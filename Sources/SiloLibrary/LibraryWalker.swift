@@ -149,7 +149,7 @@ public enum LibraryWalker {
     /// it is about to create and standardising resolves `/private` away only for a path that
     /// exists; then with symlinks resolved on both sides, because a directory enumerator hands
     /// back the resolved form of a root that was given as the link.
-    static func relativePath(of url: URL, in root: URL) -> String {
+    public static func relativePath(of url: URL, in root: URL) -> String {
         if let relative = relative(url.path, under: root.path) { return relative }
         if let relative = relative(url.resolvingSymlinksInPath().path, under: root.resolvingSymlinksInPath().path) { return relative }
         return url.path
