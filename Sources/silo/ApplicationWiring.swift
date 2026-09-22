@@ -29,4 +29,9 @@ package enum ApplicationWiring {
     package static func rulesets(config: SiloConfig) throws -> RulesetStore {
         try RulesetStore(folder: config.stateDirectory.appendingPathComponent("rulesets", isDirectory: true))
     }
+
+    @Provides
+    package static func jobs(config: SiloConfig) throws -> JobStore {
+        try JobStore(folder: config.stateDirectory.appendingPathComponent("jobs", isDirectory: true))
+    }
 }

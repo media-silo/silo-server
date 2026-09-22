@@ -13,13 +13,16 @@ package struct SiloConfig: Sendable {
     package var stateDirectory: URL
     package var libraries: [LibraryConfig]
     package var operatorToken: String?
+    /// Whether the silo runs a node inside itself, so that one machine is the whole pipeline.
+    package var embeddedNode: Bool
 
-    package init(host: String, port: Int, stateDirectory: URL, libraries: [LibraryConfig], operatorToken: String?) {
+    package init(host: String, port: Int, stateDirectory: URL, libraries: [LibraryConfig], operatorToken: String?, embeddedNode: Bool = false) {
         self.host = host
         self.port = port
         self.stateDirectory = stateDirectory
         self.libraries = libraries
         self.operatorToken = operatorToken
+        self.embeddedNode = embeddedNode
     }
 
     /// `SILO_LIBRARIES` is `name=path,name=path`, or one bare path, which is the library `main`.
@@ -41,7 +44,8 @@ package struct SiloConfig: Sendable {
             port: config.int(forKey: "SILO_PORT", default: 8080),
             stateDirectory: URL(fileURLWithPath: config.string(forKey: "SILO_STATE_DIR", default: "silo-state"), isDirectory: true),
             libraries: parsed,
-            operatorToken: config.string(forKey: "SILO_OPERATOR_TOKEN").flatMap { $0.isEmpty ? nil : $0 }
+            operatorToken: config.string(forKey: "SILO_OPERATOR_TOKEN").flatMap { $0.isEmpty ? nil : $0 },
+            embeddedNode: config.bool(forKey: "SILO_EMBEDDED_NODE", default: false)
         )
     }
 
