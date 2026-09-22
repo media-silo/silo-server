@@ -1,0 +1,18 @@
+name: licence
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  LicenceHeaders:
+    name: Licence headers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      # Pure git and shell. Until the package lands this is the only gate the repository has, and
+      # afterwards it stays the only one that notices a file written without a header.
+      - name: Check SPDX headers
+        run: ./Scripts/check-license-headers.sh
