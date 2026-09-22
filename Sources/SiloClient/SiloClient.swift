@@ -92,6 +92,28 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("POST", "/v1/jobs/\(job)/fail", body: FailRequest(reason: reason))
     }
 
+    // MARK: - Nodes
+
+    public func registerNode(_ registration: NodeRegistration) async throws -> Node {
+        try await send("POST", "/v1/nodes", body: registration)
+    }
+
+    public func nodeStatus(id: String, secret: String) async throws -> NodeStatus {
+        try await send("GET", "/v1/nodes/\(id)", body: Nothing?.none, headers: ["x-silo-node-secret": secret])
+    }
+
+    public func nodes() async throws -> [Node] {
+        try await send("GET", "/v1/nodes")
+    }
+
+    public func approveNode(_ id: String) async throws -> Node {
+        try await send("POST", "/v1/nodes/\(id)/approve")
+    }
+
+    public func revokeNode(_ id: String) async throws -> Node {
+        try await send("POST", "/v1/nodes/\(id)/revoke")
+    }
+
     // MARK: - Rulesets
 
     public struct RulesetDocument: Hashable, Sendable, Codable {
@@ -132,18 +154,19 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send(method, path, body: Nothing?.none)
     }
 
-    private func send<Body: Encodable, Response: Decodable>(_ method: String, _ path: String, body: Body?) async throws -> Response {
-        let (data, status) = try await request(method, path, body: body)
+    private func send<Body: Encodable, Response: Decodable>(_ method: String, _ path: String, body: Body?, headers: [String: String] = [:]) async throws -> Response {
+        let (data, status) = try await request(method, path, body: body, headers: headers)
         guard (200..<300).contains(status) else { throw SiloClientError.status(status, String(decoding: data, as: UTF8.self)) }
         return try Self.decoder.decode(Response.self, from: data)
     }
 
-    private func request<Body: Encodable>(_ method: String, _ path: String, body: Body?) async throws -> (Data, Int) {
+    private func request<Body: Encodable>(_ method: String, _ path: String, body: Body?, headers: [String: String] = [:]) async throws -> (Data, Int) {
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else { throw SiloClientError.badPath(path) }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try Self.encoder.encode(body)

@@ -21,8 +21,10 @@ jobs:
       # itself where they are missing; installing them here is what stops it skipping. Avahi's
       # tools arrive with the node's discovery later and are installed now so the job's shape
       # does not change when it does.
-      - name: Install ffmpeg and SQLite
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsqlite3-dev
+      # Avahi's tools are installed for the discovery module to find; the live Bonjour test still
+      # skips itself here, since no daemon runs, and is opted into with SILO_TEST_BONJOUR=1.
+      - name: Install ffmpeg, SQLite and Avahi
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsqlite3-dev avahi-utils
       # On Linux deliberately: nothing below the server imports anything Apple-only, and this job
       # is what keeps that true.
       - name: Test

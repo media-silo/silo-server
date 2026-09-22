@@ -34,4 +34,9 @@ package enum ApplicationWiring {
     package static func jobs(config: SiloConfig) throws -> JobStore {
         try JobStore(folder: config.stateDirectory.appendingPathComponent("jobs", isDirectory: true))
     }
+
+    @Provides
+    package static func nodes(config: SiloConfig) throws -> NodeStore {
+        try NodeStore(folder: config.stateDirectory.appendingPathComponent("nodes", isDirectory: true))
+    }
 }

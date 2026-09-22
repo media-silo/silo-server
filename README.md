@@ -51,6 +51,14 @@ One package, in the order its parts arrived:
   inside itself when `SILO_EMBEDDED_NODE=true`, so one machine is the whole
   pipeline: the tool registers a rip, assigns it, the embedded node encodes it,
   and `silo-ctl jobs place` has the silo move the result into the library.
+- `SiloDiscovery` and `silo-node` — a node on another machine. It finds the
+  silo by Bonjour (through `dns-sd` on macOS or Avahi's tools on Linux, as a
+  process, so nothing Apple-only is linked) or is given its URL, registers
+  itself and is given nothing, waits for a person to approve it with
+  `silo-ctl nodes approve`, takes its token once, and then runs the same loop
+  the embedded node runs, serving what it makes for the silo to fetch at
+  placement. Revoking it is one command and its token stops at once. The silo
+  advertises itself the same way unless `SILO_ADVERTISE=false`.
 - `silo-ctl` — the operator's command line. `encode` and `place` are the parts
   that need no server: the first takes a ruleset file and a ripped file and
   says what it would do, does it, and verifies the result; the second takes a
@@ -60,6 +68,8 @@ One package, in the order its parts arrived:
 swift test
 SILO_LIBRARIES=main=~/Library SILO_STATE_DIR=~/silo-state SILO_OPERATOR_TOKEN=secret SILO_EMBEDDED_NODE=true swift run silo
 SILO_URL=http://localhost:8080 SILO_TOKEN=secret swift run silo-ctl jobs list
+swift run silo-node                       # on another machine; finds the silo, waits to be approved
+SILO_URL=http://localhost:8080 SILO_TOKEN=secret swift run silo-ctl nodes approve <id>
 swift run silo-ctl encode --ruleset Examples/household.xml --kind featurette --commentary 2 in.mkv out.mkv
 swift run silo-ctl place --library ~/Library --repository ~/data --container 0123456789abcdef --item part1 \
     --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv

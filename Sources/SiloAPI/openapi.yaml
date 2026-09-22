@@ -20,6 +20,7 @@ tags:
   - name: Containers
   - name: Rulesets
   - name: Jobs
+  - name: Nodes
 
 paths:
   /libraries:
@@ -361,6 +362,7 @@ paths:
         already holds, leased to it for two minutes and renewed by every progress report.
       tags: [Jobs]
       security:
+        - node: []
         - operator: []
       requestBody:
         required: true
@@ -542,6 +544,7 @@ paths:
       summary: A node reports progress, which renews its lease
       tags: [Jobs]
       security:
+        - node: []
         - operator: []
       parameters:
         - $ref: "#/components/parameters/JobID"
@@ -569,6 +572,7 @@ paths:
       summary: A node reports the output, where it holds it
       tags: [Jobs]
       security:
+        - node: []
         - operator: []
       parameters:
         - $ref: "#/components/parameters/JobID"
@@ -602,6 +606,7 @@ paths:
       summary: A node gives up on a job
       tags: [Jobs]
       security:
+        - node: []
         - operator: []
       parameters:
         - $ref: "#/components/parameters/JobID"
@@ -629,12 +634,125 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
 
+  /nodes:
+    get:
+      operationId: listNodes
+      summary: Every node the silo knows, pending ones included
+      tags: [Nodes]
+      security:
+        - operator: []
+      responses:
+        "200":
+          description: The nodes, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+    post:
+      operationId: registerNode
+      summary: A node announces itself
+      description: >
+        Recorded pending, and given nothing, until a person approves it. A later registration of
+        the same id has to know the secret the node minted on its first run, and then brings the
+        node's name and capabilities up to date.
+      tags: [Nodes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeRegistration"
+      responses:
+        "201":
+          description: The node's record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "403":
+          description: A node of that id exists and the secret is not its.
+
+  /nodes/{id}:
+    get:
+      operationId: nodeStatus
+      summary: A node polls for its approval
+      description: The first poll after approval carries the node's token; later ones do not, since the node keeps it.
+      tags: [Nodes]
+      parameters:
+        - $ref: "#/components/parameters/NodeID"
+        - name: x-silo-node-secret
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The record, and the token once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeStatus"
+        "403":
+          description: The secret is not the node's.
+        "404":
+          description: No such node.
+
+  /nodes/{id}/approve:
+    post:
+      operationId: approveNode
+      summary: Let a node take work
+      tags: [Nodes]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/NodeID"
+      responses:
+        "200":
+          description: Approved; its next poll gives it its token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such node.
+
+  /nodes/{id}/revoke:
+    post:
+      operationId: revokeNode
+      summary: Stop a node taking work
+      tags: [Nodes]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/NodeID"
+      responses:
+        "200":
+          description: Revoked; its token stops working at once.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such node.
+
 components:
   securitySchemes:
     operator:
       type: http
       scheme: bearer
       description: The operator's token, from the silo's configuration.
+    node:
+      type: http
+      scheme: bearer
+      description: An approved node's token, minted at approval and handed to it once.
 
   parameters:
     Library:
@@ -657,6 +775,12 @@ components:
       schema:
         type: string
     JobID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    NodeID:
       name: id
       in: path
       required: true
@@ -1038,6 +1162,70 @@ components:
         placement:
           $ref: "#/components/schemas/PlacementSummary"
         failure:
+          type: string
+
+    NodeState:
+      type: string
+      enum: [pending, approved, revoked]
+
+    Node:
+      type: object
+      required: [id, name, platform, state, capabilities, registeredAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+        state:
+          $ref: "#/components/schemas/NodeState"
+        capabilities:
+          type: array
+          items:
+            type: string
+        ffmpegVersion:
+          type: string
+        cores:
+          type: integer
+        registeredAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+
+    NodeRegistration:
+      type: object
+      required: [id, secret, name, platform, capabilities]
+      properties:
+        id:
+          type: string
+        secret:
+          type: string
+        name:
+          type: string
+        platform:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        ffmpegVersion:
+          type: string
+        cores:
+          type: integer
+
+    NodeStatus:
+      type: object
+      required: [node]
+      properties:
+        node:
+          $ref: "#/components/schemas/Node"
+        token:
           type: string
 
     ClaimRequest:

@@ -33,9 +33,8 @@ package struct JobController {
     }
 }
 
-/// Jobs, changed: registered by the tool, assigned, cancelled, retried and placed by an operator,
-/// and claimed, reported and completed by a node. All behind the operator's token for now; a
-/// node's own token arrives with nodes.
+/// Jobs, changed by the operator's side: registered by the tool, assigned, cancelled, retried and
+/// placed. Behind the operator's token.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 @Middleware(RouteMiddleware.requireOperator)
@@ -87,6 +86,21 @@ package struct JobOperatorController {
     @ErrorResponse(PlacementFetchError.self, .badGateway, { Components.Schemas.Problem(detail: $0.localizedDescription) })
     package func placeJob(@Path id: String) async throws -> Components.Schemas.Job {
         try Mapping.transcode(try await service.place(id))
+    }
+
+}
+
+/// The node's four: claim, report, complete, fail. Behind the node gate, which the operator's
+/// token also passes, so the embedded node and the operator's tooling need nothing more.
+@Singleton
+@OpenAPIController(spec: "SiloAPI")
+@Middleware(RouteMiddleware.requireNode)
+package struct JobNodeController {
+    private let service: JobService
+
+    @Inject
+    package init(service: JobService) {
+        self.service = service
     }
 
     @Operation

@@ -48,7 +48,9 @@ let package = Package(
         .library(name: "FileServing", targets: ["FileServing"]),
         .library(name: "SiloClient", targets: ["SiloClient"]),
         .library(name: "SiloWorker", targets: ["SiloWorker"]),
+        .library(name: "SiloDiscovery", targets: ["SiloDiscovery"]),
         .executable(name: "silo-ctl", targets: ["silo-ctl"]),
+        .executable(name: "silo-node", targets: ["silo-node"]),
         .executable(name: "silo", targets: ["silo"]),
     ],
     dependencies: [
@@ -76,6 +78,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.6.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.13.2"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.0.0"),
+        // SHA-256 over a node's secret and token, so that the silo stores neither.
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
     ],
     targets: [
         // Facts, rules, recipes: what the silo decides with. Pure, and testable on literal values.
@@ -109,9 +113,35 @@ let package = Package(
                 "SiloKit",
                 "SiloLibrary",
                 .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
             ]
+        ),
+        // Bonjour, through the tools each platform has: dns-sd on macOS, Avahi's on Linux. A process
+        // rather than a framework, so nothing Apple-only is linked and a missing tool is a warning.
+        .target(
+            name: "SiloDiscovery",
+            dependencies: [
+                "Encoder",
+                .product(name: "Logging", package: "swift-log"),
+            ]
+        ),
+        // A node on another machine: finds the silo, registers, waits to be approved, then runs
+        // the worker's loop and serves what it makes.
+        .executableTarget(
+            name: "silo-node",
+            dependencies: [
+                "SiloKit",
+                "SiloClient",
+                "SiloWorker",
+                "SiloDiscovery",
+                "FileServing",
+                "Encoder",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            swiftSettings: proposalSettings
         ),
         // A file, served by range through the proposal's server, by every participant that holds one.
         .target(
@@ -188,6 +218,7 @@ let package = Package(
                 "SiloLibrary",
                 "SiloStore",
                 "SiloWorker",
+                "SiloDiscovery",
                 "Encoder",
                 .product(name: "Configuration", package: "swift-configuration"),
                 .product(name: "Wire", package: "swift-wire"),
@@ -211,6 +242,7 @@ let package = Package(
                 "Encoder",
                 "SiloLibrary",
                 "SiloClient",
+                "SiloDiscovery",
                 .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -234,6 +266,7 @@ let package = Package(
                 "SiloStore",
                 "SiloClient",
                 "SiloWorker",
+                "SiloDiscovery",
                 "FileServing",
                 "Encoder",
                 .product(name: "SmdKit", package: "SmdKit"),

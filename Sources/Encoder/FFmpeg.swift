@@ -31,6 +31,16 @@ public struct FFmpeg: Sendable {
         }
     }
 
+    /// The first line of `ffmpeg -version`: what a node reports as the build it runs.
+    public func version() async throws -> String {
+        let collected = OutputCollector()
+        let outcome = try await ProcessRunner.run(executable, arguments: ["-hide_banner", "-version"]) { collected.append($0) }
+        guard outcome.status == 0 else {
+            throw ToolError.failed(tool: "ffmpeg", status: outcome.status, stderr: outcome.stderrTail)
+        }
+        return collected.text.split(separator: "\n").first.map(String.init) ?? "ffmpeg"
+    }
+
     /// The encoders this `ffmpeg` has, by name: what a node reports as its capabilities.
     public func encoders() async throws -> Set<String> {
         let collected = OutputCollector()
