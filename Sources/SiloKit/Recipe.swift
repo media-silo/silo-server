@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SmdSidecar
 
 /// The fully resolved instructions for turning one source file into one presentation: one decision
 /// per source stream, each naming the rule that made it, and the layout of streams the output will
@@ -163,16 +164,7 @@ public struct LayoutStream: Hashable, Sendable, Codable {
     }
 }
 
-/// A feature mapped to a file's streams: the sidecar's `<track feature="…" audio="…" subtitle="…"/>`
-/// as a value, counted from one among streams of each kind.
-public struct TrackMapping: Hashable, Sendable, Codable {
-    public var feature: String
-    public var audio: Int?
-    public var subtitle: Int?
-
-    public init(feature: String, audio: Int? = nil, subtitle: Int? = nil) {
-        self.feature = feature
-        self.audio = audio
-        self.subtitle = subtitle
-    }
-}
+/// The sidecar's `<track feature="…" audio="…" subtitle="…"/>` as a value, counted from one among
+/// streams of each kind. The sidecar's own type, so that a recipe's renumbered map is the thing
+/// the sidecar writes.
+public typealias TrackMapping = SmdSidecar.TrackMapping
