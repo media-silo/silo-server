@@ -1,0 +1,24 @@
+{
+  "originHash" : "f25d434a4f0f6f0f70dec2327a041621bca839c8764d682565bbf414c2fec787",
+  "pins" : [
+    {
+      "identity" : "smdkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/project-smd/SmdKit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "6bfa50a6b163f5619125b0a8dfba3f53bcafb61e"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
+      }
+    }
+  ],
+  "version" : 3
+}
