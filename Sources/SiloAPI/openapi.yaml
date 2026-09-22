@@ -1,0 +1,835 @@
+openapi: "3.1.0"
+info:
+  title: Silo
+  version: "1.0.0"
+  description: >
+    A silo serves one household's libraries of smd-shaped containers. The read routes follow the
+    smddb hosting proposal's, so that a client reading the shared store finds a library familiar;
+    the rest is what making a library needs. Silo.md is the argument.
+
+    Two routes stream bytes and are served beside this document rather than described in it, since
+    an operation buffers its body whole: GET /v1/media/{presentation} is the file, with Range,
+    ETag and Accept-Ranges, 206 for a part and 416 for a range the file cannot satisfy; and
+    GET /v1/containers/{id}/smd is the container as its sidecar, as application/xml.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: Libraries
+  - name: Containers
+  - name: Rulesets
+
+paths:
+  /libraries:
+    get:
+      operationId: listLibraries
+      summary: The libraries this silo serves
+      tags: [Libraries]
+      responses:
+        "200":
+          description: The libraries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Library"
+
+  /libraries/{library}/scan:
+    post:
+      operationId: scanLibrary
+      summary: Re-read what changed in a library
+      description: >
+        Walks the library from its top-level folders and re-reads only the sidecars whose
+        modification time or size differs from what the index recorded. Operator only.
+      tags: [Libraries]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      responses:
+        "200":
+          description: What the scan did.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanReport"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library.
+
+  /containers:
+    get:
+      operationId: listContainers
+      summary: The listed roots
+      description: >
+        Series, films and collections nothing holds, and that are listed. Unlisted containers
+        are reachable through the ones that reference them and by id, never from here.
+      tags: [Containers]
+      parameters:
+        - name: library
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The roots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContainerSummary"
+
+  /containers/{id}:
+    get:
+      operationId: getContainer
+      summary: One container, with its presentations
+      tags: [Containers]
+      parameters:
+        - $ref: "#/components/parameters/ContainerID"
+        - name: profile
+          in: query
+          required: false
+          description: >
+            Leaves only presentations of this profile in the answer. A filter, never a decision:
+            the silo does not choose a presentation for a client.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The container.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Container"
+        "404":
+          description: No such container.
+
+  /lookup:
+    get:
+      operationId: lookup
+      summary: A provider's id, resolved to what it names here
+      tags: [Containers]
+      parameters:
+        - name: provider
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: value
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The containers that carry the reference, directly or through an item.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContainerSummary"
+
+  /search:
+    get:
+      operationId: search
+      summary: Titles matching, across containers and items
+      tags: [Containers]
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: The hits.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchHit"
+
+  /rulesets:
+    get:
+      operationId: listRulesets
+      summary: The rulesets the silo holds, at their latest versions
+      tags: [Rulesets]
+      responses:
+        "200":
+          description: The rulesets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RulesetSummary"
+
+  /rulesets/{name}:
+    get:
+      operationId: getRuleset
+      summary: A ruleset, at its latest version or the one asked for
+      tags: [Rulesets]
+      parameters:
+        - $ref: "#/components/parameters/RulesetName"
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The ruleset, as its XML document.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesetDocument"
+        "404":
+          description: No such ruleset or version.
+    put:
+      operationId: storeRuleset
+      summary: Store a ruleset as a new version
+      description: >
+        Every store is a new version the silo numbers; a version is immutable once stored, because
+        a job names the version it resolved against. Operator only.
+      tags: [Rulesets]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/RulesetName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RulesetDocument"
+      responses:
+        "201":
+          description: Stored, with the version the silo gave it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesetDocument"
+        "400":
+          description: The document is not a ruleset this silo can read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+
+  /rulesets/{name}/resolve:
+    post:
+      operationId: resolveRecipe
+      summary: What a ruleset would do to a file with these facts
+      description: A dry run of the resolver, so that a person can see the recipe before anything is encoded.
+      tags: [Rulesets]
+      parameters:
+        - $ref: "#/components/parameters/RulesetName"
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveRequest"
+      responses:
+        "200":
+          description: The recipe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recipe"
+        "404":
+          description: No such ruleset or version.
+        "422":
+          description: A stream no rule decides.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+components:
+  securitySchemes:
+    operator:
+      type: http
+      scheme: bearer
+      description: The operator's token, from the silo's configuration.
+
+  parameters:
+    Library:
+      name: library
+      in: path
+      required: true
+      schema:
+        type: string
+    ContainerID:
+      name: id
+      in: path
+      required: true
+      description: Sixteen lowercase hex characters, minted by the shared store. Anything else is 404.
+      schema:
+        type: string
+    RulesetName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    Unauthorised:
+      description: The operator's token is missing or wrong.
+
+  schemas:
+    Problem:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+
+    Library:
+      type: object
+      required: [id, containers, presentations]
+      properties:
+        id:
+          type: string
+        containers:
+          type: integer
+        presentations:
+          type: integer
+
+    ScanReport:
+      type: object
+      required: [read, unchanged, removed, findings]
+      properties:
+        read:
+          type: integer
+        unchanged:
+          type: integer
+        removed:
+          type: integer
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+
+    Finding:
+      type: object
+      required: [severity, text]
+      properties:
+        severity:
+          type: string
+          enum: [error, warning]
+        path:
+          type: string
+        text:
+          type: string
+
+    ContainerSummary:
+      type: object
+      required: [id, library, type, title, displayTitle, listed]
+      properties:
+        id:
+          type: string
+        library:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        displayTitle:
+          type: string
+        year:
+          type: integer
+        typeLabel:
+          type: string
+        outline:
+          type: string
+        listed:
+          type: boolean
+        parent:
+          type: string
+
+    Container:
+      type: object
+      required: [id, library, type, title, displayTitle, listed, alternatives, features, sequences, extras, children, externalRefs]
+      properties:
+        id:
+          type: string
+        library:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        displayTitle:
+          type: string
+        year:
+          type: integer
+        typeLabel:
+          type: string
+        outline:
+          type: string
+        listed:
+          type: boolean
+        parent:
+          type: string
+        defaultAlternative:
+          type: string
+        alternatives:
+          type: array
+          items:
+            $ref: "#/components/schemas/Alternative"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/Feature"
+        sequences:
+          type: array
+          items:
+            $ref: "#/components/schemas/Sequence"
+        extrasAnchor:
+          type: string
+        extras:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContainerSummary"
+        externalRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalRef"
+
+    Alternative:
+      type: object
+      required: [id, sequence]
+      properties:
+        id:
+          type: string
+        sequence:
+          type: string
+        title:
+          type: string
+        outline:
+          type: string
+
+    Feature:
+      type: object
+      required: [id, type, participants]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Participant"
+
+    Participant:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+
+    Sequence:
+      type: object
+      required: [exploded, items]
+      properties:
+        id:
+          type: string
+        exploded:
+          type: string
+          enum: [never, allowed, preferred]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+
+    Item:
+      type: object
+      required: [optional, externalRefs, presentations]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        outline:
+          type: string
+        optional:
+          type: boolean
+        container:
+          type: string
+          description: The child container, for an item of type container.
+        ref:
+          type: string
+          description: "`<container id>#<item>` or a bare item id, for an item that is a position in this order and lives elsewhere."
+        externalRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalRef"
+        presentations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Presentation"
+
+    ExternalRef:
+      type: object
+      required: [provider, value]
+      properties:
+        provider:
+          type: string
+        value:
+          type: string
+
+    Presentation:
+      type: object
+      required: [id, file, tracks, chapters]
+      properties:
+        id:
+          type: string
+          description: Stable across rescans; what the media route takes.
+        alternative:
+          type: string
+        profile:
+          type: string
+        displayName:
+          type: string
+        file:
+          type: string
+        source:
+          $ref: "#/components/schemas/SourceRef"
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackMapping"
+        chapters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chapter"
+
+    SourceRef:
+      type: object
+      required: [disc, playlist]
+      properties:
+        disc:
+          type: string
+        playlist:
+          type: string
+
+    TrackMapping:
+      type: object
+      required: [feature]
+      properties:
+        feature:
+          type: string
+        audio:
+          type: integer
+          description: From one, among the file's audio streams.
+        subtitle:
+          type: integer
+          description: From one, among the file's subtitle streams.
+
+    Chapter:
+      type: object
+      required: [index, title]
+      properties:
+        index:
+          type: integer
+        title:
+          type: string
+
+    SearchHit:
+      type: object
+      required: [container, title]
+      properties:
+        container:
+          type: string
+        item:
+          type: string
+        title:
+          type: string
+
+    RulesetSummary:
+      type: object
+      required: [name, version]
+      properties:
+        name:
+          type: string
+        version:
+          type: integer
+
+    RulesetDocument:
+      type: object
+      required: [name, document]
+      properties:
+        name:
+          type: string
+        version:
+          type: integer
+          description: Assigned by the silo; ignored on a store.
+        document:
+          type: string
+          description: The ruleset's XML.
+
+    ResolveRequest:
+      type: object
+      required: [facts]
+      properties:
+        facts:
+          $ref: "#/components/schemas/SourceFacts"
+        mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackMapping"
+
+    SourceFacts:
+      type: object
+      required: [audio, subtitles, hints]
+      properties:
+        kind:
+          type: string
+        profile:
+          type: string
+        format:
+          type: string
+          enum: [dvd, bluray, uhd]
+        duration:
+          type: number
+        video:
+          $ref: "#/components/schemas/VideoFacts"
+        audio:
+          type: array
+          items:
+            $ref: "#/components/schemas/AudioFacts"
+        subtitles:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubtitleFacts"
+        hints:
+          type: array
+          items:
+            $ref: "#/components/schemas/FactHint"
+
+    VideoFacts:
+      type: object
+      required: [absoluteIndex, codec, width, height, interlaced]
+      properties:
+        absoluteIndex:
+          type: integer
+        codec:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        frameRate:
+          type: number
+        interlaced:
+          type: boolean
+        hdr:
+          type: string
+          enum: [hdr10, hlg]
+        bitDepth:
+          type: integer
+
+    AudioFacts:
+      type: object
+      required: [index, absoluteIndex, codec, lossless, channels, role, core]
+      properties:
+        index:
+          type: integer
+        absoluteIndex:
+          type: integer
+        codec:
+          type: string
+        profile:
+          type: string
+        lossless:
+          type: boolean
+        channels:
+          type: integer
+        layout:
+          type: string
+        language:
+          type: string
+        role:
+          type: string
+          enum: [main, commentary, isolatedMusic, descriptive, other]
+        core:
+          type: boolean
+        title:
+          type: string
+
+    SubtitleFacts:
+      type: object
+      required: [index, absoluteIndex, codec, forced, hearingImpaired]
+      properties:
+        index:
+          type: integer
+        absoluteIndex:
+          type: integer
+        codec:
+          type: string
+        language:
+          type: string
+        forced:
+          type: boolean
+        hearingImpaired:
+          type: boolean
+        title:
+          type: string
+
+    FactHint:
+      type: object
+      required: [text]
+      properties:
+        stream:
+          type: integer
+        text:
+          type: string
+
+    Recipe:
+      type: object
+      required: [ruleset, decisions, output, layout, warnings]
+      properties:
+        ruleset:
+          $ref: "#/components/schemas/RulesetRef"
+        decisions:
+          type: array
+          items:
+            $ref: "#/components/schemas/StreamDecision"
+        output:
+          $ref: "#/components/schemas/OutputPolicy"
+        layout:
+          $ref: "#/components/schemas/OutputLayout"
+        warnings:
+          type: array
+          items:
+            type: string
+
+    RulesetRef:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        version:
+          type: integer
+
+    StreamDecision:
+      type: object
+      required: [kind, sourceIndex, sourceAbsoluteIndex, rule, action]
+      properties:
+        kind:
+          $ref: "#/components/schemas/StreamKind"
+        sourceIndex:
+          type: integer
+        sourceAbsoluteIndex:
+          type: integer
+        rule:
+          type: string
+        action:
+          $ref: "#/components/schemas/Action"
+
+    StreamKind:
+      type: string
+      enum: [video, audio, subtitle]
+
+    Action:
+      type: object
+      description: >
+        Swift's encoding of an enum with associated values: exactly one key, `copy` or `drop`
+        with an empty object, or `encode` holding the settings.
+      properties:
+        copy:
+          type: object
+        drop:
+          type: object
+        encode:
+          type: object
+          required: [_0]
+          properties:
+            _0:
+              $ref: "#/components/schemas/EncodeSettings"
+
+    EncodeSettings:
+      type: object
+      required: [codec, filters, options]
+      properties:
+        codec:
+          type: string
+        preset:
+          type: string
+        crf:
+          type: integer
+        bitrate:
+          type: string
+        channels:
+          type: integer
+        pixelFormat:
+          type: string
+        filters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        options:
+          type: object
+          additionalProperties:
+            type: string
+
+    OutputPolicy:
+      type: object
+      required: [container]
+      properties:
+        container:
+          type: string
+
+    OutputLayout:
+      type: object
+      required: [streams]
+      properties:
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/LayoutStream"
+
+    LayoutStream:
+      type: object
+      required: [kind, sourceIndex, sourceAbsoluteIndex, outputIndex, outputAbsoluteIndex]
+      properties:
+        kind:
+          $ref: "#/components/schemas/StreamKind"
+        sourceIndex:
+          type: integer
+        sourceAbsoluteIndex:
+          type: integer
+        outputIndex:
+          type: integer
+        outputAbsoluteIndex:
+          type: integer

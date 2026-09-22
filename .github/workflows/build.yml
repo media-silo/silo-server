@@ -21,8 +21,8 @@ jobs:
       # itself where they are missing; installing them here is what stops it skipping. Avahi's
       # tools arrive with the node's discovery later and are installed now so the job's shape
       # does not change when it does.
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install ffmpeg and SQLite
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsqlite3-dev
       # On Linux deliberately: nothing below the server imports anything Apple-only, and this job
       # is what keeps that true.
       - name: Test
