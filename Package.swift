@@ -20,6 +20,7 @@ let package = Package(
     products: [
         .library(name: "SiloKit", targets: ["SiloKit"]),
         .library(name: "Encoder", targets: ["Encoder"]),
+        .library(name: "SiloLibrary", targets: ["SiloLibrary"]),
         .executable(name: "silo-ctl", targets: ["silo-ctl"]),
     ],
     dependencies: [
@@ -32,7 +33,18 @@ let package = Package(
         .target(
             name: "SiloKit",
             dependencies: [
-                .product(name: "SmdKit", package: "SmdKit")
+                .product(name: "SmdKit", package: "SmdKit"),
+                .product(name: "SmdSidecar", package: "SmdKit"),
+            ]
+        ),
+        // A library on disk: its layout, the walk that finds every sidecar in it, the checks a
+        // sidecar has to pass, and the placement that puts a finished file into it.
+        .target(
+            name: "SiloLibrary",
+            dependencies: [
+                "SiloKit",
+                .product(name: "SmdKit", package: "SmdKit"),
+                .product(name: "SmdSidecar", package: "SmdKit"),
             ]
         ),
         // ffprobe and ffmpeg, driven as processes. The one place a recipe becomes an argument list.
@@ -45,10 +57,14 @@ let package = Package(
             dependencies: [
                 "SiloKit",
                 "Encoder",
+                "SiloLibrary",
+                .product(name: "SmdKit", package: "SmdKit"),
+                .product(name: "SmdSidecar", package: "SmdKit"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
         .testTarget(name: "SiloKitTests", dependencies: ["SiloKit"]),
         .testTarget(name: "EncoderTests", dependencies: ["Encoder", "SiloKit"]),
+        .testTarget(name: "SiloLibraryTests", dependencies: ["SiloLibrary", "SiloKit"]),
     ]
 )

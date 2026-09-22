@@ -10,6 +10,6 @@ struct SiloCtl: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "silo-ctl",
         abstract: "Operate a silo: encode, place, and later browse, approve and queue.",
-        subcommands: [Encode.self]
+        subcommands: [Encode.self, Place.self]
     )
 }

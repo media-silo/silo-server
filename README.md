@@ -26,13 +26,22 @@ One package, in the order its parts arrived:
 - `Encoder` — `ffprobe` and `ffmpeg` as processes: a recipe becomes an argument
   list, progress comes back a report at a time, and the output is probed and
   checked against the layout the recipe promised.
-- `silo-ctl` — the operator's command line. `encode` is the part that needs no
-  server: give it a ruleset file and a ripped file and it says what it would do,
-  does it, and verifies the result.
+- `SiloLibrary` — a library on disk: the layout (a folder per container named
+  from its title, `container.smd` inside, `{item} - {display name}.mkv` beside
+  it), the walk that finds every sidecar from the roots down and reports the
+  ones nothing references, the validator, and the placement that puts a
+  finished file in and records it — computed and shown before it is applied,
+  refused whole when a finding is an error, and written sidecar-last.
+- `silo-ctl` — the operator's command line. `encode` and `place` are the parts
+  that need no server: the first takes a ruleset file and a ripped file and
+  says what it would do, does it, and verifies the result; the second takes a
+  finished file and a clone of the data repository and files it into a library.
 
 ```sh
 swift test
 swift run silo-ctl encode --ruleset Examples/household.xml --kind featurette --commentary 2 in.mkv out.mkv
+swift run silo-ctl place --library ~/Library --repository ~/data --container 0123456789abcdef --item part1 \
+    --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv
 ```
 
 `Examples/household.xml` is the ruleset the proposal was written with: an extra
