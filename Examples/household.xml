@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The ruleset the proposal was written with. Copy it, rename it, and edit; the silo numbers the
+     versions when it is stored there. -->
+<ruleset format="1" name="household">
+    <extraction embeddedAudio="false" subtitles="true" embeddedSubtitles="true"/>
+
+    <!-- An extra below standard-definition width: small, and never HEVC. -->
+    <video id="small-extras">
+        <when fact="kind" in="featurette,interview,deletedScene,behindTheScenes,trailer,scene,short,clip"/>
+        <when fact="video.width" lt="576"/>
+        <encode codec="libx264" preset="slow" crf="22" pixelFormat="yuv420p">
+            <deinterlace mode="auto"/>
+        </encode>
+    </video>
+
+    <!-- A lossless source that is not a commentary keeps everything, smaller. -->
+    <audio id="lossless-main">
+        <when fact="audio.lossless" is="true"/>
+        <when fact="audio.role" ne="commentary"/>
+        <encode codec="flac"/>
+    </audio>
+
+    <!-- A commentary is speech; it does not need what the main mix needs. -->
+    <audio id="commentary">
+        <when fact="audio.role" is="commentary"/>
+        <encode codec="aac" bitrate="160k" channels="2"/>
+    </audio>
+
+    <!-- Everything else, as it came. Written last, deliberately. -->
+    <video><copy/></video>
+    <audio><copy/></audio>
+    <subtitle><copy/></subtitle>
+
+    <output container="mkv"/>
+</ruleset>
