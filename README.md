@@ -32,6 +32,16 @@ One package, in the order its parts arrived:
   ones nothing references, the validator, and the placement that puts a
   finished file in and records it — computed and shown before it is applied,
   refused whole when a finding is an error, and written sidecar-last.
+- `SiloStore` — the silo's own state: the index, a SQLite file derived from the
+  sidecars that a scan brings up to date by re-reading only what changed, and
+  the rulesets, kept as the documents they were given under
+  `rulesets/<name>/<version>.xml`, a version never rewritten.
+- `SiloAPI`, `SiloApp` and `silo` — the server: an OpenAPI document under `/v1`
+  for what a client reads (libraries, containers with their presentations,
+  lookup by a provider's id, search, rulesets and a dry run of the resolver)
+  and what an operator changes (a scan, a stored ruleset), on the swift-wire
+  stack; and beside the document, two routes that stream, the file a
+  presentation is with `Range`, and the container as its sidecar.
 - `silo-ctl` — the operator's command line. `encode` and `place` are the parts
   that need no server: the first takes a ruleset file and a ripped file and
   says what it would do, does it, and verifies the result; the second takes a
@@ -39,6 +49,7 @@ One package, in the order its parts arrived:
 
 ```sh
 swift test
+SILO_LIBRARIES=main=~/Library SILO_STATE_DIR=~/silo-state SILO_OPERATOR_TOKEN=secret swift run silo
 swift run silo-ctl encode --ruleset Examples/household.xml --kind featurette --commentary 2 in.mkv out.mkv
 swift run silo-ctl place --library ~/Library --repository ~/data --container 0123456789abcdef --item part1 \
     --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv
