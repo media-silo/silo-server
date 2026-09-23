@@ -35,33 +35,63 @@ nothing it reports is a credential.
 
 Pinned by: nothing yet.
 
-### Requirement: Bootstrap is the absence of an operator credential, and setup fires once
+### Requirement: Bootstrap is the absence of an operator credential, and only a confirmed setup ends it
 A silo SHALL be in bootstrap when it holds no operator credential — no `operator-credential.json`
-in its state directory and no `SILO_OPERATOR_TOKEN` in its environment. In bootstrap the silo
-SHALL behave as a silo with no operator token does today — reads served, operator routes refused
-with 401 — except that it SHALL also serve `POST /v1/setup`, taking a `SetupRequest` (an optional
-`name`, and a `passkey`) and answering 201 with the server's `ServerInfo`. On success the silo
-SHALL store the SHA-256 of the passkey as the operator credential and record the name, SHALL write
-both atomically, and SHALL thereby leave bootstrap. `POST /v1/setup` on a server that is not in
-bootstrap SHALL answer 410 `gone`, including immediately after the one success and across
-restarts, and no network route SHALL return a server to bootstrap.
+in its state directory and no `SILO_OPERATOR_TOKEN` in its environment; a staged but unconfirmed
+setup SHALL NOT end bootstrap. In bootstrap the silo SHALL behave as a silo with no operator
+token does today — reads served, operator routes refused with 401 — except that it SHALL also
+serve the setup pair: `POST /v1/setup` and `POST /v1/setup/confirm`.
+
+`POST /v1/setup` SHALL take a `SetupRequest` (an optional `name`, and a `passkey`), stage the
+passkey and name in memory with a deadline ten minutes hence, and answer 202 with the staged
+setup — the `ServerID`, the name it would take, and the `confirmBy` timestamp — writing nothing
+to the state directory. While a stage is pending and unexpired, a further `POST /v1/setup`
+SHALL answer 409; once the deadline passes the stage SHALL be void and the route SHALL stage
+anew. On a server that is not in bootstrap the route SHALL answer 410 `gone`, across restarts,
+and no network route SHALL return a server to bootstrap.
+
+`POST /v1/setup/confirm` SHALL take the staged passkey as its bearer. A bearer matching the
+pending stage SHALL install the credential and the name — the SHA-256 of the passkey and the
+name written to state atomically — answer 201 with the server's `ServerInfo`, and thereby leave
+bootstrap. A bearer that does not match SHALL answer 401 and leave the stage standing. With
+nothing staged — expired, restarted, or attempted on a configured server — the route SHALL
+answer 404.
 
 #### Scenario: setup once, then gone
-- **WHEN** `POST /v1/setup` succeeds on a bootstrap silo and is then called again
-- **THEN** the replies are 201 and 410, and after a restart the route still answers 410
+- **WHEN** `POST /v1/setup` is staged and confirmed, and `POST /v1/setup` is then called again
+- **THEN** the replies are 202, 201 and 410, and after a restart the route still answers 410
 
 #### Scenario: the empty case refuses
 - **WHEN** `POST /v1/setup` arrives with an empty `passkey`
-- **THEN** the reply is 400 and the silo remains in bootstrap
+- **THEN** the reply is 400, nothing is staged, and the silo remains in bootstrap
+
+#### Scenario: an unconfirmed stage expires
+- **WHEN** a staged setup's `confirmBy` passes with no confirm received
+- **THEN** the staged passkey's confirm answers 404 and a fresh `POST /v1/setup` stages anew
+
+#### Scenario: two stages collide
+- **WHEN** a second `POST /v1/setup` arrives while a stage's window is still open
+- **THEN** it answers 409 and the first stage remains confirmable
+
+#### Scenario: a wrong confirm does no damage
+- **WHEN** `POST /v1/setup/confirm` carries a bearer that is not the staged passkey
+- **THEN** it answers 401, and a confirm with the staged passkey still succeeds
+
+#### Scenario: a restart forgets the stage
+- **WHEN** the silo restarts with a setup staged but unconfirmed
+- **THEN** the state directory holds no credential, the confirm answers 404, and
+  `POST /v1/setup` stages anew
 
 Pinned by: nothing yet.
 
 ### Requirement: The silo stores only the hash of the operator passkey
-The operator credential installed by setup SHALL be kept at `operator-credential.json` in the
-state directory as the SHA-256 of the passkey, as hex — never the passkey itself. The operator
-gate SHALL accept a bearer whose hash matches the stored credential, and SHALL continue to accept
-the `SILO_OPERATOR_TOKEN` value, which takes precedence whenever it is set. A boot over a state
-directory holding the credential SHALL authenticate its bearer across restarts.
+The operator credential installed by a confirmed setup SHALL be kept at
+`operator-credential.json` in the state directory as the SHA-256 of the passkey, as hex — never
+the passkey itself. A staged passkey SHALL be held in memory only; none of it SHALL reach the
+state directory before its confirm. The operator gate SHALL accept a bearer whose hash matches
+the stored credential, and SHALL continue to accept the `SILO_OPERATOR_TOKEN` value, which
+takes precedence whenever it is set. A boot over a state directory holding the credential
+SHALL authenticate its bearer across restarts.
 
 #### Scenario: the passkey survives a restart
 - **WHEN** a silo was set up and a fresh process opens the same state directory

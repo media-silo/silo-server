@@ -43,23 +43,40 @@ Pinned by: nothing yet.
 
 ### Requirement: The setup flow mints the passkey, shows it once, and installs it
 For a bootstrap silo, SiloAdmin SHALL generate a random 128-bit passkey, render it for a human
-to transcribe, and display it exactly once with an offer to copy it, before sending
-`POST /v1/setup` with it and an optional name. On success it SHALL store the passkey in its
-Keychain keyed by the silo's `ServerID`, record the silo in its registry, and reclassify it as
-seen, has access. The passkey SHALL NOT be logged, written to files by the app, or displayed in
-full ever again. A `410` reply SHALL end the flow, discard the passkey minted for that attempt,
-and leave the silo classified by its probe result — a retry whose earlier attempt landed keeps the
-earlier passkey, which the probe resolves honestly.
+to transcribe, and display it exactly once with an offer to copy it. On the operator's
+confirmation it SHALL play the setup pair in order — `POST /v1/setup` with the passkey and an
+optional name, the passkey into its Keychain keyed by the silo's `ServerID`, then
+`POST /v1/setup/confirm` with the passkey as bearer — and the Keychain write SHALL precede the
+confirm, so the silo cannot become configured while the app holds no copy. On a confirmed setup
+it SHALL record the silo in its registry and classify it seen, has access. If the Keychain
+already holds a passkey for a bootstrap silo's ServerID — the residue of an attempt whose
+confirm never landed — the flow SHALL reuse that passkey rather than minting afresh. The
+passkey SHALL NOT be logged, written to files by the app, or displayed in full ever again. A
+`410` reply SHALL end the flow, discard the passkey minted for that attempt, and leave the
+silo classified by its probe result — any passkey the Keychain already holds for the ServerID
+stays, and the probe resolves the truth honestly. A `409` reply SHALL tell the operator that a
+setup is staged elsewhere and when its window runs out, and SHALL store nothing.
 
 #### Scenario: setup from the chair
 - **WHEN** the operator confirms the setup sheet for a bootstrap silo
-- **THEN** the app mints the passkey, the setup call succeeds, the passkey is in the Keychain
-  under the silo's ServerID, and the silo shows as seen, has access
+- **THEN** the stage succeeds, the passkey is in the Keychain under the silo's ServerID before
+  the confirm is sent, the confirm answers 201, and the silo shows as seen, has access
+
+#### Scenario: an interrupted setup resumes with the same passkey
+- **WHEN** an earlier attempt staged a setup whose confirm never landed, its stage has expired,
+  and the operator retries setup on the still-bootstrap silo
+- **THEN** the new stage sends the passkey already in the Keychain for that ServerID, the
+  confirm succeeds, and the silo shows as seen, has access
 
 #### Scenario: someone else got there first
-- **WHEN** the setup call is refused with 410
+- **WHEN** the stage call is refused with 410
 - **THEN** the passkey minted for that attempt is discarded, any passkey the Keychain already
   holds for the ServerID stays, and the silo is classified by what its probe says
+
+#### Scenario: setup staged elsewhere
+- **WHEN** the stage call is refused with 409
+- **THEN** nothing is stored, and the operator is shown that a setup is already staged and when
+  its window runs out
 
 Pinned by: nothing yet.
 
