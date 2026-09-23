@@ -12,11 +12,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      # swiftly rather than setup-swift: it installs any toolchain swift.org has released, the
-      # day it is released, so the pin here never waits on an action's version list.
-      - uses: vapor/swiftly-action@v0.2
-        with:
-          toolchain: "6.4.0"
+      # The toolchain is the one .swift-version names, installed through Swiftly, so a new Swift
+      # is a change to that file and nothing here.
+      - uses: swift-wire/setup-swift@v1
       # The encoder's integration test runs the real tools on a sample the tools make, and skips
       # itself where they are missing; installing them here is what stops it skipping. Avahi's
       # tools arrive with the node's discovery later and are installed now so the job's shape
