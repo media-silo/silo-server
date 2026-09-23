@@ -10,8 +10,9 @@ ripped file is encoded, the machines on the local network that encode it, and
 the step that places the result where the server will find it.
 
 The design is argued before it is built, in [Proposals/Silo.md](Proposals/Silo.md).
-That document is the specification until code lands, and the record of what was
-decided and why afterwards.
+That document stays the record of what was decided and why. What the code does now is specified,
+behaviour by behaviour, in [openspec/](openspec/README.md), where each requirement is pinned to
+the test that measures it.
 
 The model it serves is [SmdKit](https://github.com/project-smd/SmdKit); the tool
 that feeds it is the ingestion workflow in smd-tools.

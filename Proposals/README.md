@@ -6,7 +6,9 @@
 Designs argued before they are built, in the manner of the
 [smddb proposals](https://github.com/project-smd/smd-tools/tree/main/Proposals) this project
 grows out of. When a proposal lands, its content becomes the specification and the code, and the
-document stays as the record of what was decided and why.
+document stays as the record of what was decided and why. The specification the proposals become
+lives in [openspec/](../openspec/README.md); a proposal that changes behaviour carries its spec
+deltas under `Proposals/<Name>/specs/`, as that README describes.
 
 - [Silo](Silo.md) — a server for one household's library of smd-shaped containers: what it
   serves, how the files it serves are laid out, the rules that decide how a ripped file is
