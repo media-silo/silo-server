@@ -420,3 +420,34 @@ extension ServerTests {
         }
     }
 }
+
+/// The server's own route, open to anything that asks: its id, its name and its bootstrap state.
+extension ServerTests {
+    @Test func theServerRouteAnswersOpenly() async throws {
+        try await withClient { client in
+            let server = try await client.get("/v1/server")
+            #expect(server.status == 200)
+            struct Info: Decodable, Equatable { var id: String; var name: String; var bootstrap: Bool }
+            let info = try SiloClient.decoder.decode(Info.self, from: server.body)
+            #expect(info.id == info.id.lowercased() && UUID(uuidString: info.id) != nil)
+            #expect(info.name.hasPrefix("Silo on "))
+            #expect(info.bootstrap == false, "the suite's environment sets a token")
+            #expect(try SiloClient.decoder.decode(Info.self, from: server.body) == info, "the same boot answers the same")
+        }
+    }
+}
+
+/// The setup pair, shut from the very first boot: the suite's environment sets a token, so the
+/// server is never in bootstrap, staging is gone for good, and nothing is ever staged to confirm.
+/// The open pair's life — six scenarios of it — is pinned at the service in `SetupTests`.
+extension ServerTests {
+    @Test func theSetupPairStaysShutWhereACredentialStands() async throws {
+        try await withClient { client in
+            struct Setup: Encodable { var passkey: String }
+            let stage = try await client.post("/v1/setup", json: Setup(passkey: "horse-battery"))
+            #expect(stage.status == 410, "a token in the environment means staging is gone")
+            let confirm = try await client.send("POST", "/v1/setup/confirm", headers: ["Authorization": "Bearer horse-battery"])
+            #expect(confirm.status == 404, "nothing was ever staged")
+        }
+    }
+}

@@ -16,6 +16,7 @@ servers:
   - url: /v1
 
 tags:
+  - name: Server
   - name: Libraries
   - name: Containers
   - name: Rulesets
@@ -23,6 +24,77 @@ tags:
   - name: Nodes
 
 paths:
+  /server:
+    get:
+      operationId: getServer
+      summary: Who this silo is
+      description: >
+        The server's id, the name it goes by, and whether it is in bootstrap — waiting on an
+        operator's setup. Open: a Bonjour browse already tells everything this answers, and none
+        of it is a credential.
+      tags: [Server]
+      responses:
+        "200":
+          description: The server's identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerInfo"
+
+  /setup:
+    post:
+      operationId: stageSetup
+      summary: Stage the server's only setup
+      description: >
+        Open — the one call a bootstrap server exists to serve, and refused on any other. Stages
+        the passkey and name in memory for ten minutes and writes nothing; only its confirm ever
+        reaches the state directory. 409 while a stage stands, 410 once the server is set up,
+        for good.
+      tags: [Server]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetupRequest"
+      responses:
+        "202":
+          description: The staged setup.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupStage"
+        "400":
+          description: An empty passkey.
+        "409":
+          description: A setup is staged already; confirm or expire it.
+        "410":
+          description: The server is set up; this was only ever open in bootstrap.
+
+  /setup/confirm:
+    post:
+      operationId: confirmSetup
+      summary: Spend the staged setup
+      description: >
+        Takes the staged passkey as its bearer, carried in `Authorization: Bearer <passkey>`. A
+        match lands the credential and the name as one write to state — closing bootstrap for
+        good — and answers the server as it now is; a miss leaves the stage standing. 404 when
+        nothing is staged.
+      tags: [Server]
+      security:
+        - setup: []
+      responses:
+        "201":
+          description: The server, set up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerInfo"
+        "401":
+          description: The bearer is not the staged passkey.
+        "404":
+          description: Nothing is staged — it expired, was never staged, or the server is set up.
+
   /libraries:
     get:
       operationId: listLibraries
@@ -753,6 +825,10 @@ components:
       type: http
       scheme: bearer
       description: An approved node's token, minted at approval and handed to it once.
+    setup:
+      type: http
+      scheme: bearer
+      description: The staged setup's passkey, spent by its confirm — never the credential itself.
 
   parameters:
     Library:
@@ -792,6 +868,45 @@ components:
       description: The operator's token is missing or wrong.
 
   schemas:
+    ServerInfo:
+      type: object
+      required: [id, name, bootstrap]
+      properties:
+        id:
+          type: string
+          description: The server's id, minted at its first boot.
+        name:
+          type: string
+        bootstrap:
+          type: boolean
+          description: Whether the server holds no operator credential yet and waits on setup.
+
+    SetupRequest:
+      type: object
+      required: [passkey]
+      properties:
+        name:
+          type: string
+          description: The name the server takes where it is set up; its identity's name where absent.
+        passkey:
+          type: string
+          description: The operator's passkey, staged in memory and never stored; its hash alone reaches the state directory, and only on confirm.
+
+    SetupStage:
+      type: object
+      required: [id, name, confirmBy]
+      properties:
+        id:
+          type: string
+          description: The server's id.
+        name:
+          type: string
+          description: The name the setup would take.
+        confirmBy:
+          type: string
+          format: date-time
+          description: The staged setup's deadline — ten minutes from staging; a confirm after it finds nothing staged.
+
     Problem:
       type: object
       required: [detail]

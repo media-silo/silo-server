@@ -8,6 +8,7 @@ import HTTPTypes
 import Logging
 import NIOHTTPServer
 import SiloApp
+import SiloStore
 import Wire
 import WireMVC
 import WireMVCRouter
