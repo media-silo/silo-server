@@ -420,3 +420,19 @@ extension ServerTests {
         }
     }
 }
+
+/// The server's own route, open to anything that asks: its id, its name and its bootstrap state.
+extension ServerTests {
+    @Test func theServerRouteAnswersOpenly() async throws {
+        try await withClient { client in
+            let server = try await client.get("/v1/server")
+            #expect(server.status == 200)
+            struct Info: Decodable, Equatable { var id: String; var name: String; var bootstrap: Bool }
+            let info = try SiloClient.decoder.decode(Info.self, from: server.body)
+            #expect(info.id == info.id.lowercased() && UUID(uuidString: info.id) != nil)
+            #expect(info.name.hasPrefix("Silo on "))
+            #expect(info.bootstrap == false, "the suite's environment sets a token")
+            #expect(try SiloClient.decoder.decode(Info.self, from: server.body) == info, "the same boot answers the same")
+        }
+    }
+}

@@ -39,4 +39,14 @@ package enum ApplicationWiring {
     package static func nodes(config: SiloConfig) throws -> NodeStore {
         try NodeStore(folder: config.stateDirectory.appendingPathComponent("nodes", isDirectory: true))
     }
+
+    @Provides
+    package static func identity(config: SiloConfig) throws -> ServerIdentity {
+        try loadServerIdentity(from: config.stateDirectory, named: config.name)
+    }
+
+    @Provides
+    package static func operatorCredential(config: SiloConfig) -> OperatorCredential {
+        OperatorCredential(file: config.stateDirectory.appendingPathComponent("operator-credential.json"))
+    }
 }

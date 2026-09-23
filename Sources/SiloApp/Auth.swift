@@ -3,23 +3,31 @@
 
 import HTTPAPIs
 import HTTPTypes
+import SiloStore
 import Wire
 import WireMVC
 
-/// The operator's token, from configuration. No token configured means no operator routes work,
-/// which is the safe way round for a server that is otherwise open on a LAN.
+/// The operator's token, located by the daemon: the environment's when it is set — it wins
+/// whenever it is — and otherwise the stored credential's hash, which a confirmed setup landed.
+/// Neither present is bootstrap, and no operator routes work, which is the safe way round for a
+/// server that is otherwise open on a LAN.
 @Singleton
 package struct OperatorToken: Sendable {
     private let token: String?
+    private let credential: OperatorCredential
 
     @Inject
-    package init(config: SiloConfig) {
+    package init(config: SiloConfig, credential: OperatorCredential) {
         token = config.operatorToken
+        self.credential = credential
     }
 
     package func accepts(_ header: String?) -> Bool {
-        guard let token, let header, header.hasPrefix("Bearer ") else { return false }
-        return String(header.dropFirst("Bearer ".count)) == token
+        guard let header, header.hasPrefix("Bearer ") else { return false }
+        let bearer = String(header.dropFirst("Bearer ".count))
+        if let token { return bearer == token }
+        guard !bearer.isEmpty else { return false }
+        return credential.acceptsHash(NodeStore.hash(bearer))
     }
 }
 
