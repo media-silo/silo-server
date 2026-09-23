@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
+import FileServing
 import Foundation
 import HTTPTypes
+import SiloClient
 import SiloKit
 import SiloLibrary
 import SmdKit
@@ -24,7 +26,7 @@ enum Fixture {
         serial.alternatives = [Alternative(id: "broadcast", sequence: "parts", title: "Broadcast version")]
         serial.defaultAlternative = "broadcast"
         serial.features = [Feature(id: "commentary1", type: .commentary, title: "Commentary")]
-        serial.sequences = [Sequence(id: "parts", items: [Entry(id: "part1", type: .episode, title: "Part One"), Entry(id: "part2", type: .episode, title: "Part Two")])]
+        serial.sequences = [Sequence(id: "parts", items: [Entry(id: "part1", type: .episode, title: "Part One"), Entry(id: "part2", type: .episode, title: "Part Two"), Entry(id: "part3", type: .episode, title: "Part Three")])]
         return serial
     }()
     static let unlisted = Container(id: ContainerID("0000000000000004")!, type: .series, title: "Behind the Sofa", listed: false)
@@ -219,14 +221,14 @@ struct ServerTests {
     }
 
     @Test func rangesAreParsedAsTheSpecificationSays() {
-        #expect(MediaController.range(from: nil, size: 100) == .whole)
-        #expect(MediaController.range(from: "bytes=0-49", size: 100) == .part(0, 49))
-        #expect(MediaController.range(from: "bytes=50-", size: 100) == .part(50, 99))
-        #expect(MediaController.range(from: "bytes=-10", size: 100) == .part(90, 99))
-        #expect(MediaController.range(from: "bytes=0-500", size: 100) == .part(0, 99), "an end past the file is clipped")
-        #expect(MediaController.range(from: "bytes=100-", size: 100) == .unsatisfiable)
-        #expect(MediaController.range(from: "bytes=0-1,5-6", size: 100) == .whole, "several ranges are served as the whole")
-        #expect(MediaController.range(from: "items=0-1", size: 100) == .whole)
+        #expect(ByteRange.parse(nil, size: 100) == .whole)
+        #expect(ByteRange.parse("bytes=0-49", size: 100) == .part(0, 49))
+        #expect(ByteRange.parse("bytes=50-", size: 100) == .part(50, 99))
+        #expect(ByteRange.parse("bytes=-10", size: 100) == .part(90, 99))
+        #expect(ByteRange.parse("bytes=0-500", size: 100) == .part(0, 99), "an end past the file is clipped")
+        #expect(ByteRange.parse("bytes=100-", size: 100) == .unsatisfiable)
+        #expect(ByteRange.parse("bytes=0-1,5-6", size: 100) == .whole, "several ranges are served as the whole")
+        #expect(ByteRange.parse("items=0-1", size: 100) == .whole)
     }
 
     struct ContainerJSON: Decodable {
@@ -312,6 +314,69 @@ extension ServerTests {
             let unreadable = PlaceBody(containers: ["<nope/>"], item: "part2", file: file.path)
             #expect(try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(unreadable), headers: Self.operatorHeaders).status == 400)
             #expect(try await client.send("POST", "/v1/libraries/other/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders).status == 404)
+        }
+    }
+}
+
+/// The job routes, each reaching the transition the service tests cover, over the in-process
+/// server and through the client every other participant uses.
+extension ServerTests {
+    @Test func yJobsAreRegisteredAssignedClaimedAndPlacedOverTheAPI() async throws {
+        try await withClient { client in
+            let rip = Fixture.root.appendingPathComponent("rip.mkv")
+            try Fixture.mediaBytes.write(to: rip)
+            let source = FileRef(holder: "laptop", url: rip, path: rip.path, sizeBytes: 3000, secret: "s3cret")
+            let newJob = SiloClient.NewJob(source: source, discName: "Disc 1", probe: JobServiceTests.Bench.probe)
+
+            #expect(try await client.post("/v1/jobs", json: newJob).status == 401)
+            let created = try await client.post("/v1/jobs", json: newJob, headers: ["Authorization": "Bearer secret"])
+            #expect(created.status == 201)
+            let job = try SiloClient.decoder.decode(Job.self, from: created.body)
+            #expect(job.state == .unassigned)
+            #expect(try await client.get("/v1/jobs?state=unassigned").bodyText.contains(job.id))
+            #expect(try await client.get("/v1/jobs?state=placed").bodyText == "[]")
+            #expect(try await client.get("/v1/jobs/nothing").status == 404)
+
+            let body = RulesetDocumentBody(name: "household", document: Fixture.household)
+            _ = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(body), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
+
+            let assigned = try await client.send("PUT", "/v1/jobs/\(job.id)/assignment", body: try SiloClient.encoder.encode(JobServiceTests.Bench.assignment(item: "part3", profile: "mobile")), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
+            #expect(assigned.status == 200)
+            let pending = try SiloClient.decoder.decode(Job.self, from: assigned.body)
+            #expect(pending.state == .pending)
+            #expect(pending.requirements == ["aac", "flac"])
+
+            let strict = try await client.send("PUT", "/v1/jobs/\(job.id)/assignment", body: try SiloClient.encoder.encode({ var a = JobServiceTests.Bench.assignment(); a.ruleset = "strict"; return a }()), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
+            #expect(strict.status == 422, "the strict ruleset from the ruleset test decides no audio")
+
+            struct Claim: Encodable { var node: String; var capabilities: [String] }
+            let nothing = try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac"]), headers: ["Authorization": "Bearer secret"])
+            #expect(nothing.status == 200)
+            #expect(nothing.bodyText == "{}")
+            let claim = try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac", "aac"]), headers: ["Authorization": "Bearer secret"])
+            #expect(claim.status == 200)
+            #expect(claim.bodyText.contains("s3cret"), "the claiming node is handed the source's secret")
+
+            let progress = try await client.send("POST", "/v1/jobs/\(job.id)/progress", body: try SiloClient.encoder.encode(JobProgress(fraction: 0.25)), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
+            #expect(progress.bodyText == "{\"state\":\"encoding\"}")
+            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/retry", headers: ["Authorization": "Bearer secret"]).status == 409)
+
+            let output = Fixture.root.appendingPathComponent("encoded-\(job.id).mkv")
+            try Fixture.mediaBytes.write(to: output)
+            struct Complete: Encodable { var output: FileRef; var result: EncodeResult }
+            let completed = try await client.post("/v1/jobs/\(job.id)/complete", json: Complete(output: FileRef(holder: "box", url: output, path: output.path, secret: ""), result: EncodeResult(streams: ["video h264", "audio flac", "audio aac"], layoutMatched: true)), headers: ["Authorization": "Bearer secret"])
+            #expect(completed.status == 200)
+            #expect(try SiloClient.decoder.decode(Job.self, from: completed.body).state == .encoded)
+
+            let placed = try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: ["Authorization": "Bearer secret"])
+            #expect(placed.status == 200)
+            let done = try SiloClient.decoder.decode(Job.self, from: placed.body)
+            #expect(done.state == .placed)
+            #expect(done.placement?.destination == "Doctor Who (1963)/Pyramids of Mars/Part Three - mobile.mkv")
+            let id = try #require(done.placement?.presentation)
+            #expect(try await client.get("/v1/media/\(id)", headers: ["Range": "bytes=0-9"]).status == 206)
+            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: ["Authorization": "Bearer secret"]).status == 409)
+            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/cancel", headers: ["Authorization": "Bearer secret"]).status == 409)
         }
     }
 }

@@ -42,6 +42,15 @@ One package, in the order its parts arrived:
   and what an operator changes (a scan, a stored ruleset), on the swift-wire
   stack; and beside the document, two routes that stream, the file a
   presentation is with `Range`, and the container as its sidecar.
+- `FileServing`, `SiloClient` and `SiloWorker` — the parts every participant
+  shares: a file served by range to the node that needs it, guarded by a
+  secret the silo hands out per job; the silo's API from a client's side over
+  nothing but Foundation; and the node's loop, which claims a job, opens or
+  fetches its source, encodes it as the recipe says, probes the result, checks
+  its layout and tells the silo where the output is. The silo runs that loop
+  inside itself when `SILO_EMBEDDED_NODE=true`, so one machine is the whole
+  pipeline: the tool registers a rip, assigns it, the embedded node encodes it,
+  and `silo-ctl jobs place` has the silo move the result into the library.
 - `silo-ctl` — the operator's command line. `encode` and `place` are the parts
   that need no server: the first takes a ruleset file and a ripped file and
   says what it would do, does it, and verifies the result; the second takes a
@@ -49,7 +58,8 @@ One package, in the order its parts arrived:
 
 ```sh
 swift test
-SILO_LIBRARIES=main=~/Library SILO_STATE_DIR=~/silo-state SILO_OPERATOR_TOKEN=secret swift run silo
+SILO_LIBRARIES=main=~/Library SILO_STATE_DIR=~/silo-state SILO_OPERATOR_TOKEN=secret SILO_EMBEDDED_NODE=true swift run silo
+SILO_URL=http://localhost:8080 SILO_TOKEN=secret swift run silo-ctl jobs list
 swift run silo-ctl encode --ruleset Examples/household.xml --kind featurette --commentary 2 in.mkv out.mkv
 swift run silo-ctl place --library ~/Library --repository ~/data --container 0123456789abcdef --item part1 \
     --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv

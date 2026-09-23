@@ -19,6 +19,7 @@ tags:
   - name: Libraries
   - name: Containers
   - name: Rulesets
+  - name: Jobs
 
 paths:
   /libraries:
@@ -305,6 +306,329 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
 
+  /jobs:
+    get:
+      operationId: listJobs
+      summary: The queue
+      tags: [Jobs]
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/JobState"
+      responses:
+        "200":
+          description: The jobs, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+    post:
+      operationId: createJob
+      summary: Register a ripped file
+      description: >
+        The tool registers a rip the moment it finishes, before it is assigned, with where the tool
+        is serving the file from and what ffprobe and MakeMKV saw of it. The job is unassigned
+        until the assignment lands.
+      tags: [Jobs]
+      security:
+        - operator: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewJob"
+      responses:
+        "201":
+          description: Registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+
+  /jobs/claim:
+    post:
+      operationId: claimJob
+      summary: A node asks for work
+      description: >
+        The first pending job the node's encoders can do, preferring one whose source the node
+        already holds, leased to it for two minutes and renewed by every progress report.
+      tags: [Jobs]
+      security:
+        - operator: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimRequest"
+      responses:
+        "200":
+          description: The job, with the source's location and secret; or no job, when there is nothing to do.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimReply"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+
+  /jobs/{id}:
+    get:
+      operationId: getJob
+      summary: One job
+      tags: [Jobs]
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "404":
+          description: No such job.
+
+  /jobs/{id}/assignment:
+    put:
+      operationId: assignJob
+      summary: Say what the file is
+      description: >
+        Facts are merged from the probe, the scan and the assignment, the recipe is resolved
+        against the named ruleset, and the job becomes pending. A stream no rule decides is 422
+        with the stream named.
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Assignment"
+      responses:
+        "200":
+          description: Pending, with its recipe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: The assignment cannot be used as given.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such job.
+        "409":
+          description: The job is in a state that cannot be assigned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: A stream no rule decides.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /jobs/{id}/cancel:
+    post:
+      operationId: cancelJob
+      summary: Cancel a job
+      description: A job a node is working on becomes cancelling; the node learns at its next report and stops.
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: Cancelled, or cancelling.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such job.
+        "409":
+          description: The job is in a state that cannot be cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /jobs/{id}/retry:
+    post:
+      operationId: retryJob
+      summary: Offer a failed or cancelled job again
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: Pending again, or unassigned when it never had a recipe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such job.
+        "409":
+          description: The job is in a state that cannot be retried.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /jobs/{id}/place:
+    post:
+      operationId: placeJob
+      summary: Fetch an encoded job's output and place it
+      description: >
+        The silo fetches the output from the node that holds it into the library's filesystem,
+        places it as the assignment says, and re-scans. Refused, with the reasons, when the
+        placement would be.
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: Placed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such job, or no such library.
+        "409":
+          description: Not encoded, or the placement is refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "502":
+          description: The node holding the output did not give it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /jobs/{id}/progress:
+    post:
+      operationId: reportProgress
+      summary: A node reports progress, which renews its lease
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Progress"
+      responses:
+        "200":
+          description: The job's state, which is how a node learns of a cancel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgressReply"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such job.
+
+  /jobs/{id}/complete:
+    post:
+      operationId: completeJob
+      summary: A node reports the output, where it holds it
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteRequest"
+      responses:
+        "200":
+          description: Encoded, or failed when the layout did not match.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such job.
+        "409":
+          description: The job was not being worked on.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /jobs/{id}/fail:
+    post:
+      operationId: failJob
+      summary: A node gives up on a job
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FailRequest"
+      responses:
+        "200":
+          description: Failed, or cancelled when a cancel was pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such job.
+        "409":
+          description: The job was not being worked on.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
 components:
   securitySchemes:
     operator:
@@ -328,6 +652,12 @@ components:
         type: string
     RulesetName:
       name: name
+      in: path
+      required: true
+      schema:
+        type: string
+    JobID:
+      name: id
       in: path
       required: true
       schema:
@@ -439,6 +769,316 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Finding"
+
+    JobState:
+      type: string
+      enum: [unassigned, pending, claimed, encoding, encoded, placing, placed, failed, cancelling, cancelled]
+
+    FileRef:
+      type: object
+      required: [holder, url, secret]
+      properties:
+        holder:
+          type: string
+          description: The node the file is on.
+        url:
+          type: string
+          format: uri
+        path:
+          type: string
+          description: For the holder's own use, so it opens the file rather than fetching it.
+        sizeBytes:
+          type: integer
+          format: int64
+        secret:
+          type: string
+
+    NewJob:
+      type: object
+      required: [source]
+      properties:
+        source:
+          $ref: "#/components/schemas/FileRef"
+        discName:
+          type: string
+        probe:
+          $ref: "#/components/schemas/ProbedSource"
+        makeMKV:
+          $ref: "#/components/schemas/MakeMKVFacts"
+
+    ProbedSource:
+      type: object
+      required: [streams]
+      properties:
+        duration:
+          type: number
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProbedStream"
+
+    ProbedStream:
+      type: object
+      required: [absoluteIndex, kind, codec, dispositions]
+      properties:
+        absoluteIndex:
+          type: integer
+        kind:
+          type: string
+          enum: [video, audio, subtitle, data, attachment, other]
+        codec:
+          type: string
+        profile:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        frameRate:
+          type: number
+        fieldOrder:
+          type: string
+        colorTransfer:
+          type: string
+        pixelFormat:
+          type: string
+        bitsPerRawSample:
+          type: integer
+        channels:
+          type: integer
+        channelLayout:
+          type: string
+        language:
+          type: string
+        title:
+          type: string
+        dispositions:
+          type: array
+          items:
+            type: string
+
+    MakeMKVFacts:
+      type: object
+      required: [tracks]
+      properties:
+        format:
+          type: string
+          enum: [dvd, bluray, uhd]
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/MakeMKVTrack"
+
+    MakeMKVTrack:
+      type: object
+      required: [kind, flags, core, forcedOnly]
+      properties:
+        kind:
+          $ref: "#/components/schemas/StreamKind"
+        codecId:
+          type: string
+        language:
+          type: string
+        channels:
+          type: integer
+        flags:
+          type: integer
+        core:
+          type: boolean
+        forcedOnly:
+          type: boolean
+
+    Assignment:
+      type: object
+      required: [library, containers, item, tracks, chapters, ruleset]
+      properties:
+        library:
+          type: string
+        containers:
+          type: array
+          description: The item's container and every one above it, root first, as repository documents.
+          items:
+            type: string
+        item:
+          type: string
+        alternative:
+          type: string
+        profile:
+          type: string
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackMapping"
+        chapters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chapter"
+        source:
+          $ref: "#/components/schemas/SourceRef"
+        ruleset:
+          type: string
+        rulesetVersion:
+          type: integer
+
+    Attempt:
+      type: object
+      required: [node, startedAt]
+      properties:
+        node:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        outcome:
+          type: string
+
+    Lease:
+      type: object
+      required: [node, expiresAt]
+      properties:
+        node:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    Progress:
+      type: object
+      required: [updatedAt]
+      properties:
+        fraction:
+          type: number
+        seconds:
+          type: number
+        fps:
+          type: number
+        speed:
+          type: number
+        updatedAt:
+          type: string
+          format: date-time
+
+    EncodeResult:
+      type: object
+      required: [streams, layoutMatched]
+      properties:
+        sizeBytes:
+          type: integer
+          format: int64
+        streams:
+          type: array
+          items:
+            type: string
+        layoutMatched:
+          type: boolean
+
+    PlacementSummary:
+      type: object
+      required: [destination, writes, placedAt]
+      properties:
+        destination:
+          type: string
+        presentation:
+          type: string
+        writes:
+          type: array
+          items:
+            type: string
+        placedAt:
+          type: string
+          format: date-time
+
+    Job:
+      type: object
+      required: [id, state, createdAt, updatedAt, source, requirements, attempts]
+      properties:
+        id:
+          type: string
+        state:
+          $ref: "#/components/schemas/JobState"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        source:
+          $ref: "#/components/schemas/FileRef"
+        discName:
+          type: string
+        probe:
+          $ref: "#/components/schemas/ProbedSource"
+        makeMKV:
+          $ref: "#/components/schemas/MakeMKVFacts"
+        assignment:
+          $ref: "#/components/schemas/Assignment"
+        facts:
+          $ref: "#/components/schemas/SourceFacts"
+        recipe:
+          $ref: "#/components/schemas/Recipe"
+        requirements:
+          type: array
+          items:
+            type: string
+        attempts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attempt"
+        lease:
+          $ref: "#/components/schemas/Lease"
+        progress:
+          $ref: "#/components/schemas/Progress"
+        output:
+          $ref: "#/components/schemas/FileRef"
+        result:
+          $ref: "#/components/schemas/EncodeResult"
+        placement:
+          $ref: "#/components/schemas/PlacementSummary"
+        failure:
+          type: string
+
+    ClaimRequest:
+      type: object
+      required: [node, capabilities]
+      properties:
+        node:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+
+    ClaimReply:
+      type: object
+      properties:
+        job:
+          $ref: "#/components/schemas/Job"
+
+    ProgressReply:
+      type: object
+      required: [state]
+      properties:
+        state:
+          $ref: "#/components/schemas/JobState"
+
+    CompleteRequest:
+      type: object
+      required: [output, result]
+      properties:
+        output:
+          $ref: "#/components/schemas/FileRef"
+        result:
+          $ref: "#/components/schemas/EncodeResult"
+
+    FailRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
 
     ContainerSummary:
       type: object

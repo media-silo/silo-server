@@ -45,6 +45,9 @@ let package = Package(
         .library(name: "Encoder", targets: ["Encoder"]),
         .library(name: "SiloLibrary", targets: ["SiloLibrary"]),
         .library(name: "SiloStore", targets: ["SiloStore"]),
+        .library(name: "FileServing", targets: ["FileServing"]),
+        .library(name: "SiloClient", targets: ["SiloClient"]),
+        .library(name: "SiloWorker", targets: ["SiloWorker"]),
         .executable(name: "silo-ctl", targets: ["silo-ctl"]),
         .executable(name: "silo", targets: ["silo"]),
     ],
@@ -110,6 +113,33 @@ let package = Package(
                 .product(name: "SmdSidecar", package: "SmdKit"),
             ]
         ),
+        // A file, served by range through the proposal's server, by every participant that holds one.
+        .target(
+            name: "FileServing",
+            dependencies: [
+                "SiloKit",
+                .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
+                .product(name: "NIOHTTPServer", package: "swift-http-server"),
+                .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "BasicContainers", package: "swift-collections"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            swiftSettings: proposalSettings
+        ),
+        // The silo's API from a client's side, over Foundation's URLSession and nothing else.
+        .target(
+            name: "SiloClient",
+            dependencies: ["SiloKit"]
+        ),
+        // The node's loop, the same for a node on another machine and the one inside the silo.
+        .target(
+            name: "SiloWorker",
+            dependencies: [
+                "SiloKit",
+                "Encoder",
+                .product(name: "Logging", package: "swift-log"),
+            ]
+        ),
         // The document and its generated types. Depends on the Wire product without importing it:
         // that is how WireOpenAPI discovers which module carries a document.
         .target(
@@ -130,6 +160,8 @@ let package = Package(
                 "SiloKit",
                 "SiloLibrary",
                 "SiloStore",
+                "FileServing",
+                "SiloWorker",
                 .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
                 .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
@@ -155,6 +187,8 @@ let package = Package(
                 "SiloKit",
                 "SiloLibrary",
                 "SiloStore",
+                "SiloWorker",
+                "Encoder",
                 .product(name: "Configuration", package: "swift-configuration"),
                 .product(name: "Wire", package: "swift-wire"),
                 .product(name: "WireOpenAPI", package: "wire-open-api"),
@@ -176,6 +210,7 @@ let package = Package(
                 "SiloKit",
                 "Encoder",
                 "SiloLibrary",
+                "SiloClient",
                 .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -197,6 +232,10 @@ let package = Package(
                 "SiloKit",
                 "SiloLibrary",
                 "SiloStore",
+                "SiloClient",
+                "SiloWorker",
+                "FileServing",
+                "Encoder",
                 .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
                 .product(name: "Wire", package: "swift-wire"),
