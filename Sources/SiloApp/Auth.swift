@@ -25,6 +25,43 @@ package struct OperatorToken: Sendable {
 
 package enum RouteMiddleware {
     package static let requireOperator = FactoryKey()
+    package static let requireNode = FactoryKey()
+}
+
+/// Answers 401 for a request without an approved node's token or the operator's. Seeing a node's
+/// token is its heartbeat. The node named in a request body is trusted to be the token's; on a
+/// household network that is enough, and the operator's token is what the embedded node and the
+/// operator's own tooling use.
+@Factory(RouteMiddleware.requireNode)
+@MiddlewareFactory
+package struct RequireNode<
+    Ctx: HTTPServerCapability.RequestContext & ~Copyable,
+    Reader: AsyncReader & ~Copyable,
+    Sender: HTTPResponseSender & ~Copyable
+>: Middleware
+where Reader.ReadElement == UInt8, Reader.FinalElement == HTTPFields?, Sender.Writer: ~Copyable {
+    @Inject let token: OperatorToken
+    @Inject let nodes: NodeService
+
+    package typealias Input = RequestResponseMiddlewareBox<Ctx, Reader, Sender>
+    package typealias NextInput = Input
+
+    package func intercept<Return: ~Copyable>(
+        input: consuming Input,
+        next: (consuming NextInput) async throws -> Return
+    ) async throws -> Return {
+        let header = input.peekedRequest.headerFields[.authorization]
+        var authorised = token.accepts(header)
+        if !authorised, let header, header.hasPrefix("Bearer ") {
+            authorised = nodes.authenticate(bearer: String(header.dropFirst("Bearer ".count))) != nil
+        }
+        guard input.isPending, !authorised else { return try await next(input) }
+        return try await next(
+            input.responding { sender in
+                try await sender.sendAndFinish(HTTPResponse(status: .unauthorized))
+            }
+        )
+    }
 }
 
 /// Answers 401 for a request without the operator's bearer token, and lets the rest through.

@@ -33,14 +33,16 @@ public struct FFprobe: Sendable {
 }
 
 /// Collects the lines a tool wrote, for a tool whose output is one document rather than a stream.
-final class OutputCollector: Sendable {
+package final class OutputCollector: Sendable {
     private let lines = Mutex<[String]>([])
 
-    func append(_ line: String) {
+    package init() {}
+
+    package func append(_ line: String) {
         lines.withLock { $0.append(line) }
     }
 
-    var text: String {
+    package var text: String {
         lines.withLock { $0.joined(separator: "\n") }
     }
 }

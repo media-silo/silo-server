@@ -15,14 +15,19 @@ package struct SiloConfig: Sendable {
     package var operatorToken: String?
     /// Whether the silo runs a node inside itself, so that one machine is the whole pipeline.
     package var embeddedNode: Bool
+    /// The name the silo goes by on the network, and whether it says so through Bonjour.
+    package var name: String
+    package var advertise: Bool
 
-    package init(host: String, port: Int, stateDirectory: URL, libraries: [LibraryConfig], operatorToken: String?, embeddedNode: Bool = false) {
+    package init(host: String, port: Int, stateDirectory: URL, libraries: [LibraryConfig], operatorToken: String?, embeddedNode: Bool = false, name: String = "silo", advertise: Bool = false) {
         self.host = host
         self.port = port
         self.stateDirectory = stateDirectory
         self.libraries = libraries
         self.operatorToken = operatorToken
         self.embeddedNode = embeddedNode
+        self.name = name
+        self.advertise = advertise
     }
 
     /// `SILO_LIBRARIES` is `name=path,name=path`, or one bare path, which is the library `main`.
@@ -45,7 +50,9 @@ package struct SiloConfig: Sendable {
             stateDirectory: URL(fileURLWithPath: config.string(forKey: "SILO_STATE_DIR", default: "silo-state"), isDirectory: true),
             libraries: parsed,
             operatorToken: config.string(forKey: "SILO_OPERATOR_TOKEN").flatMap { $0.isEmpty ? nil : $0 },
-            embeddedNode: config.bool(forKey: "SILO_EMBEDDED_NODE", default: false)
+            embeddedNode: config.bool(forKey: "SILO_EMBEDDED_NODE", default: false),
+            name: config.string(forKey: "SILO_NAME", default: "Silo on \(ProcessInfo.processInfo.hostName)"),
+            advertise: config.bool(forKey: "SILO_ADVERTISE", default: true)
         )
     }
 

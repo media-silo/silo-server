@@ -44,13 +44,13 @@ public enum ToolError: Error, CustomStringConvertible {
 
 /// Runs a tool, streaming its standard output a line at a time and keeping the tail of its
 /// standard error for the failure message. Cancelling the task terminates the process.
-enum ProcessRunner {
-    struct Outcome: Sendable {
-        var status: Int32
-        var stderrTail: String
+package enum ProcessRunner {
+    package struct Outcome: Sendable {
+        package var status: Int32
+        package var stderrTail: String
     }
 
-    static func run(
+    package static func run(
         _ executable: URL,
         arguments: [String],
         onLine: @escaping @Sendable (String) -> Void
@@ -154,7 +154,7 @@ enum ProcessRunner {
 
 /// Splits a byte stream into lines, holding the partial last one between calls. `ffmpeg` writes
 /// progress with `\n`; a carriage return, which some builds use for status lines, ends a line too.
-final class LineSplitter: Sendable {
+package final class LineSplitter: Sendable {
     private let buffer = Mutex(Data())
 
     func append(_ data: Data) -> [String] {

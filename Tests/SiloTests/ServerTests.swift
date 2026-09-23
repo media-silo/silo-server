@@ -380,3 +380,43 @@ extension ServerTests {
         }
     }
 }
+
+/// The node routes: a node's own two, the operator's three, and the node gate on the job routes.
+extension ServerTests {
+    @Test func xNodesRegisterAreApprovedAndTakeWorkWithTheirToken() async throws {
+        try await withClient { client in
+            let registration = NodeRegistration(id: "node-1", secret: "s3cret", name: "box", platform: "Linux", capabilities: ["flac", "aac"], ffmpegVersion: "ffmpeg 7", cores: 4)
+            let registered = try await client.post("/v1/nodes", json: registration)
+            #expect(registered.status == 201)
+            #expect(try SiloClient.decoder.decode(Node.self, from: registered.body).state == .pending)
+            #expect(try await client.post("/v1/nodes", json: NodeRegistration(id: "node-1", secret: "wrong", name: "box", platform: "Linux", capabilities: [])).status == 403)
+
+            #expect(try await client.get("/v1/nodes").status == 401)
+            let listed = try await client.get("/v1/nodes", headers: ["Authorization": "Bearer secret"])
+            #expect(try SiloClient.decoder.decode([Node].self, from: listed.body).map(\.id) == ["node-1"])
+
+            let pending = try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"])
+            #expect(pending.status == 200)
+            #expect(try SiloClient.decoder.decode(NodeStatus.self, from: pending.body).token == nil)
+            #expect(try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "wrong"]).status == 403)
+            #expect(try await client.get("/v1/nodes/node-9", headers: ["x-silo-node-secret": "s3cret"]).status == 404)
+
+            struct Claim: Encodable { var node: String; var capabilities: [String] }
+            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"])).status == 401, "no token yet")
+
+            #expect(try await client.send("POST", "/v1/nodes/node-1/approve").status == 401)
+            #expect(try await client.send("POST", "/v1/nodes/node-1/approve", headers: ["Authorization": "Bearer secret"]).status == 200)
+            let approved = try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"])
+            let token = try #require(try SiloClient.decoder.decode(NodeStatus.self, from: approved.body).token)
+            #expect(try SiloClient.decoder.decode(NodeStatus.self, from: try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"]).body).token == nil, "once")
+
+            let claim = try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"]), headers: ["Authorization": "Bearer \(token)"])
+            #expect(claim.status == 200, "the node's token passes the node gate")
+            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"]), headers: ["Authorization": "Bearer nope"]).status == 401)
+            #expect(try await client.send("POST", "/v1/jobs/nothing/cancel", headers: ["Authorization": "Bearer \(token)"]).status == 401, "a node's token does not pass the operator's gate")
+
+            #expect(try await client.send("POST", "/v1/nodes/node-1/revoke", headers: ["Authorization": "Bearer secret"]).status == 200)
+            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"]), headers: ["Authorization": "Bearer \(token)"]).status == 401, "revoked at once")
+        }
+    }
+}
