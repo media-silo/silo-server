@@ -12,8 +12,11 @@ package struct SetupGone: Error {}
 /// The passkey a setup would stage is empty.
 package struct EmptyPasskey: Error {}
 
-/// A setup is staged already; its window is still open.
-package struct StagePending: Error {}
+/// A setup is staged already; its window is still open — the standing stage's deadline is what
+/// a refused stager is told, so another console knows how long to wait out.
+package struct StagePending: Error {
+    package var confirmBy: Date
+}
 
 /// Nothing is staged to confirm: the stage expired, was never made, or a restart forgot it.
 package struct NothingStaged: Error {}
@@ -94,7 +97,7 @@ package final class ServerService: Sendable {
         guard !passkey.isEmpty else { throw EmptyPasskey() }
         return try staged.withLock { current in
             let now = self.now()
-            if let pending = current, pending.confirmBy > now { throw StagePending() }
+            if let pending = current, pending.confirmBy > now { throw StagePending(confirmBy: pending.confirmBy) }
             let pending = PendingSetup(passkey: passkey, name: name ?? self.name, confirmBy: now.addingTimeInterval(stageWindow))
             current = pending
             return StagedSetup(name: pending.name, confirmBy: pending.confirmBy)

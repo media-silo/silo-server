@@ -29,7 +29,7 @@ package struct ServerController {
 
     @Operation
     @ErrorResponse(EmptyPasskey.self, .badRequest)
-    @ErrorResponse(StagePending.self, .conflict)
+    @ErrorResponse(StagePending.self, .conflict, { Components.Schemas.SetupConflict(confirmBy: $0.confirmBy) })
     @ErrorResponse(SetupGone.self, .gone)
     package func stageSetup(@JSONBody body: Components.Schemas.SetupRequest) async throws -> Components.Schemas.SetupStage {
         let staged = try service.stageSetup(passkey: body.passkey, name: body.name)
