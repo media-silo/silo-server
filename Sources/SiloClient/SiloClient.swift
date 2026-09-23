@@ -134,6 +134,59 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("PUT", "/v1/rulesets/\(name)", body: RulesetDocument(name: name, version: nil, document: document))
     }
 
+    // MARK: - Server
+
+    /// Who the silo says it is, openly: its id, its name, and whether it still waits on a setup.
+    public struct ServerInfo: Hashable, Sendable, Codable {
+        public var id: String
+        public var name: String
+        public var bootstrap: Bool
+
+        public init(id: String, name: String, bootstrap: Bool) {
+            self.id = id
+            self.name = name
+            self.bootstrap = bootstrap
+        }
+    }
+
+    /// What staging tells its stager: the name the setup would take and its deadline.
+    public struct SetupStage: Hashable, Sendable, Codable {
+        public var id: String
+        public var name: String
+        public var confirmBy: Date
+
+        public init(id: String, name: String, confirmBy: Date) {
+            self.id = id
+            self.name = name
+            self.confirmBy = confirmBy
+        }
+    }
+
+    struct SetupRequest: Codable { var name: String?; var passkey: String }
+    struct SetupConflict: Codable { var confirmBy: Date }
+
+    public func server() async throws -> ServerInfo {
+        try await send("GET", "/v1/server")
+    }
+
+    /// Stages the server's only setup. While a stage stands this throws `conflict(confirmBy:)`
+    /// carrying the standing stage's deadline; once the server is set up, `status(410, _)`.
+    public func setup(name: String? = nil, passkey: String) async throws -> SetupStage {
+        do {
+            return try await send("POST", "/v1/setup", body: SetupRequest(name: name, passkey: passkey))
+        } catch SiloClientError.status(409, let body) {
+            if let conflict = try? Self.decoder.decode(SetupConflict.self, from: Data(body.utf8)) {
+                throw SiloClientError.conflict(confirmBy: conflict.confirmBy)
+            }
+            throw SiloClientError.status(409, body)
+        }
+    }
+
+    /// Spends the staged setup: the passkey travels as the bearer, not as the client's token.
+    public func confirmSetup(bearer: String) async throws -> ServerInfo {
+        try await send("POST", "/v1/setup/confirm", body: Nothing?.none, headers: ["Authorization": "Bearer \(bearer)"])
+    }
+
     // MARK: - Plumbing
 
     public static let encoder: JSONEncoder = {
@@ -180,11 +233,15 @@ public struct SiloClient: Sendable, JobsAPI {
 public enum SiloClientError: Error, CustomStringConvertible {
     case badPath(String)
     case status(Int, String)
+    /// A `POST /v1/setup` was refused because a stage already stands; the deadline is the
+    /// standing stage's own, so a refused console knows how long to wait out.
+    case conflict(confirmBy: Date)
 
     public var description: String {
         switch self {
         case .badPath(let path): "not a path: \(path)"
         case .status(let status, let body): "the silo answered \(status)\(body.isEmpty ? "" : ": \(body)")"
+        case .conflict(let confirmBy): "a setup is staged already until \(confirmBy)"
         }
     }
 }
