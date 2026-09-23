@@ -14,3 +14,7 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   serves, how the files it serves are laid out, the rules that decide how a ripped file is
   encoded, the nodes that do the encoding, and how a finished file is placed where the server
   will find it.
+- [Onboarding](Onboarding.md) — how a silo with no configuration becomes a working server:
+  bootstrap mode and the staged, then confirmed, setup pair it allows, the operator's passkey,
+  recovery through the filesystem, and SiloAdmin, the macOS console that finds silos and walks
+  a fresh one through its first ten minutes.
