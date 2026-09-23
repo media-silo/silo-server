@@ -9,9 +9,11 @@ directly rather than through Emby, together with the rules that decide how a
 ripped file is encoded, the machines on the local network that encode it, and
 the step that places the result where the server will find it.
 
-The design is argued before it is built, in [Proposals/Silo.md](Proposals/Silo.md).
-That document is the specification until code lands, and the record of what was
-decided and why afterwards.
+The design is written down before it is built. [Specs/](Specs/) is the
+specification as the code is today, one document per capability.
+[Proposals/](Proposals/) is the record of what was decided and why: each
+change argued in a proposal whose spec text lands with its implementation. The
+founding argument is [Proposals/Silo.md](Proposals/Silo.md).
 
 The model it serves is [SmdKit](https://github.com/project-smd/SmdKit); the tool
 that feeds it is the ingestion workflow in smd-tools.
