@@ -17,6 +17,12 @@ package struct BadRuleset: Error {
 package struct Unresolvable: Error {
     package var reason: String
 }
+package struct BadPlacement: Error {
+    package var reason: String
+}
+package struct PlacementRefused: Error {
+    package var result: Components.Schemas.PlacementResult
+}
 
 /// The index's rows and the sidecar's values as the document's types. One direction only: the API
 /// is a projection of the model, never a place the model is edited.

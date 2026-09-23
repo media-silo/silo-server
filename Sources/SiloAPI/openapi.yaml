@@ -60,6 +60,50 @@ paths:
         "404":
           description: No such library.
 
+  /libraries/{library}/place:
+    post:
+      operationId: placeFile
+      summary: Put a finished file into the library as a presentation of an item
+      description: >
+        Computes every write the placement would make — folders, the file's destination, the
+        sidecars root first — and shows them; applies them unless asked for a dry run; refuses
+        them whole, with the findings, when any finding is an error. The file is a path the silo
+        can reach; a job's output arrives here by the silo fetching it first. Operator only.
+      tags: [Libraries]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceRequest"
+      responses:
+        "200":
+          description: The placement, applied unless it was a dry run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementResult"
+        "400":
+          description: A container document that cannot be read, a lineage that does not hold together, or an item the container does not have.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library.
+        "409":
+          description: Refused, with the findings that refuse it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlacementResult"
+
   /containers:
     get:
       operationId: listContainers
@@ -338,6 +382,63 @@ components:
           type: string
         text:
           type: string
+
+    PlaceRequest:
+      type: object
+      required: [containers, item, file]
+      properties:
+        containers:
+          type: array
+          description: The container the item is in and every container above it, root first, each as its repository XML document.
+          items:
+            type: string
+        item:
+          type: string
+        alternative:
+          type: string
+        profile:
+          type: string
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackMapping"
+        chapters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chapter"
+        source:
+          $ref: "#/components/schemas/SourceRef"
+        file:
+          type: string
+          description: The finished file, as a path the silo can reach.
+        copy:
+          type: boolean
+          description: Copy the file into place rather than moving it.
+        dryRun:
+          type: boolean
+          description: Show the writes and make none.
+
+    PlacementResult:
+      type: object
+      required: [applied, destination, writes, findings]
+      properties:
+        applied:
+          type: boolean
+        destination:
+          type: string
+          description: The file's path in the library, relative to its root.
+        presentation:
+          type: string
+          description: The presentation's id once applied; what the media route takes.
+        writes:
+          type: array
+          description: The declared write targets, one per line.
+          items:
+            type: string
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
 
     ContainerSummary:
       type: object

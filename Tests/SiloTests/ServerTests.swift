@@ -31,7 +31,11 @@ enum Fixture {
 
     static let mediaBytes = Data((0..<3000).map { UInt8($0 % 251) })
 
-    static let root: URL = {
+    /// One library for the one suite: the environment the harness applies is the process's, so
+    /// a second suite with its own paths would race the first for what the app reads at boot.
+    static let root = build()
+
+    static func build() -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-server-\(UUID().uuidString)")
         let library = root.appendingPathComponent("Library")
         try! FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
@@ -49,13 +53,15 @@ enum Fixture {
             return folder.appendingPathComponent("container.smd")
         }())
         return root
-    }()
+    }
 
-    static let environment: [String: String] = [
-        "SILO_LIBRARIES": "main=\(root.appendingPathComponent("Library").path)",
-        "SILO_STATE_DIR": root.appendingPathComponent("State").path,
-        "SILO_OPERATOR_TOKEN": "secret",
-    ]
+    static func environment(_ root: URL) -> [String: String] {
+        [
+            "SILO_LIBRARIES": "main=\(root.appendingPathComponent("Library").path)",
+            "SILO_STATE_DIR": root.appendingPathComponent("State").path,
+            "SILO_OPERATOR_TOKEN": "secret",
+        ]
+    }
 
     static let household = try! String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Examples/household.xml"), encoding: .utf8)
 }
@@ -66,7 +72,7 @@ struct RulesetDocumentBody: Codable {
     var document: String?
 }
 
-@Suite(.wiremvc(.inProcess, environment: { Fixture.environment }), .serialized)
+@Suite(.wiremvc(.inProcess, environment: { Fixture.environment(Fixture.root) }), .serialized)
 struct ServerTests {
     @Test func theLibraryIsBrowsable() async throws {
         try await withClient { client in
@@ -233,5 +239,79 @@ struct ServerTests {
     private static func presentationID(in json: String, file: String) -> String? {
         let container = try? JSONDecoder().decode(ContainerJSON.self, from: Data(json.utf8))
         return container?.sequences.flatMap(\.items).flatMap(\.presentations).first { $0.file == file }?.id
+    }
+}
+
+struct PlaceBody: Encodable {
+    var containers: [String]
+    var item: String
+    var alternative: String?
+    var profile: String?
+    var tracks: [TrackMapping] = []
+    var chapters: [Chapter] = []
+    var file: String
+    var copy: Bool = false
+    var dryRun: Bool = false
+}
+
+struct PlacementResultBody: Decodable {
+    struct Finding: Decodable { var severity: String; var text: String }
+    var applied: Bool
+    var destination: String
+    var presentation: String?
+    var writes: [String]
+    var findings: [Finding]
+}
+
+extension ServerTests {
+    static let documents = [Fixture.series, Fixture.serial].map { String(decoding: ContainerFile.data(for: $0), as: UTF8.self) }
+    static let operatorHeaders = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
+
+    /// Last in the suite on purpose: it changes the library the tests above count.
+    @Test func zPlacementIsShownThenAppliedAndRefusedTheSecondTime() async throws {
+        let file = Fixture.root.appendingPathComponent("part2.mkv")
+        try Fixture.mediaBytes.write(to: file)
+        try await withClient { client in
+            var body = PlaceBody(containers: Self.documents, item: "part2", tracks: [TrackMapping(feature: "commentary1", audio: 2)], chapters: [Chapter(index: 1, title: "Opening")], file: file.path, dryRun: true)
+            #expect(try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body)).status == 401)
+
+            let shown = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders)
+            #expect(shown.status == 200)
+            let dry = try shown.json(PlacementResultBody.self)
+            #expect(dry.applied == false)
+            #expect(dry.presentation == nil)
+            #expect(dry.destination == "Doctor Who (1963)/Pyramids of Mars/Part Two.mkv")
+            #expect(dry.writes.last == "update   Doctor Who (1963)/Pyramids of Mars/container.smd")
+            #expect(FileManager.default.fileExists(atPath: file.path), "a dry run moves nothing")
+
+            body.dryRun = false
+            let placed = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders)
+            #expect(placed.status == 200)
+            let result = try placed.json(PlacementResultBody.self)
+            #expect(result.applied == true)
+            #expect(!FileManager.default.fileExists(atPath: file.path), "moved into place")
+            let id = try #require(result.presentation)
+            let media = try await client.get("/v1/media/\(id)", headers: ["Range": "bytes=0-9"])
+            #expect(media.status == 206, "the index learned of it without a scan being asked for")
+            let serial = try await client.get("/v1/containers/0000000000000003")
+            #expect(serial.bodyText.contains("Part Two.mkv"))
+            #expect(serial.bodyText.contains("\"title\":\"Opening\""))
+
+            try Fixture.mediaBytes.write(to: file)
+            let again = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders)
+            #expect(again.status == 409)
+            let refused = try again.json(PlacementResultBody.self)
+            #expect(refused.applied == false)
+            #expect(refused.findings.map(\.text).contains("already exists; nothing is overwritten"))
+            #expect(FileManager.default.fileExists(atPath: file.path), "a refusal moves nothing")
+
+            let unknownItem = PlaceBody(containers: Self.documents, item: "part9", file: file.path)
+            let bad = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(unknownItem), headers: Self.operatorHeaders)
+            #expect(bad.status == 400)
+            #expect(bad.bodyText.contains("has no item part9"))
+            let unreadable = PlaceBody(containers: ["<nope/>"], item: "part2", file: file.path)
+            #expect(try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(unreadable), headers: Self.operatorHeaders).status == 400)
+            #expect(try await client.send("POST", "/v1/libraries/other/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders).status == 404)
+        }
     }
 }

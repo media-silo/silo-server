@@ -22,7 +22,11 @@ public struct Index: Sendable {
 
     /// Opens or creates the index at `url`; `nil` keeps it in memory, for tests.
     public init(at url: URL?) throws {
-        queue = try url.map { try DatabaseQueue(path: $0.path) } ?? DatabaseQueue()
+        // Wait on a lock rather than fail: the operator's command line and the silo may open one
+        // index file, and a scan holds it for a moment.
+        var configuration = GRDB.Configuration()
+        configuration.busyMode = .timeout(5)
+        queue = try url.map { try DatabaseQueue(path: $0.path, configuration: configuration) } ?? DatabaseQueue(configuration: configuration)
         try Self.migrator.migrate(queue)
     }
 
