@@ -71,3 +71,26 @@ public final class OperatorCredential: Sendable {
         return try? decoder.decode(StoredOperatorCredential.self, from: Data(contentsOf: file))
     }
 }
+
+/// What a reset file had to say, for the daemon to log loudly.
+public enum OperatorCredentialReset: Hashable, Sendable {
+    /// A new token's hash is now the operator credential.
+    case rotated
+    /// The file was empty or whitespace; it is gone and the credential is unchanged.
+    case ignored
+}
+
+/// Boot-time recovery, the filesystem's own deliberate act: the operator writes
+/// `operator-credential.reset` holding a new token, and by the time the boot is done the file is
+/// gone and the token's SHA-256 is the operator credential. An empty file is no door — it is
+/// removed and the credential left alone. No network route offers this; that is the point of it
+/// being a file. Returns `nil` when no reset file exists.
+public func processOperatorCredentialReset(from file: URL, into credential: OperatorCredential) throws -> OperatorCredentialReset? {
+    guard let raw = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+    let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !token.isEmpty {
+        try credential.install(StoredOperatorCredential(passkeyHash: NodeStore.hash(token)))
+    }
+    try FileManager.default.removeItem(at: file)
+    return token.isEmpty ? .ignored : .rotated
+}

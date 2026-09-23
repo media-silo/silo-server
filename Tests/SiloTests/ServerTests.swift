@@ -436,3 +436,18 @@ extension ServerTests {
         }
     }
 }
+
+/// The setup pair, shut from the very first boot: the suite's environment sets a token, so the
+/// server is never in bootstrap, staging is gone for good, and nothing is ever staged to confirm.
+/// The open pair's life — six scenarios of it — is pinned at the service in `SetupTests`.
+extension ServerTests {
+    @Test func theSetupPairStaysShutWhereACredentialStands() async throws {
+        try await withClient { client in
+            struct Setup: Encodable { var passkey: String }
+            let stage = try await client.post("/v1/setup", json: Setup(passkey: "horse-battery"))
+            #expect(stage.status == 410, "a token in the environment means staging is gone")
+            let confirm = try await client.send("POST", "/v1/setup/confirm", headers: ["Authorization": "Bearer horse-battery"])
+            #expect(confirm.status == 404, "nothing was ever staged")
+        }
+    }
+}

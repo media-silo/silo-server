@@ -34,6 +34,50 @@ package struct OperatorToken: Sendable {
 package enum RouteMiddleware {
     package static let requireOperator = FactoryKey()
     package static let requireNode = FactoryKey()
+    package static let confirmSetup = FactoryKey()
+}
+
+/// The setup confirm's bearer is the staged passkey — an input, not a gate, and one the typed
+/// operation cannot declare: OpenAPI reserves `Authorization` out of `Input`, so the header is
+/// read here instead. A matching bearer spends the stage and the operation runs on to answer
+/// the server as it now is; a miss answers 401, and nothing staged answers 404, both without
+/// the operation ever running.
+@Factory(RouteMiddleware.confirmSetup)
+@MiddlewareFactory
+package struct ConfirmSetup<
+    Ctx: HTTPServerCapability.RequestContext & ~Copyable,
+    Reader: AsyncReader & ~Copyable,
+    Sender: HTTPResponseSender & ~Copyable
+>: Middleware
+where Reader.ReadElement == UInt8, Reader.FinalElement == HTTPFields?, Sender.Writer: ~Copyable {
+    @Inject let service: ServerService
+
+    package typealias Input = RequestResponseMiddlewareBox<Ctx, Reader, Sender>
+    package typealias NextInput = Input
+
+    package func intercept<Return: ~Copyable>(
+        input: consuming Input,
+        next: (consuming NextInput) async throws -> Return
+    ) async throws -> Return {
+        guard input.isPending else { return try await next(input) }
+        let header = input.peekedRequest.headerFields[.authorization]
+        let bearer = header.flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst("Bearer ".count)) : nil }
+        let refusal: HTTPResponse.Status?
+        do {
+            try service.confirmSetup(bearer: bearer)
+            refusal = nil
+        } catch is NothingStaged {
+            refusal = .notFound
+        } catch is ConfirmRefused {
+            refusal = .unauthorized
+        }
+        guard let refusal else { return try await next(input) }
+        return try await next(
+            input.responding { sender in
+                try await sender.sendAndFinish(HTTPResponse(status: refusal))
+            }
+        )
+    }
 }
 
 /// Answers 401 for a request without an approved node's token or the operator's. Seeing a node's

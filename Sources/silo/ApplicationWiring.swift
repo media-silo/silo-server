@@ -45,8 +45,25 @@ package enum ApplicationWiring {
         try loadServerIdentity(from: config.stateDirectory, named: config.name)
     }
 
+    /// Boot is the one place a reset can happen: the operator's `operator-credential.reset` —
+    /// the filesystem's deliberate act, not a network route's — is processed here, its effect
+    /// logged loudly, its file gone before the first request. A rotated credential still means
+    /// a credential, so a reset never returns the silo to bootstrap.
     @Provides
-    package static func operatorCredential(config: SiloConfig) -> OperatorCredential {
-        OperatorCredential(file: config.stateDirectory.appendingPathComponent("operator-credential.json"))
+    package static func operatorCredential(config: SiloConfig) throws -> OperatorCredential {
+        let credential = OperatorCredential(file: config.stateDirectory.appendingPathComponent("operator-credential.json"))
+        let reset = try processOperatorCredentialReset(
+            from: config.stateDirectory.appendingPathComponent("operator-credential.reset"),
+            into: credential
+        )
+        switch reset {
+        case .rotated:
+            Logger(label: "silo.credential").warning("operator credential rotated from operator-credential.reset; the file is gone")
+        case .ignored:
+            Logger(label: "silo.credential").warning("operator-credential.reset was empty — removed, the credential is unchanged")
+        case nil:
+            break
+        }
+        return credential
     }
 }

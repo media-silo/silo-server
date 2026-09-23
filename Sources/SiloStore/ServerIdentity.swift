@@ -32,3 +32,13 @@ public func loadServerIdentity(from folder: URL, named name: String) throws -> S
     }
     return identity
 }
+
+/// Writes the identity back to `server.json` in `folder` atomically. The mint is the only other
+/// writer; this one exists for a confirmed setup, which lands the name it set up with without
+/// re-minting the id.
+public func storeServerIdentity(_ identity: ServerIdentity, in folder: URL) throws {
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(identity).write(to: folder.appendingPathComponent("server.json"), options: .atomic)
+}
