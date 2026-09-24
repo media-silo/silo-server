@@ -24,6 +24,13 @@ package struct NothingStaged: Error {}
 /// The confirm's bearer is not the staged passkey.
 package struct ConfirmRefused: Error {}
 
+/// What the verify route's middleware is told when a live staged passkey asks after itself:
+/// the request is pending, and until when — carried as an error because the middleware that
+/// answers it speaks raw bytes, not the document's types.
+package struct PendingStage: Error {
+    package var confirmBy: Date
+}
+
 /// The server's identity as the rest of the silo reads it: what it minted, and whether it is in
 /// bootstrap — the absence of any operator credential, which is to say no stored credential and
 /// no token in the environment. It also holds the one staged setup: in memory only, ten minutes
@@ -102,6 +109,17 @@ package final class ServerService: Sendable {
             current = pending
             return StagedSetup(name: pending.name, confirmBy: pending.confirmBy)
         }
+    }
+
+    /// Throws `PendingStage` with the stage's deadline when a bearer is the live staged
+    /// passkey: the one staged secret is not yet a credential, and the verify route alone
+    /// answers it — everywhere else keeps the operator gate.
+    package func pendingConfirmBy(bearer: String?) throws {
+        let confirmBy = staged.withLock { current -> Date? in
+            guard let pending = current, pending.confirmBy > now(), let bearer, !bearer.isEmpty, bearer == pending.passkey else { return nil }
+            return pending.confirmBy
+        }
+        if let confirmBy { throw PendingStage(confirmBy: confirmBy) }
     }
 
     /// Confirms the staged setup: the bearer's hash and the staged name land in the state

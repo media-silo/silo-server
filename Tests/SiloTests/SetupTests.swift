@@ -107,6 +107,45 @@ struct SetupTests {
         #expect(!service.isInBootstrap, "the stage stood through the misses")
     }
 
+    @Test func aLiveStageAnswersItsOwnBearerPending() throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let clock = Mutex(Date(timeIntervalSince1970: 1_800_000_000))
+        let service = ServerService(identity: ServerIdentity(id: "s1", name: "Silo on attic"), config: config(at: folder), credential: OperatorCredential(), stageWindow: 600, now: { clock.withLock { $0 } })
+
+        _ = try service.stageSetup(passkey: "horse-battery", name: nil)
+
+        do {
+            try service.pendingConfirmBy(bearer: "horse-battery")
+            Issue.record("a live staged passkey is pending, not nothing")
+        } catch let pending as PendingStage {
+            #expect(pending.confirmBy == Date(timeIntervalSince1970: 1_800_000_600), "its own deadline is what it is told")
+        }
+
+        #expect(throws: Never.self) { try service.pendingConfirmBy(bearer: "someone-else") }
+        #expect(throws: Never.self) { try service.pendingConfirmBy(bearer: nil) }
+        #expect(throws: Never.self) { try service.pendingConfirmBy(bearer: "") }
+
+        clock.withLock { $0 += 601 }
+        #expect(throws: Never.self) { try service.pendingConfirmBy(bearer: "horse-battery") }
+
+        _ = try service.stageSetup(passkey: "second-chance", name: nil)
+        try service.confirmSetup(bearer: "second-chance")
+        #expect(!service.isInBootstrap, "expiry voided the old stage; the fresh one confirmed")
+    }
+
+    @Test func aConfirmedStageStopsAnsweringItsPasskey() throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let service = ServerService(identity: ServerIdentity(id: "s1", name: "Silo on attic"), config: config(at: folder), credential: OperatorCredential(), stageWindow: 600, now: { .now })
+
+        _ = try service.stageSetup(passkey: "horse-battery", name: nil)
+        #expect(throws: PendingStage.self) { try service.pendingConfirmBy(bearer: "horse-battery") }
+
+        try service.confirmSetup(bearer: "horse-battery")
+        #expect(throws: Never.self) { try service.pendingConfirmBy(bearer: "horse-battery") }
+    }
+
     @Test func aRestartForgetsTheStage() throws {
         let folder = Self.folder()
         defer { try? FileManager.default.removeItem(at: folder) }
