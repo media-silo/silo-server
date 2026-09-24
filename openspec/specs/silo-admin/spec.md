@@ -12,9 +12,9 @@ asking the silo, never by remembering. For a bootstrap silo it mints the 128-bit
 it to the operator exactly once, and installs it with the Keychain write ahead of the confirm,
 so the silo can never become configured while the app holds no copy. For a silo it holds no
 passkey for, it claims with what the operator types, verifying by probe before it keeps
-anything. For a silo that has gone quiet, it forgets: the passkey off this Mac, the registry
-empty of it, the row gone. A passkey is never logged, never written to a file by the app, and
-never rendered in full again.
+anything. For a silo that has gone quiet, it offers to forget — never on its own, only when
+the operator says so: the passkey off this Mac, the registry empty of it, the row gone. A
+passkey is never logged, never written to a file by the app, and never rendered in full again.
 
 Rationale: [Silo proposal — Onboarding](../../../Proposals/Onboarding.md) — the console
 remembers silos; access is always asked of the silo.
@@ -28,7 +28,8 @@ passkey is stored for it. Browsing Bonjour SHALL merge into the registry — cre
 silos never seen, refreshing `last-seen` and the last-known address for ones it has — and an
 address typed by the operator SHALL be resolved through `GET /v1/server` and merged the same way.
 The registry SHALL survive an app restart. A silo that is neither in the registry nor reachable
-SHALL not appear at all.
+SHALL not appear at all. A silo that stops answering SHALL never be removed by a refresh: it
+renders unreachable, credentials and entry intact, and removal is the operator's act alone.
 
 #### Scenario: browsing refreshes, never forgets
 - **WHEN** the app launches and browses a network where a previously seen silo is absent and a
