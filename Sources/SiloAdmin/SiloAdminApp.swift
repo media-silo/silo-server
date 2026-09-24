@@ -104,7 +104,11 @@ final class ConsoleModel {
     }
 
     func prepareSetup(for silo: AdminConsole.Silo) async {
-        prepared = try? await console.prepareSetup(silo)
+        do {
+            prepared = try await console.prepareSetup(silo)
+        } catch {
+            refusal = .unreachable
+        }
     }
 
     /// Confirms the sheet: plays the pair through the engine; the sheet, and with it the one
@@ -301,7 +305,10 @@ extension Optional where Wrapped == Bool {
 }
 
 /// The one place a minted passkey is ever rendered in full. Confirming dismisses it for good;
-/// the engine has already promised the Keychain write lands before the confirm does.
+/// the engine has already promised the Keychain write lands before the confirm does. When the
+/// engine probed the Keychain's residue as a stage that still stands, the sheet instead offers
+/// that stage to be finished — deadline shown, the residue never re-rendered, the name the
+/// stage already holds not up for typing anew.
 struct SetupSheet: View {
     let prepared: AdminConsole.PreparedSetup
     let onConfirm: (String?) -> Void
@@ -312,7 +319,7 @@ struct SetupSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Set Up This Silo")
+            Text(prepared.resumingUntil == nil ? "Set Up This Silo" : "Finish Setting Up This Silo")
                 .font(.headline)
 
             switch prepared.presentation {
@@ -329,17 +336,26 @@ struct SetupSheet: View {
                     NSPasteboard.general.setString(passkey, forType: .string)
                 }
             case .reused:
-                Text("The passkey from the earlier, unfinished attempt is already filed away. Confirming retries with it.")
-                    .foregroundStyle(.secondary)
+                if let until = prepared.resumingUntil {
+                    Text("An earlier attempt left a setup staged on this silo; its window shuts at \(until.formatted(date: .omitted, time: .shortened)).")
+                        .foregroundStyle(.secondary)
+                    Text("Confirming finalises the passkey shown at that attempt; it will not be shown again. The staged setup keeps the name it was made with.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("The passkey from the earlier, unfinished attempt is already filed away.")
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            TextField("Name for the silo (optional)", text: $name)
-                .textFieldStyle(.roundedBorder)
+            if prepared.resumingUntil == nil {
+                TextField("Name for the silo (optional)", text: $name)
+                    .textFieldStyle(.roundedBorder)
+            }
 
             HStack {
                 Button("Cancel", role: .cancel) { dismiss(); onCancel() }
                 Spacer()
-                Button("Confirm Setup") { dismiss(); onConfirm(name) }
+                Button(prepared.resumingUntil == nil ? "Confirm Setup" : "Finish Setup") { dismiss(); onConfirm(name) }
                     .buttonStyle(.borderedProminent)
             }
         }
