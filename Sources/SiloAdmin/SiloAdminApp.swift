@@ -1,0 +1,355 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 the media-silo project authors
+
+#if canImport(SwiftUI)
+import AppKit
+import Combine
+import SwiftUI
+import SiloAdminKit
+
+/// The operator's console: a window over `AdminConsole`, and thin on purpose — the kit owns the
+/// registry, the passkeys and the flows; the shell renders what the engine handed back and asks
+/// it for the next thing. The passkey passes through exactly one view, the setup sheet, and
+/// only when it was minted this attempt.
+@main
+struct SiloAdminApp: App {
+    @State private var model: ConsoleModel
+
+    init() {
+        let registryFile = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "media-silo/SiloAdmin/registry.json", directoryHint: .notDirectory)
+        let console = AdminConsole(
+            registry: SiloRegistry(file: registryFile),
+            passkeys: KeychainPasskeyStore()
+        )
+        _model = State(initialValue: ConsoleModel(console: console))
+    }
+
+    var body: some Scene {
+        Window("SiloAdmin", id: "console") {
+            ConsoleView(model: model)
+                .frame(minWidth: 520, minHeight: 360)
+        }
+    }
+}
+
+extension AdminConsole.Silo: Identifiable {}
+
+extension AdminConsole.PreparedSetup: Identifiable {
+    public var id: String { serverID }
+}
+
+/// The engine at the window's cadence: the rendered rows, the address being typed, and the
+/// transient state of the two sheets. Main-actor because the views are; every hand-off to the
+/// console suspends into the actor and comes back with rows to publish.
+@MainActor @Observable
+final class ConsoleModel {
+    private let console: AdminConsole
+
+    private(set) var silos: [AdminConsole.Silo] = []
+    var typedAddress = ""
+    var prepared: AdminConsole.PreparedSetup?
+    var claimTarget: AdminConsole.Silo?
+    var refusal: Refusal?
+
+    /// The endings an operator has to be told in words: someone else's stage runs out at a
+    /// clock time, someone else finished, or the silo could not be asked at all.
+    enum Refusal {
+        case stagedElsewhere(until: Date)
+        case noLongerInBootstrap
+        case unreachable
+
+        var title: String {
+            switch self {
+            case .stagedElsewhere: "Setup Staged Elsewhere"
+            case .noLongerInBootstrap: "Someone Finished First"
+            case .unreachable: "The Silo Could Not Be Reached"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .stagedElsewhere(let until):
+                "Another console has a setup staged on this silo. Its window runs out at \(until.formatted(date: .omitted, time: .shortened)) — try again after that."
+            case .noLongerInBootstrap:
+                "This silo's setup was already confirmed. It now shows as what its probe says."
+            case .unreachable:
+                "No reply; the row keeps its last-known state. Try again when the silo answers."
+            }
+        }
+    }
+
+    /// How a claim ended; only `refused` keeps the sheet up, so a mistyped group can be fixed.
+    enum ClaimOutcome {
+        case claimed
+        case refused
+        case failed
+    }
+
+    init(console: AdminConsole) {
+        self.console = console
+    }
+
+    /// Browses, resolves whatever is typed, and republishes the rows. A typed address that does
+    /// not parse is the operator mid-typing, not an error to report.
+    func refresh() async {
+        var urls: [URL] = []
+        let typed = typedAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty {
+            let candidate = typed.contains("://") ? typed : "http://\(typed)"
+            if let url = URL(string: candidate), url.host != nil { urls.append(url) }
+        }
+        silos = await console.refresh(typedURLs: urls)
+    }
+
+    func prepareSetup(for silo: AdminConsole.Silo) async {
+        prepared = try? await console.prepareSetup(silo)
+    }
+
+    /// Confirms the sheet: plays the pair through the engine; the sheet, and with it the one
+    /// rendering of a minted passkey, is already gone.
+    func runSetup(name: String?) async {
+        guard let prepared else { return }
+        self.prepared = nil
+        do {
+            _ = try await console.runSetup(prepared, name: name?.isEmpty == true ? nil : name)
+            silos = await console.silos
+        } catch AdminConsole.SetupRefusal.stagedElsewhere(let until) {
+            refusal = .stagedElsewhere(until: until)
+        } catch AdminConsole.SetupRefusal.noLongerInBootstrap {
+            silos = await console.silos
+            refusal = .noLongerInBootstrap
+        } catch {
+            silos = await console.silos
+            refusal = .unreachable
+        }
+    }
+
+    /// Hands the operator's passkey to the engine; the engine's probe is the verdict, and a
+    /// refusal keeps the sheet open so a mistyped group can be fixed.
+    func claim(_ silo: AdminConsole.Silo, passkey: String) async -> ClaimOutcome {
+        do {
+            _ = try await console.claim(silo, passkey: passkey)
+            silos = await console.silos
+            claimTarget = nil
+            return .claimed
+        } catch is AdminConsole.ClaimRefused {
+            return .refused
+        } catch {
+            silos = await console.silos
+            claimTarget = nil
+            refusal = .unreachable
+            return .failed
+        }
+    }
+}
+
+struct ConsoleView: View {
+    @Bindable var model: ConsoleModel
+
+    private let refresher = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        List(model.silos) { silo in
+            SiloRow(silo: silo) {
+                switch silo.classification {
+                case .bootstrap:
+                    Button("Set Up…") { Task { await model.prepareSetup(for: silo) } }
+                case .unseen, .seenWithoutAccess:
+                    Button("Claim…") { model.claimTarget = silo }
+                case .seenWithAccess:
+                    EmptyView()
+                }
+            }
+        }
+        .overlay {
+            if model.silos.isEmpty {
+                ContentUnavailableView("No Silos", systemImage: "externaldrive", description: Text("Nothing on the network, nothing remembered."))
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                TextField("Add by address…", text: $model.typedAddress)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 260)
+                    .onSubmit { Task { await model.refresh() } }
+            }
+            ToolbarItem {
+                Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
+            }
+        }
+        .task { await model.refresh() }
+        .onReceive(refresher) { _ in Task { await model.refresh() } }
+        .sheet(item: $model.prepared) { prepared in
+            SetupSheet(
+                prepared: prepared,
+                onConfirm: { name in Task { await model.runSetup(name: name) } },
+                onCancel: { model.prepared = nil }
+            )
+        }
+        .sheet(item: $model.claimTarget) { silo in
+            ClaimSheet(
+                silo: silo,
+                onClaim: { passkey in await model.claim(silo, passkey: passkey) },
+                onCancel: { model.claimTarget = nil }
+            )
+        }
+        .alert(model.refusal?.title ?? "", isPresented: Binding(
+            get: { model.refusal != nil },
+            set: { if !$0 { model.refusal = nil } }
+        )) {
+            Button("OK") { model.refusal = nil }
+        } message: {
+            if let refusal = model.refusal {
+                Text(refusal.message)
+            }
+        }
+    }
+}
+
+struct SiloRow<Actions: View>: View {
+    let silo: AdminConsole.Silo
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        HStack {
+            Image(systemName: silo.classification.symbol)
+                .foregroundStyle(silo.classification.colour)
+                .frame(width: 24)
+            VStack(alignment: .leading) {
+                Text(silo.name)
+                Text("\(silo.url.host ?? silo.url.absoluteString) · \(silo.classification.label) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            actions()
+        }
+    }
+}
+
+extension AdminConsole.Classification {
+    /// The one-word truth of how this Mac stands with the silo.
+    var label: String {
+        switch self {
+        case .bootstrap: "waiting for setup"
+        case .unseen: "never met"
+        case .seenWithAccess: "has access"
+        case .seenWithoutAccess: "no access"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .bootstrap: "wand.and.sparkles"
+        case .unseen: "questionmark.circle"
+        case .seenWithAccess: "checkmark.shield"
+        case .seenWithoutAccess: "lock.trianglebadge.exclamationmark"
+        }
+    }
+
+    var colour: AnyShapeStyle {
+        switch self {
+        case .bootstrap: AnyShapeStyle(.tint)
+        case .unseen: AnyShapeStyle(.secondary)
+        case .seenWithAccess: AnyShapeStyle(.green)
+        case .seenWithoutAccess: AnyShapeStyle(.orange)
+        }
+    }
+}
+
+/// The one place a minted passkey is ever rendered in full. Confirming dismisses it for good;
+/// the engine has already promised the Keychain write lands before the confirm does.
+struct SetupSheet: View {
+    let prepared: AdminConsole.PreparedSetup
+    let onConfirm: (String?) -> Void
+    let onCancel: () -> Void
+
+    @State private var name = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Set Up This Silo")
+                .font(.headline)
+
+            switch prepared.presentation {
+            case .minted(let passkey):
+                Text("This passkey is shown once. File it in your password manager before confirming.")
+                    .foregroundStyle(.secondary)
+                Text(passkey)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(8)
+                    .background(.quaternary, in: .rect(cornerRadius: 6))
+                Button("Copy Passkey", systemImage: "doc.on.doc") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(passkey, forType: .string)
+                }
+            case .reused:
+                Text("The passkey from the earlier, unfinished attempt is already filed away. Confirming retries with it.")
+                    .foregroundStyle(.secondary)
+            }
+
+            TextField("Name for the silo (optional)", text: $name)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button("Cancel", role: .cancel) { dismiss(); onCancel() }
+                Spacer()
+                Button("Confirm Setup") { dismiss(); onConfirm(name) }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+}
+
+/// The claim: type the passkey the password manager holds, and the silo's probe decides. A
+/// refusal is said inline and nothing of what was typed is kept by anyone.
+struct ClaimSheet: View {
+    let silo: AdminConsole.Silo
+    let onClaim: (String) async -> ConsoleModel.ClaimOutcome
+    let onCancel: () -> Void
+
+    @State private var passkey = ""
+    @State private var refused = false
+    @State private var claiming = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Claim \(silo.name)")
+                .font(.headline)
+            SecureField("Passkey", text: $passkey)
+                .textFieldStyle(.roundedBorder)
+            if refused {
+                Text("The silo refused that passkey. Nothing was stored.")
+                    .foregroundStyle(.red)
+                    .font(.callout)
+            }
+            HStack {
+                Button("Cancel", role: .cancel) { dismiss(); onCancel() }
+                Spacer()
+                Button("Claim") {
+                    claiming = true
+                    Task {
+                        switch await onClaim(passkey) {
+                        case .claimed, .failed:
+                            dismiss()
+                        case .refused:
+                            refused = true
+                        }
+                        claiming = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(passkey.isEmpty || claiming)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+    }
+}
+#endif
