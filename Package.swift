@@ -249,6 +249,9 @@ let package = Package(
             ]
         ),
         .testTarget(name: "SiloKitTests", dependencies: ["SiloKit"]),
+        // The client's first standalone suite: the onboarding calls, against a stubbed URLProtocol
+        // so the wire shapes are pinned without a server.
+        .testTarget(name: "SiloClientTests", dependencies: ["SiloClient"]),
         .testTarget(name: "EncoderTests", dependencies: ["Encoder", "SiloKit"]),
         .testTarget(name: "SiloLibraryTests", dependencies: ["SiloLibrary", "SiloKit"]),
         .testTarget(name: "SiloStoreTests", dependencies: ["SiloStore", "SiloLibrary", "SiloKit"]),
