@@ -41,6 +41,9 @@ struct AdminConsoleTests {
 
     private static let clock = Date(timeIntervalSince1970: 1_790_000_000)
 
+    /// The verify probe's admission: OperatorStatus, not ServerInfo, is what /v1/operator serves.
+    private static let active = #"{"phase":"active"}"#
+
     private static func serverInfo(_ id: String, _ name: String, bootstrap: Bool) -> String {
         #"{"id":"\#(id)","name":"\#(name)","bootstrap":\#(bootstrap)}"#
     }
@@ -160,7 +163,7 @@ struct AdminConsoleTests {
                 return (200, Data(Self.serverInfo("access", "Access", bootstrap: false).utf8))
             case ("access", "/v1/operator"):
                 noderequests.withLock { $0.append(request.value(forHTTPHeaderField: "Authorization")) }
-                return request.value(forHTTPHeaderField: "Authorization") == "Bearer key-a" ? (200, Data(Self.serverInfo("access", "Access", bootstrap: false).utf8)) : (401, Data())
+                return request.value(forHTTPHeaderField: "Authorization") == "Bearer key-a" ? (200, Data(Self.active.utf8)) : (401, Data())
             case ("locked", "/v1/server"):
                 return (200, Data(Self.serverInfo("locked", "Locked", bootstrap: false).utf8))
             case ("locked", "/v1/operator"):
@@ -200,7 +203,7 @@ struct AdminConsoleTests {
             guard let url = request.url else { return nil }
             switch url.path {
             case "/v1/server": return (200, Data(Self.serverInfo("probe", "Probe", bootstrap: false).utf8))
-            case "/v1/operator": return request.value(forHTTPHeaderField: "Authorization") == "Bearer \(accepts.withLock { $0 })" ? (200, Data(Self.serverInfo("probe", "Probe", bootstrap: false).utf8)) : (401, Data())
+            case "/v1/operator": return request.value(forHTTPHeaderField: "Authorization") == "Bearer \(accepts.withLock { $0 })" ? (200, Data(Self.active.utf8)) : (401, Data())
             default: return nil
             }
         }
@@ -229,7 +232,7 @@ struct AdminConsoleTests {
             case "/v1/server": return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
             case "/v1/operator":
                 probed.withLock { $0 += 1 }
-                return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+                return (200, Data(Self.active.utf8))
             default: return nil
             }
         }
@@ -289,20 +292,25 @@ struct AdminConsoleTests {
         #expect(try row("s1", in: await console.silos).classification == .withAccess, "the rendered list moves with the flow")
     }
 
-    @Test func anInterruptedSetupResumesWithTheSamePasskey() async throws {
+    @Test func aLiveStageIsFinishedByConsent() async throws {
         let store = InMemoryPasskeyStore()
         store.store("kept-from-attempt-one", for: "s7")
-        let staged = Mutex<String?>(nil)
+        let wire = Mutex<[String]>([])
         let console = Self.console(passkeys: store, discovered: [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)]) { request in
             guard let url = request.url else { return nil }
+            wire.withLock { $0.append("\(request.httpMethod ?? "?") \(url.path)") }
             switch url.path {
             case "/v1/server":
                 return request.httpMethod == "GET" ? (200, Data(Self.serverInfo("s7", "Fresh Silo", bootstrap: true).utf8)) : nil
+            case "/v1/operator":
+                return request.value(forHTTPHeaderField: "Authorization") == "Bearer kept-from-attempt-one"
+                    ? (200, Data(#"{"phase":"pending","confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+                    : (401, Data())
             case "/v1/setup":
-                let body = Self.body(of: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] }
-                staged.withLock { $0 = body?["passkey"] }
-                return (202, Data(#"{"id":"s7","name":"Fresh Silo","confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+                Issue.record("a resumed stage re-stages nothing")
+                return nil
             case "/v1/setup/confirm":
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer kept-from-attempt-one", "the confirm spends the residue, not something minted")
                 return (201, Data(Self.serverInfo("s7", "Fresh Silo", bootstrap: false).utf8))
             default:
                 return nil
@@ -311,12 +319,57 @@ struct AdminConsoleTests {
 
         let fresh = try row("s7", in: await console.refresh())
         let prepared = try await console.prepareSetup(fresh)
-        #expect(prepared.presentation == .reused, "the Keychain's residue is not shown again")
+        #expect(prepared.presentation == .reused, "the residue is never shown again")
+        #expect(prepared.resumingUntil?.timeIntervalSince1970 == 1_790_244_600, "the sheet learns when the standing window shuts")
 
-        let row = try await console.runSetup(prepared, name: nil)
+        let rendered = try await console.runSetup(prepared, name: nil)
 
-        #expect(staged.withLock { $0 } == "kept-from-attempt-one", "the retry restages the same passkey")
-        #expect(row.classification == .withAccess)
+        #expect(rendered.classification == .withAccess)
+        #expect(rendered.lastKnownAccess == true)
+        #expect(wire.withLock { $0 } == ["GET /v1/server", "GET /v1/operator", "POST /v1/setup/confirm"], "probe first; consent sends the confirm alone")
+    }
+
+    @Test func aDeadResidueIsReplaced() async throws {
+        let store = InMemoryPasskeyStore()
+        store.store("dead-key", for: "s8")
+        let staged = Mutex<String?>(nil)
+        let heldAtConfirm = Mutex<String?>(nil)
+        let wire = Mutex<[String]>([])
+        let console = Self.console(passkeys: store, discovered: [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)]) { request in
+            guard let url = request.url else { return nil }
+            wire.withLock { $0.append("\(request.httpMethod ?? "?") \(url.path)") }
+            switch url.path {
+            case "/v1/server":
+                return request.httpMethod == "GET" ? (200, Data(Self.serverInfo("s8", "Fresh Silo", bootstrap: true).utf8)) : nil
+            case "/v1/operator":
+                return (401, Data())
+            case "/v1/setup":
+                let body = Self.body(of: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] }
+                staged.withLock { $0 = body?["passkey"] }
+                return (202, Data(#"{"id":"s8","name":"Fresh Silo","confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+            case "/v1/setup/confirm":
+                heldAtConfirm.withLock { $0 = store.passkey(for: "s8") }
+                return (201, Data(Self.serverInfo("s8", "Fresh Silo", bootstrap: false).utf8))
+            default:
+                return nil
+            }
+        }
+
+        let fresh = try row("s8", in: await console.refresh())
+        let prepared = try await console.prepareSetup(fresh)
+        guard case .minted(let shown) = prepared.presentation else {
+            Issue.record("a dead residue is replaced, not reused")
+            return
+        }
+        #expect(shown != "dead-key")
+        #expect(prepared.resumingUntil == nil, "a dead stage offers nothing to finish")
+        #expect(store.passkey(for: "s8") == "dead-key", "the residue is discarded only by being replaced")
+
+        _ = try await console.runSetup(prepared, name: nil)
+
+        #expect(staged.withLock { $0 } == shown, "the new stage sends the fresh mint, not the residue")
+        #expect(heldAtConfirm.withLock { $0 } == shown, "the write-ahead overwrote the residue in the Keychain")
+        #expect(wire.withLock { $0 } == ["GET /v1/server", "GET /v1/operator", "POST /v1/setup", "POST /v1/setup/confirm"], "probe first, then the pair in full")
     }
 
     @Test func someoneElseGotThereFirst() async throws {
@@ -428,7 +481,7 @@ struct AdminConsoleTests {
             case "/v1/server": return (200, Data(Self.serverInfo("found", "Found Silo", bootstrap: false).utf8))
             case "/v1/operator":
                 if store.passkey(for: "found") != nil { storedTooSoon.withLock { $0 = true } }
-                return request.value(forHTTPHeaderField: "Authorization") == "Bearer filed" ? (200, Data(Self.serverInfo("found", "Found Silo", bootstrap: false).utf8)) : (401, Data())
+                return request.value(forHTTPHeaderField: "Authorization") == "Bearer filed" ? (200, Data(Self.active.utf8)) : (401, Data())
             default: return nil
             }
         }

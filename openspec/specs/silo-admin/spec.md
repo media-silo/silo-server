@@ -12,9 +12,11 @@ asking the silo, never by remembering. For a bootstrap silo it mints the 128-bit
 it to the operator exactly once, and installs it with the Keychain write ahead of the confirm,
 so the silo can never become configured while the app holds no copy. For a silo it holds no
 passkey for, it claims with what the operator types, verifying by probe before it keeps
-anything. For a silo that has gone quiet, it forgets: the passkey off this Mac, the registry
-empty of it, the row gone. A passkey is never logged, never written to a file by the app, and
-never rendered in full again.
+anything. For a silo that has gone quiet, it offers to forget — never on its own, only when
+the operator says so: the passkey off this Mac, the registry empty of it, the row gone. A
+passkey is never logged, never written to a file by the app, and never rendered in full again,
+and the residue of an interrupted attempt is asked of the silo before anything is decided: a
+still-standing stage is finished only by the operator's consent, a dead one quietly replaced.
 
 Rationale: [Silo proposal — Onboarding](../../../Proposals/Onboarding.md) — the console
 remembers silos; access is always asked of the silo.
@@ -28,7 +30,8 @@ passkey is stored for it. Browsing Bonjour SHALL merge into the registry — cre
 silos never seen, refreshing `last-seen` and the last-known address for ones it has — and an
 address typed by the operator SHALL be resolved through `GET /v1/server` and merged the same way.
 The registry SHALL survive an app restart. A silo that is neither in the registry nor reachable
-SHALL not appear at all.
+SHALL not appear at all. A silo that stops answering SHALL never be removed by a refresh: it
+renders unreachable, credentials and entry intact, and removal is the operator's act alone.
 
 #### Scenario: browsing refreshes, never forgets
 - **WHEN** the app launches and browses a network where a previously seen silo is absent and a
@@ -90,23 +93,36 @@ optional name, the passkey into its Keychain keyed by the silo's `ServerID`, the
 confirm, so the silo cannot become configured while the app holds no copy. On a confirmed setup
 it SHALL record the silo in its registry and classify it with-access. If the Keychain
 already holds a passkey for a bootstrap silo's ServerID — the residue of an attempt whose
-confirm never landed — the flow SHALL reuse that passkey rather than minting afresh. The
-passkey SHALL NOT be logged, written to files by the app, or displayed in full ever again. A
-`410` reply SHALL end the flow, discard the passkey minted for that attempt, and leave the
-silo classified by its probe result — any passkey the Keychain already holds for the ServerID
-stays, and the probe resolves the truth honestly. A `409` reply SHALL tell the operator that a
-setup is staged elsewhere and when its window runs out, and SHALL store nothing.
+confirm never landed — the flow SHALL ask the silo what the residue amounts to before
+deciding anything: a `pending` answer means the earlier stage still stands, and the sheet
+SHALL offer to finish it, showing when the window shuts and asking the operator's consent —
+finalising the passkey the earlier attempt showed, which is not shown again — and SHALL NOT
+confirm on its own; the sheet consented to in this shape SHALL send the confirm alone,
+re-staging nothing. A refused residue is dead, and the sheet SHALL mint and show a fresh
+passkey, the new attempt's write-ahead overwriting the residue. The passkey SHALL NOT be
+logged, written to files by the app, or displayed in full ever again. A `410` reply SHALL end
+the flow, discard the passkey minted for that attempt, and leave the silo classified by its
+probe result — any passkey the Keychain already holds for the ServerID stays, and the probe
+resolves the truth honestly. A `409` reply SHALL tell the operator that a setup is staged
+elsewhere and when its window runs out, and SHALL store nothing.
 
 #### Scenario: setup from the chair
 - **WHEN** the operator confirms the setup sheet for a bootstrap silo
 - **THEN** the stage succeeds, the passkey is in the Keychain under the silo's ServerID before
   the confirm is sent, the confirm answers 201, and the silo shows as with-access
 
-#### Scenario: an interrupted setup resumes with the same passkey
-- **WHEN** an earlier attempt staged a setup whose confirm never landed, its stage has expired,
-  and the operator retries setup on the still-bootstrap silo
-- **THEN** the new stage sends the passkey already in the Keychain for that ServerID, the
-  confirm succeeds, and the silo shows as with-access
+#### Scenario: a live stage is finished by consent
+- **WHEN** the Keychain holds the residue of an attempt whose stage still stands, and the
+  operator opens the setup sheet
+- **THEN** the sheet offers to finish the staged setup, showing when its window shuts and
+  that confirming finalises the passkey the earlier attempt showed — which is not shown
+  again — and the operator's consent sends the confirm alone, staging nothing anew
+
+#### Scenario: a dead residue is replaced
+- **WHEN** the Keychain holds a residue the silo refuses — its stage expired or was never
+  this console's — and the operator opens the setup sheet
+- **THEN** the sheet mints and shows a fresh passkey, and the new attempt's Keychain
+  write-ahead overwrites the residue
 
 #### Scenario: someone else got there first
 - **WHEN** the stage call is refused with 410
@@ -118,7 +134,7 @@ setup is staged elsewhere and when its window runs out, and SHALL store nothing.
 - **THEN** nothing is stored, and the operator is shown that a setup is already staged and when
   its window runs out
 
-Pinned by: `Tests/SiloAdminKitTests/PasskeyTests.swift` (`theMintIs128BitsOfLettersAndDigits`, `theGroupingFollowsTheAlphabet`), `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`setupFromTheChair`, `anInterruptedSetupResumesWithTheSamePasskey`, `someoneElseGotThereFirst`, `setupStagedElsewhere`).
+Pinned by: `Tests/SiloAdminKitTests/PasskeyTests.swift` (`theMintIs128BitsOfLettersAndDigits`, `theGroupingFollowsTheAlphabet`), `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`setupFromTheChair`, `aLiveStageIsFinishedByConsent`, `aDeadResidueIsReplaced`, `someoneElseGotThereFirst`, `setupStagedElsewhere`).
 
 ### Requirement: Claiming is entering the passkey, and the probe is the verdict
 For a silo classified without-access, SiloAdmin SHALL offer to claim it with a passkey the

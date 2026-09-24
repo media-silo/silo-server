@@ -149,6 +149,28 @@ public struct SiloClient: Sendable, JobsAPI {
         }
     }
 
+    /// What the verify probe answers: whether the client's token is the operator's own
+    /// (`active`) or a live staged passkey (`pending`, with the deadline it can still be
+    /// confirmed by). Anything else is a 401, thrown as `status(401, _)`.
+    public enum OperatorStatus: Hashable, Sendable {
+        case active
+        case pending(confirmBy: Date)
+
+        private struct Wire: Decodable {
+            var phase: String
+            var confirmBy: Date?
+        }
+
+        init(decoding data: Data) throws {
+            let wire = try SiloClient.decoder.decode(Wire.self, from: data)
+            switch (wire.phase, wire.confirmBy) {
+            case ("active", nil): self = .active
+            case ("pending", let confirmBy?): self = .pending(confirmBy: confirmBy)
+            default: throw SiloClientError.status(200, "an OperatorStatus the client does not know")
+            }
+        }
+    }
+
     /// What staging tells its stager: the name the setup would take and its deadline.
     public struct SetupStage: Hashable, Sendable, Codable {
         public var id: String
@@ -169,10 +191,13 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("GET", "/v1/server")
     }
 
-    /// The verify-access probe: answers the server only when the client's token is accepted, so
-    /// a 401 here names the credential and not the server or its node subsystem.
-    public func verifyAccess() async throws -> ServerInfo {
-        try await send("GET", "/v1/operator")
+    /// The verify-access probe: what the client's token amounts to — `active` for the
+    /// operator's own, `pending` with its deadline for a live staged passkey — so a 401 here
+    /// names the credential and not the server or its node subsystem.
+    public func verifyAccess() async throws -> OperatorStatus {
+        let (data, status) = try await request("GET", "/v1/operator", body: Nothing?.none)
+        guard (200..<300).contains(status) else { throw SiloClientError.status(status, String(decoding: data, as: UTF8.self)) }
+        return try OperatorStatus(decoding: data)
     }
 
     /// Stages the server's only setup. While a stage stands this throws `conflict(confirmBy:)`
