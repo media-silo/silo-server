@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
+import BasicContainers
+import Foundation
 import HTTPAPIs
 import HTTPTypes
 import SiloStore
@@ -35,6 +37,7 @@ package enum RouteMiddleware {
     package static let requireOperator = FactoryKey()
     package static let requireNode = FactoryKey()
     package static let confirmSetup = FactoryKey()
+    package static let verifyAccess = FactoryKey()
 }
 
 /// The setup confirm's bearer is the staged passkey — an input, not a gate, and one the typed
@@ -141,6 +144,61 @@ where Reader.ReadElement == UInt8, Reader.FinalElement == HTTPFields?, Sender.Wr
         return try await next(
             input.responding { sender in
                 try await sender.sendAndFinish(HTTPResponse(status: .unauthorized))
+            }
+        )
+    }
+}
+
+/// The verify route's gate, wider than the operator's by exactly one secret — the live staged
+/// passkey, which a stager reaching for `GET /v1/operator` is asking after. An accepted
+/// operator bearer runs on to the typed answer; a live staged passkey is answered here with
+/// `pending` and its deadline, rendered as raw bytes because a middleware holds no generated
+/// schemas; anything else is 401 with an empty body, so the refusal says nothing. Only this
+/// route answers the pending bearer — every other operator route keeps `requireOperator`.
+@Factory(RouteMiddleware.verifyAccess)
+@MiddlewareFactory
+package struct VerifyAccess<
+    Ctx: HTTPServerCapability.RequestContext & ~Copyable,
+    Reader: AsyncReader & ~Copyable,
+    Sender: HTTPResponseSender & ~Copyable
+>: Middleware
+where Reader.ReadElement == UInt8, Reader.FinalElement == HTTPFields?, Sender.Writer: ~Copyable {
+    @Inject let token: OperatorToken
+    @Inject let service: ServerService
+
+    package typealias Input = RequestResponseMiddlewareBox<Ctx, Reader, Sender>
+    package typealias NextInput = Input
+
+    package func intercept<Return: ~Copyable>(
+        input: consuming Input,
+        next: (consuming NextInput) async throws -> Return
+    ) async throws -> Return {
+        guard input.isPending else { return try await next(input) }
+        let header = input.peekedRequest.headerFields[.authorization]
+        if token.accepts(header) { return try await next(input) }
+        let bearer = header.flatMap { $0.hasPrefix("Bearer ") ? String($0.dropFirst("Bearer ".count)) : nil }
+        let pending: (body: String, status: HTTPResponse.Status)?
+        do {
+            _ = try service.pendingConfirmBy(bearer: bearer)
+            pending = nil
+        } catch let stage as PendingStage {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            pending = (#"{"phase":"pending","confirmBy":""# + formatter.string(from: stage.confirmBy) + #""}"#, .ok)
+        } catch {
+            pending = nil
+        }
+        return try await next(
+            input.responding { sender in
+                if let pending {
+                    var body = UniqueArray<UInt8>(copying: Array(pending.body.utf8))
+                    try await sender.sendAndFinish(
+                        HTTPResponse(status: pending.status, headerFields: [.contentType: "application/json", .contentLength: String(body.count)]),
+                        buffer: &body
+                    )
+                } else {
+                    try await sender.sendAndFinish(HTTPResponse(status: .unauthorized))
+                }
             }
         )
     }
