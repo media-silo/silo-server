@@ -80,6 +80,31 @@ struct SiloClientTests {
         #expect(authorization == nil, "the route is open: no bearer, even unconfigured")
     }
 
+    @Test func theVerifyProbeSendsTheToken() async throws {
+        let seen = Mutex<(String, String, String?)?>(nil)
+        let client = Self.client(token: "horse-battery") { request in
+            seen.withLock { $0 = (request.httpMethod ?? "", request.url?.path ?? "", request.value(forHTTPHeaderField: "Authorization")) }
+            return (200, Data(#"{"id":"s1","name":"Silo on attic","bootstrap":false}"#.utf8))
+        }
+
+        let server = try await client.verifyAccess()
+
+        #expect(server == SiloClient.ServerInfo(id: "s1", name: "Silo on attic", bootstrap: false))
+        let (method, path, authorization) = try #require(seen.withLock { $0 })
+        #expect(method == "GET")
+        #expect(path == "/v1/operator")
+        #expect(authorization == "Bearer horse-battery")
+    }
+
+    @Test func aRefusedVerifyArrivesAsAStatus() async throws {
+        let client = Self.client(token: "stale") { _ in (401, Data()) }
+
+        do {
+            _ = try await client.verifyAccess()
+            Issue.record("verifying with a refused token")
+        } catch SiloClientError.status(401, _) {}
+    }
+
     @Test func stagingReadsItsDeadlineOffTheWire() async throws {
         let sent = Mutex<Data?>(nil)
         let client = Self.client { request in

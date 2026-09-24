@@ -5,21 +5,26 @@ import Foundation
 import Synchronization
 
 /// What the console remembers of a silo: the name it last used, the URL it last answered at,
-/// when it was last seen, and whether this Mac holds a passkey for it. The passkey itself lives
-/// in the Keychain — the registry carries the fact of it and nothing of the string.
+/// when it was last seen, whether this Mac holds a passkey for it, and what the probe said
+/// last time the silo answered. The passkey itself lives in the Keychain — the registry
+/// carries the fact of it and nothing of the string.
 public struct RegisteredSilo: Hashable, Sendable, Codable {
     public var id: String
     public var name: String
     public var url: URL
     public var lastSeen: Date
     public var hasStoredPasskey: Bool
+    /// The verdict of the last probe to reach this silo — nil while none was made. Recorded
+    /// only on contact, so an unreachable silo can render honest last-known access.
+    public var lastKnownAccess: Bool?
 
-    public init(id: String, name: String, url: URL, lastSeen: Date, hasStoredPasskey: Bool) {
+    public init(id: String, name: String, url: URL, lastSeen: Date, hasStoredPasskey: Bool, lastKnownAccess: Bool? = nil) {
         self.id = id
         self.name = name
         self.url = url
         self.lastSeen = lastSeen
         self.hasStoredPasskey = hasStoredPasskey
+        self.lastKnownAccess = lastKnownAccess
     }
 }
 
@@ -68,6 +73,15 @@ public final class SiloRegistry: Sendable {
             guard var entry = entries[id] else { return }
             entry.hasStoredPasskey = stored
             entries[id] = entry
+            try Self.persist(entries, to: file)
+        }
+    }
+
+    /// Removes the entry outright, persisting the loss. The half of forgetting the console's
+    /// engine owns; should the silo answer again, contact merges it back as never met.
+    public func remove(_ id: String) throws {
+        try entries.withLock { entries in
+            guard entries.removeValue(forKey: id) != nil else { return }
             try Self.persist(entries, to: file)
         }
     }

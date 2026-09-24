@@ -169,6 +169,12 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("GET", "/v1/server")
     }
 
+    /// The verify-access probe: answers the server only when the client's token is accepted, so
+    /// a 401 here names the credential and not the server or its node subsystem.
+    public func verifyAccess() async throws -> ServerInfo {
+        try await send("GET", "/v1/operator")
+    }
+
     /// Stages the server's only setup. While a stage stands this throws `conflict(confirmBy:)`
     /// carrying the standing stage's deadline; once the server is set up, `status(410, _)`.
     public func setup(name: String? = nil, passkey: String) async throws -> SetupStage {

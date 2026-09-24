@@ -27,6 +27,16 @@ package struct ServerController {
         Components.Schemas.ServerInfo(id: service.identity.id, name: service.name, bootstrap: service.isInBootstrap)
     }
 
+    /// The verify-access route: its whole job is the gate. Where /server is open and says nothing
+    /// about a bearer, and /nodes would entangle the operator's credential with the node
+    /// subsystem's health, this answers the operator's token alone — 401 names the token, and a
+    /// 200 answers the server as /server would have.
+    @Operation
+    @Middleware(RouteMiddleware.requireOperator)
+    package func getOperator() async throws -> Components.Schemas.ServerInfo {
+        Components.Schemas.ServerInfo(id: service.identity.id, name: service.name, bootstrap: service.isInBootstrap)
+    }
+
     @Operation
     @ErrorResponse(EmptyPasskey.self, .badRequest)
     @ErrorResponse(StagePending.self, .conflict, { Components.Schemas.SetupConflict(confirmBy: $0.confirmBy) })
