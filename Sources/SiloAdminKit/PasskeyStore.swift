@@ -10,6 +10,8 @@ import Synchronization
 public protocol PasskeyStore: Sendable {
     func passkey(for serverID: String) -> String?
     func store(_ passkey: String, for serverID: String)
+    /// Removes the stored passkey, if any — forgetting a silo means this Mac no longer holds it.
+    func remove(for serverID: String)
 }
 
 /// The in-memory keeper: the tests' Keychain, and the fallback where no Keychain exists.
@@ -26,6 +28,10 @@ public final class InMemoryPasskeyStore: PasskeyStore, Sendable {
 
     public func store(_ passkey: String, for serverID: String) {
         passkeys.withLock { $0[serverID] = passkey }
+    }
+
+    public func remove(for serverID: String) {
+        passkeys.withLock { $0[serverID] = nil }
     }
 }
 
@@ -64,6 +70,15 @@ public struct KeychainPasskeyStore: PasskeyStore {
         if SecItemAdd((key.merging([kSecValueData: data]) { _, new in new }) as CFDictionary, nil) == errSecDuplicateItem {
             SecItemUpdate(key as CFDictionary, [kSecValueData: data] as CFDictionary)
         }
+    }
+
+    public func remove(for serverID: String) {
+        let key: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: serverID,
+        ]
+        SecItemDelete(key as CFDictionary)
     }
 }
 #endif

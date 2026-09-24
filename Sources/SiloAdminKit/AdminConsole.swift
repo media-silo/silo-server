@@ -9,23 +9,28 @@ import FoundationNetworking
 #endif
 
 /// The console's engine: discovery merged into the registry, every silo it shows classified
-/// exactly one way, and the two flows that change what this Mac holds — staging a bootstrap
-/// silo's setup, and claiming a silo whose passkey the operator supplies. Access is asked,
-/// never inferred: the probe against the silo is the verdict, and an unreachable silo renders
-/// its last-known state rather than vanishing. An actor because every mutation of the rendered
-/// list passes through it, and none of them may interleave.
+/// exactly one way, and the three flows that change what this Mac holds — staging a bootstrap
+/// silo's setup, claiming a reachable silo whose passkey the operator supplies, and forgetting
+/// one that has gone quiet. Access is asked, never inferred: the probe against the silo is the
+/// verdict, and an unreachable silo renders what was last known of it rather than vanishing —
+/// last-known-ness is row data, not another class. An actor because every mutation of the
+/// rendered list passes through it, and none of them may interleave.
 public actor AdminConsole {
-    /// The four classes, and every silo is exactly one. `lastKnown` is not a class: a silo that
-    /// stops answering keeps whichever of the seen pair it last earned, with its last-seen time.
+    /// The four classes, and every silo is exactly one. Reachability sets the act vocabulary: a
+    /// reachable silo this Mac cannot prove access to gets Claim — never met and refused alike —
+    /// and a silo that has gone quiet gets Forget, its last-seen time and last-known access
+    /// carried on the row rather than named as states.
     public enum Classification: String, Hashable, Sendable, Codable {
-        /// Waiting on its operator; gets the setup flow.
+        /// Waiting on its operator; the offered act is to set it up.
         case bootstrap
-        /// Reachable, but this Mac has never met it; the offered act is to claim it.
-        case unseen
-        /// Met, and this Mac holds a passkey the probe passes.
-        case seenWithAccess
-        /// Met, but no passkey is stored, or the stored one is refused; the offered act is to enter one.
-        case seenWithoutAccess
+        /// Reachable, and this Mac's passkey passed the probe; no act offered.
+        case withAccess
+        /// Reachable, but no passkey this Mac holds passes the probe — first contact, none
+        /// stored, or refused is the same situation, so the offered act is to claim it.
+        case withoutAccess
+        /// Was reachable, now is not; the row carries what was last known, and the offered act
+        /// is to forget it.
+        case unreachable
     }
 
     /// A silo as the app renders it.
@@ -35,6 +40,9 @@ public actor AdminConsole {
         public var url: URL
         public var lastSeen: Date
         public var classification: Classification
+        /// The last verdict the probe gave while this Mac held a passkey — nil until there was
+        /// one. Meaningful on an `unreachable` row, where it is the honest remainder of access.
+        public var lastKnownAccess: Bool?
     }
 
     /// The two ways the server can say no to staging a setup. `stagedElsewhere` carries the
@@ -119,10 +127,10 @@ public actor AdminConsole {
         var rows: [Silo] = []
         for (url, info) in contacts {
             let stored = passkeys.passkey(for: info.id)
-            let classification = await classify(info: info, url: url, prior: known[info.id], stored: stored)
+            let (classification, lastKnownAccess) = await classify(info: info, url: url, stored: stored)
             let seenAt = now()
-            try? registry.merge(RegisteredSilo(id: info.id, name: info.name, url: url, lastSeen: seenAt, hasStoredPasskey: stored != nil))
-            rows.append(Silo(id: info.id, name: info.name, url: url, lastSeen: seenAt, classification: classification))
+            try? registry.merge(RegisteredSilo(id: info.id, name: info.name, url: url, lastSeen: seenAt, hasStoredPasskey: stored != nil, lastKnownAccess: lastKnownAccess))
+            rows.append(Silo(id: info.id, name: info.name, url: url, lastSeen: seenAt, classification: classification, lastKnownAccess: lastKnownAccess))
         }
 
         let contacted = Set(contacts.map { $0.1.id })
@@ -132,7 +140,8 @@ public actor AdminConsole {
                 name: ghost.name,
                 url: ghost.url,
                 lastSeen: ghost.lastSeen,
-                classification: ghost.hasStoredPasskey ? .seenWithAccess : .seenWithoutAccess
+                classification: .unreachable,
+                lastKnownAccess: ghost.lastKnownAccess
             ))
         }
 
@@ -140,20 +149,22 @@ public actor AdminConsole {
         return latest
     }
 
-    /// The reachable-silo classification: bootstrap says so itself; the registry decides met
-    /// or new; the passkey — probed, never assumed — decides access. A first contact is
-    /// `unseen` this pass and `seen` from the next, because the merge follows the class.
-    private func classify(info: SiloClient.ServerInfo, url: URL, prior: RegisteredSilo?, stored: String?) async -> Classification {
-        if info.bootstrap { return .bootstrap }
-        guard prior != nil else { return .unseen }
-        guard let stored else { return .seenWithoutAccess }
-        return await hasAccess(url: url, passkey: stored) ? .seenWithAccess : .seenWithoutAccess
+    /// The reachable-silo classification: bootstrap says so itself, and for the rest the passkey
+    /// — probed, never assumed — decides access. Never-yet-met, nothing-stored and
+    /// stored-but-refused are all `withoutAccess`, since the console can offer one act for all
+    /// of them; the pair returned is the class and the verdict the passkey earned, for the
+    /// registry to keep as the row's last-known access.
+    private func classify(info: SiloClient.ServerInfo, url: URL, stored: String?) async -> (Classification, lastKnownAccess: Bool?) {
+        if info.bootstrap { return (.bootstrap, nil) }
+        guard let stored else { return (.withoutAccess, nil) }
+        return await hasAccess(url: url, passkey: stored) ? (.withAccess, true) : (.withoutAccess, false)
     }
 
-    /// The probe: `GET /v1/nodes` with the passkey as bearer. 200 is access and everything
-    /// else is not — asking is the only honest test.
+    /// The probe: `GET /v1/operator` with the passkey as bearer, the verify-access route whose
+    /// only job is this question — 200 is access and everything else is not, without the node
+    /// subsystem's health saying anything a refused credential didn't.
     private func hasAccess(url: URL, passkey: String) async -> Bool {
-        (try? await SiloClient(baseURL: url, token: passkey, session: session).nodes()) != nil
+        (try? await SiloClient(baseURL: url, token: passkey, session: session).verifyAccess()) != nil
     }
 
     // MARK: - Setup
@@ -170,9 +181,9 @@ public actor AdminConsole {
 
     /// Plays the pair in order once the operator confirms the sheet: stage, then the passkey
     /// into the Keychain, then the confirm — so the silo cannot become configured while the
-    /// console holds no copy. On 201 the silo is recorded and classifies seen, has access;
-    /// a 410 ends the flow with the minted passkey discarded and the silence classified by
-    /// probe, and a 409 tells the operator whose window to wait out, storing nothing.
+    /// console holds no copy. On 201 the silo is recorded and classifies with access; a 410
+    /// ends the flow with the minted passkey discarded and the silence classified by probe,
+    /// and a 409 tells the operator whose window to wait out, storing nothing.
     @discardableResult
     public func runSetup(_ prepared: PreparedSetup, name: String?) async throws -> Silo {
         let client = SiloClient(baseURL: prepared.url, session: session)
@@ -188,8 +199,8 @@ public actor AdminConsole {
         passkeys.store(prepared.passkey, for: prepared.serverID)
         let info = try await client.confirmSetup(bearer: prepared.passkey)
 
-        let row = Silo(id: prepared.serverID, name: info.name, url: prepared.url, lastSeen: now(), classification: .seenWithAccess)
-        try? registry.merge(RegisteredSilo(id: row.id, name: row.name, url: row.url, lastSeen: row.lastSeen, hasStoredPasskey: true))
+        let row = Silo(id: prepared.serverID, name: info.name, url: prepared.url, lastSeen: now(), classification: .withAccess, lastKnownAccess: true)
+        try? registry.merge(RegisteredSilo(id: row.id, name: row.name, url: row.url, lastSeen: row.lastSeen, hasStoredPasskey: true, lastKnownAccess: true))
         render(row)
         return row
     }
@@ -198,11 +209,11 @@ public actor AdminConsole {
     /// Keychain's holdings untouched and the registry told fresh contact happened.
     private func reclassify(_ serverID: String, at url: URL) async {
         let stored = passkeys.passkey(for: serverID)
-        let access = if let stored { await hasAccess(url: url, passkey: stored) } else { false }
+        let lastKnownAccess: Bool? = if let stored { await hasAccess(url: url, passkey: stored) } else { nil }
         let prior = registry.entry(for: serverID)
         let name = (try? await SiloClient(baseURL: url, session: session).server())?.name ?? prior?.name ?? serverID
-        let row = Silo(id: serverID, name: name, url: url, lastSeen: now(), classification: access ? .seenWithAccess : .seenWithoutAccess)
-        try? registry.merge(RegisteredSilo(id: serverID, name: name, url: url, lastSeen: row.lastSeen, hasStoredPasskey: stored != nil))
+        let row = Silo(id: serverID, name: name, url: url, lastSeen: now(), classification: lastKnownAccess == true ? .withAccess : .withoutAccess, lastKnownAccess: lastKnownAccess)
+        try? registry.merge(RegisteredSilo(id: serverID, name: name, url: url, lastSeen: row.lastSeen, hasStoredPasskey: stored != nil, lastKnownAccess: lastKnownAccess))
         render(row)
     }
 
@@ -214,16 +225,27 @@ public actor AdminConsole {
     @discardableResult
     public func claim(_ silo: Silo, passkey: String) async throws -> Silo {
         do {
-            _ = try await SiloClient(baseURL: silo.url, token: passkey, session: session).nodes()
+            _ = try await SiloClient(baseURL: silo.url, token: passkey, session: session).verifyAccess()
         } catch SiloClientError.status(401, _) {
             throw ClaimRefused()
         }
 
         passkeys.store(passkey, for: silo.id)
-        let row = Silo(id: silo.id, name: silo.name, url: silo.url, lastSeen: now(), classification: .seenWithAccess)
-        try? registry.merge(RegisteredSilo(id: row.id, name: row.name, url: row.url, lastSeen: row.lastSeen, hasStoredPasskey: true))
+        let row = Silo(id: silo.id, name: silo.name, url: silo.url, lastSeen: now(), classification: .withAccess, lastKnownAccess: true)
+        try? registry.merge(RegisteredSilo(id: row.id, name: row.name, url: row.url, lastSeen: row.lastSeen, hasStoredPasskey: true, lastKnownAccess: true))
         render(row)
         return row
+    }
+
+    // MARK: - Forget
+
+    /// Forgets a silo outright: its passkey out of this Mac's stores, its entry out of the
+    /// registry, its row out of the console. The act for a silo that has gone quiet — should
+    /// it answer again, it arrives as never met.
+    public func forget(_ silo: Silo) {
+        passkeys.remove(for: silo.id)
+        try? registry.remove(silo.id)
+        latest.removeAll { $0.id == silo.id }
     }
 
     private func render(_ row: Silo) {

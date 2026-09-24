@@ -106,7 +106,8 @@ struct AdminConsoleTests {
 
         let attic = try row("attic", in: rows)
         #expect(attic.lastSeen == lastSeen, "an absent silo renders with its last-seen time")
-        #expect(attic.classification == .seenWithoutAccess)
+        #expect(attic.classification == .unreachable, "absent is a class of its own now")
+        #expect(attic.lastKnownAccess == nil, "never probed, so nothing known of access")
         let living = try row("living", in: rows)
         #expect(living.classification == .bootstrap)
         #expect(living.lastSeen == Self.clock)
@@ -128,7 +129,7 @@ struct AdminConsoleTests {
         let rows = await console.refresh(typedURLs: [URL(string: "http://corner.local:9000")!])
 
         let corner = try row("corner", in: rows)
-        #expect(corner.classification == .unseen, "first contact with a configured silo")
+        #expect(corner.classification == .withoutAccess, "first contact: reachable, nothing held — the act is to claim")
         #expect(corner.url == URL(string: "http://corner.local:9000"))
         let merged = try #require(registry.entry(for: "corner"))
         #expect(merged.url == URL(string: "http://corner.local:9000"))
@@ -146,7 +147,8 @@ struct AdminConsoleTests {
         passkeys.store("key-a", for: "access")
         passkeys.store("key-b", for: "locked")
         let noderequests = Mutex<[String?]>([])
-        let console = Self.console(registry: registry, passkeys: passkeys, discovered: ["boot", "newbie", "access", "locked", "nohands"].map { DiscoveredSilo(name: $0, host: "\($0).local", port: 8080) }) { request in
+        // nohands is registered but not discovered: it is the row that has gone quiet.
+        let console = Self.console(registry: registry, passkeys: passkeys, discovered: ["boot", "newbie", "access", "locked"].map { DiscoveredSilo(name: $0, host: "\($0).local", port: 8080) }) { request in
             guard let url = request.url, let host = url.host else { return nil }
             let id = String(host.split(separator: ".")[0])
             switch (id, url.path) {
@@ -156,16 +158,14 @@ struct AdminConsoleTests {
                 return (200, Data(Self.serverInfo("newbie", "Newbie", bootstrap: false).utf8))
             case ("access", "/v1/server"):
                 return (200, Data(Self.serverInfo("access", "Access", bootstrap: false).utf8))
-            case ("access", "/v1/nodes"):
+            case ("access", "/v1/operator"):
                 noderequests.withLock { $0.append(request.value(forHTTPHeaderField: "Authorization")) }
-                return request.value(forHTTPHeaderField: "Authorization") == "Bearer key-a" ? (200, Data("[]".utf8)) : (401, Data())
+                return request.value(forHTTPHeaderField: "Authorization") == "Bearer key-a" ? (200, Data(Self.serverInfo("access", "Access", bootstrap: false).utf8)) : (401, Data())
             case ("locked", "/v1/server"):
                 return (200, Data(Self.serverInfo("locked", "Locked", bootstrap: false).utf8))
-            case ("locked", "/v1/nodes"):
+            case ("locked", "/v1/operator"):
                 noderequests.withLock { $0.append(request.value(forHTTPHeaderField: "Authorization")) }
                 return (401, Data())
-            case ("nohands", "/v1/server"):
-                return (200, Data(Self.serverInfo("nohands", "No Hands", bootstrap: false).utf8))
             default:
                 return nil
             }
@@ -174,12 +174,20 @@ struct AdminConsoleTests {
         let rows = await console.refresh()
 
         #expect(try row("boot", in: rows).classification == .bootstrap)
-        #expect(try row("newbie", in: rows).classification == .unseen)
-        #expect(try row("access", in: rows).classification == .seenWithAccess)
-        #expect(try row("locked", in: rows).classification == .seenWithoutAccess)
-        #expect(try row("nohands", in: rows).classification == .seenWithoutAccess)
+        let newbie = try row("newbie", in: rows)
+        #expect(newbie.classification == .withoutAccess)
+        #expect(newbie.lastKnownAccess == nil, "never asked, so no verdict")
+        let access = try row("access", in: rows)
+        #expect(access.classification == .withAccess)
+        #expect(access.lastKnownAccess == true)
+        let locked = try row("locked", in: rows)
+        #expect(locked.classification == .withoutAccess)
+        #expect(locked.lastKnownAccess == false, "the refusal is the last thing known of it")
+        let nohands = try row("nohands", in: rows)
+        #expect(nohands.classification == .unreachable)
+        #expect(nohands.lastKnownAccess == nil, "the registry kept no verdict for it")
         #expect(Set(rows.map(\.id)).count == 5, "each silo exactly one row")
-        #expect(noderequests.withLock { $0 }.map { $0 ?? "(none)" }.sorted() == ["Bearer key-a", "Bearer key-b"], "the probe asks only silos with a passkey, with that passkey as bearer")
+        #expect(noderequests.withLock { $0 }.map { $0 ?? "(none)" }.sorted() == ["Bearer key-a", "Bearer key-b"], "the probe asks only reachable silos with a passkey, with that passkey as bearer")
     }
 
     @Test func theProbeDecides() async throws {
@@ -192,15 +200,19 @@ struct AdminConsoleTests {
             guard let url = request.url else { return nil }
             switch url.path {
             case "/v1/server": return (200, Data(Self.serverInfo("probe", "Probe", bootstrap: false).utf8))
-            case "/v1/nodes": return request.value(forHTTPHeaderField: "Authorization") == "Bearer \(accepts.withLock { $0 })" ? (200, Data("[]".utf8)) : (401, Data())
+            case "/v1/operator": return request.value(forHTTPHeaderField: "Authorization") == "Bearer \(accepts.withLock { $0 })" ? (200, Data(Self.serverInfo("probe", "Probe", bootstrap: false).utf8)) : (401, Data())
             default: return nil
             }
         }
 
-        #expect(try row("probe", in: await console.refresh()).classification == .seenWithAccess)
+        let first = try row("probe", in: await console.refresh())
+        #expect(first.classification == .withAccess)
+        #expect(first.lastKnownAccess == true)
 
         accepts.withLock { $0 = "rotated" }
-        #expect(try row("probe", in: await console.refresh()).classification == .seenWithoutAccess)
+        let second = try row("probe", in: await console.refresh())
+        #expect(second.classification == .withoutAccess)
+        #expect(second.lastKnownAccess == false, "the probe's refusal is what is now known")
         #expect(passkeys.passkey(for: "probe") == "held", "a refused probe removes nothing")
     }
 
@@ -215,19 +227,21 @@ struct AdminConsoleTests {
             guard alive.withLock({ $0 }), let url = request.url else { return nil }
             switch url.path {
             case "/v1/server": return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
-            case "/v1/nodes":
+            case "/v1/operator":
                 probed.withLock { $0 += 1 }
-                return (200, Data("[]".utf8))
+                return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
             default: return nil
             }
         }
 
-        #expect(try row("home", in: await console.refresh()).classification == .seenWithAccess)
+        #expect(try row("home", in: await console.refresh()).classification == .withAccess)
+        #expect(registry.entry(for: "home")?.lastKnownAccess == true, "the verdict outlives the refresh that earned it")
         #expect(probed.withLock { $0 } == 1)
 
         alive.withLock { $0 = false }
         let gone = try row("home", in: await console.refresh())
-        #expect(gone.classification == .seenWithAccess, "last-known, not unknown")
+        #expect(gone.classification == .unreachable)
+        #expect(gone.lastKnownAccess == true, "last-known, not unknown")
         #expect(gone.lastSeen == Self.clock)
         #expect(probed.withLock { $0 } == 1, "an unreachable silo is not probed")
     }
@@ -266,11 +280,13 @@ struct AdminConsoleTests {
 
         #expect(wire.withLock { $0 } == ["stage", "confirm"])
         #expect(store.passkey(for: "s1") == shown, "the passkey is stored before the confirm is sent")
-        #expect(rendered.classification == .seenWithAccess)
+        #expect(rendered.classification == .withAccess)
+        #expect(rendered.lastKnownAccess == true)
         #expect(rendered.name == "Living Room Silo")
         let merged = try #require(registry.entry(for: "s1"))
         #expect(merged.hasStoredPasskey)
-        #expect(try row("s1", in: await console.silos).classification == .seenWithAccess, "the rendered list moves with the flow")
+        #expect(merged.lastKnownAccess == true)
+        #expect(try row("s1", in: await console.silos).classification == .withAccess, "the rendered list moves with the flow")
     }
 
     @Test func anInterruptedSetupResumesWithTheSamePasskey() async throws {
@@ -300,7 +316,7 @@ struct AdminConsoleTests {
         let row = try await console.runSetup(prepared, name: nil)
 
         #expect(staged.withLock { $0 } == "kept-from-attempt-one", "the retry restages the same passkey")
-        #expect(row.classification == .seenWithAccess)
+        #expect(row.classification == .withAccess)
     }
 
     @Test func someoneElseGotThereFirst() async throws {
@@ -315,7 +331,7 @@ struct AdminConsoleTests {
             switch url.path {
             case "/v1/server": return (200, Data(Self.serverInfo(id, id, bootstrap: true).utf8))
             case "/v1/setup": return (410, Data())
-            case "/v1/nodes": return (401, Data())
+            case "/v1/operator": return (401, Data())
             default: return nil
             }
         }
@@ -329,7 +345,9 @@ struct AdminConsoleTests {
         } catch AdminConsole.SetupRefusal.noLongerInBootstrap {}
         #expect(store.passkey(for: "fresh") == nil, "the minted passkey is discarded, not filed")
         #expect(minted != "stay-key")
-        #expect(try row("fresh", in: await console.silos).classification == .seenWithoutAccess, "classified by the probe's refusal")
+        let finished = try row("fresh", in: await console.silos)
+        #expect(finished.classification == .withoutAccess, "classified by the probe's refusal")
+        #expect(finished.lastKnownAccess == nil, "nothing held, so nothing asked")
 
         let residue = try await console.prepareSetup(row("residue", in: rows))
         do {
@@ -337,7 +355,9 @@ struct AdminConsoleTests {
             Issue.record("a finished silo must refuse the staging")
         } catch AdminConsole.SetupRefusal.noLongerInBootstrap {}
         #expect(store.passkey(for: "residue") == "stay-key", "what the Keychain held from before stays")
-        #expect(try row("residue", in: await console.silos).classification == .seenWithoutAccess)
+        let held = try row("residue", in: await console.silos)
+        #expect(held.classification == .withoutAccess)
+        #expect(held.lastKnownAccess == false, "the held key was asked and refused")
     }
 
     @Test func setupStagedElsewhere() async throws {
@@ -378,14 +398,14 @@ struct AdminConsoleTests {
             guard let url = request.url else { return nil }
             switch url.path {
             case "/v1/server": return (200, Data(Self.serverInfo("known", "Known Silo", bootstrap: false).utf8))
-            case "/v1/nodes": return (401, Data())
+            case "/v1/operator": return (401, Data())
             default: return nil
             }
         }
 
         let rows = await console.refresh(typedURLs: [URL(string: "http://known.local:8080")!])
         let known = try row("known", in: rows)
-        #expect(known.classification == .seenWithoutAccess)
+        #expect(known.classification == .withoutAccess)
 
         do {
             _ = try await console.claim(known, passkey: "nope")
@@ -393,7 +413,9 @@ struct AdminConsoleTests {
         } catch is AdminConsole.ClaimRefused {}
         #expect(store.passkey(for: "known") == nil)
         #expect(registry.entry(for: "known")?.hasStoredPasskey == false)
-        #expect(try row("known", in: await console.refresh(typedURLs: [URL(string: "http://known.local:8080")!])).classification == .seenWithoutAccess, "the silo stays seen, no access")
+        let spared = try row("known", in: await console.refresh(typedURLs: [URL(string: "http://known.local:8080")!]))
+        #expect(spared.classification == .withoutAccess, "the silo stays without access")
+        #expect(spared.lastKnownAccess == nil, "a refused claim leaves nothing stored, so nothing probed")
     }
 
     @Test func aClaimVerifiesBeforeItStores() async throws {
@@ -404,21 +426,65 @@ struct AdminConsoleTests {
             guard let url = request.url else { return nil }
             switch url.path {
             case "/v1/server": return (200, Data(Self.serverInfo("found", "Found Silo", bootstrap: false).utf8))
-            case "/v1/nodes":
+            case "/v1/operator":
                 if store.passkey(for: "found") != nil { storedTooSoon.withLock { $0 = true } }
-                return request.value(forHTTPHeaderField: "Authorization") == "Bearer filed" ? (200, Data("[]".utf8)) : (401, Data())
+                return request.value(forHTTPHeaderField: "Authorization") == "Bearer filed" ? (200, Data(Self.serverInfo("found", "Found Silo", bootstrap: false).utf8)) : (401, Data())
             default: return nil
             }
         }
 
         let found = try row("found", in: await console.refresh(typedURLs: [URL(string: "http://found.local:8080")!]))
-        #expect(found.classification == .unseen)
+        #expect(found.classification == .withoutAccess, "never met and met-then-refused are the same act")
 
         let claimed = try await console.claim(found, passkey: "filed")
 
         #expect(!storedTooSoon.withLock { $0 }, "the probe is the gate, not the aftermath")
-        #expect(claimed.classification == .seenWithAccess)
+        #expect(claimed.classification == .withAccess)
+        #expect(claimed.lastKnownAccess == true)
         #expect(store.passkey(for: "found") == "filed")
-        #expect(registry.entry(for: "found")?.hasStoredPasskey == true)
+        let merged = try #require(registry.entry(for: "found"))
+        #expect(merged.hasStoredPasskey)
+        #expect(merged.lastKnownAccess == true)
+    }
+
+    // MARK: - Forget
+
+    @Test func forgetPurgesTheRegistryAndThePasskey() async throws {
+        let registry = SiloRegistry()
+        try registry.merge(RegisteredSilo(id: "quiet", name: "Quiet Silo", url: URL(string: "http://quiet.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: true, lastKnownAccess: true))
+        let store = InMemoryPasskeyStore()
+        store.store("old-key", for: "quiet")
+        let console = Self.console(registry: registry, passkeys: store) { _ in nil }
+
+        let quiet = try row("quiet", in: await console.refresh())
+        #expect(quiet.classification == .unreachable, "gone quiet is the moment to forget")
+
+        await console.forget(quiet)
+
+        #expect(store.passkey(for: "quiet") == nil, "this Mac no longer holds the passkey")
+        #expect(registry.entry(for: "quiet") == nil, "the registry keeps nothing of it")
+        #expect(await console.silos.isEmpty, "the row leaves the rendered list")
+    }
+
+    @Test func aRediscoveryRestartsHistory() async throws {
+        let registry = SiloRegistry()
+        try registry.merge(RegisteredSilo(id: "quiet", name: "Quiet Silo", url: URL(string: "http://quiet.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: true, lastKnownAccess: true))
+        let store = InMemoryPasskeyStore()
+        store.store("old-key", for: "quiet")
+        let console = Self.console(registry: registry, passkeys: store) { _ in nil }
+
+        await console.forget(try row("quiet", in: await console.refresh()))
+        #expect(registry.entry(for: "quiet") == nil, "forgotten before it answers again")
+
+        Self.answer { request in
+            guard let url = request.url, url.host == "quiet.local", url.path == "/v1/server" else { return nil }
+            return (200, Data(Self.serverInfo("quiet", "Quiet Silo", bootstrap: false).utf8))
+        }
+        let found = try row("quiet", in: await console.refresh(typedURLs: [URL(string: "http://quiet.local:8080")!]))
+        #expect(found.classification == .withoutAccess, "a forgotten silo arrives as never met")
+        #expect(found.lastKnownAccess == nil)
+        let merged = try #require(registry.entry(for: "quiet"))
+        #expect(!merged.hasStoredPasskey)
+        #expect(merged.lastKnownAccess == nil, "a rediscovery restarts history")
     }
 }
