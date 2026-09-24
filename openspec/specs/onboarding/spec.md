@@ -50,6 +50,21 @@ nothing it reports is a credential.
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`theServerRouteAnswersOpenly`).
 
+### Requirement: The verify-access route answers the operator only
+The silo SHALL serve `GET /v1/operator` as an operator-gated route whose whole job is access
+verification, answering the same `ServerInfo` as `GET /v1/server`. With no bearer, or a bearer
+the operator gate refuses, it SHALL answer 401; with an accepted bearer it SHALL answer 200 with
+the server's `id`, `name`, and `bootstrap` state. The verification SHALL NOT depend on any other
+subsystem — it is the node's list, its jobs, and the library's health in no part — so that a
+401 names the token and only the token.
+
+#### Scenario: the answer is the gate itself
+- **WHEN** `GET /v1/operator` is called without a bearer, called with a refused bearer, and
+  called with the operator's bearer
+- **THEN** the replies are 401, 401, and 200 with the server's `ServerInfo`
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`theVerifyRouteAnswersOnlyTheOperator`), `Tests/SiloClientTests/SiloClientTests.swift` (`theVerifyProbeSendsTheToken`, `aRefusedVerifyArrivesAsAStatus`).
+
 ### Requirement: Bootstrap is the absence of an operator credential, and only a confirmed setup ends it
 A silo SHALL be in bootstrap when it holds no operator credential — no `operator-credential.json`
 in its state directory and no `SILO_OPERATOR_TOKEN` in its environment; a staged but unconfirmed
