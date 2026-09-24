@@ -40,7 +40,7 @@ extension AdminConsole.PreparedSetup: Identifiable {
 }
 
 /// The engine at the window's cadence: the rendered rows, the address being typed, and the
-/// transient state of the two sheets. Main-actor because the views are; every hand-off to the
+/// transient state of the sheets and alerts. Main-actor because the views are; every hand-off to the
 /// console suspends into the actor and comes back with rows to publish.
 @MainActor @Observable
 final class ConsoleModel {
@@ -50,6 +50,7 @@ final class ConsoleModel {
     var typedAddress = ""
     var prepared: AdminConsole.PreparedSetup?
     var claimTarget: AdminConsole.Silo?
+    var forgetTarget: AdminConsole.Silo?
     var refusal: Refusal?
 
     /// The endings an operator has to be told in words: someone else's stage runs out at a
@@ -142,6 +143,14 @@ final class ConsoleModel {
             return .failed
         }
     }
+
+    /// Forgetting is the engine's purge — passkey off this Mac, registry entry gone — so the
+    /// row simply leaves on the next publish. Non-recoverable by design; the sheet said so.
+    func forget(_ silo: AdminConsole.Silo) async {
+        forgetTarget = nil
+        await console.forget(silo)
+        silos = await console.silos
+    }
 }
 
 struct ConsoleView: View {
@@ -155,9 +164,11 @@ struct ConsoleView: View {
                 switch silo.classification {
                 case .bootstrap:
                     Button("Set Up…") { Task { await model.prepareSetup(for: silo) } }
-                case .unseen, .seenWithoutAccess:
+                case .withoutAccess:
                     Button("Claim…") { model.claimTarget = silo }
-                case .seenWithAccess:
+                case .unreachable:
+                    Button("Forget…", role: .destructive) { model.forgetTarget = silo }
+                case .withAccess:
                     EmptyView()
                 }
             }
@@ -194,6 +205,19 @@ struct ConsoleView: View {
                 onCancel: { model.claimTarget = nil }
             )
         }
+        .alert("Forget \(model.forgetTarget?.name ?? "this silo")?", isPresented: Binding(
+            get: { model.forgetTarget != nil },
+            set: { if !$0 { model.forgetTarget = nil } }
+        )) {
+            Button("Forget", role: .destructive) {
+                if let silo = model.forgetTarget {
+                    Task { await model.forget(silo) }
+                }
+            }
+            Button("Cancel", role: .cancel) { model.forgetTarget = nil }
+        } message: {
+            Text("The passkey on this Mac is deleted and the registry lets it go. If it answers again, it arrives as never met.")
+        }
         .alert(model.refusal?.title ?? "", isPresented: Binding(
             get: { model.refusal != nil },
             set: { if !$0 { model.refusal = nil } }
@@ -221,10 +245,16 @@ struct SiloRow<Actions: View>: View {
                 Text("\(silo.url.host ?? silo.url.absoluteString) · \(silo.classification.label) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if silo.classification == .unreachable {
+                    Text(silo.lastKnownAccess.lastKnownLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
             actions()
         }
+        .opacity(silo.classification == .unreachable ? 0.6 : 1)
     }
 }
 
@@ -233,27 +263,39 @@ extension AdminConsole.Classification {
     var label: String {
         switch self {
         case .bootstrap: "waiting for setup"
-        case .unseen: "never met"
-        case .seenWithAccess: "has access"
-        case .seenWithoutAccess: "no access"
+        case .withAccess: "has access"
+        case .withoutAccess: "no access"
+        case .unreachable: "gone quiet"
         }
     }
 
     var symbol: String {
         switch self {
         case .bootstrap: "wand.and.sparkles"
-        case .unseen: "questionmark.circle"
-        case .seenWithAccess: "checkmark.shield"
-        case .seenWithoutAccess: "lock.trianglebadge.exclamationmark"
+        case .withAccess: "checkmark.shield"
+        case .withoutAccess: "lock.trianglebadge.exclamationmark"
+        case .unreachable: "antenna.radiowaves.left.and.right.slash"
         }
     }
 
     var colour: AnyShapeStyle {
         switch self {
         case .bootstrap: AnyShapeStyle(.tint)
-        case .unseen: AnyShapeStyle(.secondary)
-        case .seenWithAccess: AnyShapeStyle(.green)
-        case .seenWithoutAccess: AnyShapeStyle(.orange)
+        case .withAccess: AnyShapeStyle(.green)
+        case .withoutAccess: AnyShapeStyle(.orange)
+        case .unreachable: AnyShapeStyle(.secondary)
+        }
+    }
+}
+
+extension Optional where Wrapped == Bool {
+    /// What an unreachable silo last owned up to — row data, since the silo itself cannot be
+    /// asked; nil means nothing was ever held, so nothing was ever asked.
+    fileprivate var lastKnownLabel: String {
+        switch self {
+        case .some(true): "Had access when last seen"
+        case .some(false): "Had no access when last seen"
+        case .none: "Never asked"
         }
     }
 }
