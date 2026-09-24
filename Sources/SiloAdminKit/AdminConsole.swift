@@ -59,18 +59,22 @@ public actor AdminConsole {
 
     /// The sheet's payload for a bootstrap silo: a passkey the app will store only once the
     /// stage answers 202, and how much of it the operator may see. A minted passkey is rendered
-    /// exactly once, here; the residue of an interrupted attempt already had its once.
+    /// exactly once, here. `resumingUntil` is set when the Keychain's residue probed as the
+    /// live stage's own passkey: the sheet is offered the stage to finish before its deadline,
+    /// and the residue — already shown once, at the earlier attempt — is shown never again.
     public struct PreparedSetup: Sendable {
         public enum Presentation: Sendable, Hashable {
             /// Shown once, with an offer to copy, and never in full again.
             case minted(String)
-            /// Already in the Keychain from an attempt whose confirm never landed; not reshown.
+            /// In the Keychain from an attempt whose stage still stands; not reshown.
             case reused
         }
 
         public var serverID: String
         public var url: URL
         public var presentation: Presentation
+        /// Non-nil when the sheet resumes a stage that still stands: when its window shuts.
+        public var resumingUntil: Date?
         let passkey: String
     }
 
@@ -161,39 +165,59 @@ public actor AdminConsole {
     }
 
     /// The probe: `GET /v1/operator` with the passkey as bearer, the verify-access route whose
-    /// only job is this question — 200 is access and everything else is not, without the node
+    /// only job is this question — `active` is access and everything else is not: a `pending`
+    /// answer names a staged passkey, and a stage is not yet a credential — without the node
     /// subsystem's health saying anything a refused credential didn't.
     private func hasAccess(url: URL, passkey: String) async -> Bool {
-        (try? await SiloClient(baseURL: url, token: passkey, session: session).verifyAccess()) != nil
+        (try? await SiloClient(baseURL: url, token: passkey, session: session).verifyAccess()) == .active
     }
 
     // MARK: - Setup
 
-    /// Prepares the setup sheet for a bootstrap silo: mints a passkey to show once, or reuses
-    /// the one an earlier attempt left in the Keychain — which is shown no second time.
-    public func prepareSetup(_ silo: Silo) throws -> PreparedSetup {
-        if let existing = passkeys.passkey(for: silo.id) {
-            return PreparedSetup(serverID: silo.id, url: silo.url, presentation: .reused, passkey: existing)
+    /// Prepares the setup sheet for a bootstrap silo. A Keychain residue is probed first: the
+    /// live stage's own passkey — answered `pending`, with its deadline — prepares a resume
+    /// the sheet offers, the confirm sent only on the operator's word and never the engine's
+    /// own; a refused residue is dead weight, dropped for a fresh mint whose write-ahead
+    /// overwrites it. No residue mints straight away.
+    public func prepareSetup(_ silo: Silo) async throws -> PreparedSetup {
+        if let existing = passkeys.passkey(for: silo.id),
+           case .pending(let confirmBy)? = try await probeResidue(existing, at: silo.url) {
+            return PreparedSetup(serverID: silo.id, url: silo.url, presentation: .reused, resumingUntil: confirmBy, passkey: existing)
         }
         let minted = Passkey.mint()
-        return PreparedSetup(serverID: silo.id, url: silo.url, presentation: .minted(minted), passkey: minted)
+        return PreparedSetup(serverID: silo.id, url: silo.url, presentation: .minted(minted), resumingUntil: nil, passkey: minted)
     }
 
-    /// Plays the pair in order once the operator confirms the sheet: stage, then the passkey
-    /// into the Keychain, then the confirm — so the silo cannot become configured while the
-    /// console holds no copy. On 201 the silo is recorded and classifies with access; a 410
-    /// ends the flow with the minted passkey discarded and the silence classified by probe,
-    /// and a 409 tells the operator whose window to wait out, storing nothing.
+    /// The residue's probe, a refusal read as a dead passkey — its stage ran out, was
+    /// confirmed, or was never this silo's. Any other failure of the wire surfaces.
+    private func probeResidue(_ passkey: String, at url: URL) async throws -> SiloClient.OperatorStatus? {
+        do {
+            return try await SiloClient(baseURL: url, token: passkey, session: session).verifyAccess()
+        } catch SiloClientError.status(401, _) {
+            return nil
+        }
+    }
+
+    /// Plays the pair once the operator confirms the sheet — unless the sheet resumed a stage
+    /// that still stands: then the stage was the earlier attempt's play and only the confirm
+    /// remains, the standing stage keeping the name it was staged with. Otherwise stage, then
+    /// the passkey into the Keychain, then the confirm — so the silo cannot become configured
+    /// while the console holds no copy. On 201 the silo is recorded and classifies with
+    /// access; a 410 ends the flow with the minted passkey discarded and the silence
+    /// classified by probe, and a 409 tells the operator whose window to wait out, storing
+    /// nothing.
     @discardableResult
     public func runSetup(_ prepared: PreparedSetup, name: String?) async throws -> Silo {
         let client = SiloClient(baseURL: prepared.url, session: session)
-        do {
-            _ = try await client.setup(name: name, passkey: prepared.passkey)
-        } catch SiloClientError.conflict(let until) {
-            throw SetupRefusal.stagedElsewhere(until: until)
-        } catch SiloClientError.status(410, _) {
-            await reclassify(prepared.serverID, at: prepared.url)
-            throw SetupRefusal.noLongerInBootstrap
+        if prepared.resumingUntil == nil {
+            do {
+                _ = try await client.setup(name: name, passkey: prepared.passkey)
+            } catch SiloClientError.conflict(let until) {
+                throw SetupRefusal.stagedElsewhere(until: until)
+            } catch SiloClientError.status(410, _) {
+                await reclassify(prepared.serverID, at: prepared.url)
+                throw SetupRefusal.noLongerInBootstrap
+            }
         }
 
         passkeys.store(prepared.passkey, for: prepared.serverID)
@@ -221,14 +245,17 @@ public actor AdminConsole {
 
     /// Claims a silo the operator types a passkey for, in the only order that is safe: the
     /// probe first, and only a passing probe stores. A refused passkey keeps nothing and
-    /// changes nothing.
+    /// changes nothing — `pending` is a refusal here too, a staged passkey not yet being a
+    /// credential.
     @discardableResult
     public func claim(_ silo: Silo, passkey: String) async throws -> Silo {
+        let status: SiloClient.OperatorStatus
         do {
-            _ = try await SiloClient(baseURL: silo.url, token: passkey, session: session).verifyAccess()
+            status = try await SiloClient(baseURL: silo.url, token: passkey, session: session).verifyAccess()
         } catch SiloClientError.status(401, _) {
             throw ClaimRefused()
         }
+        guard status == .active else { throw ClaimRefused() }
 
         passkeys.store(passkey, for: silo.id)
         let row = Silo(id: silo.id, name: silo.name, url: silo.url, lastSeen: now(), classification: .withAccess, lastKnownAccess: true)
