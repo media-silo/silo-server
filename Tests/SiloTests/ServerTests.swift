@@ -437,6 +437,23 @@ extension ServerTests {
     }
 }
 
+/// The verify-access route: the same answer as the open route, behind the operator's gate, and
+/// nothing else. A refusal is the gate's and not the server's — the node list, the jobs, and the
+/// library never come into it.
+extension ServerTests {
+    @Test func theVerifyRouteAnswersOnlyTheOperator() async throws {
+        try await withClient { client in
+            struct Info: Decodable, Equatable { var id: String; var name: String; var bootstrap: Bool }
+            let open = try await client.get("/v1/server")
+            let verified = try await client.get("/v1/operator", headers: ["Authorization": "Bearer secret"])
+            #expect(verified.status == 200)
+            #expect(try SiloClient.decoder.decode(Info.self, from: verified.body) == SiloClient.decoder.decode(Info.self, from: open.body), "the same server as the open route answers")
+            #expect(try await client.get("/v1/operator").status == 401, "no bearer is refused")
+            #expect(try await client.get("/v1/operator", headers: ["Authorization": "Bearer wrong"]).status == 401, "a refused bearer is refused")
+        }
+    }
+}
+
 /// The setup pair, shut from the very first boot: the suite's environment sets a token, so the
 /// server is never in bootstrap, staging is gone for good, and nothing is ever staged to confirm.
 /// The open pair's life — six scenarios of it — is pinned at the service in `SetupTests`.

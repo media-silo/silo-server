@@ -99,6 +99,28 @@ paths:
         "404":
           description: Nothing is staged — it expired, was never staged, or the server is set up.
 
+  /operator:
+    get:
+      operationId: getOperator
+      summary: Verify the operator's token
+      description: >
+        One call whose whole job is to answer whether the operator's bearer is accepted — and by
+        answering, that the server is listening. Answers the same ServerInfo as /server, but
+        operator-gated: unlike an open route, a 401 from here names the token, not the server,
+        and it never touches the node subsystem to find out.
+      tags: [Server]
+      security:
+        - operator: []
+      responses:
+        "200":
+          description: The operator's token is accepted; the server, identified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServerInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+
   /libraries:
     get:
       operationId: listLibraries
