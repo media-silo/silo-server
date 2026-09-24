@@ -47,6 +47,7 @@ let package = Package(
         .library(name: "SiloStore", targets: ["SiloStore"]),
         .library(name: "FileServing", targets: ["FileServing"]),
         .library(name: "SiloClient", targets: ["SiloClient"]),
+        .library(name: "SiloAdminKit", targets: ["SiloAdminKit"]),
         .library(name: "SiloWorker", targets: ["SiloWorker"]),
         .library(name: "SiloDiscovery", targets: ["SiloDiscovery"]),
         .executable(name: "silo-ctl", targets: ["silo-ctl"]),
@@ -161,6 +162,13 @@ let package = Package(
             name: "SiloClient",
             dependencies: ["SiloKit"]
         ),
+        // The admin console minus its shell: the registry, the passkey keepers, the four
+        // classes, and the setup and claim flows. Cross-platform, so the app layer stays thin
+        // and Linux keeps the logic honest.
+        .target(
+            name: "SiloAdminKit",
+            dependencies: ["SiloClient", "SiloDiscovery"]
+        ),
         // The node's loop, the same for a node on another machine and the one inside the silo.
         .target(
             name: "SiloWorker",
@@ -252,6 +260,7 @@ let package = Package(
         // The client's first standalone suite: the onboarding calls, against a stubbed URLProtocol
         // so the wire shapes are pinned without a server.
         .testTarget(name: "SiloClientTests", dependencies: ["SiloClient"]),
+        .testTarget(name: "SiloAdminKitTests", dependencies: ["SiloAdminKit", "SiloClient"]),
         .testTarget(name: "EncoderTests", dependencies: ["Encoder", "SiloKit"]),
         .testTarget(name: "SiloLibraryTests", dependencies: ["SiloLibrary", "SiloKit"]),
         .testTarget(name: "SiloStoreTests", dependencies: ["SiloStore", "SiloLibrary", "SiloKit"]),

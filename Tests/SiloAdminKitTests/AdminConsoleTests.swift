@@ -1,0 +1,424 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 the media-silo project authors
+
+import Foundation
+import SiloAdminKit
+import SiloClient
+import SiloDiscovery
+import Synchronization
+import Testing
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
+/// The console against a silo-shaped stub: every test hands the protocol the answers a real
+/// silo would give and pins the engine's replies to the spec's promises — the classes, the
+/// wire order, and what is and is not stored. Serial because the handler is one static seam.
+@Suite(.serialized)
+struct AdminConsoleTests {
+    private final class Stub: URLProtocol, @unchecked Sendable {
+        static let handler = Mutex<@Sendable (URLRequest) throws -> (Int, Data)?>({ _ in nil })
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            do {
+                guard let (status, data) = try Self.handler.withLock({ try $0(request) }),
+                      let url = request.url,
+                      let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])
+                else { throw SiloClientError.badPath(request.url?.absoluteString ?? "") }
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: data)
+                client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+
+        override func stopLoading() {}
+    }
+
+    private static let clock = Date(timeIntervalSince1970: 1_790_000_000)
+
+    private static func serverInfo(_ id: String, _ name: String, bootstrap: Bool) -> String {
+        #"{"id":"\#(id)","name":"\#(name)","bootstrap":\#(bootstrap)}"#
+    }
+
+    /// A console wired to the stub, its clock stopped at `clock` and its browse fixed.
+    private static func console(
+        registry: SiloRegistry = SiloRegistry(),
+        passkeys: InMemoryPasskeyStore = InMemoryPasskeyStore(),
+        discovered: [DiscoveredSilo] = [],
+        answering handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)?
+    ) -> AdminConsole {
+        answer(with: handler)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [Stub.self]
+        return AdminConsole(
+            registry: registry,
+            passkeys: passkeys,
+            session: URLSession(configuration: configuration),
+            now: { clock },
+            browse: { discovered }
+        )
+    }
+
+    private static func answer(with handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)?) {
+        Stub.handler.withLock { $0 = handler }
+    }
+
+    private static func body(of request: URLRequest) -> Data? {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+            let read = stream.read(buffer, maxLength: 1024)
+            guard read > 0 else { break }
+            data.append(buffer, count: read)
+        }
+        return data
+    }
+
+    private func row(_ id: String, in rows: [AdminConsole.Silo], fileID: String = #fileID, filePath: String = #filePath, line: Int = #line, column: Int = #column) throws -> AdminConsole.Silo {
+        try #require(rows.first { $0.id == id }, "no row for \(id)", sourceLocation: SourceLocation(fileID: fileID, filePath: filePath, line: line, column: column))
+    }
+
+    // MARK: - The registry
+
+    @Test func browsingRefreshesNeverForgets() async throws {
+        let registry = SiloRegistry()
+        let lastSeen = Date(timeIntervalSince1970: 1_700_000_000)
+        try registry.merge(RegisteredSilo(id: "attic", name: "Attic Silo", url: URL(string: "http://attic.local:8080")!, lastSeen: lastSeen, hasStoredPasskey: false))
+        let wire = Mutex<[String]>([])
+        let console = Self.console(registry: registry, discovered: [DiscoveredSilo(name: "Living Room Silo", host: "living.local", port: 8080)]) { request in
+            guard let url = request.url else { return nil }
+            wire.withLock { $0.append("\(request.httpMethod ?? "?") \(url.host ?? "?")\(url.path)") }
+            guard url.host == "living.local", url.path == "/v1/server" else { return nil }
+            return (200, Data(Self.serverInfo("living", "Living Room Silo", bootstrap: true).utf8))
+        }
+
+        let rows = await console.refresh()
+
+        let attic = try row("attic", in: rows)
+        #expect(attic.lastSeen == lastSeen, "an absent silo renders with its last-seen time")
+        #expect(attic.classification == .seenWithoutAccess)
+        let living = try row("living", in: rows)
+        #expect(living.classification == .bootstrap)
+        #expect(living.lastSeen == Self.clock)
+        let merged = try #require(registry.entry(for: "living"))
+        #expect(merged.name == "Living Room Silo")
+        #expect(merged.url == URL(string: "http://living.local:8080"))
+        #expect(merged.lastSeen == Self.clock)
+        #expect(!merged.hasStoredPasskey)
+        #expect(wire.withLock { $0 } == ["GET living.local/v1/server"], "the absent silo is never asked anything")
+    }
+
+    @Test func aTypedAddressResolvesAndMerges() async throws {
+        let registry = SiloRegistry()
+        let console = Self.console(registry: registry) { request in
+            guard let url = request.url, url.host == "corner.local", url.path == "/v1/server" else { return nil }
+            return (200, Data(Self.serverInfo("corner", "Corner Silo", bootstrap: false).utf8))
+        }
+
+        let rows = await console.refresh(typedURLs: [URL(string: "http://corner.local:9000")!])
+
+        let corner = try row("corner", in: rows)
+        #expect(corner.classification == .unseen, "first contact with a configured silo")
+        #expect(corner.url == URL(string: "http://corner.local:9000"))
+        let merged = try #require(registry.entry(for: "corner"))
+        #expect(merged.url == URL(string: "http://corner.local:9000"))
+        #expect(merged.lastSeen == Self.clock)
+    }
+
+    // MARK: - The four classes
+
+    @Test func everyShownSiloIsExactlyOneClass() async throws {
+        let registry = SiloRegistry()
+        for id in ["access", "locked", "nohands"] {
+            try registry.merge(RegisteredSilo(id: id, name: id, url: URL(string: "http://\(id).local:8080")!, lastSeen: Self.clock, hasStoredPasskey: id != "nohands"))
+        }
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("key-a", for: "access")
+        passkeys.store("key-b", for: "locked")
+        let noderequests = Mutex<[String?]>([])
+        let console = Self.console(registry: registry, passkeys: passkeys, discovered: ["boot", "newbie", "access", "locked", "nohands"].map { DiscoveredSilo(name: $0, host: "\($0).local", port: 8080) }) { request in
+            guard let url = request.url, let host = url.host else { return nil }
+            let id = String(host.split(separator: ".")[0])
+            switch (id, url.path) {
+            case ("boot", "/v1/server"):
+                return (200, Data(Self.serverInfo("boot", "Boot", bootstrap: true).utf8))
+            case ("newbie", "/v1/server"):
+                return (200, Data(Self.serverInfo("newbie", "Newbie", bootstrap: false).utf8))
+            case ("access", "/v1/server"):
+                return (200, Data(Self.serverInfo("access", "Access", bootstrap: false).utf8))
+            case ("access", "/v1/nodes"):
+                noderequests.withLock { $0.append(request.value(forHTTPHeaderField: "Authorization")) }
+                return request.value(forHTTPHeaderField: "Authorization") == "Bearer key-a" ? (200, Data("[]".utf8)) : (401, Data())
+            case ("locked", "/v1/server"):
+                return (200, Data(Self.serverInfo("locked", "Locked", bootstrap: false).utf8))
+            case ("locked", "/v1/nodes"):
+                noderequests.withLock { $0.append(request.value(forHTTPHeaderField: "Authorization")) }
+                return (401, Data())
+            case ("nohands", "/v1/server"):
+                return (200, Data(Self.serverInfo("nohands", "No Hands", bootstrap: false).utf8))
+            default:
+                return nil
+            }
+        }
+
+        let rows = await console.refresh()
+
+        #expect(try row("boot", in: rows).classification == .bootstrap)
+        #expect(try row("newbie", in: rows).classification == .unseen)
+        #expect(try row("access", in: rows).classification == .seenWithAccess)
+        #expect(try row("locked", in: rows).classification == .seenWithoutAccess)
+        #expect(try row("nohands", in: rows).classification == .seenWithoutAccess)
+        #expect(Set(rows.map(\.id)).count == 5, "each silo exactly one row")
+        #expect(noderequests.withLock { $0 }.map { $0 ?? "(none)" }.sorted() == ["Bearer key-a", "Bearer key-b"], "the probe asks only silos with a passkey, with that passkey as bearer")
+    }
+
+    @Test func theProbeDecides() async throws {
+        let registry = SiloRegistry()
+        try registry.merge(RegisteredSilo(id: "probe", name: "Probe", url: URL(string: "http://probe.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: true))
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "probe")
+        let accepts = Mutex("held")
+        let console = Self.console(registry: registry, passkeys: passkeys, discovered: [DiscoveredSilo(name: "Probe", host: "probe.local", port: 8080)]) { request in
+            guard let url = request.url else { return nil }
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("probe", "Probe", bootstrap: false).utf8))
+            case "/v1/nodes": return request.value(forHTTPHeaderField: "Authorization") == "Bearer \(accepts.withLock { $0 })" ? (200, Data("[]".utf8)) : (401, Data())
+            default: return nil
+            }
+        }
+
+        #expect(try row("probe", in: await console.refresh()).classification == .seenWithAccess)
+
+        accepts.withLock { $0 = "rotated" }
+        #expect(try row("probe", in: await console.refresh()).classification == .seenWithoutAccess)
+        #expect(passkeys.passkey(for: "probe") == "held", "a refused probe removes nothing")
+    }
+
+    @Test func unreachableIsLastKnownNotUnknown() async throws {
+        let registry = SiloRegistry()
+        try registry.merge(RegisteredSilo(id: "home", name: "Home Silo", url: URL(string: "http://home.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: true))
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("key", for: "home")
+        let alive = Mutex(true)
+        let probed = Mutex(0)
+        let console = Self.console(registry: registry, passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8080)]) { request in
+            guard alive.withLock({ $0 }), let url = request.url else { return nil }
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case "/v1/nodes":
+                probed.withLock { $0 += 1 }
+                return (200, Data("[]".utf8))
+            default: return nil
+            }
+        }
+
+        #expect(try row("home", in: await console.refresh()).classification == .seenWithAccess)
+        #expect(probed.withLock { $0 } == 1)
+
+        alive.withLock { $0 = false }
+        let gone = try row("home", in: await console.refresh())
+        #expect(gone.classification == .seenWithAccess, "last-known, not unknown")
+        #expect(gone.lastSeen == Self.clock)
+        #expect(probed.withLock { $0 } == 1, "an unreachable silo is not probed")
+    }
+
+    // MARK: - The setup flow
+
+    @Test func setupFromTheChair() async throws {
+        let store = InMemoryPasskeyStore()
+        let registry = SiloRegistry()
+        let wire = Mutex<[String]>([])
+        let console = Self.console(registry: registry, passkeys: store, discovered: [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)]) { request in
+            guard let url = request.url else { return nil }
+            switch url.path {
+            case "/v1/server":
+                return request.httpMethod == "GET" ? (200, Data(Self.serverInfo("s1", "Fresh Silo", bootstrap: true).utf8)) : nil
+            case "/v1/setup":
+                wire.withLock { $0.append("stage") }
+                return (202, Data(#"{"id":"s1","name":"Living Room Silo","confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+            case "/v1/setup/confirm":
+                if store.passkey(for: "s1") == nil { Issue.record("the confirm raced the Keychain write") }
+                wire.withLock { $0.append("confirm") }
+                return (201, Data(Self.serverInfo("s1", "Living Room Silo", bootstrap: false).utf8))
+            default:
+                return nil
+            }
+        }
+
+        let fresh = try row("s1", in: await console.refresh())
+        let prepared = try await console.prepareSetup(fresh)
+        guard case .minted(let shown) = prepared.presentation else {
+            Issue.record("a fresh attempt mints and shows the passkey")
+            return
+        }
+
+        let rendered = try await console.runSetup(prepared, name: "Living Room Silo")
+
+        #expect(wire.withLock { $0 } == ["stage", "confirm"])
+        #expect(store.passkey(for: "s1") == shown, "the passkey is stored before the confirm is sent")
+        #expect(rendered.classification == .seenWithAccess)
+        #expect(rendered.name == "Living Room Silo")
+        let merged = try #require(registry.entry(for: "s1"))
+        #expect(merged.hasStoredPasskey)
+        #expect(try row("s1", in: await console.silos).classification == .seenWithAccess, "the rendered list moves with the flow")
+    }
+
+    @Test func anInterruptedSetupResumesWithTheSamePasskey() async throws {
+        let store = InMemoryPasskeyStore()
+        store.store("kept-from-attempt-one", for: "s7")
+        let staged = Mutex<String?>(nil)
+        let console = Self.console(passkeys: store, discovered: [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)]) { request in
+            guard let url = request.url else { return nil }
+            switch url.path {
+            case "/v1/server":
+                return request.httpMethod == "GET" ? (200, Data(Self.serverInfo("s7", "Fresh Silo", bootstrap: true).utf8)) : nil
+            case "/v1/setup":
+                let body = Self.body(of: request).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] }
+                staged.withLock { $0 = body?["passkey"] }
+                return (202, Data(#"{"id":"s7","name":"Fresh Silo","confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+            case "/v1/setup/confirm":
+                return (201, Data(Self.serverInfo("s7", "Fresh Silo", bootstrap: false).utf8))
+            default:
+                return nil
+            }
+        }
+
+        let fresh = try row("s7", in: await console.refresh())
+        let prepared = try await console.prepareSetup(fresh)
+        #expect(prepared.presentation == .reused, "the Keychain's residue is not shown again")
+
+        let row = try await console.runSetup(prepared, name: nil)
+
+        #expect(staged.withLock { $0 } == "kept-from-attempt-one", "the retry restages the same passkey")
+        #expect(row.classification == .seenWithAccess)
+    }
+
+    @Test func someoneElseGotThereFirst() async throws {
+        let store = InMemoryPasskeyStore()
+        store.store("stay-key", for: "residue")
+        let console = Self.console(passkeys: store, discovered: [
+            DiscoveredSilo(name: "Fresh", host: "fresh.local", port: 8080),
+            DiscoveredSilo(name: "Residue", host: "residue.local", port: 8080),
+        ]) { request in
+            guard let url = request.url, let host = url.host else { return nil }
+            let id = host == "fresh.local" ? "fresh" : "residue"
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo(id, id, bootstrap: true).utf8))
+            case "/v1/setup": return (410, Data())
+            case "/v1/nodes": return (401, Data())
+            default: return nil
+            }
+        }
+        let rows = await console.refresh()
+
+        let fresh = try await console.prepareSetup(row("fresh", in: rows))
+        guard case .minted(let minted) = fresh.presentation else { Issue.record("nothing held, so minted"); return }
+        do {
+            _ = try await console.runSetup(fresh, name: nil)
+            Issue.record("a finished silo must refuse the staging")
+        } catch AdminConsole.SetupRefusal.noLongerInBootstrap {}
+        #expect(store.passkey(for: "fresh") == nil, "the minted passkey is discarded, not filed")
+        #expect(minted != "stay-key")
+        #expect(try row("fresh", in: await console.silos).classification == .seenWithoutAccess, "classified by the probe's refusal")
+
+        let residue = try await console.prepareSetup(row("residue", in: rows))
+        do {
+            _ = try await console.runSetup(residue, name: nil)
+            Issue.record("a finished silo must refuse the staging")
+        } catch AdminConsole.SetupRefusal.noLongerInBootstrap {}
+        #expect(store.passkey(for: "residue") == "stay-key", "what the Keychain held from before stays")
+        #expect(try row("residue", in: await console.silos).classification == .seenWithoutAccess)
+    }
+
+    @Test func setupStagedElsewhere() async throws {
+        let store = InMemoryPasskeyStore()
+        let registry = SiloRegistry()
+        let wire = Mutex<[String]>([])
+        let console = Self.console(registry: registry, passkeys: store, discovered: [DiscoveredSilo(name: "Busy Silo", host: "busy.local", port: 8080)]) { request in
+            guard let url = request.url else { return nil }
+            wire.withLock { $0.append(url.path) }
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("busy", "Busy Silo", bootstrap: true).utf8))
+            case "/v1/setup": return (409, Data(#"{"confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+            default: return nil
+            }
+        }
+
+        let busy = try row("busy", in: await console.refresh())
+        let prepared = try await console.prepareSetup(busy)
+
+        do {
+            _ = try await console.runSetup(prepared, name: nil)
+            Issue.record("staging over another console's stage")
+        } catch AdminConsole.SetupRefusal.stagedElsewhere(let until) {
+            #expect(until.timeIntervalSince1970 == 1_790_244_600, "the operator is shown the window being waited out")
+        }
+        #expect(store.passkey(for: "busy") == nil)
+        #expect(registry.entry(for: "busy")?.hasStoredPasskey != true)
+        #expect(wire.withLock { $0 } == ["/v1/server", "/v1/setup"], "nothing follows a 409 — no store, no confirm")
+    }
+
+    // MARK: - Claim
+
+    @Test func wrongPasskeyNothingKept() async throws {
+        let registry = SiloRegistry()
+        try registry.merge(RegisteredSilo(id: "known", name: "Known Silo", url: URL(string: "http://known.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: false))
+        let store = InMemoryPasskeyStore()
+        let console = Self.console(registry: registry, passkeys: store) { request in
+            guard let url = request.url else { return nil }
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("known", "Known Silo", bootstrap: false).utf8))
+            case "/v1/nodes": return (401, Data())
+            default: return nil
+            }
+        }
+
+        let rows = await console.refresh(typedURLs: [URL(string: "http://known.local:8080")!])
+        let known = try row("known", in: rows)
+        #expect(known.classification == .seenWithoutAccess)
+
+        do {
+            _ = try await console.claim(known, passkey: "nope")
+            Issue.record("a refused passkey must keep nothing")
+        } catch is AdminConsole.ClaimRefused {}
+        #expect(store.passkey(for: "known") == nil)
+        #expect(registry.entry(for: "known")?.hasStoredPasskey == false)
+        #expect(try row("known", in: await console.refresh(typedURLs: [URL(string: "http://known.local:8080")!])).classification == .seenWithoutAccess, "the silo stays seen, no access")
+    }
+
+    @Test func aClaimVerifiesBeforeItStores() async throws {
+        let registry = SiloRegistry()
+        let store = InMemoryPasskeyStore()
+        let storedTooSoon = Mutex(false)
+        let console = Self.console(registry: registry, passkeys: store) { request in
+            guard let url = request.url else { return nil }
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("found", "Found Silo", bootstrap: false).utf8))
+            case "/v1/nodes":
+                if store.passkey(for: "found") != nil { storedTooSoon.withLock { $0 = true } }
+                return request.value(forHTTPHeaderField: "Authorization") == "Bearer filed" ? (200, Data("[]".utf8)) : (401, Data())
+            default: return nil
+            }
+        }
+
+        let found = try row("found", in: await console.refresh(typedURLs: [URL(string: "http://found.local:8080")!]))
+        #expect(found.classification == .unseen)
+
+        let claimed = try await console.claim(found, passkey: "filed")
+
+        #expect(!storedTooSoon.withLock { $0 }, "the probe is the gate, not the aftermath")
+        #expect(claimed.classification == .seenWithAccess)
+        #expect(store.passkey(for: "found") == "filed")
+        #expect(registry.entry(for: "found")?.hasStoredPasskey == true)
+    }
+}
