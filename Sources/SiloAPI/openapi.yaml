@@ -67,7 +67,11 @@ paths:
         "400":
           description: An empty passkey.
         "409":
-          description: A setup is staged already; confirm or expire it.
+          description: A setup is staged already; confirm or expire it. Carries the standing stage's deadline.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SetupConflict"
         "410":
           description: The server is set up; this was only ever open in bootstrap.
 
@@ -906,6 +910,15 @@ components:
           type: string
           format: date-time
           description: The staged setup's deadline — ten minutes from staging; a confirm after it finds nothing staged.
+
+    SetupConflict:
+      type: object
+      required: [confirmBy]
+      properties:
+        confirmBy:
+          type: string
+          format: date-time
+          description: The standing stage's deadline — once it passes, staging is open again.
 
     Problem:
       type: object

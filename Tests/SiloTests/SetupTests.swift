@@ -64,8 +64,13 @@ struct SetupTests {
         let credential = OperatorCredential()
         let service = ServerService(identity: ServerIdentity(id: "s1", name: "Silo on attic"), config: config(at: folder), credential: credential, stageWindow: 600, now: { .now })
 
-        _ = try service.stageSetup(passkey: "horse-battery", name: nil)
-        #expect(throws: StagePending.self) { try service.stageSetup(passkey: "interloper", name: nil) }
+        let stage = try service.stageSetup(passkey: "horse-battery", name: nil)
+        do {
+            _ = try service.stageSetup(passkey: "interloper", name: nil)
+            Issue.record("a second stage inside the window")
+        } catch let pending as StagePending {
+            #expect(pending.confirmBy == stage.confirmBy, "the refusal carries the standing stage's window, none of its own")
+        }
 
         try service.confirmSetup(bearer: "horse-battery")
         #expect(!service.isInBootstrap, "the first stage, not the refused second, is what confirmed")

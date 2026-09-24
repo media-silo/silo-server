@@ -61,7 +61,8 @@ serve the setup pair: `POST /v1/setup` and `POST /v1/setup/confirm`.
 passkey and name in memory with a deadline ten minutes hence, and answer 202 with the staged
 setup — the `ServerID`, the name it would take, and the `confirmBy` timestamp — writing nothing
 to the state directory. While a stage is pending and unexpired, a further `POST /v1/setup`
-SHALL answer 409; once the deadline passes the stage SHALL be void and the route SHALL stage
+SHALL answer 409 carrying the standing stage's `confirmBy`, so a refused console knows how long
+there is to wait out; once the deadline passes the stage SHALL be void and the route SHALL stage
 anew. On a server that is not in bootstrap the route SHALL answer 410 `gone`, across restarts,
 and no network route SHALL return a server to bootstrap.
 
@@ -86,7 +87,8 @@ answer 404.
 
 #### Scenario: two stages collide
 - **WHEN** a second `POST /v1/setup` arrives while a stage's window is still open
-- **THEN** it answers 409 and the first stage remains confirmable
+- **THEN** it answers 409 with the first stage's `confirmBy`, and the first stage remains
+  confirmable
 
 #### Scenario: a wrong confirm does no damage
 - **WHEN** `POST /v1/setup/confirm` carries a bearer that is not the staged passkey
