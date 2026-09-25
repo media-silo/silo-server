@@ -311,7 +311,7 @@ private struct DetailRoute: View {
             }
             .padding(40)
         } else {
-            ContentUnavailableView("Select a Silo", systemImage: "externaldrive", description: Text("The silo's standing is read out here."))
+            ContentUnavailableView("Select a Silo", systemImage: "externaldrive")
         }
     }
 }
