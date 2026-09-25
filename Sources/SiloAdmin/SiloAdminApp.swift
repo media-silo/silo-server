@@ -206,7 +206,7 @@ struct ConsoleView: View {
                     EmptyView()
                 } actions: {
                     HStack(spacing: 12) {
-                        Button("Add Silo by Address…", systemImage: "plus") { model.addingByAddress = true }
+                        Button("Add Manually", systemImage: "plus") { model.addingByAddress = true }
                         Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
                     }
                 }
