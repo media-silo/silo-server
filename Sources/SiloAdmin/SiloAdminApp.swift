@@ -296,7 +296,10 @@ struct ConsoleView: View {
 
 /// The detail pane, picked by the sidebar selection: the silo read aloud — its class, its
 /// host and when it was last seen. The act stays on the row, one click from where the silo
-/// was picked.
+/// was picked. A silo the operator cannot use right now is announced under a banner: gone
+/// quiet dims the whole read until it answers again, and a stored passkey the silo has
+/// stopped accepting is named for what it is. Both are read off the row, so a return to
+/// truth restores the pane without anything to unwind.
 private struct DetailRoute: View {
     let model: ConsoleModel
 
@@ -308,7 +311,7 @@ private struct DetailRoute: View {
                     .foregroundStyle(silo.classification.colour)
                 Text(silo.name)
                     .font(.title2)
-                Text(silo.classification.label)
+                Text(silo.statusLabel)
                     .foregroundStyle(.secondary)
                 Text("\(silo.url.host ?? silo.url.absoluteString) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
                     .font(.callout)
@@ -320,9 +323,37 @@ private struct DetailRoute: View {
                 }
             }
             .padding(40)
+            .opacity(silo.classification == .unreachable ? 0.35 : 1)
+            .saturation(silo.classification == .unreachable ? 0 : 1)
+            .allowsHitTesting(silo.classification != .unreachable)
+            .overlay(alignment: .top) {
+                if silo.classification == .unreachable {
+                    SiloBanner("Silo is currently unreachable")
+                } else if silo.passkeyRefused {
+                    SiloBanner("The stored passkey is no longer accepted")
+                }
+            }
         } else {
             ContentUnavailableView("Select a Silo", systemImage: "externaldrive")
         }
+    }
+}
+
+/// The word the console puts on what a silo cannot be used for: above a detail it cannot let
+/// the operator act inside. A slab against the dimmed pane, gone the moment the row says
+/// otherwise — there is nothing to reset, only a sweep's verdict to obey.
+private struct SiloBanner: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.callout.bold())
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.top, 20)
     }
 }
 
@@ -342,7 +373,7 @@ struct SiloRow<Actions: View>: View {
                 .frame(width: 24)
             VStack(alignment: .leading) {
                 Text(silo.name)
-                Text("\(silo.url.host ?? silo.url.absoluteString) · \(silo.classification.label) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
+                Text("\(silo.url.host ?? silo.url.absoluteString) · \(silo.statusLabel) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if silo.classification == .unreachable {
@@ -355,6 +386,20 @@ struct SiloRow<Actions: View>: View {
             actions()
         }
         .opacity(silo.classification == .unreachable ? 0.6 : 1)
+    }
+}
+
+extension AdminConsole.Silo {
+    /// Held-then-refused: the silo answers, but the passkey this Mac holds for it no longer
+    /// does — told apart from a silo never entered, wherever the console speaks of it.
+    var passkeyRefused: Bool {
+        classification == .withoutAccess && lastKnownAccess == false
+    }
+
+    /// The label the row and the detail read: the class, with a refusal named instead of
+    /// plain no-access.
+    var statusLabel: String {
+        passkeyRefused ? "passkey no longer accepted" : classification.label
     }
 }
 
