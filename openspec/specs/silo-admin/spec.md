@@ -101,6 +101,26 @@ alone decides what truth is shown.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`twoCallsOneSweep`).
 
+### Requirement: A silo the operator cannot use is announced, and why
+When the selected silo is unreachable, its detail SHALL render dimmed and non-interactive under
+a banner saying the silo is currently unreachable, and SHALL restore itself — dim and banner
+both — when the silo answers again; the sidebar and each row's acts SHALL stay live throughout,
+forgetting an unreachable silo being precisely the act that moment calls for. When the probe
+refuses a passkey this Mac holds, the console SHALL name the refusal — the stored passkey is no
+longer accepted — rather than rendering plain no-access, on the row and, for the selected silo,
+in a banner of its own, with the claim act still on offer.
+
+#### Scenario: the selected silo goes quiet
+- **WHEN** the silo the operator is looking at flips to unreachable
+- **THEN** its detail dims behind a "currently unreachable" banner, and the row's acts — forget
+  included — stay live
+
+#### Scenario: a held passkey stops fitting
+- **WHEN** the probe refuses the stored passkey of the selected silo
+- **THEN** the console says the stored passkey is no longer accepted, with claim still on offer
+
+Pinned by: nothing yet (the banners are shell rendering, and the shell has no test target).
+
 ### Requirement: Forgetting purges the silo and its passkey
 For an unreachable silo, SiloAdmin SHALL offer to forget it. Forgetting SHALL delete any passkey
 this Mac holds for the silo's `ServerID`, SHALL remove the silo's entry from the registry, and
