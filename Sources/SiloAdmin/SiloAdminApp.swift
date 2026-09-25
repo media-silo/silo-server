@@ -198,20 +198,20 @@ struct ConsoleView: View {
     var body: some View {
         Group {
             if model.silos.isEmpty {
-                // Nothing to select means no split: just the empty state and the two
-                // ways in — add an address, or look again.
-                ContentUnavailableView {
-                    Label("No Silos", systemImage: "externaldrive")
-                } description: {
-                    EmptyView()
-                } actions: {
-                    // Text-only buttons: ContentUnavailableView caps its action width
-                    // and truncates labels that also carry an SF Symbol.
+                // Hand-rolled so the buttons size to fit their text —
+                // ContentUnavailableView caps its action width and truncates on macOS.
+                VStack(spacing: 12) {
+                    Image(systemName: "externaldrive")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                    Text("No Silos")
+                        .font(.title2.bold())
                     HStack(spacing: 12) {
                         Button("Add Manually") { model.addingByAddress = true }
                         Button("Refresh") { Task { await model.refresh() } }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 NavigationSplitView {
                     List(model.silos, selection: $model.selected) { silo in
