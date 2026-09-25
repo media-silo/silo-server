@@ -23,12 +23,27 @@ struct SiloAdminApp: App {
             passkeys: KeychainPasskeyStore()
         )
         _model = State(initialValue: ConsoleModel(console: console))
+
+        // A bare executable earns no menu bar of its own: menus, the app name and Quit all
+        // belong to the regular activation policy, which an unpacked binary never takes.
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate()
     }
 
     var body: some Scene {
         Window("SiloAdmin", id: "console") {
             ConsoleView(model: model)
-                .frame(minWidth: 520, minHeight: 360)
+                .frame(minWidth: 640, minHeight: 380)
+        }
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Add Silo by Address…") { model.addingByAddress = true }
+                    .keyboardShortcut("A", modifiers: [.command, .shift])
+            }
+            CommandGroup(after: .sidebar) {
+                Button("Refresh") { Task { await model.refresh() } }
+                    .keyboardShortcut("R")
+            }
         }
     }
 }
@@ -47,7 +62,9 @@ final class ConsoleModel {
     private let console: AdminConsole
 
     private(set) var silos: [AdminConsole.Silo] = []
-    var typedAddress = ""
+    var addedAddresses: [String] = []
+    var selected: Set<AdminConsole.Silo.ID> = []
+    var addingByAddress = false
     var prepared: AdminConsole.PreparedSetup?
     var claimTarget: AdminConsole.Silo?
     var forgetTarget: AdminConsole.Silo?
@@ -91,16 +108,30 @@ final class ConsoleModel {
         self.console = console
     }
 
-    /// Browses, resolves whatever is typed, and republishes the rows. A typed address that does
-    /// not parse is the operator mid-typing, not an error to report.
+    /// Browses, resolves every added address, and republishes the rows. An added address that
+    /// does not parse is skipped, not an error to report.
     func refresh() async {
         var urls: [URL] = []
-        let typed = typedAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !typed.isEmpty {
-            let candidate = typed.contains("://") ? typed : "http://\(typed)"
+        for entered in addedAddresses {
+            let trimmed = entered.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let candidate = trimmed.contains("://") ? trimmed : "http://\(trimmed)"
             if let url = URL(string: candidate), url.host != nil { urls.append(url) }
         }
         silos = await console.refresh(typedURLs: urls)
+    }
+
+    /// The dialog's confirm: the address joins the kept list, so it answers every refresh from
+    /// now on, and the refresh happens on the spot.
+    func addAddress(_ entered: String) {
+        let trimmed = entered.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !addedAddresses.contains(trimmed) else { return }
+        addedAddresses.append(trimmed)
+        refreshTask()
+    }
+
+    private func refreshTask() {
+        Task { await refresh() }
     }
 
     func prepareSetup(for silo: AdminConsole.Silo) async {
@@ -160,38 +191,44 @@ final class ConsoleModel {
 struct ConsoleView: View {
     @Bindable var model: ConsoleModel
 
+    @State private var addressDraft = ""
+
     private let refresher = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        List(model.silos) { silo in
-            SiloRow(silo: silo) {
-                switch silo.classification {
-                case .bootstrap:
-                    Button("Set Up…") { Task { await model.prepareSetup(for: silo) } }
-                case .withoutAccess:
-                    Button("Claim…") { model.claimTarget = silo }
-                case .unreachable:
-                    Button("Forget…", role: .destructive) { model.forgetTarget = silo }
-                case .withAccess:
-                    EmptyView()
+        NavigationSplitView {
+            List(model.silos, selection: $model.selected) { silo in
+                SiloRow(silo: silo) {
+                    switch silo.classification {
+                    case .bootstrap:
+                        Button("Set Up…") { Task { await model.prepareSetup(for: silo) } }
+                    case .withoutAccess:
+                        Button("Claim…") { model.claimTarget = silo }
+                    case .unreachable:
+                        Button("Forget…", role: .destructive) { model.forgetTarget = silo }
+                    case .withAccess:
+                        EmptyView()
+                    }
+                }
+                .tag(silo.id)
+            }
+            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+            .overlay {
+                if model.silos.isEmpty {
+                    ContentUnavailableView("No Silos", systemImage: "externaldrive", description: Text("Nothing on the network, nothing remembered."))
                 }
             }
-        }
-        .overlay {
-            if model.silos.isEmpty {
-                ContentUnavailableView("No Silos", systemImage: "externaldrive", description: Text("Nothing on the network, nothing remembered."))
+            .toolbar {
+                ToolbarItem {
+                    Button("Add Silo by Address", systemImage: "plus") { model.addingByAddress = true }
+                        .help("Add the silo at a typed address")
+                }
+                ToolbarItem {
+                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
+                }
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                TextField("Add by address…", text: $model.typedAddress)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 260)
-                    .onSubmit { Task { await model.refresh() } }
-            }
-            ToolbarItem {
-                Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
-            }
+        } detail: {
+            DetailRoute(model: model)
         }
         .task { await model.refresh() }
         .onReceive(refresher) { _ in Task { await model.refresh() } }
@@ -232,7 +269,56 @@ struct ConsoleView: View {
                 Text(refusal.message)
             }
         }
+        .alert("Add Silo by Address", isPresented: $model.addingByAddress) {
+            TextField("host or http://host:port", text: $addressDraft)
+            Button("Add") {
+                model.addAddress(addressDraft)
+                addressDraft = ""
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(addressDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) { addressDraft = "" }
+        } message: {
+            Text("The address is kept and asked at every refresh from now on.")
+        }
     }
+}
+
+/// The detail pane, picked by the sidebar selection: the silo read aloud — its class, its
+/// host and when it was last seen. The act stays on the row, one click from where the silo
+/// was picked.
+private struct DetailRoute: View {
+    let model: ConsoleModel
+
+    var body: some View {
+        if let target = model.selected.single, let silo = model.silos.first(where: { $0.id == target }) {
+            VStack(spacing: 12) {
+                Image(systemName: silo.classification.symbol)
+                    .font(.system(size: 44))
+                    .foregroundStyle(silo.classification.colour)
+                Text(silo.name)
+                    .font(.title2)
+                Text(silo.classification.label)
+                    .foregroundStyle(.secondary)
+                Text("\(silo.url.host ?? silo.url.absoluteString) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                if silo.classification == .unreachable {
+                    Text(silo.lastKnownAccess.lastKnownLabel)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(40)
+        } else {
+            ContentUnavailableView("Select a Silo", systemImage: "externaldrive", description: Text("The silo's standing is read out here."))
+        }
+    }
+}
+
+extension Set {
+    /// The selection the detail reads: exactly one, or nothing to say.
+    fileprivate var single: Element? { count == 1 ? first : nil }
 }
 
 struct SiloRow<Actions: View>: View {
