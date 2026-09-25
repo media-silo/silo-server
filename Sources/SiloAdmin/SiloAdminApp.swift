@@ -205,9 +205,11 @@ struct ConsoleView: View {
                 } description: {
                     EmptyView()
                 } actions: {
+                    // Text-only buttons: ContentUnavailableView caps its action width
+                    // and truncates labels that also carry an SF Symbol.
                     HStack(spacing: 12) {
-                        Button("Add Manually", systemImage: "plus") { model.addingByAddress = true }
-                        Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
+                        Button("Add Manually") { model.addingByAddress = true }
+                        Button("Refresh") { Task { await model.refresh() } }
                     }
                 }
             } else {
