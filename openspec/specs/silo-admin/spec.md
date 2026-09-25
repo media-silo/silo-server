@@ -45,13 +45,19 @@ Pinned by: `Tests/SiloAdminKitTests/SiloRegistryTests.swift` (`aRestartKeepsTheR
 SiloAdmin SHALL classify each silo it shows as one of: **bootstrap** — the live advertisement or
 `GET /v1/server` says so, and the offered act is to set it up; **with access** — reachable, and
 this Mac's passkey passed the probe, and no act is offered; **without access** — reachable, but
-no passkey this Mac holds passes the probe: never met, none held, and held-then-refused are the
-same situation, and the offered act is to claim it; or **unreachable** — registered but no
-longer answering, and the offered act is to forget it. The probe SHALL be `GET /v1/operator`
-with the stored passkey as bearer — 200 is access and everything else is not — and SHALL only
-be attempted against a reachable silo this Mac holds a passkey for. Last-known-ness is row
-data, not a fifth class: each probe verdict SHALL be kept in the registry, so an unreachable
-silo renders its last-seen time and last-known access rather than being probed or dropped.
+no passkey this Mac holds passes the probe, and the offered act is to claim it: never met and
+none held are the same situation, but **held-then-refused** is not — a refusal earned while this
+Mac held the passkey SHALL be told apart from a silo never entered, wherever the console speaks
+of the silo; or **unreachable** — registered, and two consecutive sweeps have found no contact,
+and the offered act is to forget it. The probe SHALL be `GET /v1/operator` with the stored
+passkey as bearer — 200 is access and everything else is not — and SHALL only be attempted
+against a reachable silo this Mac holds a passkey for. A single missed sweep SHALL change
+nothing the operator can see — the silo keeps the last classification the console verified, and
+only its last-seen time stands still — and the next contact SHALL render that sweep's verdict
+at once, whatever it is: hysteresis damps the fall to unreachable, and nothing else.
+Last-known-ness is row data, not a fifth class: each probe verdict SHALL be kept in the
+registry, so an unreachable silo renders its last-seen time and last-known access rather than
+being probed or dropped.
 
 #### Scenario: the probe decides
 - **WHEN** the app holds a passkey for a silo and probes it, then probes with a passkey the silo
@@ -59,12 +65,27 @@ silo renders its last-seen time and last-known access rather than being probed o
 - **THEN** the silo classifies as with-access on the first probe and without-access on the
   second, and the refusal is kept as its last-known access
 
+#### Scenario: one miss disturbs nothing
+- **WHEN** a sweep finds no contact with a silo that answered the one before
+- **THEN** the silo keeps the classification the console last verified, and only its last-seen
+  time stands still
+
 #### Scenario: unreachable is last-known, not unknown
-- **WHEN** a silo the app had access to stops answering
+- **WHEN** a silo the app had access to stops answering, and two consecutive sweeps find no
+  contact
 - **THEN** it renders as unreachable with its last-seen time, and last-known access shows the
   access it had
 
-Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`everyShownSiloIsExactlyOneClass`, `theProbeDecides`, `unreachableIsLastKnownNotUnknown`).
+#### Scenario: contact heals at once
+- **WHEN** a silo that missed one sweep answers the next
+- **THEN** that sweep's true classification renders, the row never having shown unreachable
+
+#### Scenario: held-then-refused is named
+- **WHEN** a sweep's probe refuses a passkey this Mac holds
+- **THEN** the silo classifies without access, and wherever the console speaks of it the refusal
+  is named, not rendered as plain no-access
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`everyShownSiloIsExactlyOneClass`, `theProbeDecides`, `unreachableIsLastKnownNotUnknown`, `oneMissDisturbsNothing`, `contactHealsAtOnce`, `launchedIntoSilenceReadsTheRegistrysVerdicts`).
 
 ### Requirement: Forgetting purges the silo and its passkey
 For an unreachable silo, SiloAdmin SHALL offer to forget it. Forgetting SHALL delete any passkey

@@ -85,6 +85,21 @@ public actor AdminConsole {
     private let browse: @Sendable () async throws -> [DiscoveredSilo]
     private var latest: [Silo] = []
 
+    /// The session's liveness memory per silo: how many sweeps in a row found no contact, and
+    /// the class the silo keeps through its first miss. Deliberately not persisted — hysteresis
+    /// is a property of this console's vantage, and the registry already holds everything
+    /// durable; a fresh session seeds it from the registry's recorded verdicts.
+    private struct Liveness {
+        var misses: Int
+        var held: Classification?
+    }
+
+    private var liveness: [String: Liveness] = [:]
+
+    /// The sweep in flight, when one is: refreshes asked for mid-sweep join it rather than
+    /// stacking a second pass onto the actor.
+    private var sweep: Task<[Silo], Never>?
+
     public init(
         registry: SiloRegistry = SiloRegistry(),
         passkeys: any PasskeyStore,
@@ -105,10 +120,36 @@ public actor AdminConsole {
     /// Browses Bonjour and resolves any typed-in addresses through `GET /v1/server`, merging
     /// each contact into the registry and reclassifying what it finds. A silo that neither
     /// registers nor answers does not appear at all; Bonjour being missing or broken never
-    /// fails the refresh, since a URL is the mechanism and discovery only convenience.
+    /// fails the refresh, since a URL is the mechanism and discovery only convenience. One
+    /// sweep never overlaps another — a refresh asked for in flight joins the one under way —
+    /// and a silo is called unreachable only after two consecutive sweeps find no contact:
+    /// hysteresis damps the fall, but contact heals at once.
     @discardableResult
     public func refresh(typedURLs: [URL] = []) async -> [Silo] {
+        if let sweep { return await sweep.value }
+        let next = Task { await self.performRefresh(typedURLs: typedURLs) }
+        sweep = next
+        let rows = await next.value
+        sweep = nil
+        return rows
+    }
+
+    /// The body of a sweep, run by `refresh` alone so joining callers share its rows.
+    private func performRefresh(typedURLs: [URL]) async -> [Silo] {
         let known = Dictionary(registry.all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        // Launch seeding: a silo this session has never reached keeps, through its first miss,
+        // the class the registry's recorded verdicts imply — where there is no verdict, there
+        // is nothing to hold, and the first miss reads unreachable at once.
+        for entry in known.values where liveness[entry.id] == nil {
+            let held: Classification? = switch entry.lastKnownAccess {
+            case .some(true): .withAccess
+            case .some(false): .withoutAccess
+            case .none: nil
+            }
+            liveness[entry.id] = Liveness(misses: 0, held: held)
+        }
+
         let discovered = (try? await browse()) ?? []
         var candidates: [URL] = []
         for url in discovered.map(\.url) + typedURLs where !candidates.contains(url) {
@@ -135,16 +176,23 @@ public actor AdminConsole {
             let seenAt = now()
             try? registry.merge(RegisteredSilo(id: info.id, name: info.name, url: url, lastSeen: seenAt, hasStoredPasskey: stored != nil, lastKnownAccess: lastKnownAccess))
             rows.append(Silo(id: info.id, name: info.name, url: url, lastSeen: seenAt, classification: classification, lastKnownAccess: lastKnownAccess))
+            liveness[info.id] = Liveness(misses: 0, held: classification)
         }
 
         let contacted = Set(contacts.map { $0.1.id })
         for ghost in known.values where !contacted.contains(ghost.id) {
+            var stance = liveness[ghost.id] ?? Liveness(misses: 0, held: nil)
+            stance.misses += 1
+            liveness[ghost.id] = stance
+            // The first miss holds the class the console last verified — only last-seen stops
+            // advancing. The second consecutive miss is the one allowed to call it quiet.
+            let classification: Classification = stance.misses == 1 ? stance.held ?? .unreachable : .unreachable
             rows.append(Silo(
                 id: ghost.id,
                 name: ghost.name,
                 url: ghost.url,
                 lastSeen: ghost.lastSeen,
-                classification: .unreachable,
+                classification: classification,
                 lastKnownAccess: ghost.lastKnownAccess
             ))
         }
@@ -272,10 +320,14 @@ public actor AdminConsole {
     public func forget(_ silo: Silo) {
         passkeys.remove(for: silo.id)
         try? registry.remove(silo.id)
+        liveness.removeValue(forKey: silo.id)
         latest.removeAll { $0.id == silo.id }
     }
 
+    /// Replaces the silo's row after a flow verified fresh contact — the ledger resets with
+    /// it, the class rendered here being the new verdict the next miss would hold.
     private func render(_ row: Silo) {
+        liveness[row.id] = Liveness(misses: 0, held: row.classification)
         if let index = latest.firstIndex(where: { $0.id == row.id }) {
             latest[index] = row
         } else {
