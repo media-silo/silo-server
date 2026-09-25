@@ -196,39 +196,51 @@ struct ConsoleView: View {
     private let refresher = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        NavigationSplitView {
-            List(model.silos, selection: $model.selected) { silo in
-                SiloRow(silo: silo) {
-                    switch silo.classification {
-                    case .bootstrap:
-                        Button("Set Up…") { Task { await model.prepareSetup(for: silo) } }
-                    case .withoutAccess:
-                        Button("Claim…") { model.claimTarget = silo }
-                    case .unreachable:
-                        Button("Forget…", role: .destructive) { model.forgetTarget = silo }
-                    case .withAccess:
-                        EmptyView()
+        Group {
+            if model.silos.isEmpty {
+                // Nothing to select means no split: just the empty state and the two
+                // ways in — add an address, or look again.
+                ContentUnavailableView {
+                    Label("No Silos", systemImage: "externaldrive")
+                } description: {
+                    EmptyView()
+                } actions: {
+                    HStack(spacing: 12) {
+                        Button("Add Silo by Address…", systemImage: "plus") { model.addingByAddress = true }
+                        Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
                     }
                 }
-                .tag(silo.id)
-            }
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-            .overlay {
-                if model.silos.isEmpty {
-                    ContentUnavailableView("No Silos", systemImage: "externaldrive", description: Text("Nothing on the network, nothing remembered."))
+            } else {
+                NavigationSplitView {
+                    List(model.silos, selection: $model.selected) { silo in
+                        SiloRow(silo: silo) {
+                            switch silo.classification {
+                            case .bootstrap:
+                                Button("Set Up…") { Task { await model.prepareSetup(for: silo) } }
+                            case .withoutAccess:
+                                Button("Claim…") { model.claimTarget = silo }
+                            case .unreachable:
+                                Button("Forget…", role: .destructive) { model.forgetTarget = silo }
+                            case .withAccess:
+                                EmptyView()
+                            }
+                        }
+                        .tag(silo.id)
+                    }
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                    .toolbar {
+                        ToolbarItem {
+                            Button("Add Silo by Address", systemImage: "plus") { model.addingByAddress = true }
+                                .help("Add the silo at a typed address")
+                        }
+                        ToolbarItem {
+                            Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
+                        }
+                    }
+                } detail: {
+                    DetailRoute(model: model)
                 }
             }
-            .toolbar {
-                ToolbarItem {
-                    Button("Add Silo by Address", systemImage: "plus") { model.addingByAddress = true }
-                        .help("Add the silo at a typed address")
-                }
-                ToolbarItem {
-                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
-                }
-            }
-        } detail: {
-            DetailRoute(model: model)
         }
         .task { await model.refresh() }
         .onReceive(refresher) { _ in Task { await model.refresh() } }
