@@ -40,10 +40,6 @@ struct SiloAdminApp: App {
                 Button("Add Silo by Address…") { model.addingByAddress = true }
                     .keyboardShortcut("A", modifiers: [.command, .shift])
             }
-            CommandGroup(after: .sidebar) {
-                Button("Refresh") { Task { await model.refresh() } }
-                    .keyboardShortcut("R")
-            }
         }
     }
 }
@@ -206,10 +202,7 @@ struct ConsoleView: View {
                         .foregroundStyle(.secondary)
                     Text("No Silos")
                         .font(.title2.bold())
-                    HStack(spacing: 12) {
-                        Button("Add Manually") { model.addingByAddress = true }
-                        Button("Refresh") { Task { await model.refresh() } }
-                    }
+                    Button("Add Manually") { model.addingByAddress = true }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -235,17 +228,20 @@ struct ConsoleView: View {
                             Button("Add Silo by Address", systemImage: "plus") { model.addingByAddress = true }
                                 .help("Add the silo at a typed address")
                         }
-                        ToolbarItem {
-                            Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.refresh() } }
-                        }
                     }
                 } detail: {
                     DetailRoute(model: model)
                 }
             }
         }
+        // Freshness is the app's job, on all three of its cues: the window appearing, the
+        // interval firing, and the app coming back to the fore. The engine's sweep coalescing
+        // folds any overlap into one asking of the silos.
         .task { await model.refresh() }
         .onReceive(refresher) { _ in Task { await model.refresh() } }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await model.refresh() }
+        }
         .sheet(item: $model.prepared) { prepared in
             SetupSheet(
                 prepared: prepared,

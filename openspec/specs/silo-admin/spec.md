@@ -87,6 +87,20 @@ being probed or dropped.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`everyShownSiloIsExactlyOneClass`, `theProbeDecides`, `unreachableIsLastKnownNotUnknown`, `oneMissDisturbsNothing`, `contactHealsAtOnce`, `launchedIntoSilenceReadsTheRegistrysVerdicts`).
 
+### Requirement: The console keeps itself current
+SiloAdmin SHALL refresh on its own — when its window appears, on a steady interval, and
+whenever the app returns to the fore — and SHALL offer no manual refresh control: freshness is
+the app's job, not the operator's. One sweep SHALL NOT overlap another: a refresh asked for
+while one is in flight SHALL join it rather than starting anew, so the silos are asked once no
+matter how many voices asked. The interval governs how fast truth arrives; classification
+alone decides what truth is shown.
+
+#### Scenario: two calls, one sweep
+- **WHEN** a refresh is asked for while one is still in flight
+- **THEN** the second call joins the first's sweep, and the silos are asked once
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`twoCallsOneSweep`).
+
 ### Requirement: Forgetting purges the silo and its passkey
 For an unreachable silo, SiloAdmin SHALL offer to forget it. Forgetting SHALL delete any passkey
 this Mac holds for the silo's `ServerID`, SHALL remove the silo's entry from the registry, and
