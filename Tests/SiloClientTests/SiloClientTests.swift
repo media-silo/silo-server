@@ -80,6 +80,45 @@ struct SiloClientTests {
         #expect(authorization == nil, "the route is open: no bearer, even unconfigured")
     }
 
+    @Test func theVerifyProbeSendsTheToken() async throws {
+        let seen = Mutex<(String, String, String?)?>(nil)
+        let client = Self.client(token: "horse-battery") { request in
+            seen.withLock { $0 = (request.httpMethod ?? "", request.url?.path ?? "", request.value(forHTTPHeaderField: "Authorization")) }
+            return (200, Data(#"{"phase":"active"}"#.utf8))
+        }
+
+        let status = try await client.verifyAccess()
+
+        #expect(status == .active)
+        let (method, path, authorization) = try #require(seen.withLock { $0 })
+        #expect(method == "GET")
+        #expect(path == "/v1/operator")
+        #expect(authorization == "Bearer horse-battery")
+    }
+
+    @Test func aPendingVerifyCarriesTheStagesWindow() async throws {
+        let client = Self.client(token: "horse-battery") { _ in
+            (200, Data(#"{"phase":"pending","confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+        }
+
+        let status = try await client.verifyAccess()
+
+        guard case .pending(let confirmBy) = status else {
+            Issue.record("a staged passkey's probe answered \(status)")
+            return
+        }
+        #expect(confirmBy.timeIntervalSince1970 == 1_790_244_600, "the stage's deadline, decoded")
+    }
+
+    @Test func aRefusedVerifyArrivesAsAStatus() async throws {
+        let client = Self.client(token: "stale") { _ in (401, Data()) }
+
+        do {
+            _ = try await client.verifyAccess()
+            Issue.record("verifying with a refused token")
+        } catch SiloClientError.status(401, _) {}
+    }
+
     @Test func stagingReadsItsDeadlineOffTheWire() async throws {
         let sent = Mutex<Data?>(nil)
         let client = Self.client { request in

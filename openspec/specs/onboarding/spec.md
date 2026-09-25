@@ -50,6 +50,44 @@ nothing it reports is a credential.
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`theServerRouteAnswersOpenly`).
 
+### Requirement: The verify-access route names what its bearer amounts to, and nothing else
+The silo SHALL serve `GET /v1/operator` as the route whose whole job is telling a bearer what it
+holds. With the operator's bearer it SHALL answer 200 with an `OperatorStatus` of
+`{"phase":"active"}`; with the live staged passkey it SHALL answer 200 with
+`{"phase":"pending","confirmBy":...}` carrying the stage's deadline, so a console that staged a
+setup and kept the passkey can learn the stage still stands and when it shuts. With any other
+bearer, or none, it SHALL answer 401 with an empty body.
+
+The two halves of the 200 SHALL disclose no more than the phase and, for a pending stage, its
+`confirmBy`: neither the id, nor the name, nor the bootstrap flag rides on this route. The
+pending answer discloses nothing a stranger could not learn by attempting their own stage and
+being answered 409 with the same `confirmBy`, and it SHALL reach only the bearer that is the
+staged passkey — the staged secret is the stager's own, so to its own holder nothing is given
+away. The staged passkey SHALL be answered by this route alone: every other operator route
+SHALL keep refusing it with 401. The verification SHALL NOT depend on any other subsystem — it
+is the node's list, its jobs, and the library's health in no part — so that a 401 names the
+token and only the token.
+
+#### Scenario: the answer is the gate itself
+- **WHEN** `GET /v1/operator` is called without a bearer, called with a refused bearer, and
+  called with the operator's bearer
+- **THEN** the replies are 401 with an empty body, 401 with an empty body, and 200 with
+  `{"phase":"active"}`
+
+#### Scenario: the staged passkey learns its stage stands
+- **WHEN** a setup is staged and `GET /v1/operator` is called with the staged passkey as its
+  bearer before the window shuts
+- **THEN** the reply is 200 with `{"phase":"pending","confirmBy":...}` naming the stage's
+  deadline
+
+#### Scenario: a spent or void stage is a dead bearer
+- **WHEN** the staged passkey is asked after on `GET /v1/operator` after the stage expired or
+  was confirmed
+- **THEN** the reply is 401 with an empty body, the expiry or the confirm having voided it like
+  any other bearer that is not the operator's
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`theVerifyRouteAnswersOnlyTheOperator`), `Tests/SiloTests/SetupTests.swift` (`aLiveStageAnswersItsOwnBearerPending`, `aConfirmedStageStopsAnsweringItsPasskey`), `Tests/SiloClientTests/SiloClientTests.swift` (`theVerifyProbeSendsTheToken`, `aPendingVerifyCarriesTheStagesWindow`, `aRefusedVerifyArrivesAsAStatus`).
+
 ### Requirement: Bootstrap is the absence of an operator credential, and only a confirmed setup ends it
 A silo SHALL be in bootstrap when it holds no operator credential — no `operator-credential.json`
 in its state directory and no `SILO_OPERATOR_TOKEN` in its environment; a staged but unconfirmed

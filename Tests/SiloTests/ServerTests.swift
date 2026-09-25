@@ -437,6 +437,27 @@ extension ServerTests {
     }
 }
 
+/// The verify-access route: it names what its bearer amounts to and nothing else — 401 for
+/// anything that is neither, with an empty body, and never the id, the name, or the subsystem's
+/// health. The suite's environment sets a token, so no staged passkey exists here to ask after:
+/// the pending answer is pinned at the service in `SetupTests`.
+extension ServerTests {
+    @Test func theVerifyRouteAnswersOnlyTheOperator() async throws {
+        try await withClient { client in
+            let verified = try await client.get("/v1/operator", headers: ["Authorization": "Bearer secret"])
+            #expect(verified.status == 200)
+            #expect(verified.bodyText == #"{"phase":"active"}"#, "the bearer's standing, and none of the server's")
+
+            let refused = try await client.get("/v1/operator")
+            #expect(refused.status == 401, "no bearer is refused")
+            #expect(refused.body.isEmpty, "a refusal tells nothing")
+            let wrong = try await client.get("/v1/operator", headers: ["Authorization": "Bearer wrong"])
+            #expect(wrong.status == 401, "a refused bearer is refused")
+            #expect(wrong.body.isEmpty)
+        }
+    }
+}
+
 /// The setup pair, shut from the very first boot: the suite's environment sets a token, so the
 /// server is never in bootstrap, staging is gone for good, and nothing is ever staged to confirm.
 /// The open pair's life — six scenarios of it — is pinned at the service in `SetupTests`.
