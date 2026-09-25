@@ -242,11 +242,106 @@ struct AdminConsoleTests {
         #expect(probed.withLock { $0 } == 1)
 
         alive.withLock { $0 = false }
+        let held = try row("home", in: await console.refresh())
+        #expect(held.classification == .withAccess, "one miss changes nothing the operator can see")
+        #expect(held.lastSeen == Self.clock)
+
         let gone = try row("home", in: await console.refresh())
         #expect(gone.classification == .unreachable)
         #expect(gone.lastKnownAccess == true, "last-known, not unknown")
         #expect(gone.lastSeen == Self.clock)
         #expect(probed.withLock { $0 } == 1, "an unreachable silo is not probed")
+    }
+
+    @Test func oneMissDisturbsNothing() async throws {
+        let alive = Mutex(true)
+        let console = Self.console(discovered: [DiscoveredSilo(name: "Attic Silo", host: "attic.local", port: 8080)]) { request in
+            guard alive.withLock({ $0 }), let url = request.url, url.host == "attic.local", url.path == "/v1/server" else { return nil }
+            return (200, Data(Self.serverInfo("attic", "Attic Silo", bootstrap: true).utf8))
+        }
+
+        let met = try row("attic", in: await console.refresh())
+        #expect(met.classification == .bootstrap)
+        #expect(met.lastSeen == Self.clock)
+
+        alive.withLock { $0 = false }
+        let held = try row("attic", in: await console.refresh())
+        #expect(held.classification == .bootstrap, "the last verified class holds through one miss")
+        #expect(held.lastSeen == Self.clock, "the last-seen clock stands still")
+
+        let quiet = try row("attic", in: await console.refresh())
+        #expect(quiet.classification == .unreachable, "the second consecutive miss may call it quiet")
+        #expect(quiet.lastSeen == Self.clock)
+    }
+
+    @Test func contactHealsAtOnce() async throws {
+        let registry = SiloRegistry()
+        try registry.merge(RegisteredSilo(id: "probe", name: "Probe", url: URL(string: "http://probe.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: true))
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "probe")
+        let alive = Mutex(true)
+        let accepts = Mutex("held")
+        let console = Self.console(registry: registry, passkeys: passkeys, discovered: [DiscoveredSilo(name: "Probe", host: "probe.local", port: 8080)]) { request in
+            guard alive.withLock({ $0 }), let url = request.url else { return nil }
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("probe", "Probe", bootstrap: false).utf8))
+            case "/v1/operator": return request.value(forHTTPHeaderField: "Authorization") == "Bearer \(accepts.withLock { $0 })" ? (200, Data(Self.active.utf8)) : (401, Data())
+            default: return nil
+            }
+        }
+
+        #expect(try row("probe", in: await console.refresh()).classification == .withAccess)
+
+        alive.withLock { $0 = false }
+        #expect(try row("probe", in: await console.refresh()).classification == .withAccess, "one miss holds the last verified class")
+
+        accepts.withLock { $0 = "rotated" }
+        alive.withLock { $0 = true }
+        let healed = try row("probe", in: await console.refresh())
+        #expect(healed.classification == .withoutAccess, "contact renders this sweep's verdict at once, whatever it is")
+        #expect(healed.lastKnownAccess == false, "the refusal is what is now known")
+    }
+
+    @Test func launchedIntoSilenceReadsTheRegistrysVerdicts() async throws {
+        let registry = SiloRegistry()
+        try registry.merge(RegisteredSilo(id: "home", name: "Home Silo", url: URL(string: "http://home.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: true, lastKnownAccess: true))
+        try registry.merge(RegisteredSilo(id: "attic", name: "Attic Silo", url: URL(string: "http://attic.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: false))
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("key", for: "home")
+        let probed = Mutex(0)
+        let console = Self.console(registry: registry, passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8080)]) { request in
+            if request.url?.path == "/v1/operator" { probed.withLock { $0 += 1 } }
+            return nil
+        }
+
+        let rows = await console.refresh()
+        #expect(try row("home", in: rows).classification == .withAccess, "a kept access verdict holds the first miss")
+        #expect(try row("attic", in: rows).classification == .unreachable, "nothing recorded, so nothing to hold")
+        #expect(probed.withLock { $0 } == 0, "a missed silo is never probed")
+
+        let again = await console.refresh()
+        let gone = try row("home", in: again)
+        #expect(gone.classification == .unreachable, "the second miss is the one that calls it quiet")
+        #expect(gone.lastKnownAccess == true, "last-known, not unknown")
+    }
+
+    // MARK: - One sweep at a time
+
+    @Test func twoCallsOneSweep() async throws {
+        let asked = Mutex(0)
+        let console = Self.console(discovered: [DiscoveredSilo(name: "Hall Silo", host: "hall.local", port: 8080)]) { request in
+            guard let url = request.url, url.host == "hall.local", url.path == "/v1/server" else { return nil }
+            asked.withLock { $0 += 1 }
+            Thread.sleep(forTimeInterval: 0.15)
+            return (200, Data(Self.serverInfo("hall", "Hall Silo", bootstrap: true).utf8))
+        }
+
+        async let first = console.refresh()
+        async let second = console.refresh()
+        let (one, two) = await (first, second)
+
+        #expect(asked.withLock { $0 } == 1, "the second call joins the sweep in flight — the silo is asked once")
+        #expect(one.map(\.id) == two.map(\.id), "both callers receive the sweep's rows")
     }
 
     // MARK: - The setup flow
@@ -509,8 +604,9 @@ struct AdminConsoleTests {
         store.store("old-key", for: "quiet")
         let console = Self.console(registry: registry, passkeys: store) { _ in nil }
 
+        _ = await console.refresh()
         let quiet = try row("quiet", in: await console.refresh())
-        #expect(quiet.classification == .unreachable, "gone quiet is the moment to forget")
+        #expect(quiet.classification == .unreachable, "gone quiet — twice — is the moment to forget")
 
         await console.forget(quiet)
 
