@@ -53,6 +53,7 @@ let package = Package(
         .executable(name: "silo-ctl", targets: ["silo-ctl"]),
         .executable(name: "silo-node", targets: ["silo-node"]),
         .executable(name: "silo", targets: ["silo"]),
+        .executable(name: "SiloAdmin", targets: ["SiloAdmin"]),
     ],
     dependencies: [
         // The container model. Tracked by branch until it has a release to pin to.
@@ -168,6 +169,13 @@ let package = Package(
         .target(
             name: "SiloAdminKit",
             dependencies: ["SiloClient", "SiloDiscovery"]
+        ),
+        // The console itself: a SwiftUI window over SiloAdminKit, and nothing else. Where no
+        // window server exists the target is a stub entry point, so the Linux build still
+        // chews the whole package.
+        .executableTarget(
+            name: "SiloAdmin",
+            dependencies: ["SiloAdminKit"]
         ),
         // The node's loop, the same for a node on another machine and the one inside the silo.
         .target(
