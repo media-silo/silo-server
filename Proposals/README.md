@@ -18,3 +18,7 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   bootstrap mode and the staged, then confirmed, setup pair it allows, the operator's passkey,
   recovery through the filesystem, and SiloAdmin, the macOS console that finds silos and walks
   a fresh one through its first ten minutes.
+- [Refresh](Refresh.md) — SiloAdmin keeps itself current: refresh is the app's job rather than
+  a manual control, a silo is called unreachable only after two missed sweeps while contact
+  heals at once, and a selected silo that has gone quiet — or stopped accepting this Mac's
+  passkey — is announced in words.
