@@ -3,20 +3,19 @@
 
 ## ADDED Requirements
 
-### Requirement: The console shows a silo's settings, and says where each came from
-For a silo classified with access, SiloAdmin SHALL show the settings `GET /v1/settings` reports.
-Stored settings the environment does not pin SHALL be editable — the name, the embedded node and
-advertising through `PATCH /v1/settings`, the libraries through `POST` and `DELETE /v1/libraries` —
-and a pinned setting SHALL be shown read-only with the variable that pins it named. Local settings,
-the state directory among them, SHALL be shown read-only. Adding a library SHALL offer the silo's
-library roots as the places to choose within, and with no roots configured SHALL say that the silo
-has none rather than offer a path the silo will refuse. A refusal from the silo SHALL be shown in
-words, naming the variable or the reason the silo gave.
+### Requirement: The console shows a silo's settings, and changes what routes may change
+For a silo classified with access, SiloAdmin SHALL show the settings `GET /v1/settings` reports. The
+`settings.json` settings SHALL be editable — the name, the embedded node and advertising through
+`PATCH /v1/settings`, the libraries through `POST` and `DELETE /v1/libraries` — and the `silo.json`
+settings and the state directory SHALL be shown read-only, as facts of the silo's machine. Adding a
+library SHALL offer the silo's library roots as the places to choose within, and with no roots
+configured SHALL say that the silo has none rather than offer a path the silo will refuse. A refusal
+from the silo SHALL be shown in words, naming the reason the silo gave.
 
-#### Scenario: a pinned setting is read-only and says why
-- **WHEN** the operator opens the settings of a silo booted with `SILO_LIBRARIES` set
-- **THEN** its libraries are shown read-only, set by `SILO_LIBRARIES` on the server, and no add or
-  remove is offered
+#### Scenario: the machine's facts are read-only
+- **WHEN** the operator opens a silo's settings
+- **THEN** its port, library roots and state directory are shown and cannot be edited, and its
+  name, libraries, embedded node and advertising can
 
 #### Scenario: an edit applies without a restart
 - **WHEN** the operator turns the embedded node on from the console
