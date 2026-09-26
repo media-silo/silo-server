@@ -49,9 +49,8 @@ servers, proxies and admin panels a household machine might already run.
 
 ## What this is
 
-**A state directory with a known home.** Absent an explicit `SILO_STATE_DIR`, the silo takes
-systemd's `STATE_DIRECTORY` when a unit provides one, and otherwise a platform default: for a
-process running as root, `/Library/Application Support/Silo` on macOS and `/var/lib/silo` on
+**A state directory with a known home.** Absent an explicit `SILO_STATE_DIR`, the silo takes a
+platform default: for a process running as root, `/Library/Application Support/Silo` on macOS and `/var/lib/silo` on
 Linux; for anyone else, `~/Library/Application Support/Silo` and `$XDG_STATE_HOME/silo`. The boot
 logs the path it chose and why. `silo-node` gets the same resolution under its own folder name.
 
@@ -109,26 +108,39 @@ The silo resolves its state directory once, at boot, in this order:
 
 1. `SILO_STATE_DIR`, when set and not empty. It keeps its present meaning, relative paths included:
    an explicit answer is the deployment's to give.
-2. `STATE_DIRECTORY`, when set — the variable systemd provides to a unit with `StateDirectory=`,
-   having created the folder and given it to the unit's user. It may name several folders,
-   colon-separated; the silo takes the first.
-3. The platform default:
+2. The platform default:
 
 | | Running as root | Running as anyone else |
 |---|---|---|
 | macOS | `/Library/Application Support/Silo` | `~/Library/Application Support/Silo` |
 | Linux | `/var/lib/silo` | `$XDG_STATE_HOME/silo`, the variable defaulting to `~/.local/state` |
 
-Root is decided by the effective user id. A daemon under a dedicated account without a usable home
-— `_silo` under a LaunchDaemon, say — is the case the environment answers: the unit gets
-`StateDirectory=silo`, the plist gets `SILO_STATE_DIR`. The paths are spelt out per platform rather
-than asked of `FileManager`, whose application-support answer on Linux is not the Linux convention.
+Root is decided by the effective user id. A daemon under a dedicated account is not root, and would
+land in that account's home — which a service account often lacks — so it is the case the
+environment answers. The systemd unit the project ships lets systemd make the folder and names it:
+
+```ini
+[Service]
+User=silo
+StateDirectory=silo
+Environment=SILO_STATE_DIR=%S/silo
+```
+
+`%S` is `/var/lib` for a system unit; systemd creates `/var/lib/silo` and gives it to `silo`. A
+LaunchDaemon under `_silo` sets `SILO_STATE_DIR` in its plist the same way. The paths are spelt out
+per platform rather than asked of `FileManager`, whose application-support answer on Linux is not
+the Linux convention.
+
+systemd's own `STATE_DIRECTORY` is deliberately not read. It would save the unit one line, and the
+unit is the project's; but the name is generic — every unit with `StateDirectory=` sets it, and its
+children inherit it — so a silo started from a script some other unit runs would quietly adopt that
+unit's folder, which is the start-dependent state directory this proposal exists to remove. One
+variable, on every platform, is also one rule to document and test.
 
 The boot logs `state directory: <path> (<source>)` before anything reads the folder, so the answer
 to "where do I drop the reset file" is the first line of the log as well as a row of this table.
 
-`silo-node` resolves its own state directory the same way — `--state-dir`, then `STATE_DIRECTORY`,
-then `Silo Node` and `silo-node` in the same places — so a node and a silo on one machine never
+`silo-node` resolves its own state directory the same way — `--state-dir`, then `Silo Node` and `silo-node` in the same places — so a node and a silo on one machine never
 share a folder. Its present default, `~/.silo-node`, goes.
 
 There is no migration. Nothing has been released, and a silo or node whose state sits in the old
@@ -250,8 +262,8 @@ examples and its account of the environment brought up to date. The state direct
 and read-api deltas apply here.
 
 Tests: each rung of the resolution, with the environment and effective user supplied rather than
-read, on both platforms' tables; `STATE_DIRECTORY` with several entries takes the first; a relative
-`SILO_STATE_DIR` keeps its meaning.
+read, on both platforms' tables; a relative `SILO_STATE_DIR` keeps its meaning; an inherited
+`STATE_DIRECTORY` changes nothing.
 
 ### 2. Stored settings and the settings route
 

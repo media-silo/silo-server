@@ -9,9 +9,9 @@
 lower-case hex characters by the same `FileRef.mintSecret()` the silo mints secrets with — and
 write it atomically; a run that finds one SHALL reuse it. The state directory SHALL be resolved as
 the silo's is, per [configuration](../configuration/spec.md), with `--state-dir` in place of
-`SILO_STATE_DIR` and its own folder name: `--state-dir`, then the first entry of
-`STATE_DIRECTORY`, then `/Library/Application Support/Silo Node` or `/var/lib/silo-node` running as
-root and `~/Library/Application Support/Silo Node` or `$XDG_STATE_HOME/silo-node` otherwise. When
+`SILO_STATE_DIR` and its own folder name: `--state-dir`, then `/Library/Application Support/Silo
+Node` or `/var/lib/silo-node` running as root and `~/Library/Application Support/Silo Node` or
+`$XDG_STATE_HOME/silo-node` otherwise. When
 approval delivers the token, the token SHALL be written into the same `identity.json`, so a restart
 neither registers a new identity nor asks for the token a second time.
 

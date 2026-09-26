@@ -6,25 +6,26 @@
 ### Requirement: The state directory resolves to a known place on the machine
 The silo SHALL resolve its state directory once, at boot, before anything reads it: from
 `SILO_STATE_DIR` when it is set and not empty, a relative value keeping its meaning against the
-working directory; otherwise from `STATE_DIRECTORY` when it is set, taking the first of its
-colon-separated entries; otherwise from the platform default. The default SHALL be decided by the
+working directory; otherwise from the platform default. The default SHALL be decided by the
 effective user id: running as root, `/Library/Application Support/Silo` on macOS and
 `/var/lib/silo` on Linux; running as anyone else, `~/Library/Application Support/Silo` on macOS and
-`$XDG_STATE_HOME/silo` on Linux, `XDG_STATE_HOME` defaulting to `~/.local/state`. The working
-directory SHALL play no part in the default. The boot SHALL log the resolved path and which of the
-three supplied it, and SHALL create the folder when it is missing.
+`$XDG_STATE_HOME/silo` on Linux, `XDG_STATE_HOME` defaulting to `~/.local/state`. Neither the working
+directory nor systemd's `STATE_DIRECTORY` SHALL play any part in the resolution. The boot SHALL log
+the resolved path and whether the variable or the default supplied it, and SHALL create the folder
+when it is missing.
 
 #### Scenario: a daemon started in /
 - **WHEN** the silo boots as root on Linux with its working directory at `/` and neither variable set
 - **THEN** its state directory is `/var/lib/silo`, and the log says the platform default chose it
 
-#### Scenario: systemd names the folder
-- **WHEN** `STATE_DIRECTORY` is `/var/lib/silo:/var/lib/silo-extra` and `SILO_STATE_DIR` is unset
-- **THEN** the state directory is `/var/lib/silo`
+#### Scenario: a service account names its folder
+- **WHEN** the silo boots as a non-root service account with `SILO_STATE_DIR=/var/lib/silo`
+- **THEN** its state directory is `/var/lib/silo`, and the log says the variable chose it
 
-#### Scenario: the explicit answer wins
-- **WHEN** `SILO_STATE_DIR` and `STATE_DIRECTORY` are both set
-- **THEN** the state directory is `SILO_STATE_DIR`'s
+#### Scenario: an inherited STATE_DIRECTORY is ignored
+- **WHEN** the silo boots as root on Linux with `STATE_DIRECTORY=/var/lib/other` inherited and
+  `SILO_STATE_DIR` unset
+- **THEN** its state directory is `/var/lib/silo`
 
 Pinned by: nothing yet.
 
