@@ -18,7 +18,9 @@ read routes SHALL answer without any token. Of its environment the silo SHALL
 read only `SILO_STATE_DIR`, before anything is served; everything else it is
 told — where it listens and which libraries it serves — SHALL come from
 `silo.json` and `settings.json` in its state directory, as
-[configuration](../configuration/spec.md) sets out.
+[configuration](../configuration/spec.md) sets out. A library `settings.json`
+names whose path does not exist SHALL stop the boot with an error naming the
+library.
 
 #### Scenario: the gate on the routes this spec owns
 - **WHEN** a client puts `/v1/rulesets/household` with no `Authorization`

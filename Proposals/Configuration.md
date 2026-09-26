@@ -40,7 +40,8 @@ whether it advertises itself — these are household decisions, made after the b
 and today each one is an edit to a service definition and a restart. 0002-onboarding's second open
 question already leaned the same way for libraries: rather than the operator typing host paths
 into a setup sheet, libraries should grow operator routes of their own, and the console should
-drive them. And the name is already half-way there: setup names the silo at runtime, into
+drive them — the subject of [0005-libraries](Libraries.md), which builds on the files this
+proposal introduces. And the name is already half-way there: setup names the silo at runtime, into
 `server.json`, but nothing renames it after.
 
 Keeping the environment alongside a console would cost more than it saves. Every setting the
@@ -61,19 +62,15 @@ on macOS and `/var/lib/silo` on Linux; for anyone else, `~/Library/Application S
 resolution under its own folder name, with its `--state-dir` flag in place of the variable.
 
 **Two files, one rule.** Whether an operator route can change a setting decides where it lives.
-`silo.json` holds what no route changes — the ServerID, the bind host and port, the library roots —
-and is read once, at startup. `settings.json` holds what routes change — the name, the libraries,
-the embedded node, advertising — and is applied while the silo runs. The silo writes `silo.json`
-only while it starts, to create it or fill in what is missing; it writes `settings.json` whenever a
-route changes a setting.
+`silo.json` holds what no route changes — the ServerID, the bind host and port — and is read once,
+at startup. `settings.json` holds what routes change — the name, the libraries, the embedded node,
+advertising — and is applied while the silo runs. The silo writes `silo.json` only while it starts,
+to create it or fill in what is missing; it writes `settings.json` whenever a route changes a
+setting.
 
 **The credential through the filesystem.** `SILO_OPERATOR_TOKEN` goes. A reset file placed in the
 state directory before the first boot already installs a credential without the silo ever entering
 bootstrap, which is everything the override was used for.
-
-**Libraries within roots.** A library added over the network must lie within one of the roots in
-`silo.json`. Placement writes into library roots, so the roots are what bound where the network
-can make the silo write.
 
 **A less common port.** The default port becomes 8742.
 
@@ -87,8 +84,8 @@ trust. This proposal adds four of its own.
    rule, so where a setting belongs is never a judgement call.
 2. **The filesystem configures; the network operates.** The machine's owner answers what the silo
    is and where it may reach, in a file in the state directory. The operator, over the network,
-   changes what the silo does within that. Nothing the network can write widens what the owner
-   granted: where the silo listens, and the folders it may write.
+   changes what the silo does within that. Nothing the network can write changes what the owner
+   granted, and where the silo listens is the first of those.
 3. **One writer at a time.** The silo writes `silo.json` only while it starts, before it serves
    anything, so an owner's edit never races a route. `settings.json` is the silo's while it runs;
    an edit made by hand then may be overwritten, and one made while it is stopped is honoured.
@@ -102,8 +99,6 @@ trust. This proposal adds four of its own.
   written by the silo only then, and only to create it or fill a gap.
 - **`settings.json`** — the silo's file: what an operator route may change. Applied while the silo
   runs.
-- **Library root** — a folder, named in `silo.json`, within which a library added over the network
-  must lie.
 
 ## Where the state directory lives
 
@@ -156,8 +151,7 @@ server, or a new node awaiting approval, which is what those words already mean.
 {
   "serverID": "4f0c2a8e-9b1d-4e7a-a3c5-2d6f8b0e1a97",
   "host": "0.0.0.0",
-  "port": 8742,
-  "libraryRoots": ["/Volumes/Media"]
+  "port": 8742
 }
 ```
 
@@ -166,7 +160,6 @@ server, or a new node awaiting approval, which is what those words already mean.
 | `serverID` | minted: a lower-cased UUID |
 | `host` | `0.0.0.0` |
 | `port` | `8742` |
-| `libraryRoots` | none |
 
 At startup the silo reads `silo.json`. When the file does not exist, the silo creates it with every
 key at its default, minting the ServerID. When it exists but lacks a key, the silo adds that key at
@@ -190,8 +183,8 @@ the point.
 
 Each key is here for the reason principle 2 gives. The ServerID is the silo's identity, and no route
 may re-mint it. The host and port are needed before the first request, and a network write to either
-could strand the client that made it. The library roots are the grant the network works within, so
-the network cannot widen them.
+could strand the client that made it. [0005-libraries](Libraries.md) adds one more key, for the same
+reason.
 
 The bind host stays `0.0.0.0`. Nodes on other machines, a SiloAdmin on another Mac, and the Bonjour
 advertisement all need the silo reachable on the LAN; binding loopback is a deliberate
@@ -225,11 +218,11 @@ The name moves here from `server.json`, which goes: the ServerID moves to `silo.
 is a setting a route changes — setup names the silo, and the settings route renames it. `SILO_NAME`
 goes with the file.
 
-Libraries written into `settings.json` by hand are not held to the roots; the roots bound what the
-network may add, and what the owner wrote is theirs already. A library whose folder is missing at
-boot — a drive not yet mounted — is logged and left unscanned, its index rows kept, and the boot
-goes on. Today a missing library stops the boot, which suits a server started by hand and does not
-suit a daemon whose libraries were chosen from a console.
+The libraries live here because they are the operator's to change, though this proposal gives them
+no route: adding and removing them over the network, and what the silo does when one goes missing,
+are [0005-libraries](Libraries.md)'s. Until it lands, the libraries are written into
+`settings.json` by hand while the silo is stopped, and a library whose folder is missing stops the
+boot, as it does today.
 
 ## The operator credential
 
@@ -255,8 +248,9 @@ name binaries the process executes, which no route should choose.
 
 ## The settings route
 
-`GET /v1/settings`, behind the operator gate, reports every key of both files, the `silo.json` ones
-marked read-only, and the resolved state directory beside them. That the state directory is among
+`GET /v1/settings`, behind the operator gate, reports every key of both files but the libraries,
+which `GET /v1/libraries` already reports; the `silo.json` keys are marked read-only, and the
+resolved state directory is reported beside them. That the state directory is among
 them is deliberate: the console that holds the passkey is the natural place to learn where recovery
 would happen, before recovery is needed.
 
@@ -268,31 +262,12 @@ it claiming, and the job in flight, if any, runs to completion — a setting cha
 throw away an encode. Turning advertising on or off starts or drops the advertisement; renaming
 re-advertises under the new name.
 
-## Libraries grow routes
-
-`GET /v1/libraries` stays as it is. Two operator routes join it.
-
-`POST /v1/libraries` adds a library, an id and a path. The path must be absolute, must exist and be a
-directory, and once symbolic links are resolved must lie within a library root; the id must be new. A
-taken id is 409; a path outside every root, or any path when no roots are configured, is 403; a path
-that does not exist is 422. The library is written to `settings.json`, scanned as
-`POST /v1/libraries/{library}/scan` would scan it, and returned.
-
-`DELETE /v1/libraries/{library}` removes one. It refuses with 409 while a job not yet in a final
-state names the library. The library leaves `settings.json` and its rows leave the index; nothing on
-disk is touched — no sidecar, no media file. Moving a library is removing it and adding it again.
-
-With no library roots, no library can be added over the network. That is the safe way round and
-deliberately inconvenient: the one thing a console-driven silo needs from someone at the machine is
-the answer to "where do your media live", given once, in `silo.json`.
-
 ## Applying without a restart
 
-Today `SiloConfig` is an input to the graph, read from the environment, and the libraries are read
-from it directly — by the index's first scan, the library, media, operator and job controllers and
-services. `SiloConfig` becomes what `silo.json` says, and the settings become a store over
-`settings.json`. The libraries move behind one registry, a singleton that holds the current list,
-applies adds and removes, and is what every one of those asks instead. The embedded node and the
+Today `SiloConfig` is an input to the graph, read from the environment. It becomes what `silo.json`
+says, and the settings become a store over `settings.json`, read at startup and written through by
+the settings route. The libraries are read from the store at startup and, until 0005-libraries gives
+them routes, do not change while the silo runs. The embedded node and the
 advertiser stop reading a flag once in `run()` and follow the setting instead, starting and stopping
 their work as it changes. Tests build `SiloConfig` directly, as several already do, and install a
 credential through the store rather than the environment.
@@ -301,12 +276,11 @@ credential through the store rather than the environment.
 
 A Mac mini is set up for the household. The package installs a LaunchDaemon, and the silo boots with
 its state in `/Library/Application Support/Silo`, writing a `silo.json` with a fresh ServerID and
-port 8742. Someone at the machine adds `"/Volumes/Media"` to its `libraryRoots` and restarts it once.
-SiloAdmin sees a bootstrap silo, sets it up and names it, and the operator opens its settings: no
-libraries, the embedded node off, the port and roots shown read-only beside the state directory. They
-add `/Volumes/Media/Films` as `films` and turn the embedded node on; the index scans, the loop
-starts, and nothing restarted. A year later the drive is late to mount after a power cut: the silo
-logs the missing library, boots anyway, and serves the rest.
+port 8742. SiloAdmin sees a bootstrap silo, sets it up and names it, and the operator opens its
+settings: the embedded node off, advertising on, the port shown read-only beside the state directory,
+which is where the reset file would go. They turn the embedded node on and the loop starts; later
+they rename the silo, and the next browse finds it under the new name. Nothing restarted. When the
+machine moves to a different port, someone at it edits `silo.json` and restarts it once.
 
 ## What this asks of an implementation
 
@@ -328,14 +302,14 @@ read, on both platforms' tables; a relative `SILO_STATE_DIR` keeps its meaning; 
 
 `silo.json` and `settings.json` created and filled at startup, `server.json` folded into them, and
 every variable but `SILO_STATE_DIR` retired from the silo — `SILO_OPERATOR_TOKEN` included, the tests
-moving to installing a credential; a missing library no longer stopping the boot. The two files',
+moving to installing a credential. The two files',
 onboarding and read-api deltas apply here, and the onboarding and read-api specs' purpose text loses
 its account of the environment.
 
 Tests: a fresh directory gets both files at their defaults; a partial file is filled and a complete
 one untouched; a malformed file stops the boot and survives it; an unknown key is logged and kept; a
 ServerID minted over a directory holding a credential warns; a reset file placed before the first
-boot means no bootstrap; a missing library is logged and the boot goes on.
+boot means no bootstrap; libraries written into `settings.json` are served.
 
 ### 3. The settings route
 
@@ -346,20 +320,10 @@ Tests: every key reported with the `silo.json` ones read-only; a patch applies w
 survives a restart; the embedded node started and stopped by the setting, with a job in flight
 completing; renaming re-advertises.
 
-### 4. Libraries within roots
+### 4. The console's settings
 
-The library registry in place of `SiloConfig.libraries`; `POST` and `DELETE /v1/libraries`. The
-libraries delta applies here.
-
-Tests: an added library is scanned and served without a restart; a path outside the roots, through a
-symbolic link that leads outside, and with no roots configured are each refused; removal is refused
-while a live job names the library, and afterwards leaves every file on disk in place.
-
-### 5. The console's settings
-
-SiloClient and SiloAdminKit learn the settings and library routes; SiloAdmin shows a with-access
-silo's settings — the `settings.json` ones editable, the `silo.json` ones and the state directory
-read-only — and adds and removes libraries, offering the silo's roots as the places to choose within.
+SiloClient and SiloAdminKit learn the settings route; SiloAdmin shows a with-access silo's settings —
+the `settings.json` ones editable, the `silo.json` ones and the state directory read-only.
 The silo-admin delta applies here; shell-level behaviour stays `Pinned by: nothing yet.` until the
 shell grows a test seam.
 
@@ -385,14 +349,10 @@ shell grows a test seam.
 
 ## Open questions
 
-1. **Default library roots.** None is safe and unfriendly: a fresh install cannot add a library until
-   someone edits `silo.json`. A platform default — `/Volumes` on macOS, `/srv` and `/media` on Linux —
-   would remove the step and widen the network's reach by default. The installer asking is a third
-   answer, and may be the right one.
-2. **The embedded node's default.** One silo per machine suggests that the machine is also the
+1. **The embedded node's default.** One silo per machine suggests that the machine is also the
    household's only encoder more often than not, which argues for on. Off is kept here because the
    encoder tools may be absent and the silo should not start by complaining.
-3. **The node's settings.** `silo-node` has its own configuration — its silo's URL, its state directory
+2. **The node's settings.** `silo-node` has its own configuration — its silo's URL, its state directory
    — and nothing a route changes. Whether it should take the same two-file shape, and whether the
    console should reach a node's settings through the silo, are questions for the proposal that makes
    the console approve nodes.
