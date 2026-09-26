@@ -27,6 +27,10 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   two files inside it divided by one rule — `silo.json` for what no route changes, read at
   startup, and `settings.json` for what routes change, applied while the silo runs — and a
   default port off 8080.
+- [Libraries](Libraries.md) — the operator adds and removes libraries from the console, within
+  roots the machine's owner names; the server keeps the index current by itself — at startup,
+  after its own changes and on a five-minute walk — so the scan route becomes a read of the last
+  walk; and a library whose folder is missing is unavailable rather than fatal.
 - [Ingestion](Ingestion.md) — how media enters the silo, as four things kept apart: a source, a
   file as it physically is, described in an input spec no mechanism owns and registered once with
   the copies of it nodes hold; a binding, saying which segments of which sources make one entry;
