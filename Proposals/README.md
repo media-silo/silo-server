@@ -22,3 +22,8 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   a manual control, a silo is called unreachable only after two missed sweeps while contact
   heals at once, and a selected silo that has gone quiet — or stopped accepting this Mac's
   passkey — is announced in words.
+- [Configuration](Configuration.md) — where a silo's configuration lives and who may change it:
+  the state directory at a known place on the machine, local settings fixed by the environment
+  beside stored settings the console changes while the silo runs, the environment's pins
+  reported rather than silent, libraries added within locally named roots, and a default port
+  off 8080.
