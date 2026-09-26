@@ -22,3 +22,8 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   a manual control, a silo is called unreachable only after two missed sweeps while contact
   heals at once, and a selected silo that has gone quiet — or stopped accepting this Mac's
   passkey — is announced in words.
+- [Configuration](Configuration.md) — where a silo's configuration lives and who may change it:
+  `SILO_STATE_DIR` as the one variable, the state directory at a known place on the machine, and
+  two files inside it divided by one rule — `silo.json` for what no route changes, read at
+  startup, and `settings.json` for what routes change, applied while the silo runs — with
+  libraries added within locally named roots and a default port off 8080.
