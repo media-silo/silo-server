@@ -93,8 +93,9 @@ Pinned by: nothing yet.
 
 ### Requirement: /v1/settings reports both files
 The silo SHALL serve `GET /v1/settings` behind the operator gate, reporting every key of
-`settings.json` but the libraries, which `GET /v1/libraries` reports, and every key of `silo.json`,
-the latter marked read-only, together with the resolved state directory, also read-only.
+`settings.json` — the libraries with their ids and paths among them — and every key of `silo.json`,
+together with the resolved state directory. The `silo.json` keys, the state directory and the
+libraries SHALL be marked read-only, the libraries because no route yet changes them.
 
 #### Scenario: the state directory is reported
 - **WHEN** the operator reads the settings of a silo whose state directory is `/var/lib/silo`

@@ -248,9 +248,10 @@ name binaries the process executes, which no route should choose.
 
 ## The settings route
 
-`GET /v1/settings`, behind the operator gate, reports every key of both files but the libraries,
-which `GET /v1/libraries` already reports; the `silo.json` keys are marked read-only, and the
-resolved state directory is reported beside them. That the state directory is among
+`GET /v1/settings`, behind the operator gate, reports every key of both files — the libraries with
+their paths among them, which the open `GET /v1/libraries` does not carry — with the `silo.json`
+keys and, until 0005-libraries gives them routes, the libraries marked read-only, and the resolved
+state directory reported beside them. That the state directory is among
 them is deliberate: the console that holds the passkey is the natural place to learn where recovery
 would happen, before recovery is needed.
 
