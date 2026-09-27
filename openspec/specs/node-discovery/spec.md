@@ -188,20 +188,21 @@ one `DiscoveredSilo` per silo — its name, host, port and TXT records — whose
 Pinned by: `Tests/SiloTests/NodeTests.swift` (`dnssdOutputIsParsed`, `avahiOutputIsParsed`, `anAdvertisedSiloIsFound` — the last skipped where no responder runs, and opted into on Linux with `SILO_TEST_BONJOUR=1`). Tool selection and the unavailable message are pinned by nothing yet.
 
 ### Requirement: The silo advertises itself for as long as it runs
-The `silo` executable SHALL run an `Advertiser` background service which, when `advertise` in
-`settings.json` is true at startup — the default — advertises the silo's name and the port
-`silo.json` gives as
-`_silo._tcp` with TXT `v=1` and `id=<server-id>`; it SHALL keep the advertisement up for the
-life of the process and drop it at shutdown. While the silo is in bootstrap the TXT records
-SHALL also carry `b=1`, so what browses can tell a server waiting on its person from one that
-has one. With `advertise` false the silo SHALL advertise nothing. On a machine with no Bonjour tool, or
-where launching one fails, the silo SHALL log `not advertising` with the reason once and idle,
-never failing to boot over it.
+The `silo` executable SHALL run an `Advertiser` background service which, while the advertising
+setting is on — `advertise` in `settings.json`, true by default, per
+[configuration](../configuration/spec.md) — advertises the silo's name and the port `silo.json`
+gives as `_silo._tcp` with TXT `v=1` and `id=<server-id>`; it SHALL keep the advertisement up while
+the setting stays on and drop it at shutdown. The service SHALL follow the setting while the silo
+runs, starting or dropping the advertisement as it changes, and SHALL re-advertise under a new name
+when the silo is renamed. While the silo is in bootstrap the TXT records SHALL also carry `b=1`, so
+what browses can tell a server waiting on its person from one that has one. With the setting off
+the silo SHALL advertise nothing. On a machine with no Bonjour tool, or where launching one fails,
+the silo SHALL log `not advertising` with the reason once and idle, never failing to boot over it.
 
 #### Scenario: the advertisement identifies the server
 - **WHEN** the silo advertises itself
-- **THEN** the advertisement's name is the silo's name and its TXT records carry `v=1` and
-  the server's id — and `b=1` while the silo is in bootstrap, absent once it is not
+- **THEN** the advertisement's name is the silo's name and its TXT records carry `v=1` and the
+  server's id — and `b=1` while the silo is in bootstrap, absent once it is not
 
 #### Scenario: the advertisement is browsable
 - **WHEN** a silo is advertised under a unique name on a machine with a responder, and a browse follows
@@ -211,7 +212,14 @@ never failing to boot over it.
 - **WHEN** the silo boots with `"advertise": false` in `settings.json`
 - **THEN** no advertisement process starts and the silo serves as usual
 
-Pinned by: `Tests/SiloTests/NodeTests.swift` (`anAdvertisedSiloIsFound`, skipped where no responder runs). The id and `b=1` records, the `advertise` setting and the default name are pinned by nothing yet.
+#### Scenario: turned off while running
+- **WHEN** the operator turns advertising off on a silo that is advertising
+- **THEN** the advertisement is dropped, without a restart
+
+Pinned by: `Tests/SiloTests/NodeTests.swift` (`anAdvertisedSiloIsFound`, skipped where no responder runs),
+`Tests/SiloTests/SettingsFollowingTests.swift` (`theAnnouncementFollowsTheSettingTheNameAndBootstrap`,
+which pins what is announced — the setting, the name, the id and `b=1` — without Bonjour). Dropping
+and restarting the advertisement itself is pinned by nothing yet.
 
 ### Requirement: The operator steers nodes from silo-ctl
 `silo-ctl nodes` SHALL offer `list`, `approve <id>`, `revoke <id>` and `discover`, speaking to

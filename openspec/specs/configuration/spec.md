@@ -11,7 +11,8 @@ and one silo per machine is the expected case; the working directory plays no pa
 shares the resolution under its own variable and folder name. Everything else the silo is told lives
 in that directory, in two files divided by one rule — whether an operator route can change the
 setting: `silo.json` for what none can, read at startup, and `settings.json` for what routes change,
-managed by the silo while it runs.
+managed by the silo while it runs. The settings route reports both and patches the second, and what it
+changes takes effect without a restart.
 
 Rationale: [Configuration proposal](../../../Proposals/Configuration.md) — the state directory is the silo's identity and where filesystem recovery happens, so it needs a home the operator can find.
 Documentation: [README](../../../README.md).
@@ -115,3 +116,37 @@ Pinned by: `Tests/SiloStoreTests/ConfigurationFileTests.swift` (`aFreshDirectory
 `anUnknownKeyIsReportedAndKeptThroughWrites`, `settingsAreWrittenWholeAndReadBack`),
 `Tests/SiloTests/ServerIdentityTests.swift` (`identityIsMintedOnceAndKeptAcrossRestartsAndARename`),
 `Tests/SiloTests/ServerTests.swift` (the suite's fixture arrives configured through `settings.json`).
+
+### Requirement: /v1/settings reports both files
+The silo SHALL serve `GET /v1/settings` behind the operator gate, reporting every key of
+`settings.json` — the libraries with their ids and paths among them — and every key of `silo.json`,
+together with the resolved state directory. The `silo.json` keys, the state directory and the
+libraries SHALL be marked read-only, the libraries because no route yet changes them.
+
+#### Scenario: the state directory is reported
+- **WHEN** the operator reads the settings of a silo whose state directory is `/var/lib/silo`
+- **THEN** the answer carries `/var/lib/silo` read-only, beside the host and port, also read-only
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`theSettingsAreReportedAndPatchedWhole`).
+
+### Requirement: A settings patch applies whole, and takes effect at once
+The silo SHALL serve `PATCH /v1/settings` behind the operator gate, taking any of the name, the
+embedded node and advertising, and SHALL apply all of the body or none of it; an empty name SHALL be
+400. The answer SHALL be the settings as they then stand. Each change SHALL be written to
+`settings.json` and SHALL take effect without a restart: turning the embedded node on SHALL start its
+loop, and turning it off SHALL stop it claiming while a job in flight runs to completion; turning
+advertising on or off SHALL start or drop the advertisement; a new name SHALL be served and
+re-advertised.
+
+#### Scenario: an invalid field refuses the whole patch
+- **WHEN** a patch carries an empty name and turns advertising off
+- **THEN** the answer is 400, and advertising is unchanged
+
+#### Scenario: the embedded node stops between jobs
+- **WHEN** the embedded node is turned off while it is encoding a job
+- **THEN** that job completes, and no further job is claimed
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`theSettingsAreReportedAndPatchedWhole`),
+`Tests/SiloTests/SettingsFollowingTests.swift` (`theEmbeddedNodeFollowsItsSetting`,
+`theAnnouncementFollowsTheSettingTheNameAndBootstrap`). The job in flight running to completion when
+the embedded node is turned off is pinned by nothing yet.

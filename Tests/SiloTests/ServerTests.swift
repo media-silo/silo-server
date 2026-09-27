@@ -7,6 +7,7 @@ import HTTPTypes
 import SiloClient
 import SiloKit
 import SiloLibrary
+import SiloStore
 import SmdKit
 import SmdSidecar
 import Testing
@@ -434,8 +435,50 @@ extension ServerTests {
             let info = try SiloClient.decoder.decode(Info.self, from: server.body)
             #expect(info.id == info.id.lowercased() && UUID(uuidString: info.id) != nil)
             #expect(info.name.hasPrefix("Silo on "))
-            #expect(info.bootstrap == false, "the suite's environment sets a token")
+            #expect(info.bootstrap == false, "the suite's state directory arrives with a credential")
             #expect(try SiloClient.decoder.decode(Info.self, from: server.body) == info, "the same boot answers the same")
+        }
+    }
+
+    @Test func theSettingsAreReportedAndPatchedWhole() async throws {
+        struct Report: Decodable {
+            struct Editable: Decodable, Equatable { var name: String; var embeddedNode: Bool; var advertise: Bool }
+            struct Library: Decodable, Equatable { var id: String; var path: String }
+            struct ReadOnly: Decodable { var serverID: String; var host: String; var port: Int; var stateDirectory: String; var libraries: [Library] }
+            var editable: Editable
+            var readOnly: ReadOnly
+        }
+        let state = Fixture.root.appendingPathComponent("State")
+        try await withClient { client in
+            #expect(try await client.get("/v1/settings").status == 401)
+            let operatorHeaders = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
+
+            let read = try await client.send("GET", "/v1/settings", headers: operatorHeaders)
+            #expect(read.status == 200)
+            let before = try read.json(Report.self)
+            #expect(before.editable.name.hasPrefix("Silo on "))
+            #expect(before.editable.embeddedNode == false)
+            #expect(before.readOnly.stateDirectory == state.path, "where the reset file goes")
+            #expect(before.readOnly.port == 8742)
+            struct Info: Decodable { var id: String; var name: String }
+            #expect(before.readOnly.serverID == (try await client.get("/v1/server").json(Info.self)).id)
+            #expect(before.readOnly.libraries == [Report.Library(id: "main", path: Fixture.root.appendingPathComponent("Library").path)])
+
+            let refused = try await client.send("PATCH", "/v1/settings", body: Data(#"{"name": "  ", "advertise": false}"#.utf8), headers: operatorHeaders)
+            #expect(refused.status == 400)
+            #expect(refused.bodyText.contains("the name cannot be empty"))
+            let unchanged = try await client.send("GET", "/v1/settings", headers: operatorHeaders).json(Report.self)
+            #expect(unchanged.editable == before.editable, "a refused patch changes nothing")
+
+            let patched = try await client.send("PATCH", "/v1/settings", body: Data(#"{"name": "Living Room Silo"}"#.utf8), headers: operatorHeaders)
+            #expect(patched.status == 200)
+            #expect(try patched.json(Report.self).editable == Report.Editable(name: "Living Room Silo", embeddedNode: false, advertise: before.editable.advertise))
+            #expect(try await client.get("/v1/server").json(Info.self).name == "Living Room Silo", "the server goes by it at once")
+            let onDisk = try JSONDecoder().decode([String: JSONValue].self, from: Data(contentsOf: state.appendingPathComponent("settings.json")))
+            #expect(onDisk["name"] == .string("Living Room Silo"), "written to settings.json, so it survives a restart")
+
+            let restored = try await client.send("PATCH", "/v1/settings", body: try JSONEncoder().encode(["name": before.editable.name]), headers: operatorHeaders)
+            #expect(restored.status == 200)
         }
     }
 }
