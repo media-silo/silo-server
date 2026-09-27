@@ -30,8 +30,9 @@ package struct SiloConfig: Sendable {
         self.advertise = advertise
     }
 
-    /// `SILO_LIBRARIES` is `name=path,name=path`, or one bare path, which is the library `main`.
-    package init(reading config: ConfigReader) throws {
+    /// `SILO_LIBRARIES` is `name=path,name=path`, or one bare path, which is the library `main`. The
+    /// state directory is resolved before this is read, by `StateDirectory`, and handed in.
+    package init(reading config: ConfigReader, stateDirectory: URL) throws {
         let libraries = config.string(forKey: "SILO_LIBRARIES", default: "")
         var parsed: [LibraryConfig] = []
         for entry in libraries.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !entry.isEmpty {
@@ -46,8 +47,8 @@ package struct SiloConfig: Sendable {
         }
         self.init(
             host: config.string(forKey: "SILO_HOST", default: "0.0.0.0"),
-            port: config.int(forKey: "SILO_PORT", default: 8080),
-            stateDirectory: URL(fileURLWithPath: config.string(forKey: "SILO_STATE_DIR", default: "silo-state"), isDirectory: true),
+            port: config.int(forKey: "SILO_PORT", default: 8742),
+            stateDirectory: stateDirectory,
             libraries: parsed,
             operatorToken: config.string(forKey: "SILO_OPERATOR_TOKEN").flatMap { $0.isEmpty ? nil : $0 },
             embeddedNode: config.bool(forKey: "SILO_EMBEDDED_NODE", default: false),

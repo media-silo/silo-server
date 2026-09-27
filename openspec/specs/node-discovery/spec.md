@@ -23,10 +23,14 @@ Documentation: [README](../../../README.md).
 `silo-node` SHALL, on a run that finds no `identity.json` in its state directory, mint a
 `NodeIdentity` — an id, a lower-cased UUID, and a secret, 32 random bytes rendered as 64
 lower-case hex characters by the same `FileRef.mintSecret()` the silo mints secrets with — and
-write it atomically; a run that finds one SHALL reuse it. The state directory SHALL default to
-`~/.silo-node` and SHALL take `--state-dir`. When approval delivers the token, the token SHALL be
-written into the same `identity.json`, so a restart neither registers a new identity nor asks for
-the token a second time.
+write it atomically; a run that finds one SHALL reuse it. The state directory SHALL be resolved as
+the silo's is, per [configuration](../configuration/spec.md), with its own variable and folder
+name: `SILO_NODE_STATE_DIR` when it is set and not empty, then `/Library/Application Support/Silo
+Node` or `/var/lib/silo-node` running as root and `~/Library/Application Support/Silo Node` or
+`$XDG_STATE_HOME/silo-node` otherwise. `silo-node` SHALL NOT read `SILO_STATE_DIR` and SHALL take
+no flag for its state directory. When approval delivers the token, the token SHALL be written
+into the same `identity.json`, so a restart neither registers a new identity nor asks for the token
+a second time.
 
 #### Scenario: first run
 - **WHEN** `silo-node` starts with an empty state directory
@@ -36,7 +40,16 @@ the token a second time.
 - **WHEN** `silo-node` starts over a state directory an earlier run used
 - **THEN** it registers with the same id and secret it minted on the first run
 
-Pinned by: nothing yet.
+#### Scenario: a node beside a silo
+- **WHEN** a silo and `silo-node` run as the same user on one machine with no state directory given
+- **THEN** they keep their state in different folders
+
+#### Scenario: the silo's variable is not the node's
+- **WHEN** `silo-node` starts with `SILO_STATE_DIR` set and `SILO_NODE_STATE_DIR` unset
+- **THEN** it keeps its state in its own platform default, not in `SILO_STATE_DIR`
+
+Pinned by: `Tests/SiloKitTests/StateDirectoryTests.swift` (`theNodeKeepsAFolderOfItsOwn`,
+`theNodeDoesNotReadTheSilosVariable`). Minting and reusing the identity are pinned by nothing yet.
 
 ### Requirement: A node finds the silo by Bonjour, or is given its URL
 `silo-node` SHALL take the silo's URL from `--silo` first and `SILO_URL` second, and only without
@@ -220,7 +233,7 @@ Pinned by: nothing yet.
 
 ### Requirement: silo-node is the node's side of it all
 `silo-node` SHALL be the executable a machine other than the silo's runs, with the options
-`--silo`, `--name` (defaulting to the machine's host name), `--state-dir`, `--serve-port`
+`--silo`, `--name` (defaulting to the machine's host name), `--serve-port`
 (defaulting to 18600), `--advertised-host` (defaulting to the machine's host name) and `--poll`
 (the seconds between asking for work, defaulting to 5). On start it SHALL require its `ffmpeg`
 and `ffprobe` — a node without them has nothing to offer — and SHALL register its name, its

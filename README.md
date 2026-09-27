@@ -68,13 +68,24 @@ One package, in the order its parts arrived:
 ```sh
 swift test
 SILO_LIBRARIES=main=~/Library SILO_STATE_DIR=~/silo-state SILO_OPERATOR_TOKEN=secret SILO_EMBEDDED_NODE=true swift run silo
-SILO_URL=http://localhost:8080 SILO_TOKEN=secret swift run silo-ctl jobs list
+SILO_URL=http://localhost:8742 SILO_TOKEN=secret swift run silo-ctl jobs list
 swift run silo-node                       # on another machine; finds the silo, waits to be approved
-SILO_URL=http://localhost:8080 SILO_TOKEN=secret swift run silo-ctl nodes approve <id>
+SILO_URL=http://localhost:8742 SILO_TOKEN=secret swift run silo-ctl nodes approve <id>
 swift run silo-ctl encode --ruleset Examples/household.xml --kind featurette --commentary 2 in.mkv out.mkv
 swift run silo-ctl place --library ~/Library --repository ~/data --container 0123456789abcdef --item part1 \
     --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv
 ```
+
+The silo listens on port 8742. It keeps its state — the index, the rulesets, the
+jobs and nodes, its identity and the operator credential — in the folder
+`SILO_STATE_DIR` names, and otherwise in a well-known place on the machine:
+`/Library/Application Support/Silo` or `/var/lib/silo` when it runs as root,
+and `~/Library/Application Support/Silo` or `$XDG_STATE_HOME/silo` (by default
+`~/.local/state/silo`) when it does not. The first line of its log says which
+folder it chose and why; that folder is where `operator-credential.reset` goes.
+`silo-node` does the same from `SILO_NODE_STATE_DIR`, under `Silo Node` or
+`silo-node`, so a node and a silo on one machine never share a folder. The
+example above sets `SILO_STATE_DIR` so a development run keeps its state apart.
 
 `Examples/household.xml` is the ruleset the proposal was written with: an extra
 below standard-definition width is re-encoded small, a lossless track that is
