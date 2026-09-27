@@ -3,11 +3,13 @@
 
 import BasicContainers
 import Configuration
+import Foundation
 import HTTPAPIs
 import HTTPTypes
 import Logging
 import NIOHTTPServer
 import SiloApp
+import SiloKit
 import SiloStore
 import Wire
 import WireMVC
@@ -33,10 +35,14 @@ package struct AppBootstrap {
     @Inject let config: SiloConfig
 
     /// Pre-graph, so it can inject nothing; `LoggingSystem.bootstrap` is why it has to run first.
+    /// The state directory is resolved and logged before anything reads it, so where the reset file
+    /// goes is the first thing the log says.
     package static func prepare() async throws -> AppInputs {
         LoggingSystem.bootstrap { StreamLogHandler.standardOutput(label: $0) }
+        let state = StateDirectory.resolve(for: .silo)
+        Logger(label: "silo").info("state directory: \(state.url.path) (\(state.source))")
         let config = ConfigReader(provider: EnvironmentVariablesProvider())
-        return AppInputs(config: config, siloConfig: try SiloConfig(reading: config))
+        return AppInputs(config: config, siloConfig: try SiloConfig(reading: config, stateDirectory: state.url))
     }
 
     /// The concrete server rather than `some HTTPServer`: the proposal's reader and sender are

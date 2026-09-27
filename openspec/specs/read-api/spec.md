@@ -300,7 +300,8 @@ round for a server otherwise open on a household network. The read routes
 SHALL answer without any token. The silo SHALL read its environment once,
 before anything is served: `SILO_LIBRARIES` as `name=path,name=path` — or one
 bare path, which is the library `main` — `SILO_STATE_DIR` for its state
-directory (default `silo-state`), and `SILO_OPERATOR_TOKEN` for the
+directory, resolved as [configuration](../configuration/spec.md) sets out,
+and `SILO_OPERATOR_TOKEN` for the
 operator's, an empty value meaning none; a configured library whose path does
 not exist SHALL stop the boot with an error naming the library.
 

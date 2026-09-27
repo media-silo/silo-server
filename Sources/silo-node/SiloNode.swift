@@ -17,7 +17,12 @@ import SiloWorker
 struct SiloNode: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "silo-node",
-        abstract: "Encode for a silo on this network."
+        abstract: "Encode for a silo on this network.",
+        discussion: """
+            The node keeps its identity in its state directory: SILO_NODE_STATE_DIR when set, and \
+            otherwise /Library/Application Support/Silo Node or /var/lib/silo-node running as root, \
+            ~/Library/Application Support/Silo Node or $XDG_STATE_HOME/silo-node otherwise.
+            """
     )
 
     @Option(help: "The silo's URL. Found by Bonjour when not given; SILO_URL also works.")
@@ -25,9 +30,6 @@ struct SiloNode: AsyncParsableCommand {
 
     @Option(help: "This node's name, as the operator sees it. Defaults to the machine's.")
     var name: String?
-
-    @Option(name: .customLong("state-dir"), help: "Where the node keeps its identity. Defaults to ~/.silo-node.")
-    var stateDirectory: String?
 
     @Option(name: .customLong("serve-port"), help: "The port finished files are served on for the silo to fetch.")
     var servePort: Int = 18600
@@ -44,7 +46,11 @@ struct SiloNode: AsyncParsableCommand {
         let environment = ProcessInfo.processInfo.environment
         let hostName = ProcessInfo.processInfo.hostName
         let nodeName = name ?? hostName
-        let state = URL(fileURLWithPath: stateDirectory ?? (NSHomeDirectory() + "/.silo-node"), isDirectory: true)
+        // Its own variable, never the silo's: a node started from a silo's environment must not write
+        // its identity into the silo's state directory.
+        let resolved = StateDirectory.resolve(for: .node)
+        let state = resolved.url
+        logger.info("state directory: \(state.path) (\(resolved.source))")
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
 
         // The tools first: a node without them has nothing to offer.
