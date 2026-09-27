@@ -73,7 +73,6 @@ let package = Package(
         // takes it.
         .package(url: "https://github.com/tachyonics/swift-openapi-generator.git", revision: "9e655e0adb9b993ef4cb29a6aa0dfc59b9b42b09"),
         .package(url: "https://github.com/apple/swift-openapi-runtime", from: "1.7.0"),
-        .package(url: "https://github.com/apple/swift-configuration", from: "1.1.0"),
         .package(url: "https://github.com/apple/swift-http-api-proposal.git", .upToNextMinor(from: "0.2.0")),
         .package(url: "https://github.com/swift-server/swift-http-server.git", branch: "main"),
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.6.0"),
@@ -211,7 +210,6 @@ let package = Package(
                 .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
                 .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
-                .product(name: "Configuration", package: "swift-configuration"),
                 .product(name: "Wire", package: "swift-wire"),
                 .product(name: "WireMVC", package: "wire-mvc"),
                 .product(name: "WireOpenAPI", package: "wire-open-api"),
@@ -236,7 +234,6 @@ let package = Package(
                 "SiloWorker",
                 "SiloDiscovery",
                 "Encoder",
-                .product(name: "Configuration", package: "swift-configuration"),
                 .product(name: "Wire", package: "swift-wire"),
                 .product(name: "WireOpenAPI", package: "wire-open-api"),
                 .product(name: "WireMVC", package: "wire-mvc"),

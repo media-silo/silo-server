@@ -30,6 +30,21 @@ struct OperatorCredentialResetTests {
         #expect(reopened.acceptsHash(NodeStore.hash("new-token")), "the rotation is the stored credential's now")
     }
 
+    @Test func aResetBeforeTheFirstBootMeansNoBootstrap() throws {
+        let folder = Self.folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let reset = folder.appendingPathComponent("operator-credential.reset")
+        try Data("first-token\n".utf8).write(to: reset)
+
+        let credential = OperatorCredential(file: folder.appendingPathComponent("operator-credential.json"))
+        #expect(credential.current == nil, "a state directory never booted over holds no credential")
+        #expect(try processOperatorCredentialReset(from: reset, into: credential) == .rotated)
+        #expect(credential.current != nil, "the first credential is installed, so bootstrap never begins")
+        #expect(credential.acceptsHash(NodeStore.hash("first-token")))
+        #expect(!FileManager.default.fileExists(atPath: reset.path))
+    }
+
     @Test func anEmptyFileIsNoDoor() throws {
         let folder = Self.folder()
         defer { try? FileManager.default.removeItem(at: folder) }

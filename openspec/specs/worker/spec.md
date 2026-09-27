@@ -36,13 +36,13 @@ checks and the reports SHALL be the same code path, so there is one loop to test
 Pinned by: `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`).
 
 ### Requirement: SILO_EMBEDDED_NODE=true runs the loop inside the silo
-When `SILO_EMBEDDED_NODE` is true — it defaults to false — the silo SHALL run a worker inside
-itself as a background service: node id `embedded`, work folder `<state directory>/work`, asking
-the job service directly rather than over HTTP, its outputs published as `file://` references —
-holder `embedded`, the local path carried, an empty secret — which placement moves rather than
-fetches. When the flag is false the service SHALL stay up and do nothing, so the group it runs in
-is not ended; when the encode tools cannot be started it SHALL log the lack and idle rather than
-stop the silo.
+When `embeddedNode` in `settings.json` is true at startup — it defaults to false — the silo SHALL
+run a worker inside itself as a background service: node id `embedded`, work folder
+`<state directory>/work`, asking the job service directly rather than over HTTP, its outputs
+published as `file://` references — holder `embedded`, the local path carried, an empty secret —
+which placement moves rather than fetches. When the setting is false the service SHALL stay up and
+do nothing, so the group it runs in is not ended; when the encode tools cannot be started it SHALL
+log the lack and idle rather than stop the silo.
 
 #### Scenario: one machine is the whole pipeline
 - **WHEN** the silo runs with the embedded node on and a job becomes pending

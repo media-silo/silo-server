@@ -7,8 +7,11 @@
 
 Where a silo's configuration lives and who may change it. The silo resolves its state directory
 from `SILO_STATE_DIR` or, absent it, a well-known place on the machine, because a silo is a daemon
-and one silo per machine is the expected case; the working directory plays no part. This spec covers
-that resolution, which `silo-node` shares under its own variable and folder name.
+and one silo per machine is the expected case; the working directory plays no part, and `silo-node`
+shares the resolution under its own variable and folder name. Everything else the silo is told lives
+in that directory, in two files divided by one rule — whether an operator route can change the
+setting: `silo.json` for what none can, read at startup, and `settings.json` for what routes change,
+managed by the silo while it runs.
 
 Rationale: [Configuration proposal](../../../Proposals/Configuration.md) — the state directory is the silo's identity and where filesystem recovery happens, so it needs a home the operator can find.
 Documentation: [README](../../../README.md).
@@ -24,7 +27,8 @@ effective user id: running as root, `/Library/Application Support/Silo` on macOS
 `$XDG_STATE_HOME/silo` on Linux, `XDG_STATE_HOME` defaulting to `~/.local/state`. Neither the working
 directory nor systemd's `STATE_DIRECTORY` SHALL play any part in the resolution. The boot SHALL log
 the resolved path and whether the variable or the default supplied it, and SHALL create the folder
-when it is missing.
+when it is missing. `SILO_STATE_DIR` SHALL be the only environment variable the silo reads for its
+own configuration.
 
 #### Scenario: a daemon started in /
 - **WHEN** the silo boots as root on Linux with its working directory at `/` and `SILO_STATE_DIR`
@@ -44,3 +48,70 @@ Pinned by: `Tests/SiloKitTests/StateDirectoryTests.swift` (`theDefaultIsTheMachi
 `theVariableWinsAndSaysSo`, `anEmptyVariableIsUnset`, `aRelativeVariableKeepsItsMeaning`,
 `anInheritedStateDirectoryChangesNothing`, `anAbsoluteXDGStateHomeIsHonouredAndARelativeOneIgnored`).
 The boot's log line and the folder's creation are pinned by nothing yet.
+
+### Requirement: silo.json holds what no route changes, and the silo writes it only at startup
+The silo SHALL keep in `silo.json`, in its state directory, the settings no route changes: the
+`serverID`, a lower-cased UUID; the bind `host`, default `0.0.0.0`; and the `port`, default `8742`.
+At startup, before it serves anything, the silo
+SHALL read the file; when it does not exist the silo SHALL create it with every key at its default,
+minting the ServerID; when it lacks a key the silo SHALL add the key at its default and write the
+file back atomically. A complete file SHALL NOT be rewritten, and the silo SHALL write the file at no
+other time; no route SHALL write it. A file that does not parse SHALL stop the boot with the parse
+error and SHALL be left unchanged. A key the silo does not know SHALL be logged by name and kept. A
+ServerID minted into a state directory that already holds an operator credential, nodes or jobs
+SHALL be logged as a warning.
+
+#### Scenario: first boot writes the defaults
+- **WHEN** the silo boots over an empty state directory
+- **THEN** `silo.json` holds a fresh ServerID, host `0.0.0.0` and port `8742`, and the silo listens
+  on `0.0.0.0:8742`
+
+#### Scenario: a gap is filled and nothing else moves
+- **WHEN** `silo.json` holds a ServerID and `"port": 9000` and nothing else
+- **THEN** the silo listens on 9000 with the same ServerID, and the file gains `host` at its
+  default
+
+#### Scenario: a malformed file is not repaired
+- **WHEN** `silo.json` does not parse
+- **THEN** the boot stops naming the parse error, and the file is byte-for-byte as it was
+
+#### Scenario: a typo is reported
+- **WHEN** `silo.json` holds `"prot": 9000`
+- **THEN** the log names `prot` as unknown, the key stays in the file, and the silo listens on the
+  port the file's `port` key gives
+
+#### Scenario: a new identity over old state is loud
+- **WHEN** `silo.json` is deleted from a state directory that holds `operator-credential.json`, and
+  the silo boots
+- **THEN** it mints a new ServerID and logs a warning that a new identity was minted over existing
+  state
+
+Pinned by: `Tests/SiloStoreTests/ConfigurationFileTests.swift` (`aFreshDirectoryGetsBothFilesAtTheirDefaults`,
+`aGapIsFilledAndACompleteFileIsNotRewritten`, `aMalformedFileStopsTheBootAndSurvivesIt`,
+`aValueOfTheWrongKindIsRefusedByName`, `anUnknownKeyIsReportedAndKeptThroughWrites`,
+`existingStateIsRecognised`). The boot's warning over existing state and its log lines are pinned by
+nothing yet.
+
+### Requirement: settings.json holds what routes change, and the silo manages it
+The silo SHALL keep in `settings.json`, in its state directory, the settings an operator route
+changes: the `name`, default `Silo on <host name>`; the `libraries`, each an id and a path, default
+none; `embeddedNode`, default false; and `advertise`, default true. At startup the silo SHALL treat
+the file as it treats `silo.json` — created when missing, filled where a key is missing, left
+unchanged and the boot stopped when it does not parse, unknown keys logged and kept — so that the
+name is fixed at first boot. After startup the silo SHALL hold the settings in memory and SHALL
+write the file whole, atomically, whenever a route changes a setting. The silo SHALL serve the
+libraries the file names, as read at startup; a library whose folder does not exist SHALL stop the
+boot with an error naming the library.
+
+#### Scenario: a change survives a restart
+- **WHEN** the operator turns the embedded node on and the silo restarts
+- **THEN** the embedded node is on
+
+#### Scenario: arriving configured
+- **WHEN** an owner writes `settings.json` naming a library before the silo's first boot
+- **THEN** the silo boots serving that library
+
+Pinned by: `Tests/SiloStoreTests/ConfigurationFileTests.swift` (`aFreshDirectoryGetsBothFilesAtTheirDefaults`,
+`anUnknownKeyIsReportedAndKeptThroughWrites`, `settingsAreWrittenWholeAndReadBack`),
+`Tests/SiloTests/ServerIdentityTests.swift` (`identityIsMintedOnceAndKeptAcrossRestartsAndARename`),
+`Tests/SiloTests/ServerTests.swift` (the suite's fixture arrives configured through `settings.json`).

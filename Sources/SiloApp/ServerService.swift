@@ -31,56 +31,53 @@ package struct PendingStage: Error {
     package var confirmBy: Date
 }
 
-/// The server's identity as the rest of the silo reads it: what it minted, and whether it is in
-/// bootstrap — the absence of any operator credential, which is to say no stored credential and
-/// no token in the environment. It also holds the one staged setup: in memory only, ten minutes
+/// The server's identity as the rest of the silo reads it: what it minted, the name it goes by, and
+/// whether it is in bootstrap — the absence of an operator credential in the state directory. It also holds the one staged setup: in memory only, ten minutes
 /// from staging, void the moment its deadline or its confirm passes — nothing of it may outlive
 /// a restart, since a staged passkey is not yet a credential.
 @Singleton
 package final class ServerService: Sendable {
     package let identity: ServerIdentity
-    private let config: SiloConfig
+    private let settings: SettingsStore
     private let credential: OperatorCredential
     private let stageWindow: TimeInterval
     private let now: @Sendable () -> Date
     private let staged: Mutex<PendingSetup?>
-    private let confirmedName: Mutex<String?>
 
     /// The graph's init: production timing — the ten-minute window and the wall clock. The
     /// seams live on the test-facing init below, since the graph can bind neither a closure nor
     /// a bare number.
     @Inject
-    package convenience init(identity: ServerIdentity, config: SiloConfig, credential: OperatorCredential) {
-        self.init(identity: identity, config: config, credential: credential, stageWindow: 600, now: { .now })
+    package convenience init(identity: ServerIdentity, settings: SettingsStore, credential: OperatorCredential) {
+        self.init(identity: identity, settings: settings, credential: credential, stageWindow: 600, now: { .now })
     }
 
     /// The timing seams, for tests: how long a stage stands, and what "now" is.
     package init(
         identity: ServerIdentity,
-        config: SiloConfig,
+        settings: SettingsStore,
         credential: OperatorCredential,
         stageWindow: TimeInterval,
         now: @escaping @Sendable () -> Date
     ) {
         self.identity = identity
-        self.config = config
+        self.settings = settings
         self.credential = credential
         self.stageWindow = stageWindow
         self.now = now
         staged = Mutex(nil)
-        confirmedName = Mutex(nil)
     }
 
-    /// Bootstrap: no operator credential from anywhere. A confirmed setup lands the stored one,
+    /// Bootstrap: no operator credential in the state directory. A confirmed setup lands one,
     /// which ends it without a restart.
     package var isInBootstrap: Bool {
-        config.operatorToken == nil && credential.current == nil
+        credential.current == nil
     }
 
-    /// What the server goes by on the network right now. The identity's name until a setup
-    /// renames it — the file next, the advertisement at once, and no restart.
+    /// What the server goes by on the network right now: the name in `settings.json`, which a
+    /// confirmed setup changes — the file first, the advertisement at once, and no restart.
     package var name: String {
-        confirmedName.withLock { $0 } ?? identity.name
+        settings.current.name
     }
 
     private struct PendingSetup: Sendable {
@@ -137,9 +134,8 @@ package final class ServerService: Sendable {
             current = nil
             return pending
         }
-        try storeServerIdentity(ServerIdentity(id: identity.id, name: pending.name), in: config.stateDirectory)
+        try settings.update { $0.name = pending.name }
         try land(StoredOperatorCredential(passkeyHash: NodeStore.hash(pending.passkey)))
-        confirmedName.withLock { $0 = pending.name }
     }
 
     /// The credential a confirmed setup lands, ending bootstrap. The gate already reads it.

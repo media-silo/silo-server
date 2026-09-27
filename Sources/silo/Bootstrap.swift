@@ -2,7 +2,6 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import BasicContainers
-import Configuration
 import Foundation
 import HTTPAPIs
 import HTTPTypes
@@ -20,13 +19,14 @@ import WireMVCRouter
 // returned, asks this binding for the server and the route builder, registers every collated route
 // contributor, mounts introspection, registers the fallback, freezes the builder and serves.
 
-/// The graph's inputs, read before any binding is constructed. The configuration is the honest
-/// case for an input: it reads the environment, which is a deployment fact, and it has to exist
-/// before the first binding that reads a key.
+/// The graph's inputs, read before any binding is constructed: `silo.json` and the startup settings
+/// as `SiloConfig`, and the settings store over `settings.json`. They are the honest case for an
+/// input — deployment facts, read from the state directory, that must exist before the first binding
+/// reads them and must stop the boot when they cannot be read.
 @GraphInputs
 package struct AppInputs: Sendable {
-    package let config: ConfigReader
     package let siloConfig: SiloConfig
+    package let settings: SettingsStore
 }
 
 @Singleton
@@ -36,13 +36,41 @@ package struct AppBootstrap {
 
     /// Pre-graph, so it can inject nothing; `LoggingSystem.bootstrap` is why it has to run first.
     /// The state directory is resolved and logged before anything reads it, so where the reset file
-    /// goes is the first thing the log says.
+    /// goes is the first thing the log says; then the two files are opened, and a file the silo will
+    /// not start over stops the boot here, named, before anything is served.
     package static func prepare() async throws -> AppInputs {
         LoggingSystem.bootstrap { StreamLogHandler.standardOutput(label: $0) }
+        let logger = Logger(label: "silo")
         let state = StateDirectory.resolve(for: .silo)
-        Logger(label: "silo").info("state directory: \(state.url.path) (\(state.source))")
-        let config = ConfigReader(provider: EnvironmentVariablesProvider())
-        return AppInputs(config: config, siloConfig: try SiloConfig(reading: config, stateDirectory: state.url))
+        logger.info("state directory: \(state.url.path) (\(state.source))")
+        do {
+            try FileManager.default.createDirectory(at: state.url, withIntermediateDirectories: true)
+            let heldState = stateDirectoryHoldsState(state.url)
+            let (silo, siloReport) = try SiloFile.open(in: state.url)
+            log(siloReport, for: SiloFile.fileName, to: logger)
+            if siloReport.defaulted("serverID") && heldState {
+                logger.warning("minted a new ServerID, \(silo.serverID), over a state directory that already holds a silo's state: this is a new server to every console that knew the old one")
+            }
+            let (settings, settingsReport) = try SettingsStore.open(in: state.url, defaultName: "Silo on \(ProcessInfo.processInfo.hostName)")
+            log(settingsReport, for: SettingsStore.fileName, to: logger)
+            return AppInputs(siloConfig: try SiloConfig(silo: silo, settings: settings.current, stateDirectory: state.url), settings: settings)
+        } catch {
+            // A clean failure rather than a trap: a service manager reads a trap as a crash, and
+            // this is a configuration the owner has to correct.
+            logger.critical("not starting: \(error)")
+            exit(EXIT_FAILURE)
+        }
+    }
+
+    private static func log(_ report: ConfigurationFileReport, for file: String, to logger: Logger) {
+        if report.created {
+            logger.info("\(file): written with its defaults")
+        } else if !report.filled.isEmpty {
+            logger.info("\(file): added \(report.filled.joined(separator: ", ")) at their defaults")
+        }
+        for key in report.unknown {
+            logger.warning("\(file): \"\(key)\" is not a key the silo knows; kept as it is")
+        }
     }
 
     /// The concrete server rather than `some HTTPServer`: the proposal's reader and sender are

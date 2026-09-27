@@ -40,9 +40,10 @@ package enum ApplicationWiring {
         try NodeStore(folder: config.stateDirectory.appendingPathComponent("nodes", isDirectory: true))
     }
 
+    /// The ServerID `silo.json` holds, minted there at the first boot.
     @Provides
-    package static func identity(config: SiloConfig) throws -> ServerIdentity {
-        try loadServerIdentity(from: config.stateDirectory, named: config.name)
+    package static func identity(config: SiloConfig) -> ServerIdentity {
+        ServerIdentity(id: config.serverID)
     }
 
     /// Boot is the one place a reset can happen: the operator's `operator-credential.reset` —

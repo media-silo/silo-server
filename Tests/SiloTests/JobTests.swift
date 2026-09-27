@@ -27,7 +27,7 @@ struct JobServiceTests {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-jobs-\(UUID().uuidString)")
             let library = root.appendingPathComponent("Library")
             try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
-            config = SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root.appendingPathComponent("State"), libraries: [LibraryConfig(id: "main", root: library)], operatorToken: nil)
+            config = SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root.appendingPathComponent("State"), libraries: [LibraryConfig(id: "main", root: library)])
             store = JobStore()
             let rulesets = try RulesetStore(folder: root.appendingPathComponent("State/rulesets"))
             _ = try rulesets.store(Data(Fixture.household.utf8), as: "household")
