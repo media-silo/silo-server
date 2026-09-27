@@ -59,7 +59,7 @@ servers, proxies and admin panels a household machine might already run.
 silo takes a platform default: for a process running as root, `/Library/Application Support/Silo`
 on macOS and `/var/lib/silo` on Linux; for anyone else, `~/Library/Application Support/Silo` and
 `$XDG_STATE_HOME/silo`. The boot logs the path it chose and why. `silo-node` gets the same
-resolution under its own folder name, with its `--state-dir` flag in place of the variable.
+resolution under its own folder name, from its own variable, `SILO_NODE_STATE_DIR`.
 
 **Two files, one rule.** Whether an operator route can change a setting decides where it lives.
 `silo.json` holds what no route changes — the ServerID, the bind host and port — and is read once,
@@ -137,9 +137,29 @@ unit's folder, which is the start-dependent state directory this proposal exists
 The boot logs `state directory: <path> (<source>)` before anything reads the folder, so the answer
 to "where do I drop the reset file" is the first line of the log as well as a row of this table.
 
-`silo-node` resolves its own state directory the same way — `--state-dir`, then `Silo Node` and
-`silo-node` in the same places — so a node and a silo on one machine never share a folder. Its
-present default, `~/.silo-node`, goes.
+`silo-node` resolves its own state directory the same way — `SILO_NODE_STATE_DIR`, then `Silo Node`
+and `silo-node` in the same places — so a node and a silo on one machine never share a folder. Its
+present default, `~/.silo-node`, goes, and so does its `--state-dir` flag.
+
+The node has a variable of its own rather than reading `SILO_STATE_DIR`, because a node started from
+an environment set up for a silo would otherwise write its identity into the silo's state
+directory — most likely on exactly the machine where the two run side by side. And it has a variable
+rather than a flag so that both daemons are told where their state lives in the same way. The silo
+takes no flags at all: its entry point is generated, and argument parsing would be machinery for one
+value. Service definitions set environment variables alike on both platforms, so the node's unit reads
+as the silo's does:
+
+```ini
+[Service]
+User=silo-node
+StateDirectory=silo-node
+Environment=SILO_NODE_STATE_DIR=%S/silo-node
+```
+
+The rule is that a daemon learns where its state directory is from its environment and an interactive
+tool takes flags; `silo-ctl` keeps `--silo` and `--token`. The node's `--silo`, with `SILO_URL` behind
+it, stays as it is: it says where the silo is, not where the node's state is, and whether the node's
+own configuration moves into its state directory is the second open question below.
 
 There is no migration. Nothing has been released, and a silo or node whose state sits in the old
 place is started with an explicit state directory pointing at it; one that is not becomes a new
@@ -296,8 +316,9 @@ parameterised by the folder name; the boot's log line; the default port to 8742;
 up to date. The state directory and node identity deltas apply here.
 
 Tests: each rung of the resolution, with the environment and effective user supplied rather than
-read, on both platforms' tables; a relative `SILO_STATE_DIR` keeps its meaning; an inherited
-`STATE_DIRECTORY` changes nothing.
+read, on both platforms' tables, for the silo and the node alike; a relative `SILO_STATE_DIR` keeps
+its meaning; an inherited `STATE_DIRECTORY` changes nothing; a node given only `SILO_STATE_DIR` keeps
+to its own default.
 
 ### 2. The two files
 
@@ -353,7 +374,7 @@ shell grows a test seam.
 1. **The embedded node's default.** One silo per machine suggests that the machine is also the
    household's only encoder more often than not, which argues for on. Off is kept here because the
    encoder tools may be absent and the silo should not start by complaining.
-2. **The node's settings.** `silo-node` has its own configuration — its silo's URL, its state directory
-   — and nothing a route changes. Whether it should take the same two-file shape, and whether the
+2. **The node's settings.** `silo-node` has its own configuration — its silo's URL, given by `--silo`
+   or `SILO_URL` — and nothing a route changes. Whether it should take the same two-file shape, and whether the
    console should reach a node's settings through the silo, are questions for the proposal that makes
    the console approve nodes.
