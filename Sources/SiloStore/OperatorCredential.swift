@@ -16,11 +16,9 @@ public struct StoredOperatorCredential: Hashable, Sendable, Codable {
     }
 }
 
-/// The operator credential the daemon located, where the operator token used to be
-/// configuration's alone: the environment's token when one is set — it wins whenever it is — and
-/// otherwise the stored credential's hash, accepted as a bearer's hash. The crossing point a
-/// confirmed setup writes through, so the credential installed this boot authenticates without
-/// the environment having anything to say about it. The absence of both is what bootstrap is.
+/// The operator credential: the stored credential's hash, accepted as a bearer's hash. The crossing
+/// point a confirmed setup and a reset file write through, so a credential installed this boot
+/// authenticates at once. Its absence is what bootstrap is.
 ///
 /// A `Sendable` class for the reason the stores are: accepting a bearer's hash and landing the
 /// credential is one section under one lock, and nothing inside it suspends.

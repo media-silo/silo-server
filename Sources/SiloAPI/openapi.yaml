@@ -849,7 +849,7 @@ components:
     operator:
       type: http
       scheme: bearer
-      description: The operator's token, from the silo's configuration.
+      description: The operator's token, which the silo's stored operator credential accepts.
     node:
       type: http
       scheme: bearer

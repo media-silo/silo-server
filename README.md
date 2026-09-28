@@ -49,7 +49,7 @@ One package, in the order its parts arrived:
   nothing but Foundation; and the node's loop, which claims a job, opens or
   fetches its source, encodes it as the recipe says, probes the result, checks
   its layout and tells the silo where the output is. The silo runs that loop
-  inside itself when `SILO_EMBEDDED_NODE=true`, so one machine is the whole
+  inside itself when `settings.json` says `"embeddedNode": true`, so one machine is the whole
   pipeline: the tool registers a rip, assigns it, the embedded node encodes it,
   and `silo-ctl jobs place` has the silo move the result into the library.
 - `SiloDiscovery` and `silo-node` — a node on another machine. It finds the
@@ -59,7 +59,7 @@ One package, in the order its parts arrived:
   `silo-ctl nodes approve`, takes its token once, and then runs the same loop
   the embedded node runs, serving what it makes for the silo to fetch at
   placement. Revoking it is one command and its token stops at once. The silo
-  advertises itself the same way unless `SILO_ADVERTISE=false`.
+  advertises itself the same way unless `settings.json` says `"advertise": false`.
 - `silo-ctl` — the operator's command line. `encode` and `place` are the parts
   that need no server: the first takes a ruleset file and a ripped file and
   says what it would do, does it, and verifies the result; the second takes a
@@ -67,7 +67,9 @@ One package, in the order its parts arrived:
 
 ```sh
 swift test
-SILO_LIBRARIES=main=~/Library SILO_STATE_DIR=~/silo-state SILO_OPERATOR_TOKEN=secret SILO_EMBEDDED_NODE=true swift run silo
+mkdir -p ~/silo-state && echo secret > ~/silo-state/operator-credential.reset
+echo '{"libraries": [{"id": "main", "path": "'$HOME'/Library"}], "embeddedNode": true}' > ~/silo-state/settings.json
+SILO_STATE_DIR=~/silo-state swift run silo
 SILO_URL=http://localhost:8742 SILO_TOKEN=secret swift run silo-ctl jobs list
 swift run silo-node                       # on another machine; finds the silo, waits to be approved
 SILO_URL=http://localhost:8742 SILO_TOKEN=secret swift run silo-ctl nodes approve <id>
@@ -76,16 +78,28 @@ swift run silo-ctl place --library ~/Library --repository ~/data --container 012
     --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv
 ```
 
-The silo listens on port 8742. It keeps its state — the index, the rulesets, the
-jobs and nodes, its identity and the operator credential — in the folder
-`SILO_STATE_DIR` names, and otherwise in a well-known place on the machine:
+`SILO_STATE_DIR` is the only variable the silo reads. It names the state
+directory, where the silo keeps everything — the index, the rulesets, the jobs
+and nodes, the operator credential and its two configuration files — and
+without it the silo uses a well-known place on the machine:
 `/Library/Application Support/Silo` or `/var/lib/silo` when it runs as root,
 and `~/Library/Application Support/Silo` or `$XDG_STATE_HOME/silo` (by default
 `~/.local/state/silo`) when it does not. The first line of its log says which
 folder it chose and why; that folder is where `operator-credential.reset` goes.
 `silo-node` does the same from `SILO_NODE_STATE_DIR`, under `Silo Node` or
-`silo-node`, so a node and a silo on one machine never share a folder. The
-example above sets `SILO_STATE_DIR` so a development run keeps its state apart.
+`silo-node`, so a node and a silo on one machine never share a folder.
+
+The two files are divided by whether an operator route can change the setting.
+`silo.json` holds what none can — the `serverID`, and the `host` and `port` the
+silo listens on, `0.0.0.0` and `8742` by default — and is read at startup, so an
+edit takes effect at the next restart. `settings.json` holds what routes change
+— the `name`, the `libraries`, `embeddedNode` and `advertise` — and is the
+silo's to manage while it runs; edit it by hand while the silo is stopped. The
+silo writes both files with their defaults on its first boot, fills in a key
+either lacks, refuses to start over one that does not parse, and logs a key it
+does not know without removing it. The example above writes `settings.json`
+before the first boot, and places a reset file so the silo starts with an
+operator token rather than waiting to be set up.
 
 `Examples/household.xml` is the ruleset the proposal was written with: an extra
 below standard-definition width is re-encoded small, a lossless track that is

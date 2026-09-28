@@ -13,8 +13,10 @@ import Testing
 import WireMVCTesting
 @testable import SiloApp
 
-/// A library on disk that the suite points the silo at through its environment: real files, the
-/// real index, no doubles.
+/// A library on disk and a state directory that names it: real files, the real index, no doubles. The
+/// silo arrives configured the way an owner would configure it before a first boot — the library in
+/// `settings.json`, the operator's token in `operator-credential.reset` — and its environment is
+/// `SILO_STATE_DIR` alone.
 enum Fixture {
     static let series: Container = {
         var series = Container(id: ContainerID("0000000000000001")!, type: .series, title: "Doctor Who", year: 1963, yearInTitle: true, externalRefs: [ExternalRef(provider: .tvdb, value: "76107")])
@@ -54,15 +56,16 @@ enum Fixture {
             try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             return folder.appendingPathComponent("container.smd")
         }())
+        let state = root.appendingPathComponent("State")
+        try! Data("""
+            {"libraries": [{"id": "main", "path": "\(library.path)"}]}
+            """.utf8).write(to: state.appendingPathComponent("settings.json"))
+        try! Data("secret\n".utf8).write(to: state.appendingPathComponent("operator-credential.reset"))
         return root
     }
 
     static func environment(_ root: URL) -> [String: String] {
-        [
-            "SILO_LIBRARIES": "main=\(root.appendingPathComponent("Library").path)",
-            "SILO_STATE_DIR": root.appendingPathComponent("State").path,
-            "SILO_OPERATOR_TOKEN": "secret",
-        ]
+        ["SILO_STATE_DIR": root.appendingPathComponent("State").path]
     }
 
     static let household = try! String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Examples/household.xml"), encoding: .utf8)

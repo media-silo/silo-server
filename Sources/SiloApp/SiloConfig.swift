@@ -1,59 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Configuration
 import Foundation
 import SiloStore
 
-/// What the silo is told at start: where it listens, where its own state lives, which libraries it
-/// serves, and the operator's token. Read once, before the graph, and handed in as an input.
+/// What the silo is told at start: who it is and where it listens, from `silo.json`; where its
+/// own state lives; and the libraries, the embedded node and advertising as `settings.json` had them
+/// at startup. Read once, before the graph, and handed in as an input. The name is not here: it is
+/// the settings store's, since setup changes it while the silo runs.
 package struct SiloConfig: Sendable {
+    package var serverID: String
     package var host: String
     package var port: Int
     package var stateDirectory: URL
     package var libraries: [LibraryConfig]
-    package var operatorToken: String?
     /// Whether the silo runs a node inside itself, so that one machine is the whole pipeline.
     package var embeddedNode: Bool
-    /// The name the silo goes by on the network, and whether it says so through Bonjour.
-    package var name: String
+    /// Whether the silo says where it is through Bonjour.
     package var advertise: Bool
 
-    package init(host: String, port: Int, stateDirectory: URL, libraries: [LibraryConfig], operatorToken: String?, embeddedNode: Bool = false, name: String = "silo", advertise: Bool = false) {
+    package init(serverID: String = UUID().uuidString.lowercased(), host: String, port: Int, stateDirectory: URL, libraries: [LibraryConfig], embeddedNode: Bool = false, advertise: Bool = false) {
+        self.serverID = serverID
         self.host = host
         self.port = port
         self.stateDirectory = stateDirectory
         self.libraries = libraries
-        self.operatorToken = operatorToken
         self.embeddedNode = embeddedNode
-        self.name = name
         self.advertise = advertise
     }
 
-    /// `SILO_LIBRARIES` is `name=path,name=path`, or one bare path, which is the library `main`. The
-    /// state directory is resolved before this is read, by `StateDirectory`, and handed in.
-    package init(reading config: ConfigReader, stateDirectory: URL) throws {
-        let libraries = config.string(forKey: "SILO_LIBRARIES", default: "")
-        var parsed: [LibraryConfig] = []
-        for entry in libraries.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !entry.isEmpty {
-            if let separator = entry.firstIndex(of: "="), !entry[..<separator].contains("/") {
-                parsed.append(LibraryConfig(id: String(entry[..<separator]), root: URL(fileURLWithPath: String(entry[entry.index(after: separator)...]), isDirectory: true)))
-            } else {
-                parsed.append(LibraryConfig(id: "main", root: URL(fileURLWithPath: entry, isDirectory: true)))
-            }
-        }
-        for library in parsed where !FileManager.default.fileExists(atPath: library.root.path) {
+    /// The two files, as startup opened them. A library whose folder does not exist stops the boot,
+    /// naming the library.
+    package init(silo: SiloFile, settings: Settings, stateDirectory: URL) throws {
+        for library in settings.libraries where !FileManager.default.fileExists(atPath: library.root.path) {
             throw SiloConfigError.missingLibrary(library)
         }
         self.init(
-            host: config.string(forKey: "SILO_HOST", default: "0.0.0.0"),
-            port: config.int(forKey: "SILO_PORT", default: 8742),
+            serverID: silo.serverID,
+            host: silo.host,
+            port: silo.port,
             stateDirectory: stateDirectory,
-            libraries: parsed,
-            operatorToken: config.string(forKey: "SILO_OPERATOR_TOKEN").flatMap { $0.isEmpty ? nil : $0 },
-            embeddedNode: config.bool(forKey: "SILO_EMBEDDED_NODE", default: false),
-            name: config.string(forKey: "SILO_NAME", default: "Silo on \(ProcessInfo.processInfo.hostName)"),
-            advertise: config.bool(forKey: "SILO_ADVERTISE", default: true)
+            libraries: settings.libraries,
+            embeddedNode: settings.embeddedNode,
+            advertise: settings.advertise
         )
     }
 
