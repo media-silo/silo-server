@@ -124,6 +124,59 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorised"
 
+  /settings:
+    get:
+      operationId: getSettings
+      summary: The silo's settings, and the facts of its machine
+      description: >
+        Every key of settings.json and of silo.json, and the resolved state directory. What an
+        operator route changes is under `editable`; what none does — the silo.json keys, the state
+        directory, and the libraries until they grow routes of their own — is under `readOnly`.
+        Operator only.
+      tags: [Server]
+      security:
+        - operator: []
+      responses:
+        "200":
+          description: The settings as they stand.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsReport"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+    patch:
+      operationId: updateSettings
+      summary: Change the name, the embedded node or advertising
+      description: >
+        Applies all of the body or none of it, writes settings.json, and takes effect without a
+        restart: the embedded node starts or stops claiming (a job in flight runs to completion),
+        the advertisement starts, stops or takes the new name. An empty name is 400. Operator only.
+      tags: [Server]
+      security:
+        - operator: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsPatch"
+      responses:
+        "200":
+          description: The settings as they now stand.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsReport"
+        "400":
+          description: The patch cannot be applied; nothing was changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+
   /libraries:
     get:
       operationId: listLibraries
@@ -957,6 +1010,68 @@ components:
           type: string
           format: date-time
           description: The standing stage's deadline — once it passes, staging is open again.
+
+    SettingsReport:
+      type: object
+      required: [editable, readOnly]
+      properties:
+        editable:
+          $ref: "#/components/schemas/EditableSettings"
+        readOnly:
+          $ref: "#/components/schemas/MachineSettings"
+
+    EditableSettings:
+      type: object
+      description: What an operator route changes, from settings.json.
+      required: [name, embeddedNode, advertise]
+      properties:
+        name:
+          type: string
+        embeddedNode:
+          type: boolean
+          description: Whether the silo runs a node inside itself.
+        advertise:
+          type: boolean
+          description: Whether the silo says where it is through Bonjour.
+
+    MachineSettings:
+      type: object
+      description: What no route changes — silo.json, the state directory — and the libraries, until they grow routes.
+      required: [serverID, host, port, stateDirectory, libraries]
+      properties:
+        serverID:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        stateDirectory:
+          type: string
+          description: Where the silo keeps its state, and where operator-credential.reset goes.
+        libraries:
+          type: array
+          items:
+            $ref: "#/components/schemas/LibrarySetting"
+
+    LibrarySetting:
+      type: object
+      required: [id, path]
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+
+    SettingsPatch:
+      type: object
+      description: Any of the editable settings; what is left out is unchanged.
+      properties:
+        name:
+          type: string
+        embeddedNode:
+          type: boolean
+        advertise:
+          type: boolean
 
     Problem:
       type: object

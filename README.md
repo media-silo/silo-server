@@ -40,7 +40,7 @@ One package, in the order its parts arrived:
 - `SiloAPI`, `SiloApp` and `silo` — the server: an OpenAPI document under `/v1`
   for what a client reads (libraries, containers with their presentations,
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
-  and what an operator changes (a scan, a stored ruleset), on the swift-wire
+  and what an operator changes (a scan, a stored ruleset, the settings), on the swift-wire
   stack; and beside the document, two routes that stream, the file a
   presentation is with `Range`, and the container as its sidecar.
 - `FileServing`, `SiloClient` and `SiloWorker` — the parts every participant
@@ -94,7 +94,9 @@ The two files are divided by whether an operator route can change the setting.
 silo listens on, `0.0.0.0` and `8742` by default — and is read at startup, so an
 edit takes effect at the next restart. `settings.json` holds what routes change
 — the `name`, the `libraries`, `embeddedNode` and `advertise` — and is the
-silo's to manage while it runs; edit it by hand while the silo is stopped. The
+silo's to manage while it runs: `PATCH /v1/settings` changes the name, the
+embedded node and advertising, and each change takes effect at once. Edit the
+file by hand only while the silo is stopped. The
 silo writes both files with their defaults on its first boot, fills in a key
 either lacks, refuses to start over one that does not parse, and logs a key it
 does not know without removing it. The example above writes `settings.json`

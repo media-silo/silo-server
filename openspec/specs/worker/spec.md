@@ -35,22 +35,29 @@ checks and the reports SHALL be the same code path, so there is one loop to test
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`).
 
-### Requirement: SILO_EMBEDDED_NODE=true runs the loop inside the silo
-When `embeddedNode` in `settings.json` is true at startup — it defaults to false — the silo SHALL
-run a worker inside itself as a background service: node id `embedded`, work folder
-`<state directory>/work`, asking the job service directly rather than over HTTP, its outputs
-published as `file://` references — holder `embedded`, the local path carried, an empty secret —
-which placement moves rather than fetches. When the setting is false the service SHALL stay up and
-do nothing, so the group it runs in is not ended; when the encode tools cannot be started it SHALL
-log the lack and idle rather than stop the silo.
+### Requirement: The embedded node setting runs the loop inside the silo
+When the embedded node setting is on — `embeddedNode` in `settings.json`, false by default, per
+[configuration](../configuration/spec.md) — the silo SHALL run a worker inside itself as a
+background service: node id `embedded`, work folder `<state directory>/work`, asking the job service
+directly rather than over HTTP, its outputs published as `file://` references — holder `embedded`,
+the local path carried, an empty secret — which placement moves rather than fetches. The service
+SHALL follow the setting while the silo runs: turned on, it SHALL start the loop; turned off, it
+SHALL stop claiming and let a job in flight run to completion. While the setting is off the service
+SHALL stay up and do nothing, so the group it runs in is not ended; when the encode tools cannot be
+started it SHALL log the lack and idle rather than stop the silo.
 
 #### Scenario: one machine is the whole pipeline
 - **WHEN** the silo runs with the embedded node on and a job becomes pending
 - **THEN** the embedded loop claims it, encodes it, and completes it with an output on the silo's
   own filesystem
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`). The
-flag-off and tool-less arms are pinned by nothing yet.
+#### Scenario: turned on while running
+- **WHEN** the embedded node is off, a job is pending, and the operator turns the setting on
+- **THEN** the embedded loop starts and claims the job, without a restart
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`),
+`Tests/SiloTests/SettingsFollowingTests.swift` (`theEmbeddedNodeFollowsItsSetting`). The tool-less
+arm is pinned by nothing yet.
 
 ### Requirement: A claim offers the node's encoders, found once
 The worker SHALL learn its capabilities — the encoders its `ffmpeg` reports — the first time it
