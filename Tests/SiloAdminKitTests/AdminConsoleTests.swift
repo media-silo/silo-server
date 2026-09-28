@@ -595,6 +595,73 @@ struct AdminConsoleTests {
         #expect(merged.lastKnownAccess == true)
     }
 
+    // MARK: - Settings
+
+    private static func settingsReport(name: String, embeddedNode: Bool = false) -> String {
+        #"{"editable":{"name":"\#(name)","embeddedNode":\#(embeddedNode),"advertise":true},"readOnly":{"serverID":"home","host":"0.0.0.0","port":8742,"stateDirectory":"/var/lib/silo","libraries":[{"id":"films","path":"/srv/media/films"}]}}"#
+    }
+
+    @Test func settingsAreAskedWithTheHeldPasskey() async throws {
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "home")
+        let console = Self.console(passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8742)]) { request in
+            guard let url = request.url else { return nil }
+            let operatorBearer = request.value(forHTTPHeaderField: "Authorization") == "Bearer held"
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case "/v1/operator": return operatorBearer ? (200, Data(Self.active.utf8)) : (401, Data())
+            case "/v1/settings": return operatorBearer ? (200, Data(Self.settingsReport(name: "Home Silo").utf8)) : (401, Data())
+            default: return nil
+            }
+        }
+        let home = try row("home", in: await console.refresh())
+        #expect(home.classification == .withAccess)
+
+        let report = try await console.settings(of: home)
+        #expect(report.editable == SiloClient.SettingsReport.Editable(name: "Home Silo", embeddedNode: false, advertise: true))
+        #expect(report.readOnly.stateDirectory == "/var/lib/silo")
+        #expect(report.readOnly.libraries == [SiloClient.SettingsReport.Library(id: "films", path: "/srv/media/films")])
+
+        passkeys.store("rotated-away", for: "home")
+        await #expect(throws: AdminConsole.NoAccess.self) { try await console.settings(of: home) }
+        passkeys.remove(for: "home")
+        await #expect(throws: AdminConsole.NoAccess.self) { try await console.settings(of: home) }
+    }
+
+    @Test func aSettingsChangeSendsOnlyWhatChangedAndARenameIsRendered() async throws {
+        let registry = SiloRegistry()
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "home")
+        let sent = Mutex<[String]>([])
+        let console = Self.console(registry: registry, passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8742)]) { request in
+            guard let url = request.url else { return nil }
+            switch (request.httpMethod, url.path) {
+            case (_, "/v1/server"): return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
+            case ("PATCH", "/v1/settings"):
+                let body = String(decoding: Self.body(of: request) ?? Data(), as: UTF8.self)
+                sent.withLock { $0.append(body) }
+                struct Patch: Decodable { var name: String? }
+                let patch = try JSONDecoder().decode(Patch.self, from: Data(body.utf8))
+                if patch.name == "" { return (400, Data(#"{"detail":"the name cannot be empty"}"#.utf8)) }
+                return (200, Data(Self.settingsReport(name: patch.name ?? "Home Silo", embeddedNode: true).utf8))
+            default: return nil
+            }
+        }
+        let home = try row("home", in: await console.refresh())
+
+        await #expect(throws: AdminConsole.SettingsRefused(reason: "the name cannot be empty")) {
+            try await console.updateSettings(of: home, SiloClient.SettingsPatch(name: ""))
+        }
+        #expect(try row("home", in: await console.silos).name == "Home Silo", "a refusal changes nothing")
+
+        let report = try await console.updateSettings(of: home, SiloClient.SettingsPatch(name: "Loft Silo"))
+        #expect(report.editable.name == "Loft Silo")
+        #expect(sent.withLock { $0.last } == #"{"name":"Loft Silo"}"#, "only what changed travels")
+        #expect(try row("home", in: await console.silos).name == "Loft Silo", "the row takes the new name at once")
+        #expect(registry.entry(for: "home")?.name == "Loft Silo", "and the registry keeps it")
+    }
+
     // MARK: - Forget
 
     @Test func forgetPurgesTheRegistryAndThePasskey() async throws {

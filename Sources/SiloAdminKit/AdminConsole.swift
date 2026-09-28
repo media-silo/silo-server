@@ -57,6 +57,19 @@ public actor AdminConsole {
     /// The passkey the operator supplied is not one the silo accepts. Nothing is stored.
     public struct ClaimRefused: Error, Hashable {}
 
+    /// This Mac holds no passkey the silo accepts, so its settings cannot be asked or changed; the
+    /// next sweep classifies the silo by its probe.
+    public struct NoAccess: Error, Hashable {}
+
+    /// The silo refused a settings change, in its own words. Nothing was changed.
+    public struct SettingsRefused: Error, Hashable {
+        public var reason: String
+
+        public init(reason: String) {
+            self.reason = reason
+        }
+    }
+
     /// The sheet's payload for a bootstrap silo: a passkey the app will store only once the
     /// stage answers 202, and how much of it the operator may see. A minted passkey is rendered
     /// exactly once, here. `resumingUntil` is set when the Keychain's residue probed as the
@@ -310,6 +323,47 @@ public actor AdminConsole {
         try? registry.merge(RegisteredSilo(id: row.id, name: row.name, url: row.url, lastSeen: row.lastSeen, hasStoredPasskey: true, lastKnownAccess: true))
         render(row)
         return row
+    }
+
+    // MARK: - Settings
+
+    /// A with-access silo's settings, asked with the passkey this Mac holds for it.
+    public func settings(of silo: Silo) async throws -> SiloClient.SettingsReport {
+        try await withOperator(silo) { try await $0.settings() }
+    }
+
+    /// Changes a with-access silo's editable settings, all of the patch or none of it. A refusal
+    /// comes back as `SettingsRefused` in the silo's own words; a rename is rendered on the row and
+    /// kept in the registry, so the console calls the silo by its new name before the next sweep.
+    @discardableResult
+    public func updateSettings(of silo: Silo, _ patch: SiloClient.SettingsPatch) async throws -> SiloClient.SettingsReport {
+        let report: SiloClient.SettingsReport
+        do {
+            report = try await withOperator(silo) { try await $0.updateSettings(patch) }
+        } catch SiloClientError.status(400, let body) {
+            struct Problem: Decodable { var detail: String }
+            throw SettingsRefused(reason: (try? SiloClient.decoder.decode(Problem.self, from: Data(body.utf8)))?.detail ?? body)
+        }
+        if report.editable.name != silo.name, let current = latest.first(where: { $0.id == silo.id }) {
+            var renamed = current
+            renamed.name = report.editable.name
+            if let entry = registry.entry(for: silo.id) {
+                try? registry.merge(RegisteredSilo(id: entry.id, name: renamed.name, url: entry.url, lastSeen: entry.lastSeen, hasStoredPasskey: entry.hasStoredPasskey, lastKnownAccess: entry.lastKnownAccess))
+            }
+            render(renamed)
+        }
+        return report
+    }
+
+    /// Runs `call` with the passkey this Mac holds for `silo` as its bearer; no passkey, or one the
+    /// silo refuses, is `NoAccess`.
+    private func withOperator<T: Sendable>(_ silo: Silo, _ call: @Sendable (SiloClient) async throws -> T) async throws -> T {
+        guard let passkey = passkeys.passkey(for: silo.id) else { throw NoAccess() }
+        do {
+            return try await call(SiloClient(baseURL: silo.url, token: passkey, session: session))
+        } catch SiloClientError.status(401, _) {
+            throw NoAccess()
+        }
     }
 
     // MARK: - Forget

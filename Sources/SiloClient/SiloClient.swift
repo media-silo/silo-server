@@ -218,6 +218,82 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("POST", "/v1/setup/confirm", body: Nothing?.none, headers: ["Authorization": "Bearer \(bearer)"])
     }
 
+    // MARK: - Settings
+
+    /// What `GET /v1/settings` reports: what a route changes, under `editable`, and what none does —
+    /// `silo.json`, the state directory, the libraries — under `readOnly`.
+    public struct SettingsReport: Hashable, Sendable, Codable {
+        public struct Editable: Hashable, Sendable, Codable {
+            public var name: String
+            public var embeddedNode: Bool
+            public var advertise: Bool
+
+            public init(name: String, embeddedNode: Bool, advertise: Bool) {
+                self.name = name
+                self.embeddedNode = embeddedNode
+                self.advertise = advertise
+            }
+        }
+
+        public struct Library: Hashable, Sendable, Codable {
+            public var id: String
+            public var path: String
+
+            public init(id: String, path: String) {
+                self.id = id
+                self.path = path
+            }
+        }
+
+        public struct Machine: Hashable, Sendable, Codable {
+            public var serverID: String
+            public var host: String
+            public var port: Int
+            public var stateDirectory: String
+            public var libraries: [Library]
+
+            public init(serverID: String, host: String, port: Int, stateDirectory: String, libraries: [Library]) {
+                self.serverID = serverID
+                self.host = host
+                self.port = port
+                self.stateDirectory = stateDirectory
+                self.libraries = libraries
+            }
+        }
+
+        public var editable: Editable
+        public var readOnly: Machine
+
+        public init(editable: Editable, readOnly: Machine) {
+            self.editable = editable
+            self.readOnly = readOnly
+        }
+    }
+
+    /// Any of the editable settings; what is left `nil` is left out of the body, and unchanged.
+    public struct SettingsPatch: Hashable, Sendable, Codable {
+        public var name: String?
+        public var embeddedNode: Bool?
+        public var advertise: Bool?
+
+        public init(name: String? = nil, embeddedNode: Bool? = nil, advertise: Bool? = nil) {
+            self.name = name
+            self.embeddedNode = embeddedNode
+            self.advertise = advertise
+        }
+    }
+
+    /// The silo's settings and the facts of its machine. Operator only.
+    public func settings() async throws -> SettingsReport {
+        try await send("GET", "/v1/settings")
+    }
+
+    /// Changes the editable settings, all of the patch or none of it; a refusal is `status(400, _)`
+    /// carrying the silo's reason. Operator only.
+    public func updateSettings(_ patch: SettingsPatch) async throws -> SettingsReport {
+        try await send("PATCH", "/v1/settings", body: patch)
+    }
+
     // MARK: - Plumbing
 
     public static let encoder: JSONEncoder = {

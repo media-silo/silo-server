@@ -6,6 +6,7 @@ import AppKit
 import Combine
 import SwiftUI
 import SiloAdminKit
+import SiloClient
 
 /// The operator's console: a window over `AdminConsole`, and thin on purpose — the kit owns the
 /// registry, the passkeys and the flows; the shell renders what the engine handed back and asks
@@ -65,19 +66,26 @@ final class ConsoleModel {
     var claimTarget: AdminConsole.Silo?
     var forgetTarget: AdminConsole.Silo?
     var refusal: Refusal?
+    /// The settings last read or written for a silo, by its id: what the detail pane shows.
+    private(set) var settings: [AdminConsole.Silo.ID: SiloClient.SettingsReport] = [:]
 
     /// The endings an operator has to be told in words: someone else's stage runs out at a
-    /// clock time, someone else finished, or the silo could not be asked at all.
+    /// clock time, someone else finished, the silo could not be asked at all, or it refused a
+    /// settings change or the passkey the change was asked with.
     enum Refusal {
         case stagedElsewhere(until: Date)
         case noLongerInBootstrap
         case unreachable
+        case settingsRefused(String)
+        case noAccess
 
         var title: String {
             switch self {
             case .stagedElsewhere: "Setup Staged Elsewhere"
             case .noLongerInBootstrap: "Someone Finished First"
             case .unreachable: "The Silo Could Not Be Reached"
+            case .settingsRefused: "The Silo Refused the Change"
+            case .noAccess: "No Access"
             }
         }
 
@@ -89,6 +97,10 @@ final class ConsoleModel {
                 "This silo's setup was already confirmed. It now shows as what its probe says."
             case .unreachable:
                 "No reply; the row keeps its last-known state. Try again when the silo answers."
+            case .settingsRefused(let reason):
+                "Nothing was changed: \(reason)."
+            case .noAccess:
+                "The silo no longer accepts the passkey this Mac holds for it, so its settings cannot be changed from here."
             }
         }
     }
@@ -172,6 +184,29 @@ final class ConsoleModel {
             claimTarget = nil
             refusal = .unreachable
             return .failed
+        }
+    }
+
+    /// Reads a with-access silo's settings for the detail pane. A failure leaves the last reading
+    /// in place; the next sweep says how the Mac stands with the silo.
+    func loadSettings(for silo: AdminConsole.Silo) async {
+        if let report = try? await console.settings(of: silo) {
+            settings[silo.id] = report
+        }
+    }
+
+    /// Sends one change to the silo. What the silo answered is what the pane shows, and a refusal
+    /// is told in the silo's own words.
+    func updateSettings(for silo: AdminConsole.Silo, _ patch: SiloClient.SettingsPatch) async {
+        do {
+            settings[silo.id] = try await console.updateSettings(of: silo, patch)
+            silos = await console.silos
+        } catch let refused as AdminConsole.SettingsRefused {
+            refusal = .settingsRefused(refused.reason)
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+        } catch {
+            refusal = .unreachable
         }
     }
 
@@ -321,8 +356,11 @@ private struct DetailRoute: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+                if silo.classification == .withAccess {
+                    SettingsPane(silo: silo, model: model)
+                }
             }
-            .padding(40)
+            .padding(silo.classification == .withAccess ? 20 : 40)
             .opacity(silo.classification == .unreachable ? 0.35 : 1)
             .saturation(silo.classification == .unreachable ? 0 : 1)
             .allowsHitTesting(silo.classification != .unreachable)
@@ -336,6 +374,71 @@ private struct DetailRoute: View {
         } else {
             ContentUnavailableView("Select a Silo", systemImage: "externaldrive")
         }
+    }
+}
+
+/// A with-access silo's settings, as the silo reports them: what a route changes, editable, and
+/// the facts of its machine — where it listens, its id, where its state lives — read-only, since no
+/// route changes them. Each change goes to the silo as it is made, and what the silo answers is what
+/// the pane then shows. The libraries are listed, read-only, until they grow routes of their own.
+private struct SettingsPane: View {
+    let silo: AdminConsole.Silo
+    let model: ConsoleModel
+    @State private var nameDraft = ""
+
+    var body: some View {
+        Group {
+            if let report = model.settings[silo.id] {
+                Form {
+                    Section("Settings") {
+                        TextField("Name", text: $nameDraft)
+                            .onSubmit { save(SiloClient.SettingsPatch(name: nameDraft)) }
+                        Toggle("Encode on this silo", isOn: Binding(
+                            get: { report.editable.embeddedNode },
+                            set: { save(SiloClient.SettingsPatch(embeddedNode: $0)) }
+                        ))
+                        Toggle("Advertise on the network", isOn: Binding(
+                            get: { report.editable.advertise },
+                            set: { save(SiloClient.SettingsPatch(advertise: $0)) }
+                        ))
+                    }
+                    Section {
+                        LabeledContent("Listens on", value: "\(report.readOnly.host):\(report.readOnly.port)")
+                        LabeledContent("Server ID", value: report.readOnly.serverID)
+                        LabeledContent("State directory", value: report.readOnly.stateDirectory)
+                            .textSelection(.enabled)
+                    } header: {
+                        Text("This Silo's Machine")
+                    } footer: {
+                        Text("Set in silo.json on the silo's machine. The state directory is where operator-credential.reset goes.")
+                    }
+                    Section("Libraries") {
+                        if report.readOnly.libraries.isEmpty {
+                            Text("None").foregroundStyle(.secondary)
+                        }
+                        ForEach(report.readOnly.libraries, id: \.id) { library in
+                            LabeledContent(library.id, value: library.path)
+                        }
+                    }
+                }
+                .formStyle(.grouped)
+                // Set apart from the silo's read above it: the grouped form's own background is the
+                // window's, so without a tone and an edge of its own nothing says where the scroll begins.
+                .scrollContentBackground(.hidden)
+                .background(Color(nsColor: .underPageBackgroundColor))
+                .clipShape(.rect(cornerRadius: 10))
+                .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.separator) }
+                .onAppear { nameDraft = report.editable.name }
+                .onChange(of: report.editable.name) { _, name in nameDraft = name }
+            } else {
+                ProgressView()
+            }
+        }
+        .task(id: silo.id) { await model.loadSettings(for: silo) }
+    }
+
+    private func save(_ patch: SiloClient.SettingsPatch) {
+        Task { await model.updateSettings(for: silo, patch) }
     }
 }
 
