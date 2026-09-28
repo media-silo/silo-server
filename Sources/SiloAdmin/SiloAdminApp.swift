@@ -313,7 +313,7 @@ private struct DetailRoute: View {
                     .font(.title2)
                 Text(silo.statusLabel)
                     .foregroundStyle(.secondary)
-                SeenText(prefix: silo.url.host ?? silo.url.absoluteString, lastSeen: silo.lastSeen)
+                SeenText(prefix: silo.url.host ?? silo.url.absoluteString, silo: silo)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 if silo.classification == .unreachable, let lastKnown = silo.lastKnownAccess.lastKnownLabel {
@@ -361,13 +361,19 @@ private struct SiloBanner: View {
 /// last-seen time still, so its row never changes between sweeps and SwiftUI has no reason to
 /// redraw it — the phrase would freeze at whatever it read when the silo last answered. The
 /// timeline re-reads it against the wall clock, so the age keeps growing while the time holds.
+/// Only an unreachable silo says when it was seen: one that answers was seen at the last sweep,
+/// and the phrase only flickered between "now" and "15 seconds ago" with the sweep's rhythm.
 private struct SeenText: View {
     let prefix: String
-    let lastSeen: Date
+    let silo: AdminConsole.Silo
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 15)) { _ in
-            Text("\(prefix) · seen \(lastSeen.formatted(.relative(presentation: .named)))")
+        if silo.classification == .unreachable {
+            TimelineView(.periodic(from: .now, by: 15)) { _ in
+                Text("\(prefix) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
+            }
+        } else {
+            Text(prefix)
         }
     }
 }
@@ -388,7 +394,7 @@ struct SiloRow<Actions: View>: View {
                 .frame(width: 24)
             VStack(alignment: .leading) {
                 Text(silo.name)
-                SeenText(prefix: "\(silo.url.host ?? silo.url.absoluteString) · \(silo.statusLabel)", lastSeen: silo.lastSeen)
+                SeenText(prefix: "\(silo.url.host ?? silo.url.absoluteString) · \(silo.statusLabel)", silo: silo)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if silo.classification == .unreachable, let lastKnown = silo.lastKnownAccess.lastKnownLabel {
