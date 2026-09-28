@@ -313,7 +313,7 @@ private struct DetailRoute: View {
                     .font(.title2)
                 Text(silo.statusLabel)
                     .foregroundStyle(.secondary)
-                Text("\(silo.url.host ?? silo.url.absoluteString) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
+                SeenText(prefix: silo.url.host ?? silo.url.absoluteString, lastSeen: silo.lastSeen)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 if silo.classification == .unreachable {
@@ -357,6 +357,21 @@ private struct SiloBanner: View {
     }
 }
 
+/// The "seen … ago" line, kept on its own clock. A silo that has gone quiet holds its
+/// last-seen time still, so its row never changes between sweeps and SwiftUI has no reason to
+/// redraw it — the phrase would freeze at whatever it read when the silo last answered. The
+/// timeline re-reads it against the wall clock, so the age keeps growing while the time holds.
+private struct SeenText: View {
+    let prefix: String
+    let lastSeen: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 15)) { _ in
+            Text("\(prefix) · seen \(lastSeen.formatted(.relative(presentation: .named)))")
+        }
+    }
+}
+
 extension Set {
     /// The selection the detail reads: exactly one, or nothing to say.
     fileprivate var single: Element? { count == 1 ? first : nil }
@@ -373,7 +388,7 @@ struct SiloRow<Actions: View>: View {
                 .frame(width: 24)
             VStack(alignment: .leading) {
                 Text(silo.name)
-                Text("\(silo.url.host ?? silo.url.absoluteString) · \(silo.statusLabel) · seen \(silo.lastSeen.formatted(.relative(presentation: .named)))")
+                SeenText(prefix: "\(silo.url.host ?? silo.url.absoluteString) · \(silo.statusLabel)", lastSeen: silo.lastSeen)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if silo.classification == .unreachable {
