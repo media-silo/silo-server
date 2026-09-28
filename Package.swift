@@ -266,6 +266,9 @@ let package = Package(
         // so the wire shapes are pinned without a server.
         .testTarget(name: "SiloClientTests", dependencies: ["SiloClient"]),
         .testTarget(name: "SiloAdminKitTests", dependencies: ["SiloAdminKit", "SiloClient"]),
+        // The window's model, which the kit's suite cannot see: the order the sheets and the
+        // model hand things to each other in, against the same kind of stubbed silo.
+        .testTarget(name: "SiloAdminTests", dependencies: ["SiloAdmin", "SiloAdminKit", "SiloDiscovery"]),
         .testTarget(name: "EncoderTests", dependencies: ["Encoder", "SiloKit"]),
         .testTarget(name: "SiloLibraryTests", dependencies: ["SiloLibrary", "SiloKit"]),
         .testTarget(name: "SiloStoreTests", dependencies: ["SiloStore", "SiloLibrary", "SiloKit"]),
