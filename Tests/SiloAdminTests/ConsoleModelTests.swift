@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 the media-silo project authors
+
+#if canImport(SwiftUI)
+import Foundation
+import SiloAdminKit
+import SiloDiscovery
+import Synchronization
+import Testing
+@testable import SiloAdmin
+
+/// The window's model against a silo-shaped stub. The kit's suite pins the flows; this one
+/// pins the hand-offs between the sheets and the model — the order SwiftUI actually runs them
+/// in, which the engine never sees. Serial because the handler is one static seam.
+@MainActor
+@Suite(.serialized)
+struct ConsoleModelTests {
+    private final class Stub: URLProtocol, @unchecked Sendable {
+        static let handler = Mutex<@Sendable (URLRequest) -> (Int, Data)?>({ _ in nil })
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            guard let (status, data) = Self.handler.withLock({ $0(request) }),
+                  let url = request.url,
+                  let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])
+            else {
+                client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+                return
+            }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        override func stopLoading() {}
+    }
+
+    private nonisolated static func serverInfo(bootstrap: Bool) -> Data {
+        Data(#"{"id":"s1","name":"Fresh Silo","bootstrap":\#(bootstrap)}"#.utf8)
+    }
+
+    /// The setup sheet's confirm dismisses before it hands over — and dismissing a sheet bound
+    /// by item clears `prepared` on the spot. The confirm has to play the pair anyway: when the
+    /// model read the setup back from `prepared`, it found nothing, sent nothing and said
+    /// nothing, and the next Set Up minted a different passkey over an unstaged silo.
+    @Test func confirmingAfterTheSheetDismissesStillSetsUp() async throws {
+        let store = InMemoryPasskeyStore()
+        let wire = Mutex<[String]>([])
+        Stub.handler.withLock {
+            $0 = { request in
+                switch request.url?.path {
+                case "/v1/server":
+                    return (200, Self.serverInfo(bootstrap: true))
+                case "/v1/setup":
+                    wire.withLock { $0.append("stage") }
+                    return (202, Data(#"{"id":"s1","name":"Fresh Silo","confirmBy":"2026-09-24T10:10:00Z"}"#.utf8))
+                case "/v1/setup/confirm":
+                    wire.withLock { $0.append("confirm") }
+                    return (201, Self.serverInfo(bootstrap: false))
+                default:
+                    return nil
+                }
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [Stub.self]
+        let model = ConsoleModel(console: AdminConsole(
+            registry: SiloRegistry(),
+            passkeys: store,
+            session: URLSession(configuration: configuration),
+            browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
+        ))
+
+        await model.refresh()
+        let silo = try #require(model.silos.first { $0.id == "s1" })
+        await model.prepareSetup(for: silo)
+        let prepared = try #require(model.prepared, "Set Up opens the sheet")
+        guard case .minted(let shown) = prepared.presentation else {
+            Issue.record("a fresh attempt mints and shows the passkey")
+            return
+        }
+
+        // The sheet's confirm, in its order: dismiss, then hand over.
+        model.prepared = nil
+        await model.runSetup(prepared, name: "")
+
+        #expect(wire.withLock { $0 } == ["stage", "confirm"], "the confirm plays the pair")
+        #expect(store.passkey(for: "s1") == shown, "the passkey the sheet showed is the one kept")
+        #expect(model.silos.first { $0.id == "s1" }?.classification == .withAccess)
+        #expect(model.refusal == nil)
+    }
+}
+#endif

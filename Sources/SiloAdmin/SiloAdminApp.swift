@@ -139,9 +139,9 @@ final class ConsoleModel {
     }
 
     /// Confirms the sheet: plays the pair through the engine; the sheet, and with it the one
-    /// rendering of a minted passkey, is already gone.
-    func runSetup(name: String?) async {
-        guard let prepared else { return }
+    /// rendering of a minted passkey, is already gone. The setup arrives as an argument because
+    /// the sheet's own dismissal has cleared `prepared` by the time this runs.
+    func runSetup(_ prepared: AdminConsole.PreparedSetup, name: String?) async {
         self.prepared = nil
         do {
             _ = try await console.runSetup(prepared, name: name?.isEmpty == true ? nil : name)
@@ -245,7 +245,7 @@ struct ConsoleView: View {
         .sheet(item: $model.prepared) { prepared in
             SetupSheet(
                 prepared: prepared,
-                onConfirm: { name in Task { await model.runSetup(name: name) } },
+                onConfirm: { name in Task { await model.runSetup(prepared, name: name) } },
                 onCancel: { model.prepared = nil }
             )
         }
