@@ -316,8 +316,8 @@ private struct DetailRoute: View {
                 SeenText(prefix: silo.url.host ?? silo.url.absoluteString, lastSeen: silo.lastSeen)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                if silo.classification == .unreachable {
-                    Text(silo.lastKnownAccess.lastKnownLabel)
+                if silo.classification == .unreachable, let lastKnown = silo.lastKnownAccess.lastKnownLabel {
+                    Text(lastKnown)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -391,8 +391,8 @@ struct SiloRow<Actions: View>: View {
                 SeenText(prefix: "\(silo.url.host ?? silo.url.absoluteString) · \(silo.statusLabel)", lastSeen: silo.lastSeen)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if silo.classification == .unreachable {
-                    Text(silo.lastKnownAccess.lastKnownLabel)
+                if silo.classification == .unreachable, let lastKnown = silo.lastKnownAccess.lastKnownLabel {
+                    Text(lastKnown)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -450,12 +450,13 @@ extension AdminConsole.Classification {
 
 extension Optional where Wrapped == Bool {
     /// What an unreachable silo last owned up to — row data, since the silo itself cannot be
-    /// asked; nil means nothing was ever held, so nothing was ever asked.
-    fileprivate var lastKnownLabel: String {
+    /// asked. Nil means no passkey was ever held, so nothing was ever asked and there is
+    /// nothing to say — a line reading "Never asked" left the operator wondering what was.
+    fileprivate var lastKnownLabel: String? {
         switch self {
         case .some(true): "Had access when last seen"
         case .some(false): "Had no access when last seen"
-        case .none: "Never asked"
+        case .none: nil
         }
     }
 }
