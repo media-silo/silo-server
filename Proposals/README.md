@@ -27,3 +27,7 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   two files inside it divided by one rule — `silo.json` for what no route changes, read at
   startup, and `settings.json` for what routes change, applied while the silo runs — and a
   default port off 8080.
+- [Rulesets](Rulesets.md) — the operator reads, adds and changes a silo's rulesets from
+  SiloAdmin: every version and the silo's reading of it, drafts edited as the document's text and
+  checked by the silo as they are typed, a preview of the decisions a draft would change on the
+  jobs the silo has seen, and a store that names the version it replaces.
