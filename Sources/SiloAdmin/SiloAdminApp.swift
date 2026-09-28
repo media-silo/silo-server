@@ -422,6 +422,12 @@ private struct SettingsPane: View {
                     }
                 }
                 .formStyle(.grouped)
+                // Set apart from the silo's read above it: the grouped form's own background is the
+                // window's, so without a tone and an edge of its own nothing says where the scroll begins.
+                .scrollContentBackground(.hidden)
+                .background(Color(nsColor: .underPageBackgroundColor))
+                .clipShape(.rect(cornerRadius: 10))
+                .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(.separator) }
                 .onAppear { nameDraft = report.editable.name }
                 .onChange(of: report.editable.name) { _, name in nameDraft = name }
             } else {
