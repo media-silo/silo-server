@@ -9,8 +9,8 @@ The encoding capability runs a recipe: `ffprobe` and `ffmpeg` located and driven
 recipe compiled to one argument list, progress reported as the encode runs, and the finished
 output probed and checked against the layout the recipe promised — plus `silo-ctl encode`, which
 drives one file through the whole loop with no server at all. This spec covers `Sources/Encoder`
-and the `encode` command of `Sources/silo-ctl`; the recipe and the rules it comes from are
-specified in [rules](../rules/spec.md).
+and the `encode` command of `Sources/silo-ctl`; the recipe is specified in
+[recipes](../recipes/spec.md), and the rules it comes from in [rulesets](../rulesets/spec.md).
 
 Rationale: [Silo proposal — Encoding rules](../../../Proposals/Silo.md) — with an `ffmpeg` driver
 and a command that encodes one file from one ruleset, the rules are useful before a server
