@@ -6,15 +6,23 @@
 ## Purpose
 
 A ruleset is how a household writes down, once, the encoding decisions a person would otherwise
-make for every file: which streams of a ripped file are kept, which are copied as they are, and
-which are re-encoded, and with what. It is one XML document, written and read by a person, that
-holds three things — the extraction policy the ingestion tool applies when it rips, an ordered list
-of rules, and the output container. Each rule is about one kind of stream, tests facts about the
+make for every file it takes in: which streams of a source file are kept, which are copied as
+they are, and which are re-encoded, and with what. It is one XML document, written and read by a
+person, that holds three things — the extraction policy the ingestion tool applies when it
+produces a source file from its origin, an ordered list of rules, and the output container. Each rule is about one kind of stream, tests facts about the
 file and the stream, and says what to do with a stream it matches. For each stream the first
 matching rule of its kind decides, and a stream no rule decides is an error, never a silent copy.
 
 A silo holds rulesets by name, and every store of one is a new version the silo numbers and never
 rewrites, so that a job can say which version of which ruleset made its file.
+
+**Ingestion** is taking a source file in and preparing it for the library. The **source file** is
+the file ingested; its **origin** is where it came from — a disc, a download, a recording, a file
+already on hand. When the tool that produced the source file reports on the origin, that report is
+the **origin scan**. A ruleset is written for source files of any origin; some facts, and the
+extraction policy, speak only to what an origin offers, and are absent or have no effect for one
+that offers nothing of the kind. Today the one kind of origin scan is MakeMKV's scan of the disc
+title a file was read from.
 
 This spec is the whole of what a ruleset can say and how it is kept: the document, every element
 and attribute, every fact a rule may test and the values it takes, every operator and action, how
@@ -96,19 +104,22 @@ it was stored under, whatever the document's own attributes say, and SHALL NOT r
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`);
 the store's name winning is pinned by nothing yet.
 
-### Requirement: The extraction policy says what the ingestion tool keeps when it rips
-The `<extraction>` element SHALL carry the policy the ingestion tool applies when it rips a
-disc, in three optional attributes, each `true` or `false`:
+### Requirement: The extraction policy says which of an origin's streams a source file keeps
+The `<extraction>` element SHALL carry the policy the ingestion tool applies when it produces a
+source file from its origin — which of the streams the origin offers the source file keeps — in
+three optional attributes, each `true` or `false`:
 
 | Attribute | Means, when true | Default |
 |---|---|---|
 | `embeddedAudio` | keep the lossy core inside a lossless audio track as a stream of its own | `false` |
 | `subtitles` | keep subtitle tracks at all | `true` |
-| `embeddedSubtitles` | keep the forced-only subtitle stream MakeMKV derives from a subtitle track | `true` |
+| `embeddedSubtitles` | keep the forced-only subtitle stream derived from a subtitle track | `true` |
 
-An absent element, or an absent attribute, SHALL mean the default. The policy decides what
-streams the ripped file has; it takes no part in deciding what happens to them, which is the
-rules' job. It lives in the ruleset because a person deciding what is kept and how it is encoded
+An absent element, or an absent attribute, SHALL mean the default. Each attribute applies where the
+origin offers such streams — today, a disc title read by MakeMKV, which extracts embedded cores and
+derives forced-only streams — and has no effect on a source file whose origin offers none. The
+policy decides what streams the source file has; it takes no part in deciding what happens to them,
+which is the rules' job. It lives in the ruleset because a person deciding what is kept and how it is encoded
 is making one decision.
 
 #### Scenario: the defaults
@@ -170,7 +181,7 @@ scope, where it describes the stream being decided.
 |---|---|---|---|---|
 | `kind` | file | text | what the item is: `episode`, `movie`, `featurette`, or another type of extra the container names, such as `interview`, `deletedScene`, `behindTheScenes`, `trailer`, `scene`, `short`, `clip` | the assignment |
 | `profile` | file | text | the profile the file is being made into, such as `mobile`; absent for the unqualified presentation | the assignment |
-| `format` | file | text | the disc the file was ripped from: `dvd`, `bluray` or `uhd` | the assignment, else MakeMKV's scan |
+| `format` | file | text | the physical format of the origin, when the source file came from a disc: `dvd`, `bluray` or `uhd`; absent otherwise | the assignment, else the origin scan |
 | `duration` | file | number | seconds | `ffprobe` |
 | `video.codec` | video | text | the codec as `ffprobe` names it: `h264`, `hevc`, `mpeg2video`, … | `ffprobe` |
 | `video.width` | video | number | pixels | `ffprobe` |
@@ -181,13 +192,13 @@ scope, where it describes the stream being decided.
 | `video.bitDepth` | video | number | bits per sample, such as `8` or `10` | `ffprobe` |
 | `audio.codec` | audio | text | the codec as `ffprobe` names it: `truehd`, `dts`, `ac3`, `eac3`, `aac`, `flac`, `pcm_s24le`, … | `ffprobe` |
 | `audio.lossless` | audio | flag | whether the stream is lossless: TrueHD, MLP, FLAC, ALAC, WavPack, TTA, APE, any PCM, and DTS-HD Master Audio | derived from the codec and its profile |
-| `audio.channels` | audio | number | channel count, such as `2` or `6` | `ffprobe`, else MakeMKV's scan |
-| `audio.language` | audio | text | the language tag as the file carries it, usually an ISO 639-2 code such as `eng` | `ffprobe`, else MakeMKV's scan |
-| `audio.role` | audio | text | what the stream is for: `main`, `commentary`, `isolatedMusic`, `descriptive` or `other` | derived from the assignment, then the disc's flags, then the file's dispositions |
-| `audio.core` | audio | flag | whether the stream is the lossy core extracted from inside a lossless track | MakeMKV's scan |
+| `audio.channels` | audio | number | channel count, such as `2` or `6` | `ffprobe`, else the origin scan |
+| `audio.language` | audio | text | the language tag as the file carries it, usually an ISO 639-2 code such as `eng` | `ffprobe`, else the origin scan |
+| `audio.role` | audio | text | what the stream is for: `main`, `commentary`, `isolatedMusic`, `descriptive` or `other` | derived from the assignment, then the origin scan's stream flags, then the file's dispositions |
+| `audio.core` | audio | flag | whether the stream is the lossy core extracted from inside a lossless track | the origin scan |
 | `subtitle.codec` | subtitle | text | the codec as `ffprobe` names it: `hdmv_pgs_subtitle`, `dvd_subtitle`, `subrip`, … | `ffprobe` |
-| `subtitle.language` | subtitle | text | as `audio.language` | `ffprobe`, else MakeMKV's scan |
-| `subtitle.forced` | subtitle | flag | whether the stream carries only forced subtitles | the file's dispositions, or MakeMKV's scan |
+| `subtitle.language` | subtitle | text | as `audio.language` | `ffprobe`, else the origin scan |
+| `subtitle.forced` | subtitle | flag | whether the stream carries only forced subtitles | the file's dispositions, or the origin scan |
 
 A fact the file does not have — no `kind` on an unassigned file, no `video.hdr` on SDR video, no
 language tag — is **absent**. How each fact is discovered and derived is specified in
