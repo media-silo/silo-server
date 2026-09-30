@@ -1,19 +1,17 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 the media-silo project authors -->
 
-# The index and the rulesets
+# The index
 
 ## Purpose
 
-The silo's own state, kept in its state directory, is two things. The index is what every
-read route answers from: one SQLite file derived from a library's sidecars, holding nothing
-they do not, rebuilt from them when it is thrown away. The rulesets are the encoding rules
-the silo holds, kept as the XML documents they were given, each store a new version the silo
-numbers and never rewrites.
+The index is what every read route answers from: one SQLite file in the silo's state directory,
+derived from a library's sidecars, holding nothing they do not, and rebuilt from them when it is
+thrown away. How the silo keeps its rulesets, the other thing in its state directory that routes
+read, is [rulesets](../rulesets/spec.md).
 
 Rationale: [Silo proposal — The index](../../../Proposals/Silo.md) — derived state, a cache
-that can be thrown away; principles 1 (the `.smd` is the truth) and 4 (a ruleset is immutable
-once named).
+that can be thrown away; principle 1 (the `.smd` is the truth).
 Documentation: [README](../../../README.md).
 
 ## Requirements
@@ -101,40 +99,3 @@ the one-container entry point.
   `GET /v1/containers/0000000000000003` shows the placed `Part Two.mkv` at once
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAndRefusedTheSecondTime`).
-
-### Requirement: Rulesets are kept as the documents they were given
-The rulesets store SHALL keep each ruleset under `rulesets/<name>/<version>.xml` in the
-state directory — the name the folder, the version the file's name — and SHALL keep the
-bytes exactly as they were given, so that a hand-written comment survives. A read SHALL
-return the document at a version, or the latest version when none is asked, and a ruleset
-parsed from the store SHALL be named and numbered by where it was found, not by what its
-document says.
-
-#### Scenario: a stored version reads back byte for byte
-- **WHEN** the household ruleset is stored twice and version 1 is then read back
-- **THEN** the document returned for version 1 equals, byte for byte, the document that was
-  stored
-
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`rulesetsAreVersionedAndTheOperatorGateHolds`).
-
-### Requirement: Every store is a new version the silo numbers, and a version is never rewritten
-A store SHALL be assigned the next version for its name — the latest plus one, or 1 for a
-new name — read and taken under one lock, so no two stores receive the same number. A
-version SHALL NOT be rewritten: a file already on disk under that version is refused as
-`versionExists`. A document SHALL be parsed before it is stored, and a document the reader
-refuses SHALL NOT be stored at all. A name that is empty, contains a `/`, or begins with a
-`.` SHALL be refused as `invalidName`.
-
-#### Scenario: two stores are numbered in order
-- **WHEN** the same document is stored as `household` twice
-- **THEN** the first store is version 1, the second version 2, and the latest version of
-  `household` is 2
-
-#### Scenario: a document that is not a ruleset is refused
-- **WHEN** a document testing a fact a rule cannot test — `<when fact="nope" is="1"/>` — is
-  stored
-- **THEN** it is not stored; over the API the answer is 400 with
-  `not a fact a rule can test` in the problem detail
-
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`rulesetsAreVersionedAndTheOperatorGateHolds`).
-The `invalidName` and `versionExists` guards are pinned by nothing yet.

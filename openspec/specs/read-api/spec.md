@@ -9,8 +9,9 @@ The read API is the HTTP surface a client browses: the libraries the silo
 serves, their containers and presentations, provider lookup and title search,
 a container as its sidecar, a presentation as bytes, the stored rulesets, the
 resolver's dry run, and the one read that is also a trigger — a scan. Every
-answer comes from the index, which is the index-and-rulesets capability's to
-keep; this spec starts at the routes and stops at the index's door. Placement,
+answer comes from the [index](../index/spec.md), or, for a ruleset, from the
+store [rulesets](../rulesets/spec.md) describes, and each of those is its own
+capability's to keep; this spec starts at the routes and stops at their door. Placement,
 jobs and nodes are other capabilities' routes and are not described here.
 
 Rationale: [Silo proposal — Discovery and playback](../../../Proposals/Silo.md) —
