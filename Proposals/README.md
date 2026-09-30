@@ -27,3 +27,8 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   two files inside it divided by one rule — `silo.json` for what no route changes, read at
   startup, and `settings.json` for what routes change, applied while the silo runs — and a
   default port off 8080.
+- [Input specs](InputSpecs.md) — the silo stops knowing how a file was obtained: a producer
+  outside it obtains an input mezzanine and describes it in an input spec, in a vocabulary the silo
+  defines; the silo derives the facts a rule tests from it and resolves a recipe; and the producer
+  may adjust that recipe for one input as the last step of ingestion, the adjustment recorded
+  beside the decision it replaced. MakeMKV's scan leaves the server for the producer that uses it.
