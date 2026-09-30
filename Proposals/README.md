@@ -27,3 +27,9 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   two files inside it divided by one rule — `silo.json` for what no route changes, read at
   startup, and `settings.json` for what routes change, applied while the silo runs — and a
   default port off 8080.
+- [Layered rulesets](LayeredRulesets.md) — the rules that decide a file come in layers, nearest
+  first: a container's own rules in its `.smd`, then its ancestors', then the library's standard
+  ruleset. A ruleset has branches, used on the ingestions the operator chooses and promoted to be
+  the standard. Each job records exactly which rules made its file, and the silo reports which
+  placed presentations the current rules would make differently, and whether their sources can be
+  had.
