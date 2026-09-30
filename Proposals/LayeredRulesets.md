@@ -39,9 +39,9 @@ does not change; and when the household ruleset changes, the copy does not.
 Not until there are two." There are two.
 
 The versions are a line. Every store is the next number, and every assignment that does not name a
-version takes the latest. So trying a change on a few rips means storing it as the latest, where
-every other ingestion picks it up too; and backing it out means storing the old document again.
-There is no way to say "these rules, for these rips, until I decide."
+version takes the latest. So trying a change on a few source files means storing it as the latest,
+where every other ingestion picks it up too; and backing it out means storing the old document
+again. There is no way to say "these rules, for these ingestions, until I decide."
 
 And the record stops at the job. A job knows the ruleset version it was resolved against, which
 answers "what made this file". Nothing answers the next question: now the rules have changed, which
@@ -73,7 +73,8 @@ resolved against by that digest. What made a file stays readable after the sidec
 **Out of date.** A placed presentation is out of date when resolving its recorded facts against the
 stack that applies now decides any stream differently from its recorded recipe. The silo keeps this
 current as the rules change, and reports each out-of-date presentation with what would change and
-whether its source is available: still held by the node that ripped it, gone, or ripped again.
+whether its source file is available: still held by the node it was ingested from, gone, or
+ingested again.
 
 Re-making an out-of-date presentation is not part of this proposal; see
 [Non-goals](#non-goals).
@@ -130,8 +131,8 @@ does:
 </container>
 ```
 
-It holds rules and nothing else: no `<extraction>`, because the rip happens before the assignment
-says which container a file belongs to, so only the library's ruleset can speak to it; and no
+It holds rules and nothing else: no `<extraction>`, because a source file is produced from its origin before
+the assignment says which container it belongs to, so only the library's ruleset can speak to it; and no
 `<output>`, because the container a file is written into is one decision for a library, and a
 presentation in a different container format beside its siblings is a surprise nobody asked for.
 The rules apply to every item of the container and of every container below it.
@@ -156,7 +157,7 @@ rather than resolved as if the layer were not there.
 An item's stack is built from its lineage, which the assignment already carries: the nearest
 container's `<rules>`, as the index holds its sidecar, then each ancestor's, then the library's
 ruleset — the one the assignment names, or the library's standard. A container with no sidecar yet
-— the first rip of a new series — contributes no layer.
+— the first ingestion into a new series — contributes no layer.
 
 Resolution tries, for each stream, the rules of the stream's scope in the first layer in document
 order, then the next layer's, and so on; the first rule that matches decides. So a container's
@@ -193,8 +194,8 @@ new field to say which branch made it — the version knows. Each version record
 parent: the previous version on its branch, or the base for a branch's first.
 
 An assignment may name a ruleset's branch; it is resolved against the branch's head, or a version
-the assignment names. Which rips go to a trial branch is the operator's choice, made per assignment
-— and so, in practice, the ingestion tool's to offer.
+the assignment names. Which ingestions go to a trial branch is the operator's choice, made per
+assignment — and so, in practice, the ingestion tool's to offer.
 
 ### Promotion
 
@@ -232,8 +233,9 @@ differ from the recorded recipe in any stream's action or settings, or in the ou
 give no recipe at all. Which rule decided a stream is not compared: a stream re-decided by a
 renamed rule to the same action is not out of date.
 
-Changes to extraction make nothing out of date. They change what the next rip keeps; a placed file
-can only be made again from a new rip, and that is the operator's call.
+Changes to extraction make nothing out of date. They change which of an origin's streams the next
+source file keeps; a placed file can only gain them from a new source file produced from its origin,
+and that is the operator's call.
 
 The silo re-evaluates out-of-date-ness when the rules change: a store on a branch a placed job used,
 a promotion, and a walk that finds a sidecar whose `<rules>` digest differs from the one the index
@@ -248,16 +250,21 @@ so the operator knows the answer is partial.
 
 Each out-of-date presentation is reported with the state of its source:
 
-- **held** — the node that holds the job's source answered for the file when last asked;
+- **held** — the node that holds the job's source file answered for it when last asked;
 - **gone** — the node answered that the file is not there;
 - **unknown** — the node has not answered since the presentation went out of date;
-- **ripped again** — a job has been registered whose assignment names the same source, by the disc
-  and playlist the presentation's `<source>` records, which is the natural key that survives a
-  re-rip.
+- **ingested again** — a job has been registered whose assignment names the same source reference
+  the presentation's `<source>` records: the natural key of its origin, which survives producing
+  the source file a second time.
+
+The only source reference the sidecar can record today is a disc and a playlist, so it is a
+source file whose origin was a disc title that can be recognised as ingested again. One from any
+other origin records no `<source>`, and is reported held, gone or unknown; a source reference for
+other origins is the sidecar format's to add, and this state would read it unchanged.
 
 The silo asks a holder when a presentation goes out of date and whenever it next sees that node, and
-never fetches the file to find out. An out-of-date presentation whose source is gone stays reported:
-the day someone re-rips the disc, it becomes one that can be re-made.
+never fetches the file to find out. An out-of-date presentation whose source file is gone stays
+reported: the day its origin is ingested again, it becomes one that can be re-made.
 
 ### The report
 
@@ -271,18 +278,18 @@ the presentations a promotion would put out of date.
 
 The household's standard is `household@7`, and `films` names it. The operator decides the
 commentaries are too big and starts a branch, `speech-96k`, from version 7; stores the change as
-version 8 on it; and assigns the next three rips to it. The three commentaries come out at 96k,
+version 8 on it; and assigns the next three ingestions to it. The three commentaries come out at 96k,
 each job recording `household@8`. The operator listens, likes them, and asks what promotion would
-change: 41 presentations, each with one commentary stream going from 160k to 96k — 29 whose sources
-are still held by the ripping Mac, 12 gone. They promote; the standard's version 9 is version 8's
+change: 41 presentations, each with one commentary stream going from 160k to 96k — 29 whose source files
+are still held by the Mac they were ingested on, 12 gone. They promote; the standard's version 9 is version 8's
 document. The three trial files are not out of date, because version 9 decides them exactly as
 version 8 did. The 41 are, and the report says which can be re-made today.
 
 Months later the operator opens the Pyramids of Mars sidecar and adds a `<rules>` element keeping
 the restoration's extras whole. At the next walk the silo notices the new digest; the two extras
-already placed at CRF 22 turn out of date — sources gone, since the discs were ripped on a laptop
-long since wiped. They stay on the report. When the box set comes off the shelf again and the disc
-is re-ripped, they show as ripped again.
+already placed at CRF 22 turn out of date — source files gone, since the discs were ingested on a
+laptop long since wiped. They stay on the report. When the box set comes off the shelf again and
+the disc is ingested again, they show as ingested again.
 
 ## What this asks of an implementation
 
@@ -324,7 +331,7 @@ Tests: a job records its stack and a layer is readable by its digest after the s
 promotion that decides a stream differently puts its presentation out of date and one that decides
 the same does not; a sidecar's new `<rules>` puts the presentations below it out of date at the
 next walk; a presentation placed without a job is counted, not reported; each source state is
-reported, and a registered rip with a matching source shows as ripped again; the impact of a branch
+reported, and a registered ingestion with a matching source reference shows as ingested again; the impact of a branch
 equals the report after its promotion.
 
 ## Non-goals
@@ -341,7 +348,7 @@ equals the report after its promotion.
   `.smd`; their history is the layers the silo has kept by digest. A household that wants to trial a
   container override does so on a branch of the library's ruleset, with a rule testing what it can.
 - **One source, several presentations.** Making a full-quality and a mobile presentation from one
-  rip, each resolved with its own profile, is its own proposal; `profile` is already a fact every
+  source file, each resolved with its own profile, is its own proposal; `profile` is already a fact every
   layer can test, so it will compose with this one without change.
 
 ## Open questions
@@ -356,6 +363,6 @@ equals the report after its promotion.
    sidecars — to see them all in one place — would want one; the cost is a fact that is the same for
    every stream and a second way to say what a layer says.
 3. **A container's rules in the ingestion tool.** The tool assigns, so it is the natural place to
-   show which layers a rip will meet. Whether it reads them from the silo or from the sidecar in its
+   show which layers a source file will meet. Whether it reads them from the silo or from the sidecar in its
    own clone of the data repository depends on how the tool reaches the library, which is not yet
    built.

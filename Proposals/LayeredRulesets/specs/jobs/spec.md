@@ -15,7 +15,7 @@ of the lineage has `<rules>` the reader refuses (naming the container), the item
 last container, or the feature map names a feature that container does not have. An audio stream a
 feature is mapped to SHALL take its role from that feature: `commentary` for a commentary,
 `isolatedMusic` for isolated music, `other` otherwise. Facts SHALL then be merged from the probe,
-the MakeMKV facts and the assignment, and the recipe resolved against the item's stack: the
+the origin scan and the assignment, and the recipe resolved against the item's stack: the
 lineage's container rules as the index holds their sidecars, then the ruleset the assignment
 names, or the library's — at the version named, else the head of the branch named, else the head
 of the standard. A stream no rule decides SHALL be 422, the resolver's report as given. On success
@@ -24,7 +24,7 @@ resolved, the stack recorded, the facts and recipe recorded, the `requirements` 
 encoders sorted, and any failure, lease and progress cleared.
 
 #### Scenario: the household ruleset against an episode
-- **WHEN** the rip of an episode with a main mix and a mapped commentary is assigned against the
+- **WHEN** the source file of an episode with a main mix and a mapped commentary is assigned against the
   `household` ruleset, whose first version encodes lossless main mixes as FLAC and commentaries as
   AAC, in a lineage with no container rules
 - **THEN** the job is `pending`, its audio roles are `[.main, .commentary]` (the feature map
@@ -36,12 +36,12 @@ encoders sorted, and any failure, lease and progress cleared.
 - **THEN** the answer is 422
 
 #### Scenario: the library's standard
-- **WHEN** a rip is assigned into library `films`, whose ruleset is `household` with standard head
+- **WHEN** a source file is assigned into library `films`, whose ruleset is `household` with standard head
   7, naming no ruleset
 - **THEN** it is resolved against `household@7`, and its stored assignment names version 7
 
 #### Scenario: no ruleset anywhere
-- **WHEN** a rip is assigned into a library with no ruleset, naming none
+- **WHEN** a source file is assigned into a library with no ruleset, naming none
 - **THEN** the answer is 400, and the job stays as it was
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromRegisteredToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreRegisteredAssignedClaimedAndPlacedOverTheAPI`);
@@ -95,15 +95,16 @@ Pinned by: nothing yet.
 ### Requirement: An out-of-date presentation reports whether its source can be had
 Each out-of-date presentation SHALL carry the state of its source: `held` when the node holding the
 job's source last answered that it has the file, `gone` when it answered that it has not,
-`unknown` when it has not answered since the presentation went out of date, and `rippedAgain`,
-naming the job, when a job has been registered whose assignment names the same source by disc and
-playlist. The silo SHALL ask the holder when a presentation goes out of date and whenever it next
+`unknown` when it has not answered since the presentation went out of date, and `ingestedAgain`,
+naming the job, when a job has been registered whose assignment names the same source reference as
+the presentation's `<source>` — today a disc and playlist, the only one the sidecar records. A
+presentation with no source reference SHALL never be `ingestedAgain`. The silo SHALL ask the holder when a presentation goes out of date and whenever it next
 sees that node, and SHALL NOT fetch the file to find out. An out-of-date presentation SHALL stay
 reported whatever its source's state.
 
-#### Scenario: the disc is ripped again
-- **WHEN** an out-of-date presentation's source is `gone`, and a rip is registered and assigned
-  naming the same disc and playlist
-- **THEN** the presentation's source is `rippedAgain`, naming the new job
+#### Scenario: the origin is ingested again
+- **WHEN** an out-of-date presentation's source file is `gone`, and a new source file is
+  registered and assigned naming the same disc and playlist
+- **THEN** the presentation's source is `ingestedAgain`, naming the new job
 
 Pinned by: nothing yet.
