@@ -198,8 +198,10 @@ console's warning is gone before anyone thought to look for a button.
 ## What this asks of an implementation
 
 Each step is a pull request, in order, after 0004-configuration's, and each carries its spec deltas
-into `openspec/` per the corpus README — the deltas are written now, under
-[`specs/`](Libraries/specs/) beside this proposal, against the corpus as 0004-configuration leaves it.
+into `openspec/` per the corpus README — the deltas are written now, one change for each step under
+[`openspec/changes/`](../openspec/changes/): `libraries-1-missing-is-a-state`,
+`libraries-2-the-server-keeps-up`, `libraries-3-roots` and `libraries-4-console`, each applied by
+its step's pull request with `openspec archive`.
 
 ### 1. Missing is a state
 

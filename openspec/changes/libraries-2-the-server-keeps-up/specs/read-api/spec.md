@@ -1,20 +1,15 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 the media-silo project authors -->
 
+## REMOVED Requirements
+
+### Requirement: A scan re-reads what changed, and is the operator's to run
+**Reason**: Keeping the index current becomes the server's job
+([index-and-rulesets](../index-and-rulesets/spec.md)); nothing is left for a requested scan to do.
+**Migration**: The route's answer — the counts and findings — is read from
+`GET /v1/libraries/{library}/scan`, which reports the last walk.
+
 ## MODIFIED Requirements
-
-### Requirement: The libraries are listed, with what they hold
-`GET /v1/libraries` SHALL answer 200 with one object per configured library —
-its `id`, the count of `containers` under its roots, the count of
-`presentations` across those containers, walked the whole tree down, and
-whether it is `available`.
-
-#### Scenario: the one library and its counts
-- **WHEN** a client asks `GET /v1/libraries`
-- **THEN** the 200 answer names `"id":"main"`, counts `"presentations":2`, and
-  reads `"available":true`
-
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`theLibraryIsBrowsable`).
 
 ### Requirement: The operator's credential gates mutation; the server is told itself through its state directory
 Every mutation route on this surface — the library routes and the ruleset
@@ -45,14 +40,6 @@ told — where it listens and which libraries it serves — SHALL come from
 Pinned by: `Tests/SiloTests/ServerTests.swift`
 (`rulesetsAreVersionedAndTheOperatorGateHolds`, `aScanIsAnOperatorsToo`).
 
-## REMOVED Requirements
-
-### Requirement: A scan re-reads what changed, and is the operator's to run
-**Reason**: Keeping the index current becomes the server's job
-([index-and-rulesets](../index-and-rulesets/spec.md)); nothing is left for a requested scan to do.
-**Migration**: The route's answer — the counts and findings — is read from
-`GET /v1/libraries/{library}/scan`, which reports the last walk.
-
 ## ADDED Requirements
 
 ### Requirement: The last walk of a library is read, never requested
@@ -69,19 +56,5 @@ library the silo does not serve SHALL be 404. No route SHALL start a walk on req
 #### Scenario: a library the silo does not serve
 - **WHEN** the operator reads `/v1/libraries/other/scan`
 - **THEN** the answer is 404
-
-Pinned by: nothing yet.
-
-### Requirement: An unavailable library is kept, and says so
-A library SHALL be unavailable while its folder does not exist, or while its last walk found no
-container at its top level where the index holds containers for it. While a library is unavailable
-the silo SHALL keep its index rows, SHALL list it with `"available":false`, and SHALL answer its media
-route with 503. The silo SHALL log each change of a library's availability once. The boot SHALL NOT
-stop for an unavailable library.
-
-#### Scenario: a drive that is not there
-- **WHEN** the silo boots with a library's folder missing
-- **THEN** it serves every other library, lists that one unavailable, keeps its containers
-  browsable, and answers 503 for its presentations
 
 Pinned by: nothing yet.
