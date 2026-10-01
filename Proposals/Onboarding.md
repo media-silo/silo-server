@@ -292,8 +292,8 @@ require the filesystem, which is the correct place for a lost-everything recover
 ## What this asks of an implementation
 
 Each step is a pull request, in order, and each carries its spec deltas into `openspec/` per the
-corpus README — the deltas are written now, under [`specs/`](Onboarding/specs/) beside this
-proposal.
+corpus README — the deltas were written with it, and since it landed are kept in
+[`openspec/changes/archive/2026-09-25-onboarding`](../openspec/changes/archive/2026-09-25-onboarding/).
 
 ### 1. The server's identity and its own route
 
