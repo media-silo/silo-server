@@ -23,49 +23,6 @@ there is no assignment of a job any more.
 **Migration**: Make a binding, which resolves to draft recipes as [recipes](../recipes/spec.md)
 describes, and make a job from one.
 
-## ADDED Requirements
-
-### Requirement: The job record carries one committed recipe's run
-A job SHALL have an `id` (a lowercased UUID by default), a `state` of exactly one of `pending`,
-`claimed`, `encoding`, `encoded`, `placing`, `placed`, `failed`, `cancelling` and `cancelled`,
-`createdAt` and `updatedAt` timestamps (`updatedAt` refreshed on every change), the `recipe` it runs
-by id, the `requirements` (the encoders the recipe needs), the `attempts`, the current `lease`, the
-latest `progress`, the `output` file reference, the `result`, the `placement` summary, and the
-`failure` reason. A file reference SHALL carry its `holder` (the node the file is on), its `url`, the
-holder's own `path` for opening locally, its `sizeBytes`, and the `secret` that guards it. An attempt
-SHALL record its node, when it started and ended, and an outcome of `lost`, `failed`, `cancelled` or
-`encoded`. A lease SHALL name a node and when it expires. A job is *active* in exactly the states
-`claimed`, `encoding` and `cancelling`. A job's *sources* are the sources of its recipe's binding's
-segments, and where a requirement speaks of a job's source it means each of them.
-
-#### Scenario: a job freshly made
-- **WHEN** a job is made from a draft recipe
-- **THEN** the job is `pending` with a lowercased UUID id, the recipe's id and its encoders, and no
-  attempts, lease, progress, output, result, placement or failure
-
-Pinned by: nothing yet.
-
-### Requirement: A job is made from a draft recipe whose sources can be had
-`POST /v1/jobs` with a recipe's id, behind the operator's token, SHALL commit the recipe, make the job
-`pending` with the recipe's encoders sorted as its requirements, and answer 201 with it. It SHALL be
-404 for a recipe the silo does not have; 409 for a committed recipe, so one recipe is run by one job;
-and 409 naming the source when a source of the recipe's binding has no copy, since no node could
-fetch it. A job SHALL NOT be made any other way.
-
-#### Scenario: a job from a draft
-- **WHEN** the operator makes a job from a draft recipe whose source has a copy
-- **THEN** the answer is 201 with a `pending` job, and the recipe is committed
-
-#### Scenario: a second job from one recipe
-- **WHEN** the operator makes a job from a recipe a job has already been made from
-- **THEN** the answer is 409, and no job is made
-
-#### Scenario: a source no node holds
-- **WHEN** the operator makes a job from a draft whose binding's only source has no copy
-- **THEN** the answer is 409 naming the source, and the recipe stays a draft
-
-Pinned by: nothing yet.
-
 ## MODIFIED Requirements
 
 ### Requirement: The queue is read openly, oldest first, filtered by state
@@ -181,5 +138,48 @@ id, its state padded to ten, the percent done when encoding, its first source's 
 #### Scenario: watching the queue
 - **WHEN** the operator runs `SILO_URL=http://localhost:8742 SILO_TOKEN=secret silo-ctl jobs list`
 - **THEN** the queue is printed oldest first, one line a job, or `no jobs`
+
+Pinned by: nothing yet.
+
+## ADDED Requirements
+
+### Requirement: The job record carries one committed recipe's run
+A job SHALL have an `id` (a lowercased UUID by default), a `state` of exactly one of `pending`,
+`claimed`, `encoding`, `encoded`, `placing`, `placed`, `failed`, `cancelling` and `cancelled`,
+`createdAt` and `updatedAt` timestamps (`updatedAt` refreshed on every change), the `recipe` it runs
+by id, the `requirements` (the encoders the recipe needs), the `attempts`, the current `lease`, the
+latest `progress`, the `output` file reference, the `result`, the `placement` summary, and the
+`failure` reason. A file reference SHALL carry its `holder` (the node the file is on), its `url`, the
+holder's own `path` for opening locally, its `sizeBytes`, and the `secret` that guards it. An attempt
+SHALL record its node, when it started and ended, and an outcome of `lost`, `failed`, `cancelled` or
+`encoded`. A lease SHALL name a node and when it expires. A job is *active* in exactly the states
+`claimed`, `encoding` and `cancelling`. A job's *sources* are the sources of its recipe's binding's
+segments, and where a requirement speaks of a job's source it means each of them.
+
+#### Scenario: a job freshly made
+- **WHEN** a job is made from a draft recipe
+- **THEN** the job is `pending` with a lowercased UUID id, the recipe's id and its encoders, and no
+  attempts, lease, progress, output, result, placement or failure
+
+Pinned by: nothing yet.
+
+### Requirement: A job is made from a draft recipe whose sources can be had
+`POST /v1/jobs` with a recipe's id, behind the operator's token, SHALL commit the recipe, make the job
+`pending` with the recipe's encoders sorted as its requirements, and answer 201 with it. It SHALL be
+404 for a recipe the silo does not have; 409 for a committed recipe, so one recipe is run by one job;
+and 409 naming the source when a source of the recipe's binding has no copy, since no node could
+fetch it. A job SHALL NOT be made any other way.
+
+#### Scenario: a job from a draft
+- **WHEN** the operator makes a job from a draft recipe whose source has a copy
+- **THEN** the answer is 201 with a `pending` job, and the recipe is committed
+
+#### Scenario: a second job from one recipe
+- **WHEN** the operator makes a job from a recipe a job has already been made from
+- **THEN** the answer is 409, and no job is made
+
+#### Scenario: a source no node holds
+- **WHEN** the operator makes a job from a draft whose binding's only source has no copy
+- **THEN** the answer is 409 naming the source, and the recipe stays a draft
 
 Pinned by: nothing yet.

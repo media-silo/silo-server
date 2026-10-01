@@ -142,8 +142,8 @@ press refresh.
 ## What this asks of an implementation
 
 Each step is a pull request, in order, and each carries its spec deltas into `openspec/` per the
-corpus README — the deltas are written now, under [`specs/`](Refresh/specs/) beside this
-proposal.
+corpus README — the deltas were written with it, and since it landed are kept in
+[`openspec/changes/archive/2026-09-26-refresh`](../openspec/changes/archive/2026-09-26-refresh/).
 
 ### 1. The engine learns patience
 

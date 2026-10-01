@@ -306,8 +306,8 @@ machine moves to a different port, someone at it edits `silo.json` and restarts 
 ## What this asks of an implementation
 
 Each step is a pull request, in order, and each carries its spec deltas into `openspec/` per the
-corpus README — the deltas are written now, under [`specs/`](Configuration/specs/) beside this
-proposal.
+corpus README — the deltas were written with it, and since it landed are kept in
+[`openspec/changes/archive/2026-09-28-configuration`](../openspec/changes/archive/2026-09-28-configuration/).
 
 ### 1. A known home and a new port
 

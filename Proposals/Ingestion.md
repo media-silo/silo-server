@@ -364,8 +364,10 @@ its natural key rather than matched against the sidecar afterwards.
 ## What this asks of an implementation
 
 Each step is a pull request, in order, and each carries its spec deltas into `openspec/` per the
-corpus README — the deltas are written now, under [`specs/`](Ingestion/specs/) beside this
-proposal. The new input-specs, sources and bindings specs, which archiving creates with placeholder
+corpus README — the deltas are written now, one change for each step under
+[`openspec/changes/`](../openspec/changes/): `ingestion-1-sources`, `ingestion-2-outputs`,
+`ingestion-3-bindings-and-recipes` and `ingestion-4-jobs-from-recipes`, each applied by its step's
+pull request with `openspec archive`. The new input-specs, sources and bindings specs, which archiving creates with placeholder
 purposes, are each given their own when they are applied; the rulesets and recipes specs' purpose
 text loses its account of the origin scan, and the jobs spec's its account of an assignment.
 
