@@ -27,3 +27,8 @@ deltas under `Proposals/<Name>/specs/`, as that README describes.
   two files inside it divided by one rule — `silo.json` for what no route changes, read at
   startup, and `settings.json` for what routes change, applied while the silo runs — and a
   default port off 8080.
+- [Ingestion](Ingestion.md) — how media enters the silo, as four things kept apart: a source, a
+  file as it physically is, described in an input spec no mechanism owns and registered once with
+  the copies of it nodes hold; a binding, saying which segments of which sources make one entry;
+  the recipes a binding resolves to, one for each output the ruleset declares, which the producer
+  may adjust before they are committed; and the job, which only runs a committed recipe.
