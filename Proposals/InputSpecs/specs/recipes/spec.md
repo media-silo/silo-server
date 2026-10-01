@@ -22,7 +22,8 @@ below states.
 `AudioFacts.isLossless` SHALL be a function of codec and profile only, so that the producer, the
 resolver at assignment and the node at encode time agree: TrueHD, MLP, FLAC, ALAC, WavPack, TTA,
 APE and any `pcm_` codec are lossless, DTS is lossless only when its profile is DTS-HD Master Audio
-(the DTS-HD High Resolution profile is not), and anything else is not.
+(the DTS-HD High Resolution profile is not), and anything else is not — including a codec `ffmpeg`
+has no name for, which its producer has named.
 
 `AudioRole` SHALL be derived from the sources in order of authority: the assignment's feature map
 first, then the stream's marks in the input spec — `commentary` is commentary, and failing that
@@ -50,7 +51,8 @@ from marks is pinned by nothing yet.
 `SourceFacts` SHALL be derived, in one place, from a job's input spec and the assignment — the role
 of each audio stream the feature map names, `kind`, `profile` and `format`. The first video stream
 of the spec SHALL be described and further video streams reported as a hint. Each stream's codec,
-size, frame rate, bit depth, channels, language and title SHALL be the spec's; `video.interlaced`
+size, bit depth, channels, language and title SHALL be the spec's; `video.frameRate` SHALL be the
+spec's fraction as a number, its numerator divided by its denominator; `video.interlaced`
 SHALL be the spec's `interlaced`, false when absent; `video.hdr` SHALL be `hdr10` for a `transfer`
 of `smpte2084`, `hlg` for `arib-std-b67`, and absent otherwise; `subtitle.forced` SHALL be whether
 the stream is marked `forced`; `format` SHALL be the assignment's, else the spec's `medium`.
@@ -66,6 +68,11 @@ streams of their kind — the way a player's menu counts and the way the sidecar
 #### Scenario: a title that says commentary is a hint, not a role
 - **WHEN** an audio stream at index 3 is titled "Commentary with the director" and nothing marks it
 - **THEN** its role stays `main` and a hint on stream 3 reads: titled "Commentary with the director" but nothing marks it a commentary; assign it to a feature if it is one
+
+#### Scenario: a fractional frame rate
+- **WHEN** an input spec's video stream has `frameRate` `24000/1001`
+- **THEN** the `video.frameRate` fact is 24000 divided by 1001, and a rule testing
+  `<when fact="video.frameRate" lt="24"/>` holds for it
 
 #### Scenario: the medium stands in for the format
 - **WHEN** the assignment gives no format and the input spec's `medium` is `bluray`

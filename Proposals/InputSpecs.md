@@ -52,8 +52,8 @@ silo's vocabulary. The producer translates its own mechanism's signals into that
 does not decide what the silo's facts are. The silo provides one producer, for a plain file; smd-tools'
 ingestion app, which uses MakeMKV, is another.
 
-**2. The silo derives facts and resolves a recipe.** Registration takes the mezzanine's file
-reference and its input spec. Assignment adds what the silo's library knows — the item, its kind
+**2. The silo derives facts and resolves a recipe.** Registration takes the mezzanine's
+segments — for now, one file — and its input spec. Assignment adds what the silo's library knows — the item, its kind
 and profile, the feature map — and the silo derives the facts a rule tests, in one place, then
 resolves the ruleset against them. The dry-run resolve route takes the same input, so a producer can
 show the recipe before it assigns anything.
@@ -83,8 +83,10 @@ with what it decided. This proposal adds four of its own.
 
 ## Vocabulary
 
-- **Input mezzanine** — the file a producer obtained and hands to the silo to be encoded. "Source
+- **Input mezzanine** — the media a producer obtained and hands to the silo to be encoded. "Source
   file" in the specs until now.
+- **Segment** — one file of a mezzanine's media. A mezzanine is a list of segments, and for now
+  exactly one.
 - **Producer** — the process that obtains a mezzanine and writes its input spec.
 - **Input spec** — the description of one mezzanine: its streams and what was observed about them,
   in the silo's vocabulary.
@@ -97,12 +99,13 @@ with what it decided. This proposal adds four of its own.
 
 ```json
 {
+  "format": 1,
   "label": "Pyramids of Mars, disc 1, title 4",
   "medium": "dvd",
   "duration": 1497.6,
   "streams": [
     { "index": 0, "kind": "video", "codec": "mpeg2video", "width": 720, "height": 576,
-      "frameRate": 25, "interlaced": true, "transfer": "bt470bg", "bitDepth": 8 },
+      "frameRate": "25/1", "interlaced": true, "transfer": "bt470bg", "bitDepth": 8 },
     { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2, "language": "eng",
       "marks": ["default"] },
     { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "eng",
@@ -116,16 +119,18 @@ with what it decided. This proposal adds four of its own.
 
 | Field | Means | Vocabulary |
 |---|---|---|
+| `format` | the version of the input spec's shape; this proposal's is `1` | integer, required |
 | `label` | a name for the mezzanine a person will recognise | free text |
 | `medium` | the physical medium the mezzanine came from, when it came from one | `dvd`, `bluray`, `uhd` |
 | `duration` | length in seconds | number |
 | `streams[].index` | the stream's position among all the mezzanine's streams, from zero, as `ffmpeg` addresses it | integer, unique |
 | `streams[].kind` | `video`, `audio`, `subtitle`, or `other` for a stream no rule decides (data, attachments) | closed |
-| `codec`, `profile` | the codec and its profile | `ffmpeg`'s names: `truehd`, `dts` with profile `DTS-HD MA`, `hdmv_pgs_subtitle` |
-| `width`, `height`, `frameRate`, `interlaced`, `bitDepth` | the video's shape | numbers; a flag |
+| `codec`, `profile` | the codec and its profile | `ffmpeg`'s names where `ffmpeg` has one: `truehd`, `dts` with profile `DTS-HD MA`, `hdmv_pgs_subtitle`; otherwise a name the producer documents |
+| `width`, `height`, `interlaced`, `bitDepth` | the video's shape | integers; a flag |
+| `frameRate` | frames a second, exactly | a fraction as `ffmpeg` spells it, `24000/1001`, or a whole number, `25` |
 | `transfer` | the video's transfer characteristic | `ffmpeg`'s names for ITU-T H.273's: `bt709`, `smpte2084`, `arib-std-b67` |
 | `channels`, `layout` | the audio's channels | an integer; `ffmpeg`'s layout name |
-| `language` | the stream's language | ISO 639-2, such as `eng` |
+| `language` | the stream's language | ISO 639-2/B, such as `eng`, `fre`, `ger` |
 | `title` | the stream's title as the mezzanine carries it | free text |
 | `marks` | what the stream is for or how it is flagged | `default`, `forced`, `commentary`, `descriptive`, `hearingImpaired` |
 | `coreOf` | for a lossy core extracted from inside a lossless stream, that stream's `index` | an audio stream's index |
@@ -133,22 +138,43 @@ with what it decided. This proposal adds four of its own.
 
 The codec, profile, transfer and layout names are `ffmpeg`'s. That is not a mechanism leaking in:
 `ffmpeg` is what the silo's nodes encode with, a rule already tests `audio.codec` in those names,
-and they are the one vocabulary for codecs every tool in the pipeline already speaks.
+and they are the one vocabulary for codecs every tool in the pipeline already speaks. A codec
+`ffmpeg` has no name for — an immersive audio format such as IAB, say — is named as its producer
+documents it; the silo accepts it, a rule can test it, and it is not lossless, since the one
+function that decides losslessness does not know it.
 
-The silo refuses an input spec — 400, naming what is wrong — when a stream index repeats, a kind or
-mark is not in the vocabulary, a `coreOf` names no audio stream of the spec or names itself, or a
-required field is missing: `index`, `kind` and `codec` on every stream; `width` and `height` on
-video; `channels` on audio.
+A frame rate is a fraction because a decimal cannot hold 24000/1001 exactly, and the fraction is
+still `ffmpeg`'s spelling: it is what `ffprobe` reports. The `video.frameRate` fact a rule tests
+stays a number.
+
+Languages are ISO 639-2/B — `fre`, not `fra` — the form Matroska uses. A producer whose source
+writes the terminological form converts it; `ffmpeg` itself is no guide here, since it writes
+whichever form the container it is writing asks for.
+
+**The shape is versioned, and strict.** An input spec carries `format`, and the silo reads format
+`1`. A spec of a higher format is refused as newer than this silo, and a field the silo does not
+know is refused, not ignored. Ignoring one would turn a misspelt `intelaced` into video that is
+not interlaced, which is the silent default this project has already had to undo in the ruleset
+reader. A newer producer meeting an older silo therefore fails at registration, saying which format
+it wrote and which the silo reads, rather than having part of what it said dropped. Adding a field
+or a mark is a new format; a silo that reads it reads the older ones too.
+
+The silo refuses an input spec — 400, naming what is wrong — when its `format` is missing or newer
+than the silo's, a field is not in the vocabulary, a stream index repeats, a kind or mark is not in
+the vocabulary, a frame rate is not a fraction or a whole number, a `coreOf` names no audio stream
+of the spec or names itself, or a required field is missing: `index`, `kind` and `codec` on every
+stream; `width` and `height` on video; `channels` on audio.
 
 ## What the silo derives
 
 | Fact | Derived from |
 |---|---|
 | `format` | the assignment's format, else the spec's `medium` |
-| `duration`, codecs, sizes, frame rate, bit depth, channels, languages | the spec, as stated |
+| `duration`, codecs, sizes, bit depth, channels, languages | the spec, as stated |
+| `video.frameRate` | the spec's fraction, as a number |
 | `video.interlaced` | the spec's `interlaced`, false when absent |
 | `video.hdr` | `transfer`: `smpte2084` is `hdr10`, `arib-std-b67` is `hlg`, anything else none |
-| `audio.lossless` | `codec` and `profile`, by the one function every caller shares |
+| `audio.lossless` | `codec` and `profile`, by the one function every caller shares; false for a codec it does not know |
 | `audio.role` | the assignment's feature map first; then the marks, `commentary` before `descriptive`; else `main` |
 | `audio.core` | whether the stream has a `coreOf` |
 | `subtitle.forced` | whether the stream is marked `forced` |
@@ -178,8 +204,33 @@ not specified here.
 
 ## Registration and assignment
 
-`POST /v1/jobs` takes the mezzanine's file reference and its input spec, and nothing else; the
-disc name becomes the spec's `label`. An input spec the silo refuses refuses the registration.
+`POST /v1/jobs` takes the mezzanine's segments and its input spec, and nothing else; the disc name
+becomes the spec's `label`. An input spec the silo refuses refuses the registration.
+
+### A mezzanine is a list of segments
+
+A mezzanine is not always one whole file. A television DVD often holds its episodes as chapters of
+one play-all title, so an episode is part of a file; a long film can be split across two discs, so
+it is two files. The job record today gives a mezzanine one `source` file reference, and a list
+added beside it later would leave two ways to say where the media is. So the record carries
+`segments` — a list, each a file reference — and the input spec's streams describe the media of
+the segments joined in order, the way `ffmpeg`'s concat demuxer presents them, so "as `ffmpeg`
+addresses it" stays true of every index. The segments of a mezzanine must share a stream layout,
+since that is what joining them requires.
+
+This proposal accepts exactly one segment, and a segment is a file reference and nothing more.
+In and out points, for part of a file, and more than one segment, for a mezzanine across files,
+are both additions to that shape, made when they are built. They are left out rather than
+specified now because their hard questions have no use case here to answer them against —
+chief among them who cuts a stream the recipe copies: cutting without re-encoding stops at a
+keyframe, whoever does it, so an exact cut of a copied stream means re-encoding it, and that is a
+decision for the proposal that needs one. Until then a job's *source*, wherever the specs speak of
+one, is its one segment's file reference.
+
+An IMF package is the same case again: a composition playlist and its track files are a mezzanine
+across several files, and `ffmpeg`'s IMF demuxer numbers the streams of a composition as this
+spec numbers a joined mezzanine's. So the list is also what reading IMF natively would need, and an
+IMF producer can write an input spec today by describing the composition it renders.
 
 `PUT /v1/jobs/{id}/assignment` is unchanged in what it carries, adjustments aside: the library, the
 lineage, the item, its alternative and profile, the feature map, the chapters, the ruleset. The
@@ -237,16 +288,20 @@ proposal.
 
 `InputSpec` in SiloKit, with its validation; facts derived from it and an assignment, replacing the
 merge of a probe and a MakeMKV scan; `MakeMKVFacts` and `MakeMKVTrack` removed, and `ProbedSource`
-moved into the encoder, where the plain-file producer maps it to an input spec; registration taking
-an input spec; the resolve route taking one; `silo-ctl encode --input <spec>`, with the plain-file
+moved into the encoder, where the plain-file producer maps it to an input spec; the job's `source`
+replaced by `segments`, with exactly one accepted; registration taking the segments and an input
+spec; the resolve route taking one; `silo-ctl encode --input <spec>`, with the plain-file
 producer when no spec is given and `--makemkv` gone; the OpenAPI document and SiloClient to match;
 an example spec under `Examples/`. The input-specs, recipes, rulesets, jobs registration and record,
 read-api and encoding deltas apply here; the rulesets and recipes specs' purpose text loses its
 account of the origin scan; and the new input-specs spec, which archiving creates with a placeholder
 purpose, is given its own.
 
-Tests: a spec with a repeated index, an unknown mark, a `coreOf` naming nothing, and a video stream
-without a size are each refused, naming the fault; each derived fact comes from the field the table
+Tests: a spec with a repeated index, an unknown mark, an unknown field, a newer format, a frame
+rate that is neither a fraction nor a whole number, a `coreOf` naming nothing, and a video stream
+without a size are each refused, naming the fault; `24000/1001` derives the fact as 24000 divided by
+1001; a codec the lossless function does not know is not lossless; a registration with
+no segment, or with two, is 400; each derived fact comes from the field the table
 names; the feature map outranks the marks; the plain-file producer maps each disposition to its
 mark and field order to `interlaced`; a registration without a spec is 400; the resolve route
 answers for a spec what an assignment records.
@@ -278,6 +333,15 @@ change, in its own repository, once the first step has landed.
   is what principle 4 rules out.
 - **A codec vocabulary of the silo's own.** `ffmpeg`'s names are the pipeline's lingua franca, for
   the reason given above.
+- **Part of a file, and a mezzanine across files.** Both extend the list of segments — in and out
+  points on a segment, and more than one segment — and neither is accepted yet, for the reasons in
+  [A mezzanine is a list of segments](#a-mezzanine-is-a-list-of-segments).
+- **An IMF composition playlist as the input spec.** A composition describes how to assemble a
+  timeline from track files, with codec properties as SMPTE descriptors; every producer would have
+  to write one to say that a stream is an AC-3 commentary, and it has no place for `coreOf` or for
+  `ffmpeg`'s stream numbers. Making it the format would put one mechanism in charge of the
+  vocabulary, which principle 1 exists to prevent. What IMF offers is words, and open questions 1
+  and 2 take them.
 
 ## Open questions
 
@@ -285,9 +349,19 @@ change, in its own repository, once the first step has landed.
    the only natural key the sidecar has, and 0007 recognises an out-of-date presentation's origin
    being ingested again by it. A download or a recording has no such key. The input spec could carry
    one — a content hash, a URL — but the sidecar has nowhere to record it; that is smddb's to add.
+   A source reference as a scheme and an identifier would hold a disc and playlist, and equally an
+   IMF composition's UUID or an EIDR identifier, the natural keys an IMF package carries.
 2. **More marks.** The five marks are the ones some producer can already set. A producer that knows
-   more — a karaoke track, a sign-language video — would want a word for it, and a rule a fact to
-   test. They are added together, in the vocabulary and in the facts, when one is needed.
+   more would want a word for it, and a rule a fact to test; they are added together, in the
+   vocabulary and in the facts, as a new format of the input spec. One gap already matters: an
+   unmarked music-and-effects track takes the role `main`. IMF's audio types — primary, music and
+   effects, visually impaired narration, hearing impaired, commentary, karaoke — and its subtitle
+   types — forced narrative, captions for the hearing impaired, commentary, karaoke — are a ready
+   source for the words, so they need not be invented.
+4. **Language tags with a region.** IMF, and increasingly Matroska, tag languages as BCP 47 —
+   `es-419`, `pt-BR`, `fr-CA` — where ISO 639-2 has no region. An optional tag beside `language`,
+   and a fact for it, can be added as a new format without disturbing a rule that tests
+   `audio.language`.
 3. **Checking a producer's observations.** The silo trusts the spec: a producer that says a stream
    is `truehd` when the file holds AC-3 will get a recipe for TrueHD, and the node's layout check
    after the encode is what catches it. Probing the mezzanine at registration would catch it

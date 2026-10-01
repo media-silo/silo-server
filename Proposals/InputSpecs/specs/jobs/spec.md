@@ -11,10 +11,10 @@
 ## MODIFIED Requirements
 
 ### Requirement: A producer registers a mezzanine with its input spec
-`POST /v1/jobs` with a body of the mezzanine's file reference and its input spec SHALL create the
-job as `unassigned` and answer 201 with it. A body without an input spec, or with one the silo
-refuses as [input-specs](../input-specs/spec.md) describes, SHALL be 400 with the reason, and
-create nothing. The silo SHALL NOT probe the mezzanine or accept any other description of it. The
+`POST /v1/jobs` with a body of the mezzanine's `segments` and its input spec SHALL create the job
+as `unassigned` and answer 201 with it. A body without an input spec, or with one the silo refuses
+as [input-specs](../input-specs/spec.md) describes, or with no segment or more than one, SHALL be
+400 with the reason, and create nothing. The silo SHALL NOT probe the mezzanine or accept any other description of it. The
 route SHALL be behind the operator's token: a request without it gets 401.
 
 #### Scenario: registration over HTTP
@@ -23,8 +23,12 @@ route SHALL be behind the operator's token: a request without it gets 401.
 - **THEN** the first answer is 401 and the second is 201 with the job, `unassigned`
 
 #### Scenario: a registration without a description
-- **WHEN** a client posts a mezzanine's file reference with no input spec
+- **WHEN** a client posts a mezzanine's segment with no input spec
 - **THEN** the answer is 400, and no job is created
+
+#### Scenario: a mezzanine across two files
+- **WHEN** a client posts a mezzanine of two segments and an input spec
+- **THEN** the answer is 400, saying a mezzanine holds one segment, and no job is created
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`yJobsAreRegisteredAssignedClaimedAndPlacedOverTheAPI`); the refusals are pinned by nothing yet.
 
@@ -79,8 +83,10 @@ to one presentation", states the record with the input spec in their place.
 ### Requirement: The job record carries the whole of a mezzanine's way to one presentation
 A job SHALL have an `id` (a lowercased UUID by default), a `state` of exactly one of `unassigned`,
 `pending`, `claimed`, `encoding`, `encoded`, `placing`, `placed`, `failed`, `cancelling`,
-`cancelled`, `createdAt` and `updatedAt` timestamps (`updatedAt` refreshed on every change), a
-`source` file reference to the mezzanine, the `input` spec the producer registered it with, and
+`cancelled`, `createdAt` and `updatedAt` timestamps (`updatedAt` refreshed on every change), the
+mezzanine's `segments` — a list of file references, whose media joined in order the input spec's
+streams describe, and which for now holds exactly one — the `input` spec the producer registered
+it with, and
 then everything the queue learns: the `assignment`, its adjustments among it, the derived `facts`,
 the resolved `recipe`, the `requirements` (the encoders the recipe needs), the `attempts`, the
 current `lease`, the latest `progress`, the `output` file reference, the `result`, the `placement`
@@ -88,11 +94,13 @@ summary, and the `failure` reason. A file reference SHALL carry its `holder` (th
 on), its `url`, the holder's own `path` for opening locally, its `sizeBytes`, and the `secret` that
 guards it. An attempt SHALL record its node, when it started and ended, and an outcome of `lost`,
 `failed`, `cancelled` or `encoded`. A lease SHALL name a node and when it expires. A job is
-*active* in exactly the states `claimed`, `encoding` and `cancelling`.
+*active* in exactly the states `claimed`, `encoding` and `cancelling`. While a mezzanine holds
+exactly one segment, a job's *source*, wherever a requirement speaks of one, SHALL be that
+segment's file reference.
 
 #### Scenario: a freshly registered mezzanine
-- **WHEN** a producer registers a mezzanine with its file reference and input spec
-- **THEN** the job is `unassigned` with a lowercased UUID id, the source and input spec as given,
+- **WHEN** a producer registers a mezzanine with one segment and its input spec
+- **THEN** the job is `unassigned` with a lowercased UUID id, the segment and input spec as given,
   and no assignment, facts, recipe, requirements, attempts, lease, progress, output, result,
   placement or failure
 
