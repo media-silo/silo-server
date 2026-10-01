@@ -175,14 +175,36 @@ public struct FactHint: Hashable, Sendable, Codable, CustomStringConvertible {
 public struct ProbedSource: Hashable, Sendable, Codable {
     public var duration: Double?
     public var streams: [ProbedStream]
+    /// In the order `ffprobe` lists them.
+    public var chapters: [ProbedChapter]
 
-    public init(duration: Double? = nil, streams: [ProbedStream]) {
+    public init(duration: Double? = nil, streams: [ProbedStream], chapters: [ProbedChapter] = []) {
         self.duration = duration
         self.streams = streams
+        self.chapters = chapters
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        duration = try container.decodeIfPresent(Double.self, forKey: .duration)
+        streams = try container.decode([ProbedStream].self, forKey: .streams)
+        chapters = try container.decodeIfPresent([ProbedChapter].self, forKey: .chapters) ?? []
     }
 
     public func streams(of kind: ProbedStream.Kind) -> [ProbedStream] {
         streams.filter { $0.kind == kind }
+    }
+}
+
+/// A chapter as `ffprobe` lists it: where it starts, and its title when it has one.
+public struct ProbedChapter: Hashable, Sendable, Codable {
+    /// Seconds.
+    public var start: Double
+    public var title: String?
+
+    public init(start: Double, title: String? = nil) {
+        self.start = start
+        self.title = title
     }
 }
 
@@ -197,7 +219,7 @@ public struct ProbedStream: Hashable, Sendable, Codable {
     public var profile: String?
     public var width: Int?
     public var height: Int?
-    public var frameRate: Double?
+    public var frameRate: FrameRate?
     /// `ffprobe`'s `field_order`: `progressive`, or `tt`, `bb`, `tb`, `bt` for the interlaced ones.
     public var fieldOrder: String?
     /// `ffprobe`'s `color_transfer`: `smpte2084` is HDR10, `arib-std-b67` is HLG.
@@ -214,7 +236,7 @@ public struct ProbedStream: Hashable, Sendable, Codable {
 
     public init(
         absoluteIndex: Int, kind: Kind, codec: String, profile: String? = nil, width: Int? = nil,
-        height: Int? = nil, frameRate: Double? = nil, fieldOrder: String? = nil,
+        height: Int? = nil, frameRate: FrameRate? = nil, fieldOrder: String? = nil,
         colorTransfer: String? = nil, pixelFormat: String? = nil, bitsPerRawSample: Int? = nil,
         channels: Int? = nil, channelLayout: String? = nil, language: String? = nil,
         title: String? = nil, dispositions: Set<String> = []
@@ -362,7 +384,7 @@ extension SourceFacts {
                 codec: stream.codec,
                 width: stream.width ?? 0,
                 height: stream.height ?? 0,
-                frameRate: stream.frameRate,
+                frameRate: stream.frameRate?.value,
                 interlaced: ["tt", "bb", "tb", "bt"].contains(stream.fieldOrder ?? "progressive"),
                 hdr: Self.hdr(colorTransfer: stream.colorTransfer),
                 bitDepth: stream.bitsPerRawSample

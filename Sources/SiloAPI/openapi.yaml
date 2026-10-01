@@ -20,6 +20,7 @@ tags:
   - name: Libraries
   - name: Containers
   - name: Rulesets
+  - name: Sources
   - name: Jobs
   - name: Nodes
 
@@ -460,6 +461,137 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Problem"
+
+  /sources:
+    get:
+      operationId: listSources
+      summary: The sources the silo holds, oldest first
+      description: Open, as the queue is. A copy is rendered without the secret that guards its file.
+      tags: [Sources]
+      responses:
+        "200":
+          description: The sources.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Source"
+    post:
+      operationId: registerSource
+      summary: Register a source by its input spec
+      description: >
+        The silo mints the id. A natural key the silo already has answers that source with 200,
+        taking the copy given; the same key with a different input spec is 409. The input spec is
+        read strictly by the silo itself, so a refusal names the field at fault. Operator only.
+      tags: [Sources]
+      security:
+        - operator: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterSource"
+      responses:
+        "201":
+          description: Registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "200":
+          description: The source the natural key already names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "400":
+          description: The input spec is refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "409":
+          description: The natural key names a source described otherwise.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /sources/{id}:
+    get:
+      operationId: getSource
+      summary: One source
+      tags: [Sources]
+      parameters:
+        - $ref: "#/components/parameters/SourceID"
+      responses:
+        "200":
+          description: The source.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "404":
+          description: No such source.
+
+  /sources/{id}/copies:
+    post:
+      operationId: addSourceCopy
+      summary: Record that a node holds a source's file
+      description: A copy on a node that already holds one replaces it. Operator only.
+      tags: [Sources]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/SourceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileRef"
+      responses:
+        "200":
+          description: The source, holding the copy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such source.
+
+  /sources/{id}/copies/{node}:
+    delete:
+      operationId: removeSourceCopy
+      summary: Record that a node no longer holds a source's file
+      description: A source whose last copy goes is kept. Operator only.
+      tags: [Sources]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/SourceID"
+        - name: node
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The source, without the copy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Source"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such source.
 
   /jobs:
     get:
@@ -913,6 +1045,12 @@ components:
       description: The staged setup's passkey, spent by its confirm — never the credential itself.
 
   parameters:
+    SourceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
     Library:
       name: library
       in: path
@@ -1198,6 +1336,149 @@ components:
         secret:
           type: string
 
+    RegisterSource:
+      type: object
+      required: [input]
+      properties:
+        input:
+          description: >
+            The source's input spec, as the InputSpec schema describes it. Taken as any JSON object
+            and read strictly by the silo, so that a newer format is refused as newer and an unknown
+            field is refused by name rather than dropped.
+          type: object
+          additionalProperties: true
+        key:
+          $ref: "#/components/schemas/NaturalKey"
+        copy:
+          $ref: "#/components/schemas/FileRef"
+
+    NaturalKey:
+      type: object
+      required: [scheme, value]
+      properties:
+        scheme:
+          type: string
+        value:
+          type: string
+
+    Source:
+      type: object
+      required: [id, input, copies, createdAt]
+      properties:
+        id:
+          type: string
+        input:
+          $ref: "#/components/schemas/InputSpec"
+        key:
+          $ref: "#/components/schemas/NaturalKey"
+        copies:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceCopy"
+        createdAt:
+          type: string
+          format: date-time
+
+    SourceCopy:
+      description: A node holding a source's file, without the secret that guards it.
+      type: object
+      required: [holder, url]
+      properties:
+        holder:
+          type: string
+        url:
+          type: string
+          format: uri
+        path:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+
+    InputSpec:
+      description: What is physically in a source, in the silo's vocabulary.
+      type: object
+      required: [format, streams]
+      properties:
+        format:
+          type: integer
+        label:
+          type: string
+        medium:
+          type: string
+          enum: [dvd, bluray, uhd]
+        duration:
+          type: number
+        chapters:
+          type: array
+          items:
+            type: object
+            required: [index, start]
+            properties:
+              index:
+                type: integer
+              start:
+                type: number
+              title:
+                type: string
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/InputStream"
+        notes:
+          type: array
+          items:
+            type: object
+            required: [text]
+            properties:
+              stream:
+                type: integer
+              text:
+                type: string
+
+    InputStream:
+      type: object
+      required: [index, kind, codec]
+      properties:
+        index:
+          type: integer
+        kind:
+          type: string
+          enum: [video, audio, subtitle, other]
+        codec:
+          type: string
+        profile:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        frameRate:
+          type: string
+          description: A fraction as ffmpeg spells it, such as 24000/1001, or a whole number.
+        interlaced:
+          type: boolean
+        transfer:
+          type: string
+        bitDepth:
+          type: integer
+        channels:
+          type: integer
+        layout:
+          type: string
+        language:
+          type: string
+          description: A BCP 47 tag in canonical form, such as en, es-419 or zh-Hant.
+        title:
+          type: string
+        marks:
+          type: array
+          items:
+            type: string
+            enum: [default, forced, commentary, descriptive, hearingImpaired]
+        coreOf:
+          type: integer
+
     NewJob:
       type: object
       required: [source]
@@ -1221,6 +1502,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProbedStream"
+        chapters:
+          type: array
+          items:
+            type: object
+            required: [start]
+            properties:
+              start:
+                type: number
+              title:
+                type: string
 
     ProbedStream:
       type: object
@@ -1240,7 +1531,8 @@ components:
         height:
           type: integer
         frameRate:
-          type: number
+          type: string
+          description: The fraction ffprobe reports, such as 30000/1001.
         fieldOrder:
           type: string
         colorTransfer:
