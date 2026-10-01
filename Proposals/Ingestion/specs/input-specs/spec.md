@@ -17,7 +17,9 @@ carry `profile`; for video, `width` and `height`, both required, and `frameRate`
 `ffmpeg` names it where `ffmpeg` has a name for it, and otherwise as its producer documents it;
 transfer and layout names SHALL be `ffmpeg`'s. A frame rate SHALL be a fraction as `ffmpeg` spells
 it, such as `24000/1001`, or a whole number, such as `25`, so that it is exact. A language SHALL be
-an ISO 639-2/B code, such as `fre` rather than `fra`. `marks` SHALL be drawn from `default`,
+a BCP 47 tag (RFC 5646) in its canonical form — the shortest ISO 639 code for the language, a
+script subtag in title case, a region subtag in capitals — such as `en`, `en-GB`, `es-419`,
+`zh-Hant` or `yue`; a stream whose language is unknown SHALL have none, not `und`. `marks` SHALL be drawn from `default`,
 `forced`, `commentary`, `descriptive` and `hearingImpaired`. `coreOf` SHALL name the `index` of the
 lossless audio stream a lossy core was extracted from. A note SHALL carry `text` and MAY name a
 stream by its `index`; notes are shown to a person and are never facts. An input spec says what
@@ -36,6 +38,10 @@ losslessness, role, HDR kind or core-ness.
   2995.2 and 4492.8 seconds
 - **THEN** the input spec holds four chapters, indexed 1 to 4, with those starts
 
+#### Scenario: a regional dub
+- **WHEN** a producer describes an audio stream of Latin American Spanish
+- **THEN** the input spec gives its `language` as `es-419`
+
 #### Scenario: an exact frame rate
 - **WHEN** a video stream runs at 24000/1001 frames a second
 - **THEN** the input spec gives its `frameRate` as `24000/1001`
@@ -47,7 +53,8 @@ The silo SHALL refuse an input spec, naming the fault, when it has no `format`, 
 than the silo reads; it holds a field the vocabulary does not have, at any level; two streams share
 an `index`; two chapters share an `index`, or the chapters are not in order of index and start; a
 chapter lacks `index` or `start`; a `kind` or a mark is not in the vocabulary; a `frameRate` is neither a fraction of
-whole numbers nor a whole number; a `medium` is not one of the three; a stream lacks `index`,
+whole numbers nor a whole number; a `language` is not a well-formed BCP 47 tag, or not in its
+canonical form; a `medium` is not one of the three; a stream lacks `index`,
 `kind` or `codec`; a video stream lacks `width` or `height`; an audio stream lacks `channels`; or a
 `coreOf` names no audio stream of the spec, or names its own stream. A spec the silo refuses SHALL
 change nothing.
@@ -55,6 +62,10 @@ change nothing.
 #### Scenario: a repeated index
 - **WHEN** an input spec has two streams at index 1
 - **THEN** it is refused, naming index 1
+
+#### Scenario: a language that is not canonical
+- **WHEN** a stream's `language` is `eng`
+- **THEN** it is refused, saying the canonical tag is `en`
 
 #### Scenario: a mark the vocabulary does not have
 - **WHEN** a stream is marked `karaoke`
@@ -82,7 +93,10 @@ Pinned by: nothing yet.
 ### Requirement: The plain-file producer describes a file from its probe
 The silo's plain-file producer SHALL write an input spec from what `ffprobe` reports of a file,
 with no other source, at format 1: each probed stream's index, kind, codec, profile, size, bit
-depth, channels, layout, language and title as reported; each chapter's start and title, numbered
+depth, channels, layout and title as reported; each stream's language from the `language` tag
+`ffprobe` reports, a BCP 47 tag put in canonical form and an ISO 639-2 code, in either its
+bibliographic or terminological form, converted to the shortest code for its language, with `und`
+and no tag both giving no language; each chapter's start and title, numbered
 from one in order; the frame rate as `ffprobe`'s fraction; `interlaced` true when `field_order` is
 anything but `progressive` or absent; `transfer` from `color_transfer`; and marks from the
 dispositions that are set — `default`, `forced` and `hearing_impaired` as `default`, `forced` and
@@ -94,7 +108,11 @@ neither. A probed stream of kind data, attachment or other SHALL be described wi
 - **WHEN** a probe reports a progressive h264 stream, an AC-3 stream with disposition `comment`
   tagged `LANGUAGE=eng`, and a forced PGS subtitle
 - **THEN** the input spec has a video stream not interlaced, an audio stream marked `commentary`
-  with language `eng`, and a subtitle stream marked `forced`, and no medium
+  with language `en`, and a subtitle stream marked `forced`, and no medium
+
+#### Scenario: languages the probe reports
+- **WHEN** a probe reports audio streams tagged `fre`, `fra`, `es-419` and `und`
+- **THEN** their languages are `fr`, `fr`, `es-419` and none
 
 Pinned by: nothing yet.
 

@@ -164,11 +164,11 @@ operator's. The silo keeps each source as one JSON file under its state director
   "streams": [
     { "index": 0, "kind": "video", "codec": "mpeg2video", "width": 720, "height": 576,
       "frameRate": "25/1", "interlaced": true, "transfer": "bt470bg", "bitDepth": 8 },
-    { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2, "language": "eng",
+    { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2, "language": "en",
       "marks": ["default"] },
-    { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "eng",
+    { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "en",
       "title": "Commentary", "marks": ["commentary"] },
-    { "index": 3, "kind": "subtitle", "codec": "dvd_subtitle", "language": "eng",
+    { "index": 3, "kind": "subtitle", "codec": "dvd_subtitle", "language": "en",
       "marks": ["forced"] }
   ],
   "notes": [{ "stream": 2, "text": "the disc marks this track as the director's comments" }]
@@ -189,7 +189,7 @@ operator's. The silo keeps each source as one JSON file under its state director
 | `frameRate` | frames a second, exactly | a fraction as `ffmpeg` spells it, `24000/1001`, or a whole number, `25` |
 | `transfer` | the video's transfer characteristic | `ffmpeg`'s names for ITU-T H.273's: `bt709`, `smpte2084`, `arib-std-b67` |
 | `channels`, `layout` | the audio's channels | an integer; `ffmpeg`'s layout name |
-| `language` | the stream's language | ISO 639-2/B, such as `eng`, `fre`, `ger` |
+| `language` | the stream's language | a BCP 47 tag in its canonical form: `en`, `en-GB`, `es-419`, `zh-Hant`, `yue` |
 | `title` | the stream's title as the source carries it | free text |
 | `marks` | what the stream is for or how it is flagged | `default`, `forced`, `commentary`, `descriptive`, `hearingImpaired` |
 | `coreOf` | for a lossy core extracted from inside a lossless stream, that stream's `index` | an audio stream's index |
@@ -203,8 +203,17 @@ documents it; the silo accepts it, a rule can test it, and it is not lossless, s
 that decides losslessness does not know it.
 
 A frame rate is a fraction because a decimal cannot hold 24000/1001 exactly, and the fraction is
-still `ffmpeg`'s spelling: it is what `ffprobe` reports. Languages are ISO 639-2/B — `fre`, not
-`fra` — the form Matroska uses; a producer whose source writes the other form converts it.
+still `ffmpeg`'s spelling: it is what `ffprobe` reports.
+
+A language is a BCP 47 tag (RFC 5646), because a language alone is not always enough to tell two
+streams apart: a disc carries a Latin American and a Castilian Spanish dub (`es-419`, `es-ES`), or
+Brazilian and European Portuguese, or subtitles in Traditional and Simplified Chinese (`zh-Hant`,
+`zh-Hans`), and a rule may need to keep one and drop the other. The tag is in its canonical form:
+the shortest ISO 639 code for the language — `en`, never `eng` — with a script in title case and a
+region in capitals. A producer whose source writes an ISO 639-2 code converts it, `eng` and `fre`
+or `fra` to `en` and `fr`; a language with no two-letter code keeps its three letters, as BCP 47
+does. Matroska carries BCP 47 tags of its own, and `ffprobe` reports them as written, so a producer
+reading one passes it on in canonical form. An unknown language is no tag at all, not `und`.
 
 Chapters are what physically divides the source, and a binding's segments are spans of them.
 
@@ -286,7 +295,8 @@ since a binding that cannot be made is not worth keeping.
 | `profile` | the output |
 | `format` | the first segment's `medium` |
 | `duration` | the joined spans |
-| codecs, sizes, bit depth, channels, languages | the first segment's input spec, as stated |
+| codecs, sizes, bit depth, channels | the first segment's input spec, as stated |
+| `language`, `script`, `region` | the language tag's primary language, script and region subtags, each absent when the tag has none |
 | `video.frameRate` | the spec's fraction, as a number |
 | `video.interlaced` | the spec's `interlaced`, false when absent |
 | `video.hdr` | `transfer`: `smpte2084` is `hdr10`, `arib-std-b67` is `hlg`, anything else none |
@@ -362,13 +372,16 @@ text loses its account of the origin scan, and the jobs spec's its account of an
 ### 1. Sources and input specs
 
 `InputSpec` in SiloKit, with its validation; the sources store and routes, with natural keys and
-copies; the plain-file producer, with `ProbedSource` moved into the encoder; `MakeMKVFacts` and
-`MakeMKVTrack` removed. The input-specs and sources deltas apply here.
+copies; language tags checked and kept in canonical form; the plain-file producer, with
+`ProbedSource` moved into the encoder and an ISO 639-2 to BCP 47 table for the codes `ffprobe`
+reports; `MakeMKVFacts` and `MakeMKVTrack` removed. The input-specs and sources deltas apply here.
 
 Tests: each refusal of the input spec, naming its fault; a newer format refused; a misspelt field
 refused; a natural key matched with 200 and its copy added, and refused with 409 when the specs
 differ; a source with no copies kept; the plain-file producer mapping dispositions to marks, field
-order to `interlaced`, and keeping `ffprobe`'s fraction and chapters.
+order to `interlaced`, `eng` and `fra` to `en` and `fr`, `und` to no language, and keeping a BCP 47
+tag it is given, `ffprobe`'s fraction and chapters; a language tag that is not BCP 47, or not in
+canonical form, refused.
 
 ### 2. Outputs
 
@@ -388,7 +401,8 @@ and `--makemkv` gone. The bindings, recipes, rulesets facts and extraction, read
 
 Tests: each refusal of a binding; segments of different layouts refused; a binding resolving to one
 draft per output, the mobile one with `profile` set; a stream no rule decides refusing the binding
-and storing nothing; each derived fact from the field the table names; an adjustment recorded with
+and storing nothing; each derived fact from the field the table names, `es-419` giving the
+language `es` and the region `419`, and `zh-Hant` the language `zh` and the script `Hant`; an adjustment recorded with
 what it replaced and the encoders recomputed; an adjustment to a committed recipe refused;
 resolving again adding drafts and leaving the rest.
 
@@ -420,7 +434,7 @@ writes the binding's entry in the output's profile.
   timeline from track files, with codec properties as SMPTE descriptors; every producer would have
   to write one to say that a stream is an AC-3 commentary, and it has no place for `coreOf` or for
   `ffmpeg`'s stream numbers. An IMF package is a binding of several sources here, and what IMF offers
-  this proposal is words, which open questions 2 and 3 take.
+  this proposal is words, which the language tags above and open question 2 take.
 - **A codec vocabulary of the silo's own.** `ffmpeg`'s names are the pipeline's lingua franca.
 
 ## Open questions
@@ -436,12 +450,9 @@ writes the binding's entry in the output's profile.
    music-and-effects track takes the role `main`. IMF's audio types — primary, music and effects,
    visually impaired narration, hearing impaired, commentary, karaoke — and its subtitle types —
    forced narrative, captions for the hearing impaired, commentary, karaoke — are a ready source.
-3. **Language tags with a region.** IMF, and increasingly Matroska, tag languages as BCP 47 —
-   `es-419`, `pt-BR`, `fr-CA`. An optional tag beside `language`, and a fact for it, can be a new
-   format without disturbing a rule that tests `audio.language`.
-4. **Checking a producer's observations.** The silo trusts the spec; the node's layout check after
+3. **Checking a producer's observations.** The silo trusts the spec; the node's layout check after
    the encode is what catches a wrong one. Probing a source when a copy is registered would catch it
    sooner, at the cost of the silo reaching every producer's files before it needs to.
-5. **smddb's side.** smddb's DiscTitle is a source and its Binding a binding of one segment. Renaming
+4. **smddb's side.** smddb's DiscTitle is a source and its Binding a binding of one segment. Renaming
    the one and generalising the other to segments is a matching amendment there, written once this
    model has settled here.

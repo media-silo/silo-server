@@ -54,7 +54,9 @@ be the output's; `format` SHALL be the first segment's `medium`; `duration` SHAL
 spans' length; and an audio stream a feature is mapped to SHALL take its role from that feature —
 `commentary` for a commentary, `isolatedMusic` for isolated music, `other` otherwise. The first video
 stream SHALL be described and further video streams reported as a hint. Each stream's codec, size,
-bit depth, channels, language and title SHALL be the spec's; `video.frameRate` SHALL be the spec's
+bit depth, channels and title SHALL be the spec's; an audio or subtitle stream's `language`,
+`script` and `region` SHALL be its language tag's primary language, script and region subtags, each
+absent when the tag has none or the stream has no tag; `video.frameRate` SHALL be the spec's
 fraction as a number, its numerator divided by its denominator; `video.interlaced` SHALL be the
 spec's `interlaced`, false when absent; `video.hdr` SHALL be `hdr10` for a `transfer` of
 `smpte2084`, `hlg` for `arib-std-b67`, and absent otherwise; `subtitle.forced` SHALL be whether the
@@ -66,6 +68,11 @@ from one among the streams of their kind — the way a player's menu counts and 
 #### Scenario: HDR from the transfer characteristic
 - **WHEN** a source's video stream has `transfer` `smpte2084`, and another's has `bt709`
 - **THEN** the first's `video.hdr` is `hdr10` and the second's is absent
+
+#### Scenario: a language tag split into its parts
+- **WHEN** one audio stream's language is `es-419` and a subtitle stream's is `zh-Hant`
+- **THEN** the audio's `language` is `es` and its `region` `419`, with no `script`; the subtitle's
+  `language` is `zh` and its `script` `Hant`, with no `region`
 
 #### Scenario: a fractional frame rate
 - **WHEN** a source's video stream has `frameRate` `24000/1001`

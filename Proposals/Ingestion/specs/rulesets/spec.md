@@ -105,11 +105,15 @@ scope, where it describes the stream being decided.
 | `audio.codec` | audio | text | the codec as `ffmpeg` names it: `truehd`, `dts`, `ac3`, `eac3`, `aac`, `flac`, `pcm_s24le`, … | the input spec |
 | `audio.lossless` | audio | flag | whether the stream is lossless: TrueHD, MLP, FLAC, ALAC, WavPack, TTA, APE, any PCM, and DTS-HD Master Audio | derived from the codec and its profile |
 | `audio.channels` | audio | number | channel count, such as `2` or `6` | the input spec |
-| `audio.language` | audio | text | an ISO 639-2 code, such as `eng` | the input spec |
+| `audio.language` | audio | text | the language, as the shortest ISO 639 code for it: `en`, `fr`, `es`, `yue` | the primary language subtag of the input spec's language tag |
+| `audio.script` | audio | text | the script, in title case, such as `Latn` or `Hant`; absent when the tag names none | the script subtag of the input spec's language tag |
+| `audio.region` | audio | text | the region, such as `GB`, `BR` or `419`; absent when the tag names none | the region subtag of the input spec's language tag |
 | `audio.role` | audio | text | what the stream is for: `main`, `commentary`, `isolatedMusic`, `descriptive` or `other` | derived from the binding's feature map, then the input spec's marks |
 | `audio.core` | audio | flag | whether the stream is the lossy core extracted from inside a lossless track | derived from the input spec's `coreOf` |
 | `subtitle.codec` | subtitle | text | the codec as `ffmpeg` names it: `hdmv_pgs_subtitle`, `dvd_subtitle`, `subrip`, … | the input spec |
-| `subtitle.language` | subtitle | text | as `audio.language` | the input spec |
+| `subtitle.language` | subtitle | text | as `audio.language` | as `audio.language` |
+| `subtitle.script` | subtitle | text | as `audio.script` | as `audio.script` |
+| `subtitle.region` | subtitle | text | as `audio.region` | as `audio.region` |
 | `subtitle.forced` | subtitle | flag | whether the stream carries only forced subtitles | derived from the input spec's `forced` mark |
 
 A fact the source does not have — no `kind` where nothing names one, no `video.hdr` on SDR video,
@@ -128,6 +132,11 @@ no language tag — is **absent**. What an input spec holds is specified in
 #### Scenario: a stream fact in another scope's rule
 - **WHEN** an `<audio>` rule carries `<when fact="video.width" lt="1000"/>`
 - **THEN** the ruleset is refused, saying `video.width` cannot be tested in an `<audio>` rule
+
+#### Scenario: one Spanish dub of two
+- **WHEN** an `<audio>` rule carries `<when fact="audio.language" is="es"/>` and
+  `<when fact="audio.region" is="419"/>`, and a source has audio tagged `es-419` and `es-ES`
+- **THEN** the rule holds for the first stream and not the second
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`,
 `aRulesetSurvivesTheFile`), `Tests/SiloKitTests/FactsTests.swift`
@@ -197,3 +206,25 @@ reader does not know SHALL be ignored, as SHALL a second `<extraction>` element.
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`,
 `aRuleThatCannotBeReadIsRefused`); the ignored attributes and element, and the outputs' refusals, are pinned by nothing yet.
+
+### Requirement: A stream no rule decides stops the file
+A stream that no rule of its scope decides SHALL fail the whole resolution, never be copied,
+dropped or guessed past. The failure SHALL read `no rule decides <kind> <n> (<facts>)`, where
+`<n>` is the stream's place from one among streams of its kind and `<facts>` describes it: a video
+stream as its codec and size, then `interlaced` and its HDR kind where they apply; an audio stream
+as its codec, its profile where it has one, its channel count as `<n>ch`, its language tag or `und`,
+its role, then `lossless` and `core` where they apply; a subtitle stream as its codec, its language tag
+or `und`, then `forced` where it applies. That is enough to write the rule that would have decided
+it.
+
+#### Scenario: a ruleset with no video rule
+- **WHEN** a ruleset holds audio and subtitle rules only, and decides a file whose video is H.264
+  at 1920 by 1080, progressive and SDR
+- **THEN** resolution fails with `no rule decides video 1 (h264 1920x1080)`
+
+#### Scenario: an audio stream that falls through
+- **WHEN** a ruleset's only audio rule matches commentaries, and a file's third audio stream is a
+  two-channel English AC-3 main mix with no profile
+- **THEN** resolution fails with `no rule decides audio 3 (ac3 2ch en main)`
+
+Pinned by: `Tests/SiloKitTests/ResolverTests.swift` (`aStreamNoRuleDecidesIsAnError`).
