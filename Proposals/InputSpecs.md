@@ -16,9 +16,8 @@ a concrete recipe. The process that produced the mezzanine may then adjust that 
 something particular to this one input, as the last step of its ingestion, and the silo records the
 adjustment beside the decision it replaced.
 
-The silo stops knowing how any file was obtained. MakeMKV's scan, its stream flags and the
-reconciliation of its track counts leave the server for the producer that uses MakeMKV; the silo
-keeps one producer of its own, for a plain file, built on the `ffprobe` it already runs.
+The silo stops knowing how any file was obtained. The silo keeps one producer of its own, for a plain
+file, built on the `ffprobe` it already runs.
 
 ## The problem
 
@@ -49,8 +48,7 @@ that exists for one file.
 input mezzanine — the file to be encoded — and writes an input spec: the file's streams, each with
 its codec, its shape, its language and title, and the **marks** that say what it is for, in the
 silo's vocabulary. The producer translates its own mechanism's signals into that vocabulary; it
-does not decide what the silo's facts are. The silo provides one producer, for a plain file; smd-tools'
-ingestion app, which uses MakeMKV, is another.
+does not decide what the silo's facts are. The silo provides one producer, for a plain file.
 
 **2. The silo derives facts and resolves a recipe.** Registration takes the mezzanine's
 segments — for now, one file — and its input spec. Assignment adds what the silo's library knows — the item, its kind
@@ -193,15 +191,6 @@ does for outputs, and writes the input spec from what it reports: `field_order` 
 uses it when it is given a file and no spec, and a script can run it through `silo-ctl` to register
 a download or a recording.
 
-**The disc producer** is smd-tools' ingestion app, which already runs MakeMKV and `ffprobe`. It
-writes the spec from both: the probe for what the file holds, MakeMKV's scan for what the file did
-not say. MakeMKV's flag bits 1 and 2 become `commentary`, bit 4 `descriptive`; a track MakeMKV
-extracted as a lossless track's core gets `coreOf`; a forced-only stream gets `forced`; the disc
-type becomes `medium`. The reconciliation of MakeMKV's track order with the file's streams, and its
-refusal to apply the scan when the counts differ, move with it, and a mismatch becomes one of the
-spec's `notes`. The silo sees the result and none of the mechanism. That work is smd-tools', and is
-not specified here.
-
 ## Registration and assignment
 
 `POST /v1/jobs` takes the mezzanine's segments and its input spec, and nothing else; the disc name
@@ -263,20 +252,6 @@ producer's last word on its input, made before a node claims it.
 Where [0007-layered-rulesets](https://github.com/media-silo/silo-server/pull/47) asks which placed presentations the current rules
 would make differently, an adjusted stream is the ingestion's decision and not the rules', and is
 not compared; that proposal is rebased on this one to say so.
-
-## What this looks like to the operator
-
-A household ingests a film from disc. The ingestion app rips it, probes it, reads MakeMKV's scan,
-and writes the input spec: a TrueHD Atmos track, an AC-3 track MakeMKV marks as the director's
-commentary, the lossy core of the TrueHD with `coreOf` pointing at it. It asks the silo for the
-recipe against the library's rules: the TrueHD becomes FLAC, the commentary AAC, the core dropped.
-The person at the app knows this film's Atmos mix is the reason they bought it, and adjusts the
-TrueHD stream to `copy`, noting "keep the Atmos object track". They assign. The job's recipe copies
-the TrueHD, and says that `lossless-main` would have made it FLAC.
-
-The next week they add a documentary downloaded as an MKV. A script runs `silo-ctl` to write its
-input spec with the plain-file producer and registers it; the same rules decide it, and nobody
-had to pretend it was a disc.
 
 ## What this asks of an implementation
 
