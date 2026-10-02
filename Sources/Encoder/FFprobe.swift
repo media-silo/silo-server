@@ -22,7 +22,7 @@ public struct FFprobe: Sendable {
     }
 
     public func probe(_ file: URL) async throws -> ProbedSource {
-        let arguments = ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file.path]
+        let arguments = ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", file.path]
         let collected = OutputCollector()
         let outcome = try await ProcessRunner.run(executable, arguments: arguments) { collected.append($0) }
         guard outcome.status == 0 else {
@@ -48,7 +48,7 @@ package final class OutputCollector: Sendable {
 }
 
 extension ProbedSource {
-    /// The reduction of `ffprobe -print_format json -show_format -show_streams`.
+    /// The reduction of `ffprobe -print_format json -show_format -show_streams -show_chapters`.
     public init(ffprobeJSON data: Data) throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -75,7 +75,7 @@ extension ProbedSource {
                 profile: stream.profile,
                 width: stream.width,
                 height: stream.height,
-                frameRate: Self.frameRate(stream.avgFrameRate) ?? Self.frameRate(stream.rFrameRate),
+                frameRate: stream.avgFrameRate.flatMap(FrameRate.init) ?? stream.rFrameRate.flatMap(FrameRate.init),
                 fieldOrder: stream.fieldOrder,
                 colorTransfer: stream.colorTransfer,
                 pixelFormat: stream.pixFmt,
@@ -87,24 +87,18 @@ extension ProbedSource {
                 dispositions: dispositions
             )
         }
-        self.init(duration: document.format?.duration.flatMap(Double.init), streams: streams)
-    }
-
-    /// `"25/1"` to 25; `"30000/1001"` to 29.97; `"0/0"`, which `ffprobe` writes for a stream with
-    /// no rate, to nil.
-    private static func frameRate(_ text: String?) -> Double? {
-        guard let text else { return nil }
-        let parts = text.split(separator: "/")
-        guard parts.count == 2, let numerator = Double(parts[0]), let denominator = Double(parts[1]), denominator != 0, numerator != 0 else {
-            return Double(text).flatMap { $0 > 0 ? $0 : nil }
+        let chapters = (document.chapters ?? []).compactMap { chapter -> ProbedChapter? in
+            guard let start = chapter.startTime.flatMap(Double.init) else { return nil }
+            return ProbedChapter(start: start, title: chapter.tags?["title"] ?? chapter.tags?["TITLE"])
         }
-        return numerator / denominator
+        self.init(duration: document.format?.duration.flatMap(Double.init), streams: streams, chapters: chapters)
     }
 }
 
 private struct FFprobeDocument: Decodable {
     var streams: [Stream]
     var format: Format?
+    var chapters: [Chapter]?
 
     struct Stream: Decodable {
         var index: Int
@@ -127,5 +121,10 @@ private struct FFprobeDocument: Decodable {
 
     struct Format: Decodable {
         var duration: String?
+    }
+
+    struct Chapter: Decodable {
+        var startTime: String?
+        var tags: [String: String]?
     }
 }

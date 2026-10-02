@@ -518,3 +518,76 @@ extension ServerTests {
         }
     }
 }
+
+extension ServerTests {
+    /// A source as the API renders it, enough to check what came back.
+    struct SourceBody: Decodable {
+        struct Copy: Decodable { var holder: String; var url: String; var secret: String? }
+        var id: String
+        var copies: [Copy]
+    }
+
+    static func registration(key: String?, copyOn node: String?, extraAudio: Bool = false) -> Data {
+        let audio = extraAudio ? #", { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 }"# : ""
+        let keyJSON = key.map { #", "key": { "scheme": "discTitle", "value": "\#($0)" }"# } ?? ""
+        let copyJSON = node.map { #", "copy": { "holder": "\#($0)", "url": "http://\#($0).local:8743/files/t.mkv", "secret": "s-\#($0)" }"# } ?? ""
+        return Data("""
+        { "input": { "format": 1, "streams": [
+            { "index": 0, "kind": "video", "codec": "h264", "width": 1920, "height": 1080, "frameRate": "24000/1001" },
+            { "index": 1, "kind": "audio", "codec": "truehd", "channels": 8, "language": "en" }\(audio)
+        ] }\(keyJSON)\(copyJSON) }
+        """.utf8)
+    }
+
+    @Test func sourcesAreRegisteredOnceAndTheirCopiesKept() async throws {
+        try await withClient { client in
+            let json = ["Content-Type": "application/json"]
+            let refused = try await client.send("POST", "/v1/sources", body: Self.registration(key: nil, copyOn: nil), headers: json)
+            #expect(refused.status == 401, "registering is the operator's")
+
+            let first = try await client.send("POST", "/v1/sources", body: Self.registration(key: "3F1AC2E9/00004", copyOn: "ripper"), headers: Self.operatorHeaders)
+            #expect(first.status == 201)
+            let source = try first.json(SourceBody.self)
+            #expect(source.copies.map(\.holder) == ["ripper"])
+            #expect(first.bodyText.contains("\"frameRate\":\"24000\\/1001\"") || first.bodyText.contains("\"frameRate\":\"24000/1001\""))
+
+            let again = try await client.send("POST", "/v1/sources", body: Self.registration(key: "3F1AC2E9/00004", copyOn: "laptop"), headers: Self.operatorHeaders)
+            #expect(again.status == 200, "the natural key finds the source already registered")
+            #expect(try again.json(SourceBody.self).id == source.id)
+            #expect(Set(try again.json(SourceBody.self).copies.map(\.holder)) == ["ripper", "laptop"])
+
+            let otherwise = try await client.send("POST", "/v1/sources", body: Self.registration(key: "3F1AC2E9/00004", copyOn: nil, extraAudio: true), headers: Self.operatorHeaders)
+            #expect(otherwise.status == 409)
+            #expect(otherwise.bodyText.contains("with a different input spec"))
+
+            let misspelt = Data(#"{ "input": { "format": 1, "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1, "intelaced": true } ] } }"#.utf8)
+            let bad = try await client.send("POST", "/v1/sources", body: misspelt, headers: Self.operatorHeaders)
+            #expect(bad.status == 400)
+            #expect(bad.bodyText.contains("streams[0].intelaced is not a field of an input spec"))
+            let newer = try await client.send("POST", "/v1/sources", body: Data(#"{ "input": { "format": 2, "streams": [], "segments": [] } }"#.utf8), headers: Self.operatorHeaders)
+            #expect(newer.status == 400)
+            #expect(newer.bodyText.contains("input spec format 2 is newer than this silo reads (1)"), "newer, not unknown field")
+
+            let read = try await client.get("/v1/sources/\(source.id)")
+            #expect(read.status == 200, "sources are read openly")
+            #expect(try read.json(SourceBody.self).copies.allSatisfy { $0.secret == nil }, "and never with a copy's secret")
+            #expect(!read.bodyText.contains("s-ripper"))
+            #expect(try await client.get("/v1/sources").json([SourceBody].self).contains { $0.id == source.id })
+            #expect(try await client.get("/v1/sources/nothing").status == 404)
+
+            let gone = try await client.send("DELETE", "/v1/sources/\(source.id)/copies/ripper", headers: Self.operatorHeaders)
+            #expect(gone.status == 200)
+            #expect(try gone.json(SourceBody.self).copies.map(\.holder) == ["laptop"])
+            let last = try await client.send("DELETE", "/v1/sources/\(source.id)/copies/laptop", headers: Self.operatorHeaders)
+            #expect(try last.json(SourceBody.self).copies.isEmpty)
+            #expect(try await client.get("/v1/sources/\(source.id)").status == 200, "a source whose last copy goes is kept")
+
+            let copy = Data(#"{ "holder": "ripper", "url": "http://ripper.local:8743/files/t.mkv", "secret": "s2" }"#.utf8)
+            let held = try await client.send("POST", "/v1/sources/\(source.id)/copies", body: copy, headers: Self.operatorHeaders)
+            #expect(held.status == 200)
+            #expect(try held.json(SourceBody.self).copies.map(\.holder) == ["ripper"])
+            #expect(try await client.send("POST", "/v1/sources/nothing/copies", body: copy, headers: Self.operatorHeaders).status == 404)
+            #expect(try await client.send("POST", "/v1/sources/\(source.id)/copies", body: copy, headers: json).status == 401)
+        }
+    }
+}

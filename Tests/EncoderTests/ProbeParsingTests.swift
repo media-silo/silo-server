@@ -7,7 +7,7 @@ import Testing
 @testable import Encoder
 
 struct ProbeParsingTests {
-    /// The shape `ffprobe -print_format json -show_format -show_streams` writes, trimmed to the
+    /// The shape `ffprobe -print_format json -show_format -show_streams -show_chapters` writes, trimmed to the
     /// fields read and one of each thing the reader has to cope with.
     static let document = """
     {
@@ -39,6 +39,10 @@ struct ProbeParsingTests {
             },
             { "index": 4, "codec_type": "attachment", "codec_name": "ttf" }
         ],
+        "chapters": [
+            { "id": 0, "start_time": "0.000000", "end_time": "750.000000", "tags": { "title": "Part One" } },
+            { "id": 1, "start_time": "750.000000", "end_time": "1500.320000" }
+        ],
         "format": { "filename": "t.mkv", "duration": "1500.320000" }
     }
     """
@@ -60,6 +64,7 @@ struct ProbeParsingTests {
         #expect(probed.streams[2].dispositions == ["comment"])
         #expect(probed.streams[3].dispositions == ["forced"])
         #expect(probed.streams[4].kind == .attachment)
+        #expect(probed.chapters == [ProbedChapter(start: 0, title: "Part One"), ProbedChapter(start: 750)])
 
         let facts = SourceFacts(probe: probed)
         #expect(facts.audio.map(\.role) == [.main, .commentary])
@@ -72,7 +77,8 @@ struct ProbeParsingTests {
         {"streams":[{"index":0,"codec_type":"video","codec_name":"mpeg2video","avg_frame_rate":"30000/1001","r_frame_rate":"30000/1001","field_order":"tt"}]}
         """
         let probed = try ProbedSource(ffprobeJSON: Data(json.utf8))
-        #expect(abs(probed.streams[0].frameRate! - 29.97) < 0.001)
+        #expect(probed.streams[0].frameRate == FrameRate(30000, 1001), "kept as the fraction, exactly")
+        #expect(probed.streams[0].frameRate?.description == "30000/1001")
         #expect(SourceFacts(probe: probed).video?.interlaced == true)
     }
 

@@ -374,9 +374,11 @@ text loses its account of the origin scan, and the jobs spec's its account of an
 ### 1. Sources and input specs
 
 `InputSpec` in SiloKit, with its validation; the sources store and routes, with natural keys and
-copies; language tags checked and kept in canonical form; the plain-file producer, with
-`ProbedSource` moved into the encoder and an ISO 639-2 to BCP 47 table for the codes `ffprobe`
-reports; `MakeMKVFacts` and `MakeMKVTrack` removed. The input-specs and sources deltas apply here.
+copies; language tags checked and kept in canonical form; the plain-file producer, with an ISO
+639-2 to BCP 47 table for the codes `ffprobe` reports, and the probe keeping exact frame rates and
+reading chapters. The `ingestion-1-sources` change applies here. `ProbedSource` and `MakeMKVFacts`
+stay where they are for now: registration and assignment still take them until step 4 removes those
+routes, and they go with them.
 
 Tests: each refusal of the input spec, naming its fault; a newer format refused; a misspelt field
 refused; a natural key matched with 200 and its copy added, and refused with 409 when the specs
@@ -412,7 +414,8 @@ resolving again adding drafts and leaving the rest.
 
 Jobs made from recipes; the claim carrying segments and spans; the node joining and cutting with one
 concat input; placement from the binding; registration and assignment routes removed, with the
-`unassigned` state. The jobs, worker and encoding concat deltas apply here; a producer that used the registration and
+`unassigned` state, and with them `MakeMKVFacts` and `MakeMKVTrack`, and `ProbedSource` moved into
+the encoder, where the plain-file producer is its last user. The jobs, worker and encoding concat deltas apply here; a producer that used the registration and
 assignment routes moves to the new ones in a change of its own.
 
 Tests: a job from a draft commits it; a second job from it is 409; a recipe whose source has no copy

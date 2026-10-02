@@ -23,10 +23,12 @@ One package, in the order its parts arrived:
 
 - `SiloKit` — the facts a rule may test, the ruleset file, and the resolver that
   turns a ruleset and a file's facts into a recipe: one decision per stream and
-  the layout the output will have. Pure, and tested on literal values.
+  the layout the output will have; and the input spec, the description of a
+  source a producer registers, read strictly. Pure, and tested on literal values.
 - `Encoder` — `ffprobe` and `ffmpeg` as processes: a recipe becomes an argument
   list, progress comes back a report at a time, and the output is probed and
-  checked against the layout the recipe promised.
+  checked against the layout the recipe promised. Its probe is also the silo's
+  own producer, describing a plain file in an input spec.
 - `SiloLibrary` — a library on disk: the layout (a folder per container named
   from its title, `container.smd` inside, `{item} - {display name}.mkv` beside
   it), the walk that finds every sidecar from the roots down and reports the
@@ -36,11 +38,13 @@ One package, in the order its parts arrived:
 - `SiloStore` — the silo's own state: the index, a SQLite file derived from the
   sidecars that a scan brings up to date by re-reading only what changed, and
   the rulesets, kept as the documents they were given under
-  `rulesets/<name>/<version>.xml`, a version never rewritten.
+  `rulesets/<name>/<version>.xml`, a version never rewritten; and the sources,
+  one file each under `sources/`, with the copies nodes hold of them.
 - `SiloAPI`, `SiloApp` and `silo` — the server: an OpenAPI document under `/v1`
   for what a client reads (libraries, containers with their presentations,
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
-  and what an operator changes (a scan, a stored ruleset, the settings), on the swift-wire
+  and what an operator changes (a scan, a stored ruleset, the settings, a
+  registered source and its copies), on the swift-wire
   stack; and beside the document, two routes that stream, the file a
   presentation is with `Range`, and the container as its sidecar.
 - `FileServing`, `SiloClient` and `SiloWorker` — the parts every participant
