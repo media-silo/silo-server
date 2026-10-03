@@ -26,6 +26,16 @@ public enum RecipeResolver {
         }
 
         let layout = OutputLayout(keeping: decisions)
+        return Recipe(
+            ruleset: RulesetRef(ruleset), decisions: decisions, output: ruleset.output(for: facts.profile), layout: layout,
+            warnings: warnings(layout: layout, mappings: mappings, hasVideo: facts.video != nil)
+        )
+    }
+
+    /// What a person should read before the encode: a feature mapped to a stream the layout drops,
+    /// and a source with no video. A function of the layout, so an adjusted recipe warns as the
+    /// rules' own would.
+    public static func warnings(layout: OutputLayout, mappings: [TrackMapping], hasVideo: Bool) -> [String] {
         var warnings: [String] = []
         for mapping in mappings {
             if let audio = mapping.audio, layout.outputIndex(of: .audio, sourceIndex: audio) == nil {
@@ -35,11 +45,10 @@ public enum RecipeResolver {
                 warnings.append("feature \(mapping.feature) is mapped to subtitle \(subtitle), which this recipe drops")
             }
         }
-        if facts.video == nil {
+        if !hasVideo {
             warnings.append("the source has no video stream")
         }
-
-        return Recipe(ruleset: RulesetRef(ruleset), decisions: decisions, output: ruleset.output(for: facts.profile), layout: layout, warnings: warnings)
+        return warnings
     }
 
     private static func decide(
@@ -67,10 +76,10 @@ public enum RecipeResolver {
             return "\(video.codec) \(video.width)x\(video.height)\(video.interlaced ? " interlaced" : "")\(video.hdr.map { " \($0.rawValue)" } ?? "")"
         case .audio(let index):
             guard let audio = facts.audio.first(where: { $0.index == index }) else { return "audio \(index)" }
-            return "\(audio.codec)\(audio.profile.map { " \($0)" } ?? "") \(audio.channels)ch \(audio.language ?? "und") \(audio.role.rawValue)\(audio.lossless ? " lossless" : "")\(audio.core ? " core" : "")"
+            return "\(audio.codec)\(audio.profile.map { " \($0)" } ?? "") \(audio.channels)ch \(audio.languageTag ?? "und") \(audio.role.rawValue)\(audio.lossless ? " lossless" : "")\(audio.core ? " core" : "")"
         case .subtitle(let index):
             guard let subtitle = facts.subtitles.first(where: { $0.index == index }) else { return "subtitle \(index)" }
-            return "\(subtitle.codec) \(subtitle.language ?? "und")\(subtitle.forced ? " forced" : "")"
+            return "\(subtitle.codec) \(subtitle.languageTag ?? "und")\(subtitle.forced ? " forced" : "")"
         }
     }
 }

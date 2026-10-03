@@ -10,3 +10,4 @@ A job is made from a draft recipe and is only the run: a claim hands the node ea
 - Jobs made from recipes; registration, assignment and the unassigned state removed.
 - Claims carry segments and spans; the worker joins and cuts them as one concat input.
 - Placement from the binding, in the output's profile.
+- The merge of a probe and a MakeMKV scan, and roles from MakeMKV's flags, go with the routes that used them; the layout and the resolver speak of the binding's feature map.

@@ -55,7 +55,7 @@ struct FactsTests {
         #expect(facts.audio.map(\.lossless) == [true, false, false])
         #expect(facts.audio.map(\.core) == [false, true, false])
         #expect(facts.audio.map(\.role) == [.main, .main, .main])
-        #expect(facts.audio[2].language == "eng", "the scan's language fills what the file did not say")
+        #expect(facts.audio[2].language == "en", "the scan's language fills what the file did not say, in BCP 47's canonical form")
         #expect(facts.subtitles.map(\.forced) == [false, true])
         #expect(facts.hints == [FactHint(stream: 3, text: "titled \"Commentary with the director\" but nothing marks it a commentary; assign it to a feature if it is one")])
 

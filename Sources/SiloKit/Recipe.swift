@@ -91,13 +91,16 @@ public struct StreamDecision: Hashable, Sendable, Codable {
     /// The rule's id, or its position in the ruleset as `#n` when it has none.
     public var rule: String
     public var action: Action
+    /// When a person adjusted the stream: the action the rule chose, and why it was replaced.
+    public var adjusted: Adjusted?
 
-    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, rule: String, action: Action) {
+    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, rule: String, action: Action, adjusted: Adjusted? = nil) {
         self.kind = kind
         self.sourceIndex = sourceIndex
         self.sourceAbsoluteIndex = sourceAbsoluteIndex
         self.rule = rule
         self.action = action
+        self.adjusted = adjusted
     }
 
     public var isKept: Bool {

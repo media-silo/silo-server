@@ -402,8 +402,11 @@ profile, and two unqualified, are refused.
 The bindings store and routes; facts derived from segments, binding and output; draft recipes, one
 per output; adjustments; committing; resolving again; the dry run taking input specs; `silo-ctl
 encode --input`, with the plain-file producer when no spec is given, `--profile` to pick the output,
-and `--makemkv` gone. The bindings, recipes, rulesets facts and extraction, read-api and encoding
-`silo-ctl` deltas apply here.
+and `--makemkv` gone. The `ingestion-3-bindings-and-recipes` change applies here. The requirements
+that describe merging a probe with a MakeMKV scan, and the feature map as the assignment's, stay
+until step 4: assignment still does both until that step removes it, so their removal and rewording
+travel in step 4's change. A recipe is committed only when a job is made from it, so this step
+builds committing into the recipe store and the fourth step calls it.
 
 Tests: each refusal of a binding; segments of different layouts refused; a binding resolving to one
 draft per output, the mobile one with `profile` set; a stream no rule decides refusing the binding
