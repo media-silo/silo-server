@@ -62,9 +62,12 @@ public enum RulesetFile {
             root.addChild(element)
         }
 
-        let output = XMLElement(name: "output")
-        output.set("container", ruleset.output.container)
-        root.addChild(output)
+        for policy in ruleset.outputs {
+            let output = XMLElement(name: "output")
+            output.set("profile", policy.profile)
+            output.set("container", policy.container)
+            root.addChild(output)
+        }
 
         let document = XMLDocument(rootElement: root)
         document.version = "1.0"
@@ -151,9 +154,13 @@ public enum RulesetFile {
             extraction.includeEmbeddedSubtitleTracks = try element.bool("embeddedSubtitles") ?? extraction.includeEmbeddedSubtitleTracks
         }
 
-        var output = OutputPolicy()
-        if let element = root.child("output"), let container = element.attribute("container") {
-            output.container = container
+        var outputs: [OutputPolicy] = []
+        for element in root.elements(forName: "output") {
+            let output = OutputPolicy(profile: element.attribute("profile"), container: element.attribute("container") ?? "mkv")
+            guard !outputs.contains(where: { $0.profile == output.profile }) else {
+                throw RulesetFileError.outputMadeTwice(profile: output.profile)
+            }
+            outputs.append(output)
         }
 
         var rules: [Rule] = []
@@ -168,7 +175,7 @@ public enum RulesetFile {
             }
         }
 
-        return Ruleset(name: name, version: version, extraction: extraction, rules: rules, output: output)
+        return Ruleset(name: name, version: version, extraction: extraction, rules: rules, outputs: outputs)
     }
 
     private static func rule(from element: XMLElement, scope: Scope) throws -> Rule {
@@ -272,6 +279,7 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
     case notNumeric(fact: String, operator: String)
     case noAction(rule: String)
     case multipleActions(rule: String)
+    case outputMadeTwice(profile: String?)
 
     public var description: String {
         switch self {
@@ -287,6 +295,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
         case .notNumeric(let fact, let op): "\"\(fact)\" is not a number and cannot be compared with \(op)"
         case .noAction(let rule): "rule \(rule) has no <copy/>, <drop/> or <encode>"
         case .multipleActions(let rule): "rule \(rule) has more than one action"
+        case .outputMadeTwice(let profile?): "the profile \(profile) is made twice"
+        case .outputMadeTwice(nil): "the unqualified output is made twice"
         }
     }
 }

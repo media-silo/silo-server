@@ -2309,6 +2309,9 @@ components:
       type: object
       required: [container]
       properties:
+        profile:
+          type: string
+          description: The output's profile, such as mobile; absent for the unqualified output.
         container:
           type: string
 

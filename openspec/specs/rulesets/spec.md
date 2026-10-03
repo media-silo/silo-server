@@ -39,13 +39,13 @@ Documentation: [README](../../../README.md).
 
 ## Requirements
 
-### Requirement: A ruleset is one XML document of an extraction policy, rules and an output policy
+### Requirement: A ruleset is one XML document of an extraction policy, rules and outputs
 A ruleset SHALL be a UTF-8 XML document whose root element is `<ruleset>`. The root's children
 SHALL be, in any order: at most one `<extraction>` element, any number of rule elements —
-`<video>`, `<audio>` and `<subtitle>` — and at most one `<output>` element. Comments and
+`<video>`, `<audio>` and `<subtitle>` — and any number of `<output>` elements. Comments and
 whitespace MAY appear anywhere and mean nothing. The document order of the rule elements is
-significant, since it decides which rule wins; the placement of `<extraction>` and `<output>`
-among them is not. A ruleset with no rules is a valid document, though one that decides no
+significant, since it decides which rule wins, and so is the order of the `<output>` elements,
+which is the order a binding's recipes come in; the placement of either among the rules is not. A ruleset with no rules is a valid document, though one that decides no
 stream.
 
 A complete ruleset reads:
@@ -67,22 +67,23 @@ A complete ruleset reads:
   <subtitle><copy/></subtitle>
 
   <output container="mkv"/>
+  <output profile="mobile" container="mp4"/>
 </ruleset>
 ```
 
 #### Scenario: the order of the rules is kept
 - **WHEN** a document holds an `<output>` element, then an `<audio>` rule named `a`, then an
   `<extraction>` element, then an `<audio>` rule named `b`
-- **THEN** it reads as a ruleset whose rules are `a` then `b`, with that extraction and output
-  policy
+- **THEN** it reads as a ruleset whose rules are `a` then `b`, with that extraction policy and that
+  output
 
 #### Scenario: a ruleset with nothing in it
 - **WHEN** the document is `<ruleset format="1" name="t"/>`
-- **THEN** it reads as a ruleset with no rules, the default extraction policy and the default
-  output policy
+- **THEN** it reads as a ruleset with no rules, the default extraction policy and one unqualified
+  `mkv` output
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
-`aRulesetSurvivesTheFile`).
+`aRulesetSurvivesTheFile`, `aRulesetMakesEachOutputItDeclares`).
 
 ### Requirement: The root names the format and the ruleset
 The `<ruleset>` element SHALL carry `format`, an integer, and `name`, both required, and MAY
@@ -134,17 +135,39 @@ is making one decision.
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
 `aRulesetSurvivesTheFile`); the refusal is pinned by nothing yet.
 
-### Requirement: The output policy names the container
-The `<output>` element SHALL carry an optional `container` attribute naming the output file's
-container format; absent, the container is `mkv`. `mkv` and `matroska` SHALL both mean `ffmpeg`'s
-`matroska` format with the extension `.mkv`; any other value SHALL be handed to `ffmpeg` as the
-format name and used as the extension as given. The value is not checked when the ruleset is read.
+### Requirement: The outputs name what is made of every entry
+Each `<output>` element SHALL name one presentation the ruleset makes of every entry it is applied
+to: an optional `profile`, absent for the unqualified presentation, and an optional `container`
+naming the output file's container format, absent meaning `mkv`. A resolution SHALL make the output
+whose profile is the profile the file is being made into — the unqualified output when it is being
+made into none — and, when the ruleset declares no output for that profile, the unqualified output,
+or else the first, so that a ruleset written with one output serves every profile it served before.
+A ruleset with no `<output>`
+SHALL make one unqualified `mkv` output. Two outputs with the same profile, or two without one,
+SHALL be refused. `mkv` and `matroska` SHALL both mean `ffmpeg`'s `matroska` format with the
+extension `.mkv`; any other value SHALL be handed to `ffmpeg` as the format name and used as the
+extension as given. The container is not checked when the ruleset is read.
 
 #### Scenario: the default container
 - **WHEN** a ruleset has no `<output>` element
-- **THEN** its output is written as `matroska`, with the extension `.mkv`
+- **THEN** it makes one unqualified output, written as `matroska`, with the extension `.mkv`
 
-Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`).
+#### Scenario: a full and a mobile presentation
+- **WHEN** a ruleset holds `<output container="mkv"/>` then `<output profile="mobile" container="mp4"/>`
+- **THEN** it makes two outputs, the unqualified `mkv` first and the `mobile` `mp4` second
+
+#### Scenario: one profile twice
+- **WHEN** a ruleset holds two `<output profile="mobile"/>` elements
+- **THEN** it is refused, saying the profile `mobile` is made twice
+
+#### Scenario: each output is resolved with its profile
+- **WHEN** a ruleset whose outputs are an unqualified `mkv` and a `mobile` `mp4` resolves a file being
+  made into `mobile`, and again one being made into `hdr`
+- **THEN** the first recipe's output is the `mobile` `mp4`, and the second's the unqualified `mkv`
+
+Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
+`aRulesetMakesEachOutputItDeclares`, `anOutputMadeTwiceIsRefused`),
+`Tests/SiloKitTests/ResolverTests.swift` (`aResolutionMakesTheOutputItsProfileNames`).
 
 ### Requirement: A rule is a scope, a list of conditions and one action
 A rule SHALL be an element named for the kind of stream it decides — `<video>`, `<audio>` or
@@ -396,9 +419,10 @@ refused document is used. It SHALL be refused, in these words, when:
 | an ordering operator is applied to a fact that is not a number | `"<fact>" is not a number and cannot be compared with <operator>` |
 | a rule has no action | `rule <rule> has no <copy/>, <drop/> or <encode>` |
 | a rule has more than one action | `rule <rule> has more than one action` |
+| two outputs have the same profile, or neither has one | `the profile <profile> is made twice`, or `the unqualified output is made twice` |
 
 where `<rule>` is the rule's `id`, or its scope's element name when it has none. An attribute the
-reader does not know SHALL be ignored, as SHALL a second `<extraction>` or `<output>` element.
+reader does not know SHALL be ignored, as SHALL a second `<extraction>` element.
 
 #### Scenario: an element the document does not have
 - **WHEN** a ruleset's root holds a `<rule/>` element
@@ -409,7 +433,8 @@ reader does not know SHALL be ignored, as SHALL a second `<extraction>` or `<out
 - **THEN** it is refused as malformed XML, not read with its tags closed for it
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`,
-`aRuleThatCannotBeReadIsRefused`); the ignored attributes and elements are pinned by nothing yet.
+`aRuleThatCannotBeReadIsRefused`, `anOutputMadeTwiceIsRefused`); the ignored attributes and element
+are pinned by nothing yet.
 
 ### Requirement: A silo keeps each ruleset as the documents it was given
 A silo SHALL keep its rulesets under `rulesets/<name>/<version>.xml` in its state directory — the

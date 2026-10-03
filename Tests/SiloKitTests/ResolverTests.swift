@@ -28,6 +28,18 @@ struct ResolverTests {
         #expect(recipe.audio.map(\.rule) == ["#5"])
     }
 
+    @Test func aResolutionMakesTheOutputItsProfileNames() throws {
+        var ruleset = Ruleset.household
+        ruleset.outputs = [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")]
+        var mobile = SourceFacts.featurette
+        mobile.profile = "mobile"
+        #expect(try RecipeResolver.resolve(mobile, with: ruleset).output == OutputPolicy(profile: "mobile", container: "mp4"))
+        #expect(try RecipeResolver.resolve(.featurette, with: ruleset).output == OutputPolicy(container: "mkv"), "no profile, the unqualified output")
+        var other = SourceFacts.featurette
+        other.profile = "hdr"
+        #expect(try RecipeResolver.resolve(other, with: ruleset).output == OutputPolicy(container: "mkv"), "a profile no output names falls back to the unqualified one")
+    }
+
     @Test func theFirstMatchingRuleWins() throws {
         // A lossless commentary: lossless-main is written first but excludes commentaries, so
         // the commentary rule decides. Reorder the two and the answer changes, which is the

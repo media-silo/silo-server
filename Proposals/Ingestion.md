@@ -389,8 +389,10 @@ canonical form, refused.
 
 ### 2. Outputs
 
-The ruleset's outputs, each resolved with its profile. The rulesets output and refusal deltas apply
-here.
+The ruleset's outputs, each with its profile. The `ingestion-2-outputs` change applies here. Until
+bindings arrive in step 3, a resolution makes the one output its profile names, falling back to the
+unqualified output so that a ruleset written with one output serves every profile it served before;
+step 3's change replaces that with one resolution for every output.
 
 Tests: a ruleset of two outputs reads as two; none reads as one unqualified `mkv`; two outputs of one
 profile, and two unqualified, are refused.
