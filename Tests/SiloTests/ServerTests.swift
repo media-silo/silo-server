@@ -190,24 +190,25 @@ struct ServerTests {
             #expect(try await client.get("/v1/rulesets/household?version=9").status == 404)
             #expect(try await client.get("/v1/rulesets/nothing").status == 404)
 
-            let facts = SourceFacts(
-                kind: .featurette,
-                video: VideoFacts(absoluteIndex: 0, codec: "mpeg2video", width: 352, height: 288),
-                audio: [
-                    AudioFacts(index: 1, absoluteIndex: 1, codec: "flac", lossless: true, channels: 2),
-                    AudioFacts(index: 2, absoluteIndex: 2, codec: "ac3", lossless: false, channels: 2, role: .commentary),
-                ]
-            )
-            struct Resolve: Encodable { var facts: SourceFacts; var mappings: [TrackMapping] }
-            let resolved = try await client.post("/v1/rulesets/household/resolve", json: Resolve(facts: facts, mappings: [TrackMapping(feature: "c", audio: 2)]))
+            let featurette = InputSpec(streams: [
+                InputSpec.Stream(index: 0, kind: .video, codec: "mpeg2video", width: 352, height: 288),
+                InputSpec.Stream(index: 1, kind: .audio, codec: "flac", channels: 2),
+                InputSpec.Stream(index: 2, kind: .audio, codec: "ac3", channels: 2, marks: [.commentary]),
+            ])
+            struct Resolve: Encodable { var inputs: [InputSpec]; var kind: String?; var mappings: [TrackMapping] }
+            let resolved = try await client.post("/v1/rulesets/household/resolve", json: Resolve(inputs: [featurette], kind: "featurette", mappings: [TrackMapping(feature: "c", audio: 2)]))
             #expect(resolved.status == 200)
-            let recipe = try resolved.json(Recipe.self)
-            #expect(recipe.decisions.map(\.rule) == ["small-extras", "lossless-main", "commentary"])
-            #expect(recipe.ruleset.description == "household@2")
+            let recipes = try resolved.json([Recipe].self)
+            #expect(recipes.count == 1, "a recipe for each of the ruleset's outputs")
+            #expect(recipes[0].decisions.map(\.rule) == ["small-extras", "lossless-main", "commentary"])
+            #expect(recipes[0].ruleset.description == "household@2")
+            let newer = try await client.send("POST", "/v1/rulesets/household/resolve", body: Data(#"{ "inputs": [ { "format": 2, "streams": [] } ] }"#.utf8), headers: ["Content-Type": "application/json"])
+            #expect(newer.status == 400)
+            #expect(newer.bodyText.contains("input 1: input spec format 2 is newer than this silo reads (1)"))
 
             let strict = RulesetDocumentBody(name: "strict", document: "<ruleset format=\"1\" name=\"strict\"><video><copy/></video></ruleset>")
             _ = try await client.send("PUT", "/v1/rulesets/strict", body: try JSONEncoder().encode(strict), headers: operatorHeaders)
-            let undecided = try await client.post("/v1/rulesets/strict/resolve", json: Resolve(facts: facts, mappings: []))
+            let undecided = try await client.post("/v1/rulesets/strict/resolve", json: Resolve(inputs: [featurette], kind: "featurette", mappings: []))
             #expect(undecided.status == 422)
             #expect(undecided.bodyText.contains("no rule decides audio 1"))
         }
@@ -588,6 +589,138 @@ extension ServerTests {
             #expect(try held.json(SourceBody.self).copies.map(\.holder) == ["ripper"])
             #expect(try await client.send("POST", "/v1/sources/nothing/copies", body: copy, headers: Self.operatorHeaders).status == 404)
             #expect(try await client.send("POST", "/v1/sources/\(source.id)/copies", body: copy, headers: json).status == 401)
+        }
+    }
+}
+
+extension ServerTests {
+    struct BindingBody: Decodable {
+        var id: String
+        var segments: [Binding.Segment]
+        var recipes: [String]
+    }
+    struct StoredRecipeBody: Decodable {
+        var id: String
+        var binding: String
+        var state: String
+        var recipe: Recipe
+        var adjustments: [Adjustment]
+    }
+    struct BindingMadeBody: Decodable {
+        var binding: BindingBody
+        var recipes: [StoredRecipeBody]
+    }
+
+    /// A ruleset of two outputs, whose mobile output scales its video and whose only commentary
+    /// rule is unqualified: what a binding against it resolves to, per output.
+    static let twoOutputs = """
+    <ruleset format="1" name="two">
+        <video id="mobile-video"><when fact="profile" is="mobile"/><encode codec="libx264"><scale height="720"/></encode></video>
+        <video><copy/></video>
+        <audio id="lossless-main"><when fact="audio.lossless" is="true"/><encode codec="flac"/></audio>
+        <audio><copy/></audio>
+        <output container="mkv"/>
+        <output profile="mobile" container="mp4"/>
+    </ruleset>
+    """
+
+    static func bindingBody(source: String, ruleset: String = "two", chapters: (Int, Int)? = nil, item: String = "part2", extra: String = "") -> Data {
+        let documents = String(decoding: try! JSONEncoder().encode(Self.documents), as: UTF8.self)
+        let span = chapters.map { #", "chapters": { "from": \#($0.0), "to": \#($0.1) }"# } ?? ""
+        return Data("""
+        { "library": "main", "containers": \(documents), "item": "\(item)", "ruleset": "\(ruleset)",
+          "tracks": [ { "feature": "commentary1", "audio": 2 } ],
+          "segments": [ { "source": "\(source)"\(span) } ]\(extra) }
+        """.utf8)
+    }
+
+    @Test func entriesAreBoundAndResolvedToADraftForEachOutput() async throws {
+        try await withClient { client in
+            let ruleset = RulesetDocumentBody(name: "two", document: Self.twoOutputs)
+            #expect(try await client.send("PUT", "/v1/rulesets/two", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders).status == 201)
+            let spec = #"""
+            { "input": { "format": 1, "duration": 5990.4,
+              "chapters": [ { "index": 1, "start": 0 }, { "index": 2, "start": 1497.6 }, { "index": 3, "start": 2995.2 } ],
+              "streams": [
+                { "index": 0, "kind": "video", "codec": "mpeg2video", "width": 720, "height": 576 },
+                { "index": 1, "kind": "audio", "codec": "pcm_s16le", "channels": 2, "language": "en" },
+                { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "en" } ] } }
+            """#
+            let source = try await client.send("POST", "/v1/sources", body: Data(spec.utf8), headers: Self.operatorHeaders).json(SourceBody.self)
+
+            let refused = try await client.send("POST", "/v1/bindings", body: Self.bindingBody(source: source.id, chapters: (2, 2)), headers: ["Content-Type": "application/json"])
+            #expect(refused.status == 401, "binding is the operator's")
+
+            let made = try await client.send("POST", "/v1/bindings", body: Self.bindingBody(source: source.id, chapters: (2, 2)), headers: Self.operatorHeaders)
+            #expect(made.status == 201)
+            let body = try made.json(BindingMadeBody.self)
+            #expect(body.binding.segments == [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 2))])
+            #expect(body.recipes.map(\.state) == ["draft", "draft"])
+            #expect(body.recipes.map(\.recipe.output) == [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")])
+            #expect(body.recipes[0].recipe.video?.action == .copy)
+            #expect(body.recipes[1].recipe.video?.rule == "mobile-video", "the mobile output is resolved with its profile")
+            #expect(body.binding.recipes == body.recipes.map(\.id))
+
+            let read = try await client.get("/v1/bindings/\(body.binding.id)")
+            #expect(read.status == 200)
+            #expect(try read.json(BindingBody.self).recipes == body.recipes.map(\.id), "a binding is read with the ids of its recipes")
+            #expect(try await client.get("/v1/bindings/nothing").status == 404)
+            let recipe = try await client.get("/v1/recipes/\(body.recipes[0].id)")
+            #expect(recipe.status == 200)
+            #expect(try recipe.json(StoredRecipeBody.self).recipe.audio.first?.rule == "lossless-main")
+
+            // The producer's last word: keep the PCM, not FLAC.
+            let adjustment = #"[ { "kind": "audio", "index": 1, "action": { "copy": {} }, "note": "keep the PCM" } ]"#
+            let adjusted = try await client.send("PUT", "/v1/recipes/\(body.recipes[0].id)/adjustments", body: Data(adjustment.utf8), headers: Self.operatorHeaders)
+            #expect(adjusted.status == 200)
+            let after = try adjusted.json(StoredRecipeBody.self)
+            #expect(after.recipe.audio.first?.action == .copy)
+            #expect(after.recipe.audio.first?.adjusted == Adjusted(ruleAction: .encode(EncodeSettings(codec: "flac")), note: "keep the PCM"))
+            #expect(after.recipe.audio.first?.rule == "lossless-main")
+            let nothing = #"[ { "kind": "audio", "index": 4, "action": { "copy": {} } } ]"#
+            let bad = try await client.send("PUT", "/v1/recipes/\(body.recipes[0].id)/adjustments", body: Data(nothing.utf8), headers: Self.operatorHeaders)
+            #expect(bad.status == 400)
+            #expect(bad.bodyText.contains("the recipe has no audio 4 to adjust"))
+
+            #expect(try await client.send("DELETE", "/v1/recipes/\(body.recipes[1].id)", headers: Self.operatorHeaders).status == 204)
+            #expect(try await client.get("/v1/recipes/\(body.recipes[1].id)").status == 404)
+            #expect(try await client.get("/v1/recipes/\(body.recipes[0].id)").status == 200, "the binding's other recipe stays")
+
+            let again = try await client.send("POST", "/v1/bindings/\(body.binding.id)/recipes", headers: Self.operatorHeaders)
+            #expect(again.status == 201)
+            #expect(try again.json([StoredRecipeBody].self).count == 2, "a new draft for each output")
+            #expect(try await client.get("/v1/recipes/\(body.recipes[0].id)").json(StoredRecipeBody.self).adjustments.count == 1, "and the earlier draft as it was")
+        }
+    }
+
+    @Test func aBindingThatCannotBeMadeIsRefusedAndKeepsNothing() async throws {
+        try await withClient { client in
+            let ruleset = RulesetDocumentBody(name: "two", document: Self.twoOutputs)
+            _ = try await client.send("PUT", "/v1/rulesets/two", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders)
+            let spec = #"""
+            { "input": { "format": 1, "chapters": [ { "index": 1, "start": 0 }, { "index": 2, "start": 10 } ],
+              "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1 },
+                           { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2 }, { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 } ] } }
+            """#
+            let source = try await client.send("POST", "/v1/sources", body: Data(spec.utf8), headers: Self.operatorHeaders).json(SourceBody.self)
+
+            func refusal(_ body: Data) async throws -> (Int, String) {
+                let answer = try await client.send("POST", "/v1/bindings", body: body, headers: Self.operatorHeaders)
+                return (answer.status, answer.bodyText)
+            }
+            let past = try await refusal(Self.bindingBody(source: source.id, chapters: (2, 5)))
+            #expect(past.0 == 400)
+            #expect(past.1.contains("has no chapter 5"))
+            #expect(try await refusal(Self.bindingBody(source: "nothing")).1.contains("no source nothing"))
+            #expect(try await refusal(Self.bindingBody(source: source.id, item: "part9")).1.contains("has no item part9"))
+            #expect(try await refusal(Self.bindingBody(source: source.id, ruleset: "nope")).1.contains("no ruleset nope"))
+            #expect(try await refusal(Self.bindingBody(source: source.id, extra: #", "outputs": [ { "profile": "hdr" } ]"#)).1.contains("two makes no output for the profile hdr"))
+
+            let strict = RulesetDocumentBody(name: "videoonly", document: #"<ruleset format="1" name="videoonly"><video><copy/></video></ruleset>"#)
+            _ = try await client.send("PUT", "/v1/rulesets/videoonly", body: try JSONEncoder().encode(strict), headers: Self.operatorHeaders)
+            let undecided = try await refusal(Self.bindingBody(source: source.id, ruleset: "videoonly"))
+            #expect(undecided.0 == 422)
+            #expect(undecided.1.contains("the unqualified output: no rule decides audio 1"))
         }
     }
 }

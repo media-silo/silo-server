@@ -130,10 +130,14 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
     case audioLossless = "audio.lossless"
     case audioChannels = "audio.channels"
     case audioLanguage = "audio.language"
+    case audioScript = "audio.script"
+    case audioRegion = "audio.region"
     case audioRole = "audio.role"
     case audioCore = "audio.core"
     case subtitleCodec = "subtitle.codec"
     case subtitleLanguage = "subtitle.language"
+    case subtitleScript = "subtitle.script"
+    case subtitleRegion = "subtitle.region"
     case subtitleForced = "subtitle.forced"
 
     /// Nil for a file-level fact.
@@ -141,8 +145,8 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
         switch self {
         case .kind, .profile, .format, .duration: nil
         case .videoCodec, .videoWidth, .videoHeight, .videoFrameRate, .videoInterlaced, .videoHDR, .videoBitDepth: .video
-        case .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioRole, .audioCore: .audio
-        case .subtitleCodec, .subtitleLanguage, .subtitleForced: .subtitle
+        case .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioScript, .audioRegion, .audioRole, .audioCore: .audio
+        case .subtitleCodec, .subtitleLanguage, .subtitleScript, .subtitleRegion, .subtitleForced: .subtitle
         }
     }
 
@@ -297,10 +301,14 @@ extension SourceFacts {
         case .audioLossless: return audioFacts(stream).map { .flag($0.lossless) } ?? .absent
         case .audioChannels: return audioFacts(stream).map { .number(Double($0.channels)) } ?? .absent
         case .audioLanguage: return audioFacts(stream)?.language.map(FactValue.text) ?? .absent
+        case .audioScript: return audioFacts(stream)?.script.map(FactValue.text) ?? .absent
+        case .audioRegion: return audioFacts(stream)?.region.map(FactValue.text) ?? .absent
         case .audioRole: return audioFacts(stream).map { .text($0.role.rawValue) } ?? .absent
         case .audioCore: return audioFacts(stream).map { .flag($0.core) } ?? .absent
         case .subtitleCodec: return subtitleFacts(stream).map { .text($0.codec) } ?? .absent
         case .subtitleLanguage: return subtitleFacts(stream)?.language.map(FactValue.text) ?? .absent
+        case .subtitleScript: return subtitleFacts(stream)?.script.map(FactValue.text) ?? .absent
+        case .subtitleRegion: return subtitleFacts(stream)?.region.map(FactValue.text) ?? .absent
         case .subtitleForced: return subtitleFacts(stream).map { .flag($0.forced) } ?? .absent
         }
     }

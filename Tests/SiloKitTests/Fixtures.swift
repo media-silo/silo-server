@@ -52,13 +52,13 @@ extension SourceFacts {
         duration: 1500,
         video: VideoFacts(absoluteIndex: 0, codec: "h264", width: 1920, height: 1080, frameRate: 25),
         audio: [
-            AudioFacts(index: 1, absoluteIndex: 1, codec: "truehd", lossless: true, channels: 8, language: "eng", role: .main),
-            AudioFacts(index: 2, absoluteIndex: 2, codec: "ac3", lossless: false, channels: 2, language: "eng", role: .commentary),
-            AudioFacts(index: 3, absoluteIndex: 3, codec: "ac3", lossless: false, channels: 2, language: "eng", role: .main),
+            AudioFacts(index: 1, absoluteIndex: 1, codec: "truehd", lossless: true, channels: 8, language: "en", role: .main),
+            AudioFacts(index: 2, absoluteIndex: 2, codec: "ac3", lossless: false, channels: 2, language: "en", role: .commentary),
+            AudioFacts(index: 3, absoluteIndex: 3, codec: "ac3", lossless: false, channels: 2, language: "en", role: .main),
         ],
         subtitles: [
-            SubtitleFacts(index: 1, absoluteIndex: 4, codec: "hdmv_pgs_subtitle", language: "eng"),
-            SubtitleFacts(index: 2, absoluteIndex: 5, codec: "hdmv_pgs_subtitle", language: "eng", forced: true),
+            SubtitleFacts(index: 1, absoluteIndex: 4, codec: "hdmv_pgs_subtitle", language: "en"),
+            SubtitleFacts(index: 2, absoluteIndex: 5, codec: "hdmv_pgs_subtitle", language: "en", forced: true),
         ]
     )
 
@@ -68,6 +68,6 @@ extension SourceFacts {
         format: .dvd,
         duration: 600,
         video: VideoFacts(absoluteIndex: 0, codec: "mpeg2video", width: 352, height: 288, frameRate: 25, interlaced: true),
-        audio: [AudioFacts(index: 1, absoluteIndex: 1, codec: "ac3", lossless: false, channels: 2, language: "eng")]
+        audio: [AudioFacts(index: 1, absoluteIndex: 1, codec: "ac3", lossless: false, channels: 2, language: "en")]
     )
 }

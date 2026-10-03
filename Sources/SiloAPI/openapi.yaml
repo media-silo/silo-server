@@ -21,6 +21,7 @@ tags:
   - name: Containers
   - name: Rulesets
   - name: Sources
+  - name: Bindings
   - name: Jobs
   - name: Nodes
 
@@ -430,8 +431,10 @@ paths:
   /rulesets/{name}/resolve:
     post:
       operationId: resolveRecipe
-      summary: What a ruleset would do to a file with these facts
-      description: A dry run of the resolver, so that a person can see the recipe before anything is encoded.
+      summary: What a ruleset would make of sources described by these input specs
+      description: >
+        A dry run of the resolver: the input specs are joined as a binding's segments are, and the
+        answer is a recipe for each of the ruleset's outputs. Nothing is stored and nothing encoded.
       tags: [Rulesets]
       parameters:
         - $ref: "#/components/parameters/RulesetName"
@@ -448,15 +451,189 @@ paths:
               $ref: "#/components/schemas/ResolveRequest"
       responses:
         "200":
-          description: The recipe.
+          description: A recipe for each of the ruleset's outputs, in its order.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Recipe"
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recipe"
+        "400":
+          description: An input spec is refused, or the specs cannot be joined.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "404":
           description: No such ruleset or version.
         "422":
           description: A stream no rule decides.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /bindings:
+    post:
+      operationId: makeBinding
+      summary: Bind an entry to the segments of sources it is made from
+      description: >
+        Checks the binding whole, resolves it once for each output it makes, and keeps the binding and
+        a draft recipe for each, or keeps nothing. Operator only.
+      tags: [Bindings]
+      security:
+        - operator: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBinding"
+      responses:
+        "201":
+          description: Made, with its draft recipes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindingMade"
+        "400":
+          description: The binding cannot be made.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "422":
+          description: A stream no rule decides, for one of the outputs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /bindings/{id}:
+    get:
+      operationId: getBinding
+      summary: One binding, and the ids of its recipes
+      tags: [Bindings]
+      parameters:
+        - $ref: "#/components/parameters/BindingID"
+      responses:
+        "200":
+          description: The binding.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Binding"
+        "404":
+          description: No such binding.
+
+  /bindings/{id}/recipes:
+    post:
+      operationId: resolveBindingAgain
+      summary: Resolve a binding against its ruleset as it now stands
+      description: Adds a draft for each output and leaves every earlier recipe as it was. Operator only.
+      tags: [Bindings]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/BindingID"
+      responses:
+        "201":
+          description: The new drafts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StoredRecipe"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such binding.
+        "422":
+          description: A stream no rule decides, for one of the outputs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /recipes/{id}:
+    get:
+      operationId: getRecipe
+      summary: One recipe
+      tags: [Bindings]
+      parameters:
+        - $ref: "#/components/parameters/RecipeID"
+      responses:
+        "200":
+          description: The recipe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoredRecipe"
+        "404":
+          description: No such recipe.
+    delete:
+      operationId: discardRecipe
+      summary: Discard a draft
+      description: A committed recipe is the record of what a job ran, and is refused. Operator only.
+      tags: [Bindings]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/RecipeID"
+      responses:
+        "204":
+          description: Discarded.
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such recipe.
+        "409":
+          description: The recipe is committed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /recipes/{id}/adjustments:
+    put:
+      operationId: adjustRecipe
+      summary: Replace a draft's adjustments
+      description: An empty list gives back what the rules decided. Operator only.
+      tags: [Bindings]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/RecipeID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/Adjustment"
+      responses:
+        "200":
+          description: The recipe, adjusted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoredRecipe"
+        "400":
+          description: An adjustment names a stream the recipe has no decision for, or one stream twice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such recipe.
+        "409":
+          description: The recipe is committed.
           content:
             application/json:
               schema:
@@ -1045,6 +1222,18 @@ components:
       description: The staged setup's passkey, spent by its confirm — never the credential itself.
 
   parameters:
+    BindingID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    RecipeID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
     SourceID:
       name: id
       in: path
@@ -1335,6 +1524,146 @@ components:
           format: int64
         secret:
           type: string
+
+    NewBinding:
+      type: object
+      required: [library, containers, item, ruleset, segments]
+      properties:
+        library:
+          type: string
+        containers:
+          type: array
+          description: The item's container and every one above it, root first, as repository documents.
+          items:
+            type: string
+        item:
+          type: string
+        alternative:
+          type: string
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackMapping"
+        chapters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chapter"
+        source:
+          $ref: "#/components/schemas/SourceRef"
+        ruleset:
+          type: string
+        rulesetVersion:
+          type: integer
+        outputs:
+          type: array
+          description: The ruleset's outputs to make, by profile; an object with no profile names the unqualified one. Every output when left out.
+          items:
+            type: object
+            properties:
+              profile:
+                type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Segment"
+
+    Segment:
+      type: object
+      required: [source]
+      properties:
+        source:
+          type: string
+          description: The source's id.
+        chapters:
+          type: object
+          required: [from, to]
+          properties:
+            from:
+              type: integer
+            to:
+              type: integer
+
+    Binding:
+      type: object
+      required: [id, library, containers, item, tracks, chapters, ruleset, segments, createdAt, recipes]
+      properties:
+        id:
+          type: string
+        library:
+          type: string
+        containers:
+          type: array
+          items:
+            type: string
+        item:
+          type: string
+        alternative:
+          type: string
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrackMapping"
+        chapters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Chapter"
+        source:
+          $ref: "#/components/schemas/SourceRef"
+        ruleset:
+          type: string
+        rulesetVersion:
+          type: integer
+        outputs:
+          type: array
+          items:
+            type: object
+            properties:
+              profile:
+                type: string
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Segment"
+        createdAt:
+          type: string
+          format: date-time
+        recipes:
+          type: array
+          description: The ids of the binding's recipes, oldest first.
+          items:
+            type: string
+
+    BindingMade:
+      type: object
+      required: [binding, recipes]
+      properties:
+        binding:
+          $ref: "#/components/schemas/Binding"
+        recipes:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoredRecipe"
+
+    StoredRecipe:
+      type: object
+      required: [id, binding, state, recipe, adjustments, createdAt]
+      properties:
+        id:
+          type: string
+        binding:
+          type: string
+        state:
+          type: string
+          enum: [draft, committed]
+        recipe:
+          $ref: "#/components/schemas/Recipe"
+        adjustments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Adjustment"
+        createdAt:
+          type: string
+          format: date-time
 
     RegisterSource:
       type: object
@@ -2100,10 +2429,31 @@ components:
 
     ResolveRequest:
       type: object
-      required: [facts]
+      required: [inputs]
       properties:
-        facts:
-          $ref: "#/components/schemas/SourceFacts"
+        inputs:
+          type: array
+          description: >
+            Input specs, as the InputSpec schema describes them, joined in order as a binding's
+            segments are. Each is taken as any JSON object and read strictly by the silo.
+          items:
+            type: object
+            additionalProperties: true
+        kind:
+          type: string
+          description: What the item is, as a binding's lineage would say.
+        roles:
+          type: array
+          description: The role each audio stream a feature map names takes from its feature.
+          items:
+            type: object
+            required: [audio, role]
+            properties:
+              audio:
+                type: integer
+              role:
+                type: string
+                enum: [main, commentary, isolatedMusic, descriptive, other]
         mappings:
           type: array
           items:
@@ -2257,6 +2607,32 @@ components:
           type: string
         action:
           $ref: "#/components/schemas/Action"
+        adjusted:
+          $ref: "#/components/schemas/Adjusted"
+
+    Adjusted:
+      description: When a person adjusted the stream, the action the rule chose and why it was replaced.
+      type: object
+      required: [ruleAction]
+      properties:
+        ruleAction:
+          $ref: "#/components/schemas/Action"
+        note:
+          type: string
+
+    Adjustment:
+      type: object
+      required: [kind, index, action]
+      properties:
+        kind:
+          $ref: "#/components/schemas/StreamKind"
+        index:
+          type: integer
+          description: From one, among streams of the kind.
+        action:
+          $ref: "#/components/schemas/Action"
+        note:
+          type: string
 
     StreamKind:
       type: string

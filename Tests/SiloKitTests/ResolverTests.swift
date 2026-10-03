@@ -63,7 +63,7 @@ struct ResolverTests {
             try RecipeResolver.resolve(.episode, with: ruleset)
         }
         ruleset.rules.append(Rule(scope: .video, action: .copy))
-        #expect(throws: ResolutionError(kind: .audio, sourceIndex: 3, facts: "ac3 2ch eng main")) {
+        #expect(throws: ResolutionError(kind: .audio, sourceIndex: 3, facts: "ac3 2ch en main")) {
             try RecipeResolver.resolve(.episode, with: ruleset)
         }
     }

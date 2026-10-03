@@ -1,0 +1,84 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Debug silo-ctl",
+            "target": "silo-ctl",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug silo-ctl"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Release silo-ctl",
+            "target": "silo-ctl",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release silo-ctl"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Debug silo-node",
+            "target": "silo-node",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug silo-node"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Release silo-node",
+            "target": "silo-node",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release silo-node"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Debug silo",
+            "target": "silo",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug silo"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Release silo",
+            "target": "silo",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release silo"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Debug SiloAdmin",
+            "target": "SiloAdmin",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug SiloAdmin"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:silo-server}",
+            "name": "Release SiloAdmin",
+            "target": "SiloAdmin",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release SiloAdmin"
+        }
+    ]
+}

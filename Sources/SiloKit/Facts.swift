@@ -103,7 +103,12 @@ public struct AudioFacts: Hashable, Sendable, Codable {
     public var lossless: Bool
     public var channels: Int
     public var layout: String?
+    /// The primary language subtag of the stream's BCP 47 tag: `en`, `es`.
     public var language: String?
+    /// The script subtag: `Hant`.
+    public var script: String?
+    /// The region subtag: `419`, `BR`.
+    public var region: String?
     public var role: AudioRole
     /// The lossy core MakeMKV can extract from inside a lossless track, kept as a stream of its
     /// own. The same audio again, smaller and worse; a rule may want to drop it.
@@ -112,8 +117,8 @@ public struct AudioFacts: Hashable, Sendable, Codable {
 
     public init(
         index: Int, absoluteIndex: Int, codec: String, profile: String? = nil, lossless: Bool,
-        channels: Int, layout: String? = nil, language: String? = nil, role: AudioRole = .main,
-        core: Bool = false, title: String? = nil
+        channels: Int, layout: String? = nil, language: String? = nil, script: String? = nil,
+        region: String? = nil, role: AudioRole = .main, core: Bool = false, title: String? = nil
     ) {
         self.index = index
         self.absoluteIndex = absoluteIndex
@@ -123,6 +128,8 @@ public struct AudioFacts: Hashable, Sendable, Codable {
         self.channels = channels
         self.layout = layout
         self.language = language
+        self.script = script
+        self.region = region
         self.role = role
         self.core = core
         self.title = title
@@ -133,19 +140,24 @@ public struct SubtitleFacts: Hashable, Sendable, Codable {
     public var index: Int
     public var absoluteIndex: Int
     public var codec: String
+    /// The primary language subtag, as for audio.
     public var language: String?
+    public var script: String?
+    public var region: String?
     public var forced: Bool
     public var hearingImpaired: Bool
     public var title: String?
 
     public init(
-        index: Int, absoluteIndex: Int, codec: String, language: String? = nil,
-        forced: Bool = false, hearingImpaired: Bool = false, title: String? = nil
+        index: Int, absoluteIndex: Int, codec: String, language: String? = nil, script: String? = nil,
+        region: String? = nil, forced: Bool = false, hearingImpaired: Bool = false, title: String? = nil
     ) {
         self.index = index
         self.absoluteIndex = absoluteIndex
         self.codec = codec
         self.language = language
+        self.script = script
+        self.region = region
         self.forced = forced
         self.hearingImpaired = hearingImpaired
         self.title = title
@@ -409,7 +421,9 @@ extension SourceFacts {
                 lossless: AudioFacts.isLossless(codec: stream.codec, profile: stream.profile),
                 channels: stream.channels ?? scanned?.channels ?? 0,
                 layout: stream.channelLayout,
-                language: stream.language ?? scanned?.language,
+                language: Self.tag(stream.language ?? scanned?.language)?.language,
+                script: Self.tag(stream.language ?? scanned?.language)?.script,
+                region: Self.tag(stream.language ?? scanned?.language)?.region,
                 role: role,
                 core: scanned?.core ?? false,
                 title: stream.title
@@ -422,7 +436,9 @@ extension SourceFacts {
                 index: position + 1,
                 absoluteIndex: stream.absoluteIndex,
                 codec: stream.codec,
-                language: stream.language ?? scanned?.language,
+                language: Self.tag(stream.language ?? scanned?.language)?.language,
+                script: Self.tag(stream.language ?? scanned?.language)?.script,
+                region: Self.tag(stream.language ?? scanned?.language)?.region,
                 forced: stream.dispositions.contains("forced") || (scanned?.forcedOnly ?? false),
                 hearingImpaired: stream.dispositions.contains("hearing_impaired"),
                 title: stream.title
@@ -447,5 +463,26 @@ extension SourceFacts {
         case "arib-std-b67": .hlg
         default: nil
         }
+    }
+}
+
+extension SourceFacts {
+    /// A language as a file or a scan tagged it, in BCP 47's canonical form, so that a rule testing
+    /// `audio.language is en` holds whether the tag said `eng`, `en` or `en-GB`. `und` is no tag.
+    static func tag(_ text: String?) -> LanguageTag? {
+        text.flatMap(LanguageTag.init(canonicalizing:)).flatMap { $0.description == "und" ? nil : $0 }
+    }
+}
+
+extension AudioFacts {
+    /// The stream's language as one tag again, for a person to read: `es-419`.
+    public var languageTag: String? {
+        language.map { ([$0] + [script, region].compactMap { $0 }).joined(separator: "-") }
+    }
+}
+
+extension SubtitleFacts {
+    public var languageTag: String? {
+        language.map { ([$0] + [script, region].compactMap { $0 }).joined(separator: "-") }
     }
 }

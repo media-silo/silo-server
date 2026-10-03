@@ -5,6 +5,7 @@ import Foundation
 import OpenAPIRuntime  // swiftlint:disable:this unused_import
 import SiloAPI
 import SiloKit
+import SmdKit
 import SiloStore
 import Wire
 import WireMVC
@@ -35,18 +36,46 @@ package struct RulesetController {
         return Components.Schemas.RulesetDocument(name: name, version: found, document: String(decoding: data, as: UTF8.self))
     }
 
+    /// The dry run: the input specs joined as a binding's segments are, and a recipe for each of the
+    /// ruleset's outputs. Each spec is read strictly by the silo, as a registration reads it.
     @Operation
     @ErrorResponse(NoSuchRuleset.self, .notFound)
+    @ErrorResponse(BadBinding.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
-    package func resolveRecipe(@Path name: String, @Query version: Int?, @JSONBody body: Components.Schemas.ResolveRequest) async throws -> Components.Schemas.Recipe {
+    package func resolveRecipe(@Path name: String, @Query version: Int?, @JSONBody body: Components.Schemas.ResolveRequest) async throws -> [Components.Schemas.Recipe] {
         guard let ruleset = try store.ruleset(named: name, version: version) else { throw NoSuchRuleset() }
-        let facts: SourceFacts = try Mapping.transcode(body.facts)
+        var specs: [String: InputSpec] = [:]
+        var segments: [Binding.Segment] = []
+        for (position, input) in body.inputs.enumerated() {
+            let document = try JSONEncoder().encode(input)
+            do throws(InputSpecError) {
+                specs["\(position + 1)"] = try InputSpec.read(from: document)
+            } catch {
+                throw BadBinding(reason: "input \(position + 1): \(error.description)")
+            }
+            segments.append(Binding.Segment(source: "\(position + 1)"))
+        }
+        let joined: JoinedMedia
+        do throws(BindingError) {
+            joined = try JoinedMedia(segments, specs: specs)
+        } catch {
+            throw BadBinding(reason: error.description)
+        }
+        var roles: [Int: AudioRole] = [:]
+        for role in body.roles ?? [] {
+            roles[role.audio] = AudioRole(rawValue: role.role.rawValue)
+        }
         let mappings: [TrackMapping] = try Mapping.transcode(body.mappings ?? [])
-        do {
-            let recipe = try RecipeResolver.resolve(facts, with: ruleset, mappings: mappings)
-            return try Mapping.transcode(recipe)
-        } catch let error as ResolutionError {
-            throw Unresolvable(reason: error.description)
+        return try ruleset.outputs.map { output in
+            let facts = SourceFacts(
+                input: joined.spec, roles: roles, kind: body.kind.map(EntryType.init(rawValue:)),
+                profile: output.profile, duration: joined.duration
+            )
+            do {
+                return try Mapping.transcode(try RecipeResolver.resolve(facts, with: ruleset, mappings: mappings))
+            } catch let error as ResolutionError {
+                throw Unresolvable(reason: "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)")
+            }
         }
     }
 }
