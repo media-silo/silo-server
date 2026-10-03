@@ -13,17 +13,27 @@ public struct Ruleset: Hashable, Sendable, Codable {
     public var version: Int?
     public var extraction: ExtractionPolicy
     public var rules: [Rule]
-    public var output: OutputPolicy
+    /// What the ruleset makes of every entry, in the document's order: never empty, at most one
+    /// output for each profile, and at most one unqualified.
+    public var outputs: [OutputPolicy]
 
     public init(
         name: String, version: Int? = nil, extraction: ExtractionPolicy = ExtractionPolicy(),
-        rules: [Rule], output: OutputPolicy = OutputPolicy()
+        rules: [Rule], outputs: [OutputPolicy] = [OutputPolicy()]
     ) {
         self.name = name
         self.version = version
         self.extraction = extraction
         self.rules = rules
-        self.output = output
+        self.outputs = outputs.isEmpty ? [OutputPolicy()] : outputs
+    }
+
+    /// The output a file being made into `profile` is made as: the one declared for that profile,
+    /// else the unqualified one, else the first. Until a binding resolves once for every output, a
+    /// resolution makes the one output its profile names, and falls back so that a ruleset written
+    /// with one output serves every profile it served before.
+    public func output(for profile: String?) -> OutputPolicy {
+        outputs.first { $0.profile == profile } ?? outputs.first { $0.profile == nil } ?? outputs[0]
     }
 
     public func rules(in scope: Scope) -> [(position: Int, rule: Rule)] {
@@ -242,11 +252,16 @@ public struct ExtractionPolicy: Hashable, Sendable, Codable {
     }
 }
 
+/// One presentation a ruleset makes of every entry: its profile, or none for the unqualified one,
+/// and the container it is written in.
 public struct OutputPolicy: Hashable, Sendable, Codable {
+    /// `mobile`, say; nil for the unqualified presentation.
+    public var profile: String?
     /// The container format, as `ffmpeg -f` names it. Only `matroska` is exercised.
     public var container: String
 
-    public init(container: String = "mkv") {
+    public init(profile: String? = nil, container: String = "mkv") {
+        self.profile = profile
         self.container = container
     }
 

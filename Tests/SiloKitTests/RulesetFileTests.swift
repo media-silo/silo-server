@@ -57,8 +57,32 @@ struct RulesetFileTests {
     @Test func anEmptyRulesetHasTheToolsDefaults() throws {
         let ruleset = try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"/>".utf8))
         #expect(ruleset.extraction == ExtractionPolicy())
-        #expect(ruleset.output == OutputPolicy())
+        #expect(ruleset.outputs == [OutputPolicy()], "one unqualified mkv")
         #expect(ruleset.rules.isEmpty)
         #expect(ruleset.version == nil)
+    }
+
+    @Test func aRulesetMakesEachOutputItDeclares() throws {
+        let xml = """
+        <ruleset format="1" name="t">
+            <output container="mkv"/>
+            <video><copy/></video>
+            <output profile="mobile" container="mp4"/>
+        </ruleset>
+        """
+        let ruleset = try RulesetFile.ruleset(from: Data(xml.utf8))
+        #expect(ruleset.outputs == [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")], "in the document's order")
+        #expect(try RulesetFile.ruleset(from: RulesetFile.data(for: ruleset)).outputs == ruleset.outputs, "and they survive the file")
+    }
+
+    @Test func anOutputMadeTwiceIsRefused() {
+        #expect(throws: RulesetFileError.outputMadeTwice(profile: "mobile")) {
+            try RulesetFile.ruleset(from: Data(#"<ruleset format="1" name="t"><output profile="mobile"/><output profile="mobile" container="mp4"/></ruleset>"#.utf8))
+        }
+        #expect(throws: RulesetFileError.outputMadeTwice(profile: nil)) {
+            try RulesetFile.ruleset(from: Data(#"<ruleset format="1" name="t"><output/><output container="mp4"/></ruleset>"#.utf8))
+        }
+        #expect(RulesetFileError.outputMadeTwice(profile: "mobile").description == "the profile mobile is made twice")
+        #expect(RulesetFileError.outputMadeTwice(profile: nil).description == "the unqualified output is made twice")
     }
 }

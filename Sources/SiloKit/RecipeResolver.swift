@@ -39,7 +39,7 @@ public enum RecipeResolver {
             warnings.append("the source has no video stream")
         }
 
-        return Recipe(ruleset: RulesetRef(ruleset), decisions: decisions, output: ruleset.output, layout: layout, warnings: warnings)
+        return Recipe(ruleset: RulesetRef(ruleset), decisions: decisions, output: ruleset.output(for: facts.profile), layout: layout, warnings: warnings)
     }
 
     private static func decide(
