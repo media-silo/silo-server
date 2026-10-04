@@ -92,13 +92,15 @@ public struct Application: Hashable, Sendable, Codable {
 // MARK: - The joined media
 
 /// A binding's segments, joined: the first segment's input spec describes every stream, since the
-/// segments share a layout, and each segment is placed in seconds.
+/// segments share a layout, and each segment is placed in seconds as a `TimedSegment` — named so,
+/// not `Span`, so as not to shadow the standard library's `Span` inside this type.
 public struct JoinedMedia: Hashable, Sendable {
     public var spec: InputSpec
-    public var spans: [Span]
+    public var segments: [TimedSegment]
 
-    /// One segment in seconds: from `start`, to `end` or the source's end when that is unknown.
-    public struct Span: Hashable, Sendable {
+    /// One of a binding's segments placed in seconds: from `start`, to `end` or the source's end when
+    /// that is unknown.
+    public struct TimedSegment: Hashable, Sendable {
         public var source: String
         public var start: Double
         public var end: Double?
@@ -106,12 +108,12 @@ public struct JoinedMedia: Hashable, Sendable {
         public var isWhole: Bool
     }
 
-    /// The joined spans' length, or nil when any span's end is unknown.
+    /// The joined segments' length, or nil when any segment's end is unknown.
     public var duration: Double? {
         var total = 0.0
-        for span in spans {
-            guard let end = span.end else { return nil }
-            total += end - span.start
+        for segment in segments {
+            guard let end = segment.end else { return nil }
+            total += end - segment.start
         }
         return total
     }
@@ -121,7 +123,7 @@ public struct JoinedMedia: Hashable, Sendable {
     /// segments do not describe the same streams.
     public init(_ segments: [Binding.Segment], specs: [String: InputSpec]) throws(BindingError) {
         guard !segments.isEmpty else { throw .noSegments }
-        var spans: [Span] = []
+        var timed: [TimedSegment] = []
         var first: InputSpec?
         for (position, segment) in segments.enumerated() {
             guard let spec = specs[segment.source] else { throw .unknownSource(segment.source) }
@@ -131,7 +133,7 @@ public struct JoinedMedia: Hashable, Sendable {
                 first = spec
             }
             guard let span = segment.chapters else {
-                spans.append(Span(source: segment.source, start: 0, end: spec.duration, isWhole: true))
+                timed.append(TimedSegment(source: segment.source, start: 0, end: spec.duration, isWhole: true))
                 continue
             }
             guard span.to >= span.from else { throw .spanBackwards(source: segment.source, from: span.from, to: span.to) }
@@ -142,10 +144,10 @@ public struct JoinedMedia: Hashable, Sendable {
                 throw .unknownChapter(source: segment.source, chapter: span.to)
             }
             let after = spec.chapters.first { $0.index > span.to }
-            spans.append(Span(source: segment.source, start: start.start, end: after?.start ?? spec.duration, isWhole: false))
+            timed.append(TimedSegment(source: segment.source, start: start.start, end: after?.start ?? spec.duration, isWhole: false))
         }
         self.spec = first!
-        self.spans = spans
+        self.segments = timed
     }
 
     /// Segments are joined as the concat demuxer joins them, so a stream's index must mean the same

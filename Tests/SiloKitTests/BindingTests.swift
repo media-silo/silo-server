@@ -25,22 +25,22 @@ struct BindingTests {
 
     @Test func anEpisodeOutOfAPlayAllTitleIsItsChapterSpan() throws {
         let joined = try JoinedMedia([Self.segment("title", 2)], specs: ["title": Self.playAll])
-        #expect(joined.spans.count == 1)
-        #expect(joined.spans[0].start == 1497.6)
-        #expect(joined.spans[0].end == 2995.2)
-        #expect(!joined.spans[0].isWhole)
+        #expect(joined.segments.count == 1)
+        #expect(joined.segments[0].start == 1497.6)
+        #expect(joined.segments[0].end == 2995.2)
+        #expect(!joined.segments[0].isWhole)
         #expect(joined.duration == 1497.6)
 
         let last = try JoinedMedia([Self.segment("title", 4)], specs: ["title": Self.playAll])
-        #expect(last.spans[0].end == 5990.4, "the last chapter runs to the source's end")
+        #expect(last.segments[0].end == 5990.4, "the last chapter runs to the source's end")
         let two = try JoinedMedia([Self.segment("title", 2, 3)], specs: ["title": Self.playAll])
         #expect(two.duration.map { abs($0 - 2995.2) < 0.0001 } == true, "a span of two chapters")
     }
 
     @Test func aFilmAcrossTwoDiscsIsBothWhole() throws {
         let joined = try JoinedMedia([Self.segment("one"), Self.segment("two")], specs: ["one": Self.playAll, "two": Self.playAll])
-        #expect(joined.spans.map(\.source) == ["one", "two"])
-        #expect(joined.spans.allSatisfy { $0.isWhole })
+        #expect(joined.segments.map(\.source) == ["one", "two"])
+        #expect(joined.segments.allSatisfy { $0.isWhole })
         #expect(joined.duration == 5990.4 * 2)
     }
 
