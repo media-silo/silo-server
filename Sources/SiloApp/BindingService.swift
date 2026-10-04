@@ -29,7 +29,7 @@ package struct CommittedRecipe: Error {
 /// recipe for each output. A binding names no ruleset, so applying another, or the same one at a
 /// newer version, is the same act made again.
 @Singleton
-package final class BindingService: Sendable {
+package struct BindingService: Sendable {
     private let config: SiloConfig
     private let rulesets: RulesetStore
     private let sources: SourceStore
