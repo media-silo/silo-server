@@ -8,10 +8,11 @@
 container lineage as repository documents, the item, and its optional alternative; the feature map,
 mapping the last container's features to streams by kind and index from one among streams of the
 kind; the chapter names the presentation will carry; an optional source reference for the sidecar
-to record; the ruleset by name with an optional version; optionally the profiles of the ruleset's
-outputs to make, every output when left out; and one or more segments, each a source's id and
-optionally a span of its chapters, `from` and `to` inclusive. The silo SHALL mint the binding's id,
-keep the binding as one JSON file under its state directory, and never change a binding once made.
+to record; and one or more segments, each a source's id and optionally a span of its chapters,
+`from` and `to` inclusive. A binding SHALL name no ruleset: applying one is its own operation, as
+[recipes](../recipes/spec.md) describes, and making a binding SHALL resolve nothing. The silo SHALL
+mint the binding's id, keep the binding as one JSON file under its state directory, and never change
+a binding once made.
 
 #### Scenario: an episode out of a play-all title
 - **WHEN** the operator binds part two of a serial to chapter 2 of a source whose chapters are its
@@ -44,9 +45,7 @@ the silo; a container document cannot be read; the item is not in the last conta
 alternative is not one of that container's; the feature map names a feature the container does not
 have, or a stream the joined media does not have; a segment names a source the silo does not have; a
 span names a chapter its source does not have, or its `to` comes before its `from`; the segments
-cannot be joined; the ruleset or its version does not exist; or a profile it names is not one of the
-ruleset's outputs. A binding whose recipes cannot all be resolved SHALL be refused as
-[recipes](../recipes/spec.md) describes.
+cannot be joined.
 
 #### Scenario: a span past the end
 - **WHEN** a binding's segment spans chapters 3 to 5 of a source with four chapters
@@ -59,7 +58,7 @@ Pinned by: nothing yet.
 silo does not know, with no token asked.
 
 #### Scenario: a binding and its recipes
-- **WHEN** a client reads a binding resolved against a ruleset of two outputs
+- **WHEN** a client reads a binding to which a ruleset of two outputs has been applied
 - **THEN** the answer carries the binding and the ids of its two recipes
 
 Pinned by: nothing yet.

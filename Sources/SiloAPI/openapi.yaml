@@ -478,8 +478,8 @@ paths:
       operationId: makeBinding
       summary: Bind an entry to the segments of sources it is made from
       description: >
-        Checks the binding whole, resolves it once for each output it makes, and keeps the binding and
-        a draft recipe for each, or keeps nothing. Operator only.
+        Checks the binding whole and keeps it, or keeps nothing. A binding names no ruleset; applying
+        one is its own operation. Operator only.
       tags: [Bindings]
       security:
         - operator: []
@@ -491,11 +491,11 @@ paths:
               $ref: "#/components/schemas/NewBinding"
       responses:
         "201":
-          description: Made, with its draft recipes.
+          description: Made.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BindingMade"
+                $ref: "#/components/schemas/Binding"
         "400":
           description: The binding cannot be made.
           content:
@@ -504,12 +504,6 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "401":
           $ref: "#/components/responses/Unauthorised"
-        "422":
-          description: A stream no rule decides, for one of the outputs.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Problem"
 
   /bindings/{id}:
     get:
@@ -530,14 +524,24 @@ paths:
 
   /bindings/{id}/recipes:
     post:
-      operationId: resolveBindingAgain
-      summary: Resolve a binding against its ruleset as it now stands
-      description: Adds a draft for each output and leaves every earlier recipe as it was. Operator only.
+      operationId: applyRuleset
+      summary: Apply a ruleset to a binding
+      description: >
+        Resolves the binding once for each output the application makes, at the version named or the
+        latest, and keeps a draft for each — or nothing, when any output cannot be resolved. Every
+        recipe the binding already has is left as it was, so applying a newer version, or another
+        ruleset, is the same call again. Operator only.
       tags: [Bindings]
       security:
         - operator: []
       parameters:
         - $ref: "#/components/parameters/BindingID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Application"
       responses:
         "201":
           description: The new drafts.
@@ -547,6 +551,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/StoredRecipe"
+        "400":
+          description: The ruleset or version does not exist, or it makes no output the application names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
@@ -1527,7 +1537,7 @@ components:
 
     NewBinding:
       type: object
-      required: [library, containers, item, ruleset, segments]
+      required: [library, containers, item, segments]
       properties:
         library:
           type: string
@@ -1550,18 +1560,6 @@ components:
             $ref: "#/components/schemas/Chapter"
         source:
           $ref: "#/components/schemas/SourceRef"
-        ruleset:
-          type: string
-        rulesetVersion:
-          type: integer
-        outputs:
-          type: array
-          description: The ruleset's outputs to make, by profile; an object with no profile names the unqualified one. Every output when left out.
-          items:
-            type: object
-            properties:
-              profile:
-                type: string
         segments:
           type: array
           items:
@@ -1585,7 +1583,7 @@ components:
 
     Binding:
       type: object
-      required: [id, library, containers, item, tracks, chapters, ruleset, segments, createdAt, recipes]
+      required: [id, library, containers, item, tracks, chapters, segments, createdAt, recipes]
       properties:
         id:
           type: string
@@ -1609,17 +1607,6 @@ components:
             $ref: "#/components/schemas/Chapter"
         source:
           $ref: "#/components/schemas/SourceRef"
-        ruleset:
-          type: string
-        rulesetVersion:
-          type: integer
-        outputs:
-          type: array
-          items:
-            type: object
-            properties:
-              profile:
-                type: string
         segments:
           type: array
           items:
@@ -1633,16 +1620,24 @@ components:
           items:
             type: string
 
-    BindingMade:
+    Application:
+      description: A ruleset applied to a binding.
       type: object
-      required: [binding, recipes]
+      required: [ruleset]
       properties:
-        binding:
-          $ref: "#/components/schemas/Binding"
-        recipes:
+        ruleset:
+          type: string
+        version:
+          type: integer
+          description: The ruleset's version; the latest when absent.
+        outputs:
           type: array
+          description: The ruleset's outputs to make, by profile; an object with no profile names the unqualified one. Every output when absent.
           items:
-            $ref: "#/components/schemas/StoredRecipe"
+            type: object
+            properties:
+              profile:
+                type: string
 
     StoredRecipe:
       type: object

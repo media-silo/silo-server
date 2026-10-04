@@ -50,7 +50,7 @@ struct RecipeStoreTests {
     @Test func bindingsAndRecipesSurviveARestart() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("RecipeStoreTests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
-        let binding = Binding(library: "main", containers: [], item: "part1", ruleset: "household", segments: [Binding.Segment(source: "s")])
+        let binding = Binding(library: "main", containers: [], item: "part1", segments: [Binding.Segment(source: "s")])
         try BindingStore(folder: root.appendingPathComponent("bindings")).insert(binding)
         let draft = Self.draft(binding: binding.id)
         try RecipeStore(folder: root.appendingPathComponent("recipes")).insert([draft])

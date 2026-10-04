@@ -6,8 +6,9 @@ import SmdKit
 import SmdSidecar
 
 /// What one entry of a library is made from: segments of one or more sources, joined in order, with
-/// the entry, its feature map and the ruleset to make it by. Made once and never changed — a
-/// correction is a new binding — and resolved to a recipe for each output its ruleset declares.
+/// the entry and its feature map. A fact about the library, so it names no ruleset: applying a
+/// ruleset to it is a separate act, made as often as the rules change. Made once and never changed —
+/// a correction is a new binding.
 public struct Binding: Hashable, Sendable, Codable {
     /// A lowercased UUID, minted by the silo.
     public var id: String
@@ -22,17 +23,12 @@ public struct Binding: Hashable, Sendable, Codable {
     public var chapters: [Chapter]
     /// What the sidecar records as the presentation's source, when there is one.
     public var source: SourceRef?
-    public var ruleset: String
-    public var rulesetVersion: Int?
-    /// The ruleset's outputs to make, by profile; every one when nil.
-    public var outputs: [OutputChoice]?
     public var segments: [Segment]
     public var createdAt: Date
 
     public init(
         id: String = UUID().uuidString.lowercased(), library: String, containers: [String], item: String, alternative: String? = nil,
-        tracks: [TrackMapping] = [], chapters: [Chapter] = [], source: SourceRef? = nil, ruleset: String, rulesetVersion: Int? = nil,
-        outputs: [OutputChoice]? = nil, segments: [Segment], createdAt: Date = .now
+        tracks: [TrackMapping] = [], chapters: [Chapter] = [], source: SourceRef? = nil, segments: [Segment], createdAt: Date = .now
     ) {
         self.id = id
         self.library = library
@@ -42,20 +38,8 @@ public struct Binding: Hashable, Sendable, Codable {
         self.tracks = tracks
         self.chapters = chapters
         self.source = source
-        self.ruleset = ruleset
-        self.rulesetVersion = rulesetVersion
-        self.outputs = outputs
         self.segments = segments
         self.createdAt = createdAt
-    }
-
-    /// One of a ruleset's outputs, named by its profile; `{}` names the unqualified one.
-    public struct OutputChoice: Hashable, Sendable, Codable {
-        public var profile: String?
-
-        public init(profile: String? = nil) {
-            self.profile = profile
-        }
     }
 
     /// A source, or a span of its chapters, as one piece of a binding.
@@ -78,6 +62,29 @@ public struct Binding: Hashable, Sendable, Codable {
         public init(from: Int, to: Int) {
             self.from = from
             self.to = to
+        }
+    }
+}
+
+/// A ruleset applied to a binding: which ruleset, at which version — the latest when nil — and which
+/// of its outputs to make — every one when nil.
+public struct Application: Hashable, Sendable, Codable {
+    public var ruleset: String
+    public var version: Int?
+    public var outputs: [OutputChoice]?
+
+    public init(ruleset: String, version: Int? = nil, outputs: [OutputChoice]? = nil) {
+        self.ruleset = ruleset
+        self.version = version
+        self.outputs = outputs
+    }
+
+    /// One of a ruleset's outputs, named by its profile; `{}` names the unqualified one.
+    public struct OutputChoice: Hashable, Sendable, Codable {
+        public var profile: String?
+
+        public init(profile: String? = nil) {
+            self.profile = profile
         }
     }
 }

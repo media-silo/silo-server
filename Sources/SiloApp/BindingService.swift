@@ -13,6 +13,9 @@ package struct BadBinding: Error {
     package var reason: String
 }
 package struct NoSuchBinding: Error {}
+package struct BadApplication: Error {
+    package var reason: String
+}
 package struct NoSuchRecipe: Error {}
 package struct BadAdjustment: Error {
     package var reason: String
@@ -21,9 +24,10 @@ package struct CommittedRecipe: Error {
     package var reason: String
 }
 
-/// Bindings made and resolved: every check a binding must pass before it is kept, and the
-/// resolution of a binding into a draft recipe for each output its ruleset makes. Nothing is stored
-/// unless every output resolves, since a binding that cannot be made is not worth keeping.
+/// Bindings made, and rulesets applied to them: every check a binding must pass before it is kept,
+/// and an application of a ruleset — at a version, for some or all of its outputs — making a draft
+/// recipe for each output. A binding names no ruleset, so applying another, or the same one at a
+/// newer version, is the same act made again.
 @Singleton
 package final class BindingService: Sendable {
     private let config: SiloConfig
@@ -42,22 +46,52 @@ package final class BindingService: Sendable {
         self.recipes = recipes
     }
 
-    /// Checks a binding whole, resolves it once for each output it makes, and keeps the binding and
-    /// its drafts — or refuses it, keeping nothing.
-    package func make(_ binding: Binding) throws -> (binding: Binding, recipes: [StoredRecipe]) {
-        let made = try resolve(binding)
+    /// Checks a binding whole and keeps it, or refuses it, keeping nothing.
+    package func make(_ binding: Binding) throws -> Binding {
+        _ = try entry(of: binding)
         try bindings.insert(binding)
-        try recipes.insert(made)
-        logger.info("bound \(binding.item) as \(binding.id): \(made.count) recipes")
-        return (binding, made)
+        logger.info("bound \(binding.item) as \(binding.id)")
+        return binding
     }
 
-    /// Resolves a binding already made against its ruleset as it now stands, adding a draft for each
-    /// output and leaving every recipe it already has as it was.
-    package func resolveAgain(_ id: String) throws -> [StoredRecipe] {
+    /// Applies a ruleset to a binding: resolves it once for each output the application makes, and
+    /// keeps a draft for each — or, when any output cannot be resolved, keeps nothing. Every recipe
+    /// the binding already has is left as it was.
+    package func apply(_ application: Application, to id: String) throws -> [StoredRecipe] {
         guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
-        let made = try resolve(binding)
+        guard let ruleset = try rulesets.ruleset(named: application.ruleset, version: application.version) else {
+            throw BadApplication(reason: "no ruleset \(application.ruleset)\(application.version.map { "@\($0)" } ?? "")")
+        }
+        let outputs: [OutputPolicy]
+        if let chosen = application.outputs {
+            outputs = try chosen.map { choice in
+                guard let output = ruleset.outputs.first(where: { $0.profile == choice.profile }) else {
+                    throw BadApplication(reason: choice.profile.map { "\(ruleset.name) makes no output for the profile \($0)" } ?? "\(ruleset.name) makes no unqualified output")
+                }
+                return output
+            }
+        } else {
+            outputs = ruleset.outputs
+        }
+        let entry: Entry
+        do {
+            entry = try self.entry(of: binding)
+        } catch let error as BadBinding {
+            // A binding was checked when it was made; one that no longer holds — a library removed,
+            // say — cannot be resolved, which is the application's failure, not a malformed request.
+            throw Unresolvable(reason: error.reason)
+        }
+        let made = try outputs.map { output in
+            let facts = SourceFacts(input: entry.joined.spec, roles: entry.roles, kind: entry.kind, profile: output.profile, duration: entry.joined.duration)
+            do throws(ResolutionError) {
+                let recipe = try RecipeResolver.resolve(facts, with: ruleset, mappings: binding.tracks)
+                return StoredRecipe(binding: binding.id, facts: facts, resolved: recipe)
+            } catch {
+                throw Unresolvable(reason: "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)")
+            }
+        }
         try recipes.insert(made)
+        logger.info("applied \(RulesetRef(ruleset)) to \(binding.id): \(made.count) recipes")
         return made
     }
 
@@ -87,13 +121,18 @@ package final class BindingService: Sendable {
         }
     }
 
-    // MARK: - Checking and resolving
+    // MARK: - Checking
 
-    private func resolve(_ binding: Binding) throws -> [StoredRecipe] {
+    /// What a binding knows of its entry, once it is checked: the item's kind, the role each mapped
+    /// audio stream takes from its feature, and the segments joined.
+    private struct Entry {
+        var kind: EntryType?
+        var roles: [Int: AudioRole]
+        var joined: JoinedMedia
+    }
+
+    private func entry(of binding: Binding) throws -> Entry {
         guard config.library(binding.library) != nil else { throw BadBinding(reason: "no library \(binding.library)") }
-        guard let ruleset = try rulesets.ruleset(named: binding.ruleset, version: binding.rulesetVersion) else {
-            throw BadBinding(reason: "no ruleset \(binding.ruleset)\(binding.rulesetVersion.map { "@\($0)" } ?? "")")
-        }
         let lineage: [SmdKit.Container]
         do {
             lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
@@ -102,7 +141,7 @@ package final class BindingService: Sendable {
         }
         guard let target = lineage.last else { throw BadBinding(reason: "a binding needs the item's container") }
         let entries = target.sequences.flatMap(\.items) + target.extras
-        guard let entry = entries.first(where: { $0.id == binding.item }) else {
+        guard let item = entries.first(where: { $0.id == binding.item }) else {
             throw BadBinding(reason: "\(target.displayTitle) has no item \(binding.item)")
         }
         if let alternative = binding.alternative, !target.alternatives.contains(where: { $0.id == alternative }) {
@@ -141,27 +180,6 @@ package final class BindingService: Sendable {
                 throw BadBinding(reason: "feature \(track.feature) is mapped to subtitle \(subtitle), which the joined media does not have")
             }
         }
-
-        let outputs: [OutputPolicy]
-        if let chosen = binding.outputs {
-            outputs = try chosen.map { choice in
-                guard let output = ruleset.outputs.first(where: { $0.profile == choice.profile }) else {
-                    throw BadBinding(reason: choice.profile.map { "\(ruleset.name) makes no output for the profile \($0)" } ?? "\(ruleset.name) makes no unqualified output")
-                }
-                return output
-            }
-        } else {
-            outputs = ruleset.outputs
-        }
-
-        return try outputs.map { output in
-            let facts = SourceFacts(input: joined.spec, roles: roles, kind: entry.type, profile: output.profile, duration: joined.duration)
-            do throws(ResolutionError) {
-                let recipe = try RecipeResolver.resolve(facts, with: ruleset, mappings: binding.tracks)
-                return StoredRecipe(binding: binding.id, facts: facts, resolved: recipe)
-            } catch {
-                throw Unresolvable(reason: "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)")
-            }
-        }
+        return Entry(kind: item.type, roles: roles, joined: joined)
     }
 }

@@ -3,7 +3,7 @@
 
 # Proposals: 0006-ingestion
 
-Modified: 2026-10-01
+Modified: 2026-10-05
 
 # Ingestion: sources, bindings and recipes
 
@@ -14,10 +14,11 @@ This proposes how media enters the silo, as four things kept apart:
    owns — and registers it. The silo mints its id and keeps track of where copies of it are, if
    anywhere.
 2. A **binding** says what one entry of a library is made from: segments of one or more sources,
-   joined in order, with the entry, its feature map and the ruleset to make it by.
-3. A binding, the input specs of its sources and the ruleset resolve to **recipes** — one for each
-   output the ruleset declares — which the producer may adjust, as the last step of ingestion,
-   before they are committed.
+   joined in order, with the entry and its feature map. It names no ruleset.
+3. **Applying** a ruleset to a binding resolves it, with the input specs of its sources, to
+   **recipes** — one for each output the ruleset declares — which the producer may adjust, as the
+   last step of ingestion, before they are committed. Applying again, with a newer version or
+   another ruleset, is the same act.
 4. A **job** is made from a recipe, and is only the run: claim, encode, place.
 
 The silo stops knowing how any file was obtained, and stops folding all four of these into one job
@@ -60,15 +61,17 @@ answers the source it already has when the natural key matches one. Copies are a
 nodes come to hold the file or let it go; a source may have none, and is still a source.
 
 **Bindings.** `POST /v1/bindings` takes an entry — the library, the container lineage, the item and
-its alternative — with the feature map, the chapter names, the sidecar's source reference, the
-ruleset, and one or more **segments**: a source, and optionally a span of its chapters. The
-segments' media, joined in order, is what the entry is made from; the silo checks that they can be
-joined.
+its alternative — with the feature map, the chapter names, the sidecar's source reference, and one
+or more **segments**: a source, and optionally a span of its chapters. The segments' media, joined
+in order, is what the entry is made from; the silo checks that they can be joined, and keeps the
+binding. It resolves nothing.
 
-**Recipes.** Creating a binding resolves it against the ruleset once for each of the ruleset's
-**outputs** — an unqualified `mkv` and a `mobile` `mp4`, say — and answers the recipes, each a
-**draft**. A producer may adjust a draft: replace the action the rules chose for a stream, with a
-note saying why. A recipe is **committed** when a job is made from it, and never changes after.
+**Recipes.** `POST /v1/bindings/{id}/recipes` applies a ruleset to a binding — a ruleset by name, at
+a version or the latest — resolving it once for each of the ruleset's **outputs** — an unqualified
+`mkv` and a `mobile` `mp4`, say — and answers the recipes, each a **draft** recording the ruleset and
+version that made it. A producer may adjust a draft: replace the action the rules chose for a
+stream, with a note saying why. A recipe is **committed** when a job is made from it, and never
+changes after.
 
 **Jobs.** `POST /v1/jobs` takes a draft recipe whose sources all have a copy somewhere, commits it,
 and queues the job. A node claims it, is handed a copy of each segment, joins and cuts them, encodes,
@@ -115,6 +118,7 @@ with what it decided. This proposal adds five of its own.
   entry's features map to the joined streams. Corresponds to smddb's Binding, generalised to
   several segments.
 - **Segment** — a source, or a span of its chapters, as one piece of a binding.
+- **Application** — a ruleset, at a version, applied to a binding: what makes its recipes.
 - **Output** — one presentation a ruleset makes of every entry: a profile, or none, and a
   container.
 - **Recipe** — the resolved instructions for one output of one binding. A **draft** until a job is
@@ -241,8 +245,6 @@ A binding says what one entry is made from and how. It carries:
 - **the feature map**, mapping the container's features to streams of the joined segments, by kind
   and index from one among streams of the kind; the **chapter names** the presentation will carry;
   and the **source reference** the sidecar records on the presentation, when there is one;
-- **the ruleset**, by name and optionally version, and optionally **which of its outputs** to make,
-  by profile — every output when left out;
 - **the segments**, one or more, each a source and optionally a span of its chapters, `from` and `to`
   inclusive.
 
@@ -262,8 +264,17 @@ re-encoding copied streams; it is left to the proposal that needs one.
 cannot be read, the item is not in the last container, the alternative is not the container's, the
 feature map names a feature the container does not have or a stream the joined layout does not
 have, a source is unknown, a span names chapters its source does not have or runs backwards, the
-segments' layouts differ, the ruleset or its version does not exist, or an output it names is not
-the ruleset's. A binding is not changed once made: a correction is a new binding.
+or the segments' layouts differ. A binding is not changed once made: a correction is a new binding.
+
+**A binding names no ruleset.** Which rules make an entry is not a fact about the entry. A binding
+says what the entry is made from, which stays true whatever the household's rules are; applying a
+ruleset is a decision made at a moment — these rules, at this version, for these outputs — and made
+again whenever the rules change, or when the operator decides this binding wants a different
+ruleset, or writes a new one to suit it. Fixing a ruleset on the binding would make the first of
+those an operation of its own and the others impossible without a new binding. So making a binding
+resolves nothing, and applying a ruleset to it is a separate operation, as often as is wanted. When
+[0007-layered-rulesets](https://github.com/media-silo/silo-server/pull/47) gives a library a standard
+ruleset, an application that names none takes it, at the moment it is made.
 
 ## Outputs in the ruleset
 
@@ -283,11 +294,15 @@ the output policy.
 
 ## Recipes
 
-**A binding resolves to its recipes when it is made.** For each output it makes, the silo derives the
-facts from the segments' input specs, the binding and the output's profile, resolves the ruleset
-against them, and stores the recipe as a draft. The binding's answer carries them. If any output's
-resolution fails — a stream no rule decides — the binding is refused with 422 and nothing is stored,
-since a binding that cannot be made is not worth keeping.
+**Applying a ruleset makes the recipes.** `POST /v1/bindings/{id}/recipes` takes the ruleset's name,
+optionally a version — the latest otherwise — and optionally which of its outputs to make, by
+profile, every output otherwise. For each output it makes, the silo derives the facts from the
+segments' input specs, the binding and the output's profile, resolves the ruleset against them, and
+stores the recipe as a draft, recording the ruleset and version that made it. If any output's
+resolution fails — a stream no rule decides — the application is refused with 422 and nothing is
+stored; the binding stays, since it was never wrong, only the rules incomplete. Every recipe the
+binding already has is left as it was, so drafts from several applications sit side by side until
+one is used and the others discarded.
 
 | Fact | Derived from |
 |---|---|
@@ -321,10 +336,10 @@ any adjustment to a committed recipe.
 changes: it is what the job ran, and what the presentation was made by. A draft no job has been
 made from may be discarded.
 
-**A binding can be resolved again.** `POST /v1/bindings/{id}/recipes` resolves the binding against
-its ruleset as it now stands and adds new drafts, one per output, leaving every earlier recipe as it
-was. It is how a change of rules reaches an entry already bound, and it is what 0007's question —
-what would the rules make of this now — becomes.
+**A change of rules is the same application again.** Applying `household` after version 5 is
+stored, or applying another ruleset, is the same call, adding drafts and leaving the rest. It is how
+a change of rules reaches an entry already bound, and it is what 0007's question — what would the
+rules make of this now — becomes.
 
 **The dry run** stays. `POST /v1/rulesets/{name}/resolve` takes one or more input specs, joined as a
 binding's segments are, and what a binding would add — the kind, the roles the feature map gives,
@@ -356,7 +371,7 @@ output profile, and is otherwise as today.
 
 [0007-layered-rulesets](https://github.com/media-silo/silo-server/pull/47) is rebased on this. Its
 provenance becomes the committed recipe, which already records its ruleset version; its question of
-what the rules would make of an entry now becomes resolving the binding again; an adjusted stream
+what the rules would make of an entry now becomes applying them to the binding again; an adjusted stream
 is the ingestion's decision and is not compared; and whether an out-of-date presentation can be
 made again becomes whether its binding's sources have copies — with a re-registered source found by
 its natural key rather than matched against the sidecar afterwards.
@@ -399,8 +414,9 @@ profile, and two unqualified, are refused.
 
 ### 3. Bindings and recipes
 
-The bindings store and routes; facts derived from segments, binding and output; draft recipes, one
-per output; adjustments; committing; resolving again; the dry run taking input specs; `silo-ctl
+The bindings store and routes; facts derived from segments, binding and output; applying a ruleset
+to a binding, making a draft recipe per output; adjustments; committing; the dry run taking input
+specs; `silo-ctl
 encode --input`, with the plain-file producer when no spec is given, `--profile` to pick the output,
 and `--makemkv` gone. The `ingestion-3-bindings-and-recipes` change applies here. The requirements
 that describe merging a probe with a MakeMKV scan, and the feature map as the assignment's, stay
@@ -408,12 +424,13 @@ until step 4: assignment still does both until that step removes it, so their re
 travel in step 4's change. A recipe is committed only when a job is made from it, so this step
 builds committing into the recipe store and the fourth step calls it.
 
-Tests: each refusal of a binding; segments of different layouts refused; a binding resolving to one
-draft per output, the mobile one with `profile` set; a stream no rule decides refusing the binding
-and storing nothing; each derived fact from the field the table names, `es-419` giving the
-language `es` and the region `419`, and `zh-Hant` the language `zh` and the script `Hant`; an adjustment recorded with
-what it replaced and the encoders recomputed; an adjustment to a committed recipe refused;
-resolving again adding drafts and leaving the rest.
+Tests: each refusal of a binding; segments of different layouts refused; a binding made with no
+recipes; a ruleset applied to it making one draft per output, the mobile one with `profile` set,
+each recording its ruleset and version; a stream no rule decides refusing the application, storing
+nothing and keeping the binding; each derived fact from the field the table names, `es-419` giving
+the language `es` and the region `419`, and `zh-Hant` the language `zh` and the script `Hant`; an
+adjustment recorded with what it replaced and the encoders recomputed; an adjustment to a committed
+recipe refused; applying again, and applying another ruleset, adding drafts and leaving the rest.
 
 ### 4. Jobs from recipes
 

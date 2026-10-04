@@ -39,8 +39,8 @@ package struct BindingController {
     }
 }
 
-/// Bindings made and resolved again, and drafts adjusted and discarded: the producer's side, behind
-/// the operator's token.
+/// Bindings made, rulesets applied to them, and drafts adjusted and discarded: the producer's side,
+/// behind the operator's token.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 @Middleware(RouteMiddleware.requireOperator)
@@ -55,23 +55,19 @@ package struct BindingOperatorController {
     @Operation
     @JSONResponse(status: .created)
     @ErrorResponse(BadBinding.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
-    package func makeBinding(@JSONBody body: Components.Schemas.NewBinding) async throws -> Components.Schemas.BindingMade {
+    package func makeBinding(@JSONBody body: Components.Schemas.NewBinding) async throws -> Components.Schemas.Binding {
         let request: NewBinding = try Mapping.transcode(body)
-        let (binding, made) = try service.make(request.binding)
-        return Components.Schemas.BindingMade(
-            binding: try Mapping.binding(binding, recipes: made.map(\.id)),
-            recipes: try made.map { try Mapping.transcode($0) }
-        )
+        return try Mapping.binding(try service.make(request.binding), recipes: [])
     }
 
     @Operation
     @JSONResponse(status: .created)
     @ErrorResponse(NoSuchBinding.self, .notFound)
-    @ErrorResponse(BadBinding.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(BadApplication.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
-    package func resolveBindingAgain(@Path id: String) async throws -> [Components.Schemas.StoredRecipe] {
-        try service.resolveAgain(id).map { try Mapping.transcode($0) }
+    package func applyRuleset(@Path id: String, @JSONBody body: Components.Schemas.Application) async throws -> [Components.Schemas.StoredRecipe] {
+        let application: Application = try Mapping.transcode(body)
+        return try service.apply(application, to: id).map { try Mapping.transcode($0) }
     }
 
     @Operation
@@ -101,16 +97,12 @@ private struct NewBinding: Decodable {
     var tracks: [TrackMapping]?
     var chapters: [SmdSidecar.Chapter]?
     var source: SourceRef?
-    var ruleset: String
-    var rulesetVersion: Int?
-    var outputs: [Binding.OutputChoice]?
     var segments: [Binding.Segment]
 
     var binding: Binding {
         Binding(
             library: library, containers: containers, item: item, alternative: alternative, tracks: tracks ?? [],
-            chapters: chapters ?? [], source: source, ruleset: ruleset, rulesetVersion: rulesetVersion,
-            outputs: outputs, segments: segments
+            chapters: chapters ?? [], source: source, segments: segments
         )
     }
 }

@@ -139,9 +139,9 @@ Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToo
 ### Requirement: The outputs name what is made of every entry
 Each `<output>` element SHALL name one presentation the ruleset makes of every entry it is applied
 to: an optional `profile`, absent for the unqualified presentation, and an optional `container`
-naming the output file's container format, absent meaning `mkv`. A binding SHALL be resolved once for each
-output it makes, with the `profile` fact set to the output's profile, as
-[recipes](../recipes/spec.md) describes. A ruleset with no `<output>`
+naming the output file's container format, absent meaning `mkv`. Applying the ruleset to a binding SHALL resolve
+it once for each output the application makes, with the `profile` fact set to the output's profile,
+as [recipes](../recipes/spec.md) describes. A ruleset with no `<output>`
 SHALL make one unqualified `mkv` output. Two outputs with the same profile, or two without one,
 SHALL be refused. `mkv` and `matroska` SHALL both mean `ffmpeg`'s `matroska` format with the
 extension `.mkv`; any other value SHALL be handed to `ffmpeg` as the format name and used as the
@@ -160,15 +160,15 @@ extension as given. The container is not checked when the ruleset is read.
 - **THEN** it is refused, saying the profile `mobile` is made twice
 
 #### Scenario: each output is resolved with its profile
-- **WHEN** a binding is made against a ruleset whose outputs are an unqualified `mkv` and a `mobile`
-  `mp4`
-- **THEN** it resolves twice: once with no `profile`, to a recipe whose output is the `mkv`, and once
+- **WHEN** a ruleset whose outputs are an unqualified `mkv` and a `mobile` `mp4` is applied to a
+  binding
+- **THEN** the binding is resolved twice: once with no `profile`, to a recipe whose output is the `mkv`, and once
   with `profile` `mobile`, to a recipe whose output is the `mp4`
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
 `aRulesetMakesEachOutputItDeclares`, `anOutputMadeTwiceIsRefused`),
 `Tests/SiloKitTests/ResolverTests.swift` (`aResolutionMakesTheOutputItsProfileNames`),
-`Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndResolvedToADraftForEachOutput`).
+`Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`).
 
 ### Requirement: A rule is a scope, a list of conditions and one action
 A rule SHALL be an element named for the kind of stream it decides — `<video>`, `<audio>` or
