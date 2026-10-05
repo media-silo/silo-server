@@ -20,4 +20,4 @@ it, which for a span of chapters is where the source divides itself.
 - **WHEN** a recipe runs on two whole segments, `disc1.mkv` then `disc2.mkv`
 - **THEN** the input is a concat list naming `disc1.mkv` then `disc2.mkv`, with no points
 
-Pinned by: nothing yet.
+Pinned by: `Tests/EncoderTests/ArgumentsTests.swift` (`severalSegmentsOrASpanAreOneConcatInput`), `Tests/SiloTests/JobTests.swift` (`aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`, which encodes a span and a whole source through the list).

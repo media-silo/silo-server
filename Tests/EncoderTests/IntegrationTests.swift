@@ -34,7 +34,7 @@ struct IntegrationTests {
             sample.path,
         ])
 
-        let facts = SourceFacts(probe: try await probe.probe(sample), kind: .featurette)
+        let facts = SourceFacts(input: InputSpec(probe: try await probe.probe(sample)), kind: .featurette)
         #expect(facts.video?.width == 320)
         #expect(facts.audio.map(\.lossless) == [true, true])
         #expect(facts.audio.map(\.role) == [.main, .commentary])

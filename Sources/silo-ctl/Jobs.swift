@@ -38,9 +38,11 @@ struct Jobs: AsyncParsableCommand {
         var state: JobState?
 
         mutating func run() async throws {
-            let jobs = try await connection.client().jobs(state: state)
+            let client = try connection.client()
+            let jobs = try await client.jobs(state: state)
             if jobs.isEmpty { print("no jobs"); return }
-            for job in jobs { print(Jobs.line(job)) }
+            let lines = Jobs.Lines(client: client)
+            for job in jobs { print(await lines.line(job)) }
         }
     }
 
@@ -66,7 +68,8 @@ struct Jobs: AsyncParsableCommand {
         @Argument var id: String
 
         mutating func run() async throws {
-            print(Jobs.line(try await connection.client().cancel(id)))
+            let client = try connection.client()
+            print(await Jobs.Lines(client: client).line(try await client.cancel(id)))
         }
     }
 
@@ -77,7 +80,8 @@ struct Jobs: AsyncParsableCommand {
         @Argument var id: String
 
         mutating func run() async throws {
-            print(Jobs.line(try await connection.client().retry(id)))
+            let client = try connection.client()
+            print(await Jobs.Lines(client: client).line(try await client.retry(id)))
         }
     }
 
@@ -88,20 +92,41 @@ struct Jobs: AsyncParsableCommand {
         @Argument var id: String
 
         mutating func run() async throws {
-            let job = try await connection.client().place(id)
-            print(Jobs.line(job))
+            let client = try connection.client()
+            let job = try await client.place(id)
+            print(await Jobs.Lines(client: client).line(job))
             for write in job.placement?.writes ?? [] { print("  \(write)") }
         }
     }
 
-    static func line(_ job: Job) -> String {
-        var parts = [job.id, job.state.rawValue.padding(toLength: 10, withPad: " ", startingAt: 0)]
-        if let progress = job.progress?.fraction, job.state == .encoding { parts.append(String(format: "%3.0f%%", progress * 100)) }
-        parts.append(job.source.url.lastPathComponent)
-        if let assignment = job.assignment { parts.append("-> \(assignment.item)\(assignment.profile.map { " (\($0))" } ?? "")") }
-        if let placement = job.placement { parts.append("at \(placement.destination)") }
-        if let failure = job.failure { parts.append("! \(failure)") }
-        return parts.joined(separator: "  ")
+    /// A job as one line: its id, its state, the percent done when encoding, `-> item (profile)` from
+    /// its recipe's binding and output, where it was placed, and why it failed. A job keeps its
+    /// recipe by id, so the recipe and its binding are fetched, each binding once.
+    final class Lines {
+        let client: SiloClient
+        private var bindings: [String: Binding] = [:]
+
+        init(client: SiloClient) {
+            self.client = client
+        }
+
+        func line(_ job: Job) async -> String {
+            var parts = [job.id, job.state.rawValue.padding(toLength: 10, withPad: " ", startingAt: 0)]
+            if let progress = job.progress?.fraction, job.state == .encoding { parts.append(String(format: "%3.0f%%", progress * 100)) }
+            if let recipe = try? await client.recipe(job.recipe), let binding = await binding(recipe.binding) {
+                parts.append("-> \(binding.item)\(recipe.recipe.output.profile.map { " (\($0))" } ?? "")")
+            }
+            if let placement = job.placement { parts.append("at \(placement.destination)") }
+            if let failure = job.failure { parts.append("! \(failure)") }
+            return parts.joined(separator: "  ")
+        }
+
+        private func binding(_ id: String) async -> Binding? {
+            if let known = bindings[id] { return known }
+            let fetched = try? await client.binding(id).binding
+            bindings[id] = fetched
+            return fetched
+        }
     }
 }
 

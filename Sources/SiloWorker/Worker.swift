@@ -9,7 +9,7 @@ import SiloKit
 import FoundationNetworking
 #endif
 
-/// The node's loop: claim a job, get its source, encode it as the recipe says, probe the result,
+/// The node's loop: claim a job, reach its segments, encode them as the recipe says, probe the result,
 /// check the layout, tell the silo where the output is. The same loop whether the node is a
 /// process on another machine or the one the silo runs inside itself; only `JobsAPI` differs.
 public actor Worker {
@@ -72,10 +72,11 @@ public actor Worker {
     @discardableResult
     public func runOnce() async throws -> Bool {
         let capabilities = try await capabilities()
-        guard let job = try await api.claim(node: configuration.nodeID, capabilities: capabilities) else { return false }
+        guard let claim = try await api.claim(node: configuration.nodeID, capabilities: capabilities) else { return false }
+        let job = claim.job
         logger.info("claimed \(job.id)")
         do {
-            try await perform(job)
+            try await perform(claim)
         } catch is CancellationError {
             _ = try? await api.fail(job.id, reason: "cancelled")
         } catch let error as Cancelled {
@@ -92,23 +93,42 @@ public actor Worker {
         var reason: String
     }
 
-    private func perform(_ job: Job) async throws {
-        guard let recipe = job.recipe, let facts = job.facts else {
+    private func perform(_ claim: Claim) async throws {
+        let job = claim.job
+        guard let stored = claim.recipe, !claim.segments.isEmpty else {
             throw WorkerError.notReady(job.id)
         }
+        let recipe = stored.recipe
+        let facts = stored.facts
         try FileManager.default.createDirectory(at: configuration.workFolder, withIntermediateDirectories: true)
 
-        // The source: opened where it is when this node holds it, fetched by range otherwise.
-        let source: URL
-        if job.source.holder == configuration.nodeID, let path = job.source.path {
-            source = URL(fileURLWithPath: path)
-        } else if job.source.url.isFileURL {
-            source = job.source.url
-        } else {
-            source = configuration.workFolder.appendingPathComponent("\(job.id).source.\(job.source.url.pathExtension.isEmpty ? "mkv" : job.source.url.pathExtension)")
-            try await RangeDownloader.download(job.source, to: source) { [logger] received, total in
-                logger.debug("\(job.id): fetched \(received)\(total.map { " of \($0)" } ?? "")")
+        // Each segment's source, reached once however many segments it has: opened where it is when
+        // this node holds it, fetched by range otherwise.
+        var reached: [String: URL] = [:]
+        for (position, segment) in claim.segments.enumerated() where reached[segment.source] == nil {
+            let copy = segment.copy
+            if copy.holder == configuration.nodeID, let path = copy.path {
+                reached[segment.source] = URL(fileURLWithPath: path)
+            } else if copy.url.isFileURL {
+                reached[segment.source] = copy.url
+            } else {
+                let fetched = configuration.workFolder.appendingPathComponent("\(job.id).\(position + 1).source.\(copy.url.pathExtension.isEmpty ? "mkv" : copy.url.pathExtension)")
+                try await RangeDownloader.download(copy, to: fetched) { [logger] received, total in
+                    logger.debug("\(job.id): fetched \(received)\(total.map { " of \($0)" } ?? "")")
+                }
+                reached[segment.source] = fetched
             }
+        }
+
+        // One whole segment is its file; several, or a span of one, are one concat input.
+        let input: EncodeInput
+        if claim.segments.count == 1, claim.segments[0].isWhole {
+            input = .file(reached[claim.segments[0].source]!)
+        } else {
+            let list = configuration.workFolder.appendingPathComponent("\(job.id).concat")
+            let pieces = claim.segments.map { ConcatList.Piece(file: reached[$0.source]!, inpoint: $0.start, outpoint: $0.end) }
+            try ConcatList(pieces).text.write(to: list, atomically: true, encoding: .utf8)
+            input = .concat(list: list)
         }
 
         let output = configuration.workFolder.appendingPathComponent("\(job.id).\(recipe.output.fileExtension)")
@@ -131,7 +151,7 @@ public actor Worker {
         defer { reporter.cancel() }
 
         let encode = Task { [ffmpeg] in
-            try await ffmpeg.run(recipe.ffmpegArguments(input: source, output: output)) { progress in
+            try await ffmpeg.run(recipe.ffmpegArguments(input: input, output: output)) { progress in
                 latest.update(JobProgress(
                     fraction: duration.flatMap { total in progress.seconds.map { min(1, $0 / total) } },
                     seconds: progress.seconds, fps: progress.fps, speed: progress.speed
@@ -181,7 +201,7 @@ public enum WorkerError: Error, CustomStringConvertible {
         switch self {
         case .notReady(let job): "job \(job) has no recipe to run"
         case .layoutMismatch(let mismatches): "the output's layout is not the recipe's: " + mismatches.joined(separator: "; ")
-        case .download(let reason): "fetching the source failed: \(reason)"
+        case .download(let reason): "fetching a source failed: \(reason)"
         }
     }
 }

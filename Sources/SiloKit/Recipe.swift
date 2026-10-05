@@ -45,7 +45,7 @@ public struct Recipe: Hashable, Sendable, Codable {
         })
     }
 
-    /// The assignment's feature map, renumbered to the output: the commentary that was source
+    /// The binding's feature map, renumbered to the output: the commentary that was source
     /// audio 3 becomes `audio="2"` when the recipe dropped the surround mix before it. A mapping
     /// whose stream the recipe drops is left out; the resolver already warned about it.
     public func tracks(for mappings: [TrackMapping]) -> [TrackMapping] {

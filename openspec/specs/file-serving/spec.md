@@ -6,12 +6,12 @@
 ## Purpose
 
 Files stay where they are until they are placed, and every participant serves the files it holds:
-the ingestion tool serves its rips, a node serves its outputs, the silo serves the library. This
+a producer serves the sources it holds, a node serves its outputs, the silo serves the library. This
 spec covers the two halves of that transfer — a holder's file server, which answers a published
 file by HTTP `Range` to whoever carries the file's secret, and the fetching side, which resumes by
 offset from what it already has. The secret is minted per file by the file's holder, travels to
-the silo inside the job's file reference, and reaches the node that claimed the job inside the
-claim's answer; the silo relays it and never mints it (the proposal gives the minting to the silo —
+the silo inside a source's copy or a job's output, and reaches the node that claimed the job inside
+the claim's answer; the silo relays it and never mints it (the proposal gives the minting to the silo —
 the code puts the mint on the holder, in `FileRef.mintSecret`). Plaintext HTTP on a household
 network is accepted in this version.
 

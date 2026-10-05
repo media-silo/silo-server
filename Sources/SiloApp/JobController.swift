@@ -33,8 +33,8 @@ package struct JobController {
     }
 }
 
-/// Jobs, changed by the operator's side: registered by the tool, assigned, cancelled, retried and
-/// placed. Behind the operator's token.
+/// Jobs, changed by the operator's side: made from draft recipes, cancelled, retried and placed.
+/// Behind the operator's token.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 @Middleware(RouteMiddleware.requireOperator)
@@ -47,21 +47,12 @@ package struct JobOperatorController {
     }
 
     @Operation
+    @JSONResponse(status: .created)
+    @ErrorResponse(NoSuchRecipe.self, .notFound)
+    @ErrorResponse(CommittedRecipe.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(Unrunnable.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     package func createJob(@JSONBody body: Components.Schemas.NewJob) async throws -> Components.Schemas.Job {
-        let source: FileRef = try Mapping.transcode(body.source)
-        let probe: ProbedSource? = try body.probe.map { try Mapping.transcode($0) }
-        let makeMKV: MakeMKVFacts? = try body.makeMKV.map { try Mapping.transcode($0) }
-        return try Mapping.transcode(try service.register(source: source, discName: body.discName, probe: probe, makeMKV: makeMKV))
-    }
-
-    @Operation
-    @ErrorResponse(NoSuchJob.self, .notFound)
-    @ErrorResponse(WrongState.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
-    @ErrorResponse(BadAssignment.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
-    package func assignJob(@Path id: String, @JSONBody body: Components.Schemas.Assignment) async throws -> Components.Schemas.Job {
-        let assignment: Assignment = try Mapping.transcode(body)
-        return try Mapping.transcode(try service.assign(id, assignment))
+        try Mapping.transcode(try service.make(from: body.recipe))
     }
 
     @Operation
@@ -87,7 +78,6 @@ package struct JobOperatorController {
     package func placeJob(@Path id: String) async throws -> Components.Schemas.Job {
         try Mapping.transcode(try await service.place(id))
     }
-
 }
 
 /// The node's four: claim, report, complete, fail. Behind the node gate, which the operator's
@@ -105,7 +95,8 @@ package struct JobNodeController {
 
     @Operation
     package func claimJob(@JSONBody body: Components.Schemas.ClaimRequest) async throws -> Components.Schemas.ClaimReply {
-        Components.Schemas.ClaimReply(job: try await service.claim(node: body.node, capabilities: Set(body.capabilities)).map { try Mapping.transcode($0) })
+        guard let claim = try await service.claim(node: body.node, capabilities: Set(body.capabilities)) else { return Components.Schemas.ClaimReply() }
+        return try Mapping.transcode(claim)
     }
 
     @Operation

@@ -326,33 +326,46 @@ extension ServerTests {
 /// The job routes, each reaching the transition the service tests cover, over the in-process
 /// server and through the client every other participant uses.
 extension ServerTests {
-    @Test func yJobsAreRegisteredAssignedClaimedAndPlacedOverTheAPI() async throws {
+    @Test func yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI() async throws {
         try await withClient { client in
             let rip = Fixture.root.appendingPathComponent("rip.mkv")
             try Fixture.mediaBytes.write(to: rip)
-            let source = FileRef(holder: "laptop", url: rip, path: rip.path, sizeBytes: 3000, secret: "s3cret")
-            let newJob = SiloClient.NewJob(source: source, discName: "Disc 1", probe: JobServiceTests.Bench.probe)
+            let copy = FileRef(holder: "laptop", url: rip, path: rip.path, sizeBytes: 3000, secret: "s3cret")
+            let ruleset = RulesetDocumentBody(name: "household", document: JobServiceTests.Bench.household)
+            _ = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders)
 
-            #expect(try await client.post("/v1/jobs", json: newJob).status == 401)
-            let created = try await client.post("/v1/jobs", json: newJob, headers: ["Authorization": "Bearer secret"])
+            /// A draft for part three of the serial, made from a source with the copy given.
+            func draft(copy: FileRef?) async throws -> StoredRecipeBody {
+                let source = try await client.post("/v1/sources", json: SiloClient.NewSource(input: JobServiceTests.Bench.input, copy: copy), headers: Self.operatorHeaders).json(SourceBody.self)
+                let binding = try await client.post("/v1/bindings", json: SiloClient.NewBinding(
+                    library: "main", containers: Self.documents, item: "part3", tracks: [TrackMapping(feature: "commentary1", audio: 2)],
+                    segments: [Binding.Segment(source: source.id)]
+                ), headers: Self.operatorHeaders).json(BindingBody.self)
+                let application = Application(ruleset: "household", outputs: [Application.OutputChoice(profile: "mobile")])
+                return try #require(try await client.post("/v1/bindings/\(binding.id)/recipes", json: application, headers: Self.operatorHeaders).json([StoredRecipeBody].self).first)
+            }
+            let recipe = try await draft(copy: copy)
+            struct NewJob: Encodable { var recipe: String }
+
+            #expect(try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id)).status == 401)
+            #expect(try await client.post("/v1/jobs", json: NewJob(recipe: "nothing"), headers: Self.operatorHeaders).status == 404)
+            let created = try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id), headers: Self.operatorHeaders)
             #expect(created.status == 201)
             let job = try SiloClient.decoder.decode(Job.self, from: created.body)
-            #expect(job.state == .unassigned)
-            #expect(try await client.get("/v1/jobs?state=unassigned").bodyText.contains(job.id))
+            #expect(job.state == .pending)
+            #expect(job.recipe == recipe.id)
+            #expect(job.requirements == ["aac", "flac"])
+            #expect(try await client.get("/v1/recipes/\(recipe.id)").json(StoredRecipeBody.self).state == "committed")
+            #expect(try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id), headers: Self.operatorHeaders).status == 409, "one recipe, one job")
+            #expect(try await client.get("/v1/jobs?state=pending").bodyText.contains(job.id))
             #expect(try await client.get("/v1/jobs?state=placed").bodyText == "[]")
             #expect(try await client.get("/v1/jobs/nothing").status == 404)
 
-            let body = RulesetDocumentBody(name: "household", document: Fixture.household)
-            _ = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(body), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
-
-            let assigned = try await client.send("PUT", "/v1/jobs/\(job.id)/assignment", body: try SiloClient.encoder.encode(JobServiceTests.Bench.assignment(item: "part3", profile: "mobile")), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
-            #expect(assigned.status == 200)
-            let pending = try SiloClient.decoder.decode(Job.self, from: assigned.body)
-            #expect(pending.state == .pending)
-            #expect(pending.requirements == ["aac", "flac"])
-
-            let strict = try await client.send("PUT", "/v1/jobs/\(job.id)/assignment", body: try SiloClient.encoder.encode({ var a = JobServiceTests.Bench.assignment(); a.ruleset = "strict"; return a }()), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
-            #expect(strict.status == 422, "the strict ruleset from the ruleset test decides no audio")
+            let unheld = try await draft(copy: nil)
+            let refused = try await client.post("/v1/jobs", json: NewJob(recipe: unheld.id), headers: Self.operatorHeaders)
+            #expect(refused.status == 409)
+            #expect(refused.bodyText.contains("has no copy; no node could fetch it"))
+            #expect(try await client.get("/v1/recipes/\(unheld.id)").json(StoredRecipeBody.self).state == "draft")
 
             struct Claim: Encodable { var node: String; var capabilities: [String] }
             let nothing = try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac"]), headers: ["Authorization": "Bearer secret"])
@@ -361,6 +374,11 @@ extension ServerTests {
             let claim = try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac", "aac"]), headers: ["Authorization": "Bearer secret"])
             #expect(claim.status == 200)
             #expect(claim.bodyText.contains("s3cret"), "the claiming node is handed the source's secret")
+            struct ClaimBody: Decodable { var job: Job; var recipe: StoredRecipeBody; var segments: [ClaimedSegment] }
+            let claimed = try SiloClient.decoder.decode(ClaimBody.self, from: claim.body)
+            #expect(claimed.job.id == job.id)
+            #expect(claimed.recipe.id == recipe.id)
+            #expect(claimed.segments.map(\.copy) == [copy], "the segment's copy, whole")
 
             let progress = try await client.send("POST", "/v1/jobs/\(job.id)/progress", body: try SiloClient.encoder.encode(JobProgress(fraction: 0.25)), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
             #expect(progress.bodyText == "{\"state\":\"encoding\"}")

@@ -6,7 +6,7 @@
 A server for one household's library of smd-shaped containers: the structure the
 [smddb](https://github.com/project-smd/smd-tools) proposals describe, served
 directly rather than through Emby, together with the rules that decide how a
-ripped file is encoded, the machines on the local network that encode it, and
+source file is encoded, the machines on the local network that encode it, and
 the step that places the result where the server will find it.
 
 The design is argued before it is built, in [Proposals/Silo.md](Proposals/Silo.md).
@@ -46,18 +46,19 @@ One package, in the order its parts arrived:
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
   and what an operator changes (a scan, a stored ruleset, the settings, a
   registered source and its copies, a binding and the draft recipes it resolves to, an
-  adjusted or discarded draft), on the swift-wire
+  adjusted or discarded draft, and a job made from a draft), on the swift-wire
   stack; and beside the document, two routes that stream, the file a
   presentation is with `Range`, and the container as its sidecar.
 - `FileServing`, `SiloClient` and `SiloWorker` — the parts every participant
   shares: a file served by range to the node that needs it, guarded by a
   secret the silo hands out per job; the silo's API from a client's side over
   nothing but Foundation; and the node's loop, which claims a job, opens or
-  fetches its source, encodes it as the recipe says, probes the result, checks
-  its layout and tells the silo where the output is. The silo runs that loop
-  inside itself when `settings.json` says `"embeddedNode": true`, so one machine is the whole
-  pipeline: the tool registers a rip, assigns it, the embedded node encodes it,
-  and `silo-ctl jobs place` has the silo move the result into the library.
+  fetches each of its segments, encodes them as the recipe says — several, or part of one, as
+  one concat input — probes the result, checks its layout and tells the silo where the output
+  is. The silo runs that loop inside itself when `settings.json` says `"embeddedNode": true`, so
+  one machine is the whole pipeline: a producer registers a source, binds an entry to it and
+  makes a job of one of its recipes, the embedded node encodes it, and `silo-ctl jobs place` has
+  the silo move the result into the library.
 - `SiloDiscovery` and `silo-node` — a node on another machine. It finds the
   silo by Bonjour (through `dns-sd` on macOS or Avahi's tools on Linux, as a
   process, so nothing Apple-only is linked) or is given its URL, registers
@@ -67,7 +68,7 @@ One package, in the order its parts arrived:
   placement. Revoking it is one command and its token stops at once. The silo
   advertises itself the same way unless `settings.json` says `"advertise": false`.
 - `silo-ctl` — the operator's command line. `encode` and `place` are the parts
-  that need no server: the first takes a ruleset file and a ripped file and
+  that need no server: the first takes a ruleset file and a media file and
   says what it would do, does it, and verifies the result; the second takes a
   finished file and a clone of the data repository and files it into a library.
 
@@ -112,9 +113,9 @@ operator token rather than waiting to be set up.
 `Examples/household.xml` is the ruleset the proposal was written with: an extra
 below standard-definition width is re-encoded small, a lossless track that is
 not a commentary becomes FLAC, a commentary becomes AAC, and everything else is
-copied. `--commentary 2` says the second audio stream is one, which is what the
-assignment will say once the ingestion tool makes them; the recipe's `<track>`
-index for it is printed renumbered to the output.
+copied. `--commentary 2` says the second audio stream is one, which is what a
+binding's feature map says; the recipe's `<track>` index for it is printed
+renumbered to the output.
 
 Needs `ffmpeg` and `ffprobe` on `PATH`, or `FFMPEG_PATH` and `FFPROBE_PATH` set.
 The integration test that runs them skips itself where they are missing; CI

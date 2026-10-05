@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloClient
+import SiloKit
 import Synchronization
 import Testing
 #if canImport(FoundationNetworking)
@@ -182,5 +183,27 @@ struct SiloClientTests {
             _ = try await client.confirmSetup(bearer: "horse-battery")
             Issue.record("confirming with nothing staged")
         } catch SiloClientError.status(404, _) {}
+    }
+
+    @Test func aJobIsMadeFromARecipeAndAClaimCarriesItsSegments() async throws {
+        let seen = Mutex<[(String, String, Data?)]>([])
+        let job = Job(id: "j1", createdAt: Date(timeIntervalSince1970: 0), recipe: "r1", requirements: ["flac"])
+        let copy = FileRef(holder: "ripper", url: URL(string: "http://ripper.local:8743/files/t.mkv")!, secret: "s3cret")
+        let claim = Claim(job: job, recipe: nil, segments: [ClaimedSegment(source: "s1", copy: copy, start: 1497.6, end: 2995.2)])
+        let client = Self.client(token: "secret") { request in
+            seen.withLock { $0.append((request.httpMethod ?? "", request.url?.path ?? "", Self.body(of: request))) }
+            switch request.url?.path {
+            case "/v1/jobs": return (201, try SiloClient.encoder.encode(job))
+            case "/v1/jobs/claim" where seen.withLock({ $0.count }) == 2: return (200, Data("{}".utf8))
+            default: return (200, try SiloClient.encoder.encode(claim))
+            }
+        }
+
+        #expect(try await client.createJob(recipe: "r1") == job)
+        #expect(try await client.claim(node: "box", capabilities: ["flac"]) == nil, "no job, no claim")
+        #expect(try await client.claim(node: "box", capabilities: ["flac"]) == claim)
+        let sent = seen.withLock { $0 }
+        #expect(sent[0].0 == "POST" && sent[0].1 == "/v1/jobs")
+        #expect(sent[0].2.map { String(decoding: $0, as: UTF8.self) } == #"{"recipe":"r1"}"#)
     }
 }

@@ -36,7 +36,7 @@ struct AdvertiserTests {
 /// is missing.
 @Suite(.enabled(if: FFmpeg.isAvailable && FFprobe.isAvailable, "ffmpeg and ffprobe are needed"))
 struct EmbeddedNodeTests {
-    private func sample(in bench: JobServiceTests.Bench, named name: String) async throws -> (FileRef, ProbedSource) {
+    private func sample(in bench: JobServiceTests.Bench, named name: String) async throws -> (FileRef, InputSpec) {
         let file = bench.root.appendingPathComponent(name)
         try await FFmpeg().run([
             "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
@@ -46,7 +46,7 @@ struct EmbeddedNodeTests {
             "-map", "0:v", "-map", "1:a", "-map", "2:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "flac",
             file.path,
         ])
-        return (FileRef(holder: "embedded", url: file, path: file.path, secret: ""), try await FFprobe().probe(file))
+        return (FileRef(holder: "embedded", url: file, path: file.path, secret: ""), InputSpec(probe: try await FFprobe().probe(file)))
     }
 
     private func state(of job: String, in bench: JobServiceTests.Bench, becomes wanted: Set<JobState>, within seconds: Double) async throws -> JobState {
@@ -67,9 +67,8 @@ struct EmbeddedNodeTests {
         let running = Task { await node.follow() }
         defer { running.cancel() }
 
-        let (first, firstProbe) = try await sample(in: bench, named: "first.mkv")
-        let firstJob = try bench.service.register(source: first, discName: nil, probe: firstProbe, makeMKV: nil)
-        _ = try bench.service.assign(firstJob.id, JobServiceTests.Bench.assignment(profile: "mobile"))
+        let (first, firstInput) = try await sample(in: bench, named: "first.mkv")
+        let firstJob = try bench.service.make(from: try bench.draft(input: firstInput, copy: first, profile: "mobile").id)
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(firstJob.id).state == .pending, "off, it claims nothing")
 
@@ -78,9 +77,8 @@ struct EmbeddedNodeTests {
 
         try settings.update { $0.embeddedNode = false }
         try await Task.sleep(for: .milliseconds(200))
-        let (second, secondProbe) = try await sample(in: bench, named: "second.mkv")
-        let secondJob = try bench.service.register(source: second, discName: nil, probe: secondProbe, makeMKV: nil)
-        _ = try bench.service.assign(secondJob.id, JobServiceTests.Bench.assignment(item: "part2", profile: "mobile"))
+        let (second, secondInput) = try await sample(in: bench, named: "second.mkv")
+        let secondJob = try bench.service.make(from: try bench.draft(input: secondInput, copy: second, profile: "mobile").id)
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(secondJob.id).state == .pending, "off again, it claims no more")
     }

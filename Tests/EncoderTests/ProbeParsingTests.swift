@@ -66,7 +66,7 @@ struct ProbeParsingTests {
         #expect(probed.streams[4].kind == .attachment)
         #expect(probed.chapters == [ProbedChapter(start: 0, title: "Part One"), ProbedChapter(start: 750)])
 
-        let facts = SourceFacts(probe: probed)
+        let facts = SourceFacts(input: InputSpec(probe: probed))
         #expect(facts.audio.map(\.role) == [.main, .commentary])
         #expect(facts.audio.map(\.lossless) == [true, false])
         #expect(facts.subtitles.map(\.forced) == [true])
@@ -79,7 +79,7 @@ struct ProbeParsingTests {
         let probed = try ProbedSource(ffprobeJSON: Data(json.utf8))
         #expect(probed.streams[0].frameRate == FrameRate(30000, 1001), "kept as the fraction, exactly")
         #expect(probed.streams[0].frameRate?.description == "30000/1001")
-        #expect(SourceFacts(probe: probed).video?.interlaced == true)
+        #expect(SourceFacts(input: InputSpec(probe: probed)).video?.interlaced == true)
     }
 
     @Test func somethingThatIsNotFFprobesOutputIsRefused() {

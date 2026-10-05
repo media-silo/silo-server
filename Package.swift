@@ -160,7 +160,10 @@ let package = Package(
         // The silo's API from a client's side, over Foundation's URLSession and nothing else.
         .target(
             name: "SiloClient",
-            dependencies: ["SiloKit"]
+            dependencies: [
+                "SiloKit",
+                .product(name: "SmdSidecar", package: "SmdKit"),
+            ]
         ),
         // The admin console minus its shell: the registry, the passkey keepers, the four
         // classes, and the setup and claim flows. Cross-platform, so the app layer stays thin
