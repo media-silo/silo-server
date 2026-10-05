@@ -27,3 +27,8 @@ jobs:
       # is what keeps that true.
       - name: Test
         run: swift test
+      # A debug build and the tests export every internal symbol, so a reference to one in another
+      # module links there and fails only when optimised. Building release is what catches that
+      # before a deploy does, as it once failed on the middleware box wire-mvc kept internal.
+      - name: Build release
+        run: swift build -c release
