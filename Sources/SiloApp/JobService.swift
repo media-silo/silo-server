@@ -16,7 +16,7 @@ import FoundationNetworking
 /// The job's states and every transition between them, in one place, with the store as the only
 /// thing it writes. The controllers translate; the embedded node calls this directly.
 @Singleton
-package final class JobService: Sendable, JobsAPI {
+package struct JobService: Sendable, JobsAPI {
     package static let leaseLength: TimeInterval = 120
     package static let attemptsAllowed = 3
 

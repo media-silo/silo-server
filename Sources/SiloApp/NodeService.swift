@@ -10,7 +10,7 @@ import Wire
 /// Nodes: registered by themselves, approved by a person, authenticated by the token the approval
 /// minted. The silo stores hashes of the secret and the token and never either itself.
 @Singleton
-package final class NodeService: Sendable {
+package struct NodeService: Sendable {
     private let nodes: NodeStore
     private let logger = Logger(label: "silo.nodes")
 
