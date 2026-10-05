@@ -134,7 +134,7 @@ recorded duration, never above 1.
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, which
 asserts the `<job id>.mkv` name; `aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`, for
-the concat input). The not-ready arm is pinned by nothing yet.
+the concat input; `aClaimWithNoRecipeFailsAtOnce`, for the not-ready arm).
 
 ### Requirement: Progress doubles as heartbeat, and the answer carries the cancel
 While an encode runs the worker SHALL report the latest progress every progress interval — five
@@ -212,4 +212,4 @@ segments of one source SHALL be reached once.
 - **WHEN** a node claims a job of two segments, holding the first's source and not the second's
 - **THEN** it opens the first in place and fetches the second into the work folder
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`). Reaching two segments of one source once is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`; `twoSegmentsOfOneFetchedSourceAreFetchedOnce`, for reaching two segments of one source once).
