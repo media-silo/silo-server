@@ -7,8 +7,9 @@ import Foundation
 import SiloKit
 import SmdKit
 
-/// Encode one file by one ruleset, with no server: probe it, say what it is, resolve the recipe,
-/// show it, run it, and check the output has the layout the recipe promised.
+/// Encode one file by one ruleset, with no server: describe it — from an input spec a producer
+/// wrote, or with the silo's own plain-file producer — resolve the recipe for one of the ruleset's
+/// outputs, show it, run it, and check the output has the layout the recipe promised.
 struct Encode: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Encode one file from a ruleset file, and verify the output's stream layout."
@@ -20,14 +21,14 @@ struct Encode: AsyncParsableCommand {
     @Option(help: "The item's kind: episode, movie, featurette, interview, trailer…")
     var kind: String?
 
-    @Option(help: "The profile being made: mobile, sdr…; none for the unqualified presentation.")
+    @Option(help: "Which of the ruleset's outputs to make, by its profile: mobile…; the unqualified output when left out.")
     var profile: String?
 
-    @Option(help: "The disc format the file came from: dvd, bluray or uhd.")
+    @Option(help: "The medium the file came from, which a plain file cannot say: dvd, bluray or uhd.")
     var format: SourceFormat?
 
-    @Option(name: .customLong("makemkv"), help: "A JSON file of what MakeMKV recorded about the title (MakeMKVFacts).")
-    var makeMKVPath: String?
+    @Option(name: .customLong("input"), help: "A JSON file holding the file's input spec; the plain-file producer describes it when left out.")
+    var inputSpecPath: String?
 
     @Option(help: "An audio stream, from one, that is a commentary. Repeatable; also maps it as feature \"commentary\".")
     var commentary: [Int] = []
@@ -58,11 +59,24 @@ struct Encode: AsyncParsableCommand {
 
     mutating func run() async throws {
         let ruleset = try RulesetFile.ruleset(from: Data(contentsOf: URL(fileURLWithPath: rulesetPath)))
-        let makeMKV = try makeMKVPath.map { try JSONDecoder().decode(MakeMKVFacts.self, from: Data(contentsOf: URL(fileURLWithPath: $0))) }
+        guard let made = ruleset.outputs.first(where: { $0.profile == profile }) else {
+            let names = ruleset.outputs.map { $0.profile ?? "the unqualified output" }.joined(separator: ", ")
+            throw ValidationError("\(ruleset.name) makes no output for \(profile.map { "the profile \($0)" } ?? "no profile"); it makes \(names)")
+        }
 
         let inputURL = URL(fileURLWithPath: input)
         let probe = try FFprobe()
-        let probed = try await probe.probe(inputURL)
+        var spec: InputSpec
+        if let inputSpecPath {
+            do {
+                spec = try InputSpec.read(from: Data(contentsOf: URL(fileURLWithPath: inputSpecPath)))
+            } catch let error as InputSpecError {
+                throw ValidationError("\(inputSpecPath): \(error.description)")
+            }
+        } else {
+            spec = InputSpec(probe: try await probe.probe(inputURL))
+        }
+        if let format { spec.medium = format }
 
         var roles: [Int: AudioRole] = [:]
         var mappings: [TrackMapping] = []
@@ -70,10 +84,7 @@ struct Encode: AsyncParsableCommand {
         for index in descriptive { roles[index] = .descriptive }
         for index in music { roles[index] = .isolatedMusic; mappings.append(TrackMapping(feature: "music", audio: index)) }
 
-        let facts = SourceFacts(
-            probe: probed, makeMKV: makeMKV, roles: roles,
-            kind: kind.map(EntryType.init(rawValue:)), profile: profile, format: format
-        )
+        let facts = SourceFacts(input: spec, roles: roles, kind: kind.map(EntryType.init(rawValue:)), profile: made.profile)
 
         let recipe: Recipe
         do {

@@ -105,10 +105,10 @@ it was stored under, whatever the document's own attributes say, and SHALL NOT r
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`);
 the store's name winning is pinned by nothing yet.
 
-### Requirement: The extraction policy says which of an origin's streams a source file keeps
-The `<extraction>` element SHALL carry the policy the ingestion tool applies when it produces a
-source file from its origin — which of the streams the origin offers the source file keeps — in
-three optional attributes, each `true` or `false`:
+### Requirement: The extraction policy says which streams a producer keeps in a source
+The `<extraction>` element SHALL carry the policy a producer applies when it obtains a source —
+which of the streams available to it the source keeps — in three optional attributes, each
+`true` or `false`:
 
 | Attribute | Means, when true | Default |
 |---|---|---|
@@ -116,12 +116,13 @@ three optional attributes, each `true` or `false`:
 | `subtitles` | keep subtitle tracks at all | `true` |
 | `embeddedSubtitles` | keep the forced-only subtitle stream derived from a subtitle track | `true` |
 
-An absent element, or an absent attribute, SHALL mean the default. Each attribute applies where the
-origin offers such streams — today, a disc title read by MakeMKV, which extracts embedded cores and
-derives forced-only streams — and has no effect on a source file whose origin offers none. The
-policy decides what streams the source file has; it takes no part in deciding what happens to them,
-which is the rules' job. It lives in the ruleset because a person deciding what is kept and how it is encoded
-is making one decision.
+An absent element, or an absent attribute, SHALL mean the default. The silo stores the policy with
+the ruleset and serves it to producers; it does not apply it. Each attribute speaks to streams a
+producer may be able to keep or leave out — a lossy core it could extract, a forced-only stream it
+could derive — and has no effect for a producer that has no such streams to offer. The policy
+decides what streams the source has; it takes no part in deciding what happens to them, which is
+the rules' job. It lives in the ruleset because a person deciding what is kept and how it is
+encoded is making one decision.
 
 #### Scenario: the defaults
 - **WHEN** a ruleset has no `<extraction>` element
@@ -138,11 +139,9 @@ Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToo
 ### Requirement: The outputs name what is made of every entry
 Each `<output>` element SHALL name one presentation the ruleset makes of every entry it is applied
 to: an optional `profile`, absent for the unqualified presentation, and an optional `container`
-naming the output file's container format, absent meaning `mkv`. A resolution SHALL make the output
-whose profile is the profile the file is being made into — the unqualified output when it is being
-made into none — and, when the ruleset declares no output for that profile, the unqualified output,
-or else the first, so that a ruleset written with one output serves every profile it served before.
-A ruleset with no `<output>`
+naming the output file's container format, absent meaning `mkv`. Applying the ruleset to a binding SHALL resolve
+it once for each output the application makes, with the `profile` fact set to the output's profile,
+as [recipes](../recipes/spec.md) describes. A ruleset with no `<output>`
 SHALL make one unqualified `mkv` output. Two outputs with the same profile, or two without one,
 SHALL be refused. `mkv` and `matroska` SHALL both mean `ffmpeg`'s `matroska` format with the
 extension `.mkv`; any other value SHALL be handed to `ffmpeg` as the format name and used as the
@@ -161,13 +160,15 @@ extension as given. The container is not checked when the ruleset is read.
 - **THEN** it is refused, saying the profile `mobile` is made twice
 
 #### Scenario: each output is resolved with its profile
-- **WHEN** a ruleset whose outputs are an unqualified `mkv` and a `mobile` `mp4` resolves a file being
-  made into `mobile`, and again one being made into `hdr`
-- **THEN** the first recipe's output is the `mobile` `mp4`, and the second's the unqualified `mkv`
+- **WHEN** a ruleset whose outputs are an unqualified `mkv` and a `mobile` `mp4` is applied to a
+  binding
+- **THEN** the binding is resolved twice: once with no `profile`, to a recipe whose output is the `mkv`, and once
+  with `profile` `mobile`, to a recipe whose output is the `mp4`
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
 `aRulesetMakesEachOutputItDeclares`, `anOutputMadeTwiceIsRefused`),
-`Tests/SiloKitTests/ResolverTests.swift` (`aResolutionMakesTheOutputItsProfileNames`).
+`Tests/SiloKitTests/ResolverTests.swift` (`aResolutionMakesTheOutputItsProfileNames`),
+`Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`).
 
 ### Requirement: A rule is a scope, a list of conditions and one action
 A rule SHALL be an element named for the kind of stream it decides — `<video>`, `<audio>` or
@@ -202,29 +203,34 @@ scope, where it describes the stream being decided.
 
 | Fact | Scope | Shape | Values | Comes from |
 |---|---|---|---|---|
-| `kind` | file | text | what the item is: `episode`, `movie`, `featurette`, or another type of extra the container names, such as `interview`, `deletedScene`, `behindTheScenes`, `trailer`, `scene`, `short`, `clip` | the assignment |
-| `profile` | file | text | the profile the file is being made into, such as `mobile`; absent for the unqualified presentation | the assignment |
-| `format` | file | text | the physical format of the origin, when the source file came from a disc: `dvd`, `bluray` or `uhd`; absent otherwise | the assignment, else the origin scan |
-| `duration` | file | number | seconds | `ffprobe` |
-| `video.codec` | video | text | the codec as `ffprobe` names it: `h264`, `hevc`, `mpeg2video`, … | `ffprobe` |
-| `video.width` | video | number | pixels | `ffprobe` |
-| `video.height` | video | number | pixels | `ffprobe` |
-| `video.frameRate` | video | number | frames a second, such as `23.976` or `25` | `ffprobe` |
-| `video.interlaced` | video | flag | whether the stream's field order is interlaced | `ffprobe` |
-| `video.hdr` | video | text | `hdr10` or `hlg`; absent for SDR video | `ffprobe`'s transfer characteristic |
-| `video.bitDepth` | video | number | bits per sample, such as `8` or `10` | `ffprobe` |
-| `audio.codec` | audio | text | the codec as `ffprobe` names it: `truehd`, `dts`, `ac3`, `eac3`, `aac`, `flac`, `pcm_s24le`, … | `ffprobe` |
+| `kind` | file | text | what the item is: `episode`, `movie`, `featurette`, or another type of extra the container names, such as `interview`, `deletedScene`, `behindTheScenes`, `trailer`, `scene`, `short`, `clip` | the binding's item |
+| `profile` | file | text | the profile of the output being made, such as `mobile`; absent for the unqualified output | the output being resolved |
+| `format` | file | text | the physical medium the source came from: `dvd`, `bluray` or `uhd`; absent for one that came from none | the first segment's input spec's `medium` |
+| `duration` | file | number | seconds | the binding's joined spans |
+| `video.codec` | video | text | the codec as `ffmpeg` names it: `h264`, `hevc`, `mpeg2video`, … | the input spec |
+| `video.width` | video | number | pixels | the input spec |
+| `video.height` | video | number | pixels | the input spec |
+| `video.frameRate` | video | number | frames a second, such as `23.976` or `25` | the input spec |
+| `video.interlaced` | video | flag | whether the stream is interlaced | the input spec |
+| `video.hdr` | video | text | `hdr10` or `hlg`; absent for SDR video | derived from the input spec's transfer characteristic |
+| `video.bitDepth` | video | number | bits per sample, such as `8` or `10` | the input spec |
+| `audio.codec` | audio | text | the codec as `ffmpeg` names it: `truehd`, `dts`, `ac3`, `eac3`, `aac`, `flac`, `pcm_s24le`, … | the input spec |
 | `audio.lossless` | audio | flag | whether the stream is lossless: TrueHD, MLP, FLAC, ALAC, WavPack, TTA, APE, any PCM, and DTS-HD Master Audio | derived from the codec and its profile |
-| `audio.channels` | audio | number | channel count, such as `2` or `6` | `ffprobe`, else the origin scan |
-| `audio.language` | audio | text | the language tag as the file carries it, usually an ISO 639-2 code such as `eng` | `ffprobe`, else the origin scan |
-| `audio.role` | audio | text | what the stream is for: `main`, `commentary`, `isolatedMusic`, `descriptive` or `other` | derived from the assignment, then the origin scan's stream flags, then the file's dispositions |
-| `audio.core` | audio | flag | whether the stream is the lossy core extracted from inside a lossless track | the origin scan |
-| `subtitle.codec` | subtitle | text | the codec as `ffprobe` names it: `hdmv_pgs_subtitle`, `dvd_subtitle`, `subrip`, … | `ffprobe` |
-| `subtitle.language` | subtitle | text | as `audio.language` | `ffprobe`, else the origin scan |
-| `subtitle.forced` | subtitle | flag | whether the stream carries only forced subtitles | the file's dispositions, or the origin scan |
+| `audio.channels` | audio | number | channel count, such as `2` or `6` | the input spec |
+| `audio.language` | audio | text | the language, as the shortest ISO 639 code for it: `en`, `fr`, `es`, `yue` | the primary language subtag of the input spec's language tag |
+| `audio.script` | audio | text | the script, in title case, such as `Latn` or `Hant`; absent when the tag names none | the script subtag of the input spec's language tag |
+| `audio.region` | audio | text | the region, such as `GB`, `BR` or `419`; absent when the tag names none | the region subtag of the input spec's language tag |
+| `audio.role` | audio | text | what the stream is for: `main`, `commentary`, `isolatedMusic`, `descriptive` or `other` | derived from the binding's feature map, then the input spec's marks |
+| `audio.core` | audio | flag | whether the stream is the lossy core extracted from inside a lossless track | derived from the input spec's `coreOf` |
+| `subtitle.codec` | subtitle | text | the codec as `ffmpeg` names it: `hdmv_pgs_subtitle`, `dvd_subtitle`, `subrip`, … | the input spec |
+| `subtitle.language` | subtitle | text | as `audio.language` | as `audio.language` |
+| `subtitle.script` | subtitle | text | as `audio.script` | as `audio.script` |
+| `subtitle.region` | subtitle | text | as `audio.region` | as `audio.region` |
+| `subtitle.forced` | subtitle | flag | whether the stream carries only forced subtitles | derived from the input spec's `forced` mark |
 
-A fact the file does not have — no `kind` on an unassigned file, no `video.hdr` on SDR video, no
-language tag — is **absent**. How each fact is discovered and derived is specified in
+A fact the source does not have — no `kind` where nothing names one, no `video.hdr` on SDR video,
+no language tag — is **absent**. What an input spec holds is specified in
+[input-specs](../input-specs/spec.md), and how each fact is derived from it in
 [recipes](../recipes/spec.md).
 
 #### Scenario: a file fact in a stream's rule
@@ -239,9 +245,14 @@ language tag — is **absent**. How each fact is discovered and derived is speci
 - **WHEN** an `<audio>` rule carries `<when fact="video.width" lt="1000"/>`
 - **THEN** the ruleset is refused, saying `video.width` cannot be tested in an `<audio>` rule
 
+#### Scenario: one Spanish dub of two
+- **WHEN** an `<audio>` rule carries `<when fact="audio.language" is="es"/>` and
+  `<when fact="audio.region" is="419"/>`, and a source has audio tagged `es-419` and `es-ES`
+- **THEN** the rule holds for the first stream and not the second
+
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`,
 `aRulesetSurvivesTheFile`), `Tests/SiloKitTests/FactsTests.swift`
-(`losslessIsAFunctionOfCodecAndProfile`, `theRoleComesFromTheMostAuthoritativeSource`).
+(`losslessIsAFunctionOfCodecAndProfile`), `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`).
 
 ### Requirement: A condition applies exactly one of seven operators
 A `<when>` SHALL carry exactly one operator attribute besides `fact`:
@@ -384,8 +395,8 @@ A stream that no rule of its scope decides SHALL fail the whole resolution, neve
 dropped or guessed past. The failure SHALL read `no rule decides <kind> <n> (<facts>)`, where
 `<n>` is the stream's place from one among streams of its kind and `<facts>` describes it: a video
 stream as its codec and size, then `interlaced` and its HDR kind where they apply; an audio stream
-as its codec, its profile where it has one, its channel count as `<n>ch`, its language or `und`,
-its role, then `lossless` and `core` where they apply; a subtitle stream as its codec, its language
+as its codec, its profile where it has one, its channel count as `<n>ch`, its language tag or `und`,
+its role, then `lossless` and `core` where they apply; a subtitle stream as its codec, its language tag
 or `und`, then `forced` where it applies. That is enough to write the rule that would have decided
 it.
 
@@ -397,7 +408,7 @@ it.
 #### Scenario: an audio stream that falls through
 - **WHEN** a ruleset's only audio rule matches commentaries, and a file's third audio stream is a
   two-channel English AC-3 main mix with no profile
-- **THEN** resolution fails with `no rule decides audio 3 (ac3 2ch eng main)`
+- **THEN** resolution fails with `no rule decides audio 3 (ac3 2ch en main)`
 
 Pinned by: `Tests/SiloKitTests/ResolverTests.swift` (`aStreamNoRuleDecidesIsAnError`).
 

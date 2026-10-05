@@ -1,52 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 the media-silo project authors -->
 
-## REMOVED Requirements
-
-### Requirement: Losslessness and role are each derived in one place
-**Reason**: Role and core-ness were derived from MakeMKV's stream flags and scan, which the silo no
-longer receives; they are now derived from the input spec's marks and `coreOf`.
-**Migration**: The requirement added below, "Losslessness, role and core-ness are each derived in
-one place", states the derivation from the input spec.
-
-### Requirement: Facts are merged once from the probe, the scan and the assignment
-**Reason**: The silo no longer receives a probe or a MakeMKV scan; a producer describes each source
-in an input spec, and reconciling a scan with a probe is that producer's work.
-**Migration**: Facts are derived from a binding, its sources' input specs and an output, as the
-requirement added below states.
-
-## MODIFIED Requirements
-
-### Requirement: The output layout maps source streams to output streams
-
-The recipe's layout SHALL list the streams the output will have — video first, then the surviving
-audio streams, then the surviving subtitles, each in source order — with every entry pointing back
-at its source stream by per-kind index and absolute index, and numbered with an `outputIndex`
-from one among output streams of the kind and an `outputAbsoluteIndex` from zero across the whole
-output, `ffmpeg`'s own count. The layout is computed before the encode, so the new presentation's
-`<track>` indices are known without opening the output: `tracks(for:)` SHALL renumber the
-binding's feature map through it, and a mapping whose stream the recipe drops SHALL be left
-out.
-
-#### Scenario: a dropped stream renumbers what follows
-- **WHEN** the household ruleset gains rules dropping lossless audio and forced subtitles and resolves the episode, whose commentary is source audio 2
-- **THEN** the layout is video, audio, audio, subtitle; source audio 2 becomes output audio 1 and source audio 3 becomes output audio 2; the feature mapped to audio 2 renumbers to `audio="1"`; and the features mapped to the dropped streams are left out of the renumbered map
-
-Pinned by: `Tests/SiloKitTests/ResolverTests.swift` (`aDroppedStreamRenumbersWhatFollowsAndWarnsAboutAMappedOne`).
-
-### Requirement: Resolution is a pure function of the facts and the ruleset
-
-`RecipeResolver.resolve` SHALL take every input as a value — the file's facts, the ruleset, the
-binding's feature map — and return the recipe or throw `ResolutionError`, with no file read
-and no `ffprobe` or `ffmpeg` run. The two derived facts, the closed vocabulary and the file
-reader exist so that the resolver never needs to ask anything else.
-
-#### Scenario: the proposal's rules resolve against a literal DVD featurette
-- **WHEN** the household ruleset resolves literal facts for a 352x288 interlaced MPEG-2 featurette with one AC-3 stereo track
-- **THEN** the video is encoded by `small-extras` as libx264, preset slow, CRF 22, yuv420p, deinterlaced automatically, and the audio falls to the catch-all copy — with no tool and no file involved
-
-Pinned by: `Tests/SiloKitTests/ResolverTests.swift` (`aSmallExtraIsReencoded`).
-
 ## ADDED Requirements
 
 ### Requirement: Losslessness, role and core-ness are each derived in one place
@@ -121,26 +75,42 @@ from one among the streams of their kind — the way a player's menu counts and 
 
 Pinned by: nothing yet.
 
-### Requirement: A binding resolves to one draft recipe for each output
-Making a binding SHALL resolve it once for each output it makes — every output of its ruleset, or
-those its profiles name — deriving the facts for that output and resolving the ruleset's rules
-against them, and SHALL store each recipe as a `draft`, naming its binding, its output, and the
-ruleset version resolved. If any output's resolution fails because a stream no rule decides, the
-binding SHALL be refused with 422 carrying the resolver's report, and nothing stored. The binding's
-answer SHALL carry its recipes. `GET /v1/recipes/{id}` SHALL answer one recipe, with no token
-asked, or 404 for an id the silo does not know.
+### Requirement: Applying a ruleset to a binding makes a draft recipe for each output
+`POST /v1/bindings/{id}/recipes`, behind the operator's token, SHALL apply a ruleset to a binding:
+it SHALL take the ruleset's name, an optional version — the latest when left out — and optionally
+the outputs to make, by profile, an object with no profile naming the unqualified output, and every
+output when left out. It SHALL resolve the binding once for each output it makes, deriving the facts
+for that output and resolving the ruleset's rules against them, and SHALL store each recipe as a
+`draft`, naming its binding, its output, and the ruleset version resolved, and answer 201 with them.
+A ruleset or version the silo does not hold, or an output the ruleset does not make, SHALL be 400; a
+binding the silo does not hold SHALL be 404. If any output's resolution fails because a stream no
+rule decides, the application SHALL be refused with 422 carrying the resolver's report, and nothing
+stored; the binding stays, since the rules were incomplete and the binding was not wrong. Every
+recipe the binding already has SHALL be left as it was, draft or committed, so applying a newer
+version of the ruleset, or another ruleset, is the same operation again. `GET /v1/recipes/{id}`
+SHALL answer one recipe, with no token asked, or 404 for an id the silo does not know.
 
 #### Scenario: two outputs, two recipes
-- **WHEN** a binding is made against a ruleset whose outputs are an unqualified `mkv` and a `mobile`
-  `mp4`, and whose video rules are one scaling to 720 lines when `profile` is `mobile`, then a
-  condition-less copy
-- **THEN** it has two draft recipes; the mobile one scales the video and the unqualified one copies
-  it
+- **WHEN** a ruleset whose outputs are an unqualified `mkv` and a `mobile` `mp4`, and whose video
+  rules are one scaling to 720 lines when `profile` is `mobile`, then a condition-less copy, is
+  applied to a binding
+- **THEN** the binding has two draft recipes, each naming that ruleset and version; the mobile one
+  scales the video and the unqualified one copies it
 
 #### Scenario: an output no rule can make
-- **WHEN** a binding's ruleset has a mobile output but no audio rule that holds when `profile` is
-  `mobile`
-- **THEN** the binding is refused with 422, naming the undecided audio stream, and nothing is stored
+- **WHEN** a ruleset with a mobile output but no audio rule that holds when `profile` is `mobile` is
+  applied to a binding
+- **THEN** the application is refused with 422, naming the undecided audio stream; nothing is stored,
+  and the binding stays
+
+#### Scenario: the rules changed
+- **WHEN** a binding's committed recipe was made by `household@3`, the ruleset is now at version 4,
+  and `household` is applied to the binding again
+- **THEN** a new draft names `household@4`, and the committed recipe still names `household@3`
+
+#### Scenario: another ruleset for the same binding
+- **WHEN** a binding has a draft from `household`, and the operator applies `restoration` to it
+- **THEN** the binding has a draft from each, and the first is as it was
 
 Pinned by: nothing yet.
 
@@ -181,18 +151,5 @@ operator's token, SHALL discard a draft and SHALL be 409 for a committed recipe.
 #### Scenario: a draft discarded
 - **WHEN** the operator discards a draft no job was made from
 - **THEN** the recipe is gone, and its binding's other recipes are as they were
-
-Pinned by: nothing yet.
-
-### Requirement: A binding can be resolved again, leaving its earlier recipes as they were
-`POST /v1/bindings/{id}/recipes`, behind the operator's token, SHALL resolve the binding against its
-ruleset as it now stands — the latest version, unless the binding names one — and store a new draft
-for each output it makes, answering them. Every recipe the binding already had SHALL be left as it
-was, draft or committed. A resolution that fails SHALL be 422 and store nothing.
-
-#### Scenario: the rules changed
-- **WHEN** a binding's committed recipe was made by `household@3`, the ruleset is now at version 4,
-  and the binding is resolved again
-- **THEN** a new draft names `household@4`, and the committed recipe still names `household@3`
 
 Pinned by: nothing yet.

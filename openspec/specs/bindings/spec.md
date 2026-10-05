@@ -1,17 +1,34 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 the media-silo project authors -->
 
-## ADDED Requirements
+# Bindings
+
+## Purpose
+
+A binding says what one entry of a library is made from: segments of one or more sources, each a
+whole source or a span of its chapters, joined in order, with the entry and its feature map. It is
+checked whole before it is kept and never changed once made. It names no ruleset: a binding is a
+fact about the library, and applying a ruleset to it is a separate act, made as often as the rules
+change, which makes a draft recipe for each output. This spec covers the bindings routes, the binding
+and the joining of its segments in `Sources/SiloKit`, `BindingService` and `BindingStore`; applying a
+ruleset to a binding is [recipes](../recipes/spec.md)'s.
+
+Rationale: [Ingestion proposal — Bindings](../../../Proposals/Ingestion.md) — each thing is said once:
+an entry is bound once, however many outputs are made of it.
+Documentation: [README](../../../README.md).
+
+## Requirements
 
 ### Requirement: A binding says what one entry is made from, segment by segment
 `POST /v1/bindings`, behind the operator's token, SHALL take a binding: the library, the item's
 container lineage as repository documents, the item, and its optional alternative; the feature map,
 mapping the last container's features to streams by kind and index from one among streams of the
 kind; the chapter names the presentation will carry; an optional source reference for the sidecar
-to record; the ruleset by name with an optional version; optionally the profiles of the ruleset's
-outputs to make, every output when left out; and one or more segments, each a source's id and
-optionally a span of its chapters, `from` and `to` inclusive. The silo SHALL mint the binding's id,
-keep the binding as one JSON file under its state directory, and never change a binding once made.
+to record; and one or more segments, each a source's id and optionally a span of its chapters,
+`from` and `to` inclusive. A binding SHALL name no ruleset: applying one is its own operation, as
+[recipes](../recipes/spec.md) describes, and making a binding SHALL resolve nothing. The silo SHALL
+mint the binding's id, keep the binding as one JSON file under its state directory, and never change
+a binding once made.
 
 #### Scenario: an episode out of a play-all title
 - **WHEN** the operator binds part two of a serial to chapter 2 of a source whose chapters are its
@@ -22,7 +39,7 @@ keep the binding as one JSON file under its state directory, and never change a 
 - **WHEN** the operator binds a film to two sources, each a whole disc title with the same streams
 - **THEN** the binding is made with two segments, in that order
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloKitTests/BindingTests.swift` (`anEpisodeOutOfAPlayAllTitleIsItsChapterSpan`, `aFilmAcrossTwoDiscsIsBothWhole`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`), `Tests/SiloStoreTests/RecipeStoreTests.swift` (`bindingsAndRecipesSurviveARestart`).
 
 ### Requirement: A binding's segments are joined in order, and must share a stream layout
 A binding's media SHALL be its segments' spans joined end to end in order, the way `ffmpeg`'s concat
@@ -36,7 +53,7 @@ binding whose segments do not SHALL be refused, naming the first stream that dif
 - **WHEN** a binding's first segment has an AC-3 stream at index 1 and its second a DTS stream there
 - **THEN** the binding is refused, naming stream 1
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloKitTests/BindingTests.swift` (`anEpisodeOutOfAPlayAllTitleIsItsChapterSpan`, `aFilmAcrossTwoDiscsIsBothWhole`, `segmentsThatCannotBeJoinedAreRefused`).
 
 ### Requirement: A binding that cannot be made is refused whole
 A binding SHALL be refused with 400, naming why, and nothing stored, when its library is unknown to
@@ -44,22 +61,20 @@ the silo; a container document cannot be read; the item is not in the last conta
 alternative is not one of that container's; the feature map names a feature the container does not
 have, or a stream the joined media does not have; a segment names a source the silo does not have; a
 span names a chapter its source does not have, or its `to` comes before its `from`; the segments
-cannot be joined; the ruleset or its version does not exist; or a profile it names is not one of the
-ruleset's outputs. A binding whose recipes cannot all be resolved SHALL be refused as
-[recipes](../recipes/spec.md) describes.
+cannot be joined.
 
 #### Scenario: a span past the end
 - **WHEN** a binding's segment spans chapters 3 to 5 of a source with four chapters
 - **THEN** the binding is refused with 400, naming chapter 5, and nothing is stored
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aBindingOrAnApplicationThatCannotBeMadeKeepsNothing`), `Tests/SiloKitTests/BindingTests.swift` (`segmentsThatCannotBeJoinedAreRefused`).
 
 ### Requirement: Bindings are read openly
 `GET /v1/bindings/{id}` SHALL answer the binding with the ids of its recipes, or 404 for an id the
 silo does not know, with no token asked.
 
 #### Scenario: a binding and its recipes
-- **WHEN** a client reads a binding resolved against a ruleset of two outputs
+- **WHEN** a client reads a binding to which a ruleset of two outputs has been applied
 - **THEN** the answer carries the binding and the ids of its two recipes
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`).

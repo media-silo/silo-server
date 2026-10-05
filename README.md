@@ -39,12 +39,14 @@ One package, in the order its parts arrived:
   sidecars that a scan brings up to date by re-reading only what changed, and
   the rulesets, kept as the documents they were given under
   `rulesets/<name>/<version>.xml`, a version never rewritten; and the sources,
-  one file each under `sources/`, with the copies nodes hold of them.
+  bindings and recipes, one file each under `sources/`, `bindings/` and
+  `recipes/`.
 - `SiloAPI`, `SiloApp` and `silo` — the server: an OpenAPI document under `/v1`
   for what a client reads (libraries, containers with their presentations,
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
   and what an operator changes (a scan, a stored ruleset, the settings, a
-  registered source and its copies), on the swift-wire
+  registered source and its copies, a binding and the draft recipes it resolves to, an
+  adjusted or discarded draft), on the swift-wire
   stack; and beside the document, two routes that stream, the file a
   presentation is with `Range`, and the container as its sidecar.
 - `FileServing`, `SiloClient` and `SiloWorker` — the parts every participant
