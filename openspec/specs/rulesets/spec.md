@@ -6,28 +6,31 @@
 ## Purpose
 
 A ruleset is how a household writes down, once, the encoding decisions a person would otherwise
-make for every file it takes in: which streams of a source file are kept, which are copied as
-they are, and which are re-encoded, and with what. It is one XML document, written and read by a
-person, that holds three things — the extraction policy the ingestion tool applies when it
-produces a source file from its origin, an ordered list of rules, and the output container. Each rule is about one kind of stream, tests facts about the
-file and the stream, and says what to do with a stream it matches. For each stream the first
+make for every file it takes in: which streams of a source are kept, which are copied as they
+are, and which are re-encoded, and with what. It is one XML document, written and read by a
+person, that holds three things — the extraction policy a producer may apply when it makes a
+source, an ordered list of rules, and the outputs the ruleset makes, each a container in a profile.
+Each rule is about one kind of stream, tests facts about the file and the stream, and says what to
+do with a stream it matches. For each stream the first
 matching rule of its kind decides, and a stream no rule decides is an error, never a silent copy.
 
 A silo holds rulesets by name, and every store of one is a new version the silo numbers and never
-rewrites, so that a job can say which version of which ruleset made its file.
+rewrites, so that a recipe can say which version of which ruleset made it.
 
-**Ingestion** is taking a source file in and preparing it for the library. The **source file** is
-the file ingested; its **origin** is where it came from — a disc, a download, a recording, a file
-already on hand. When the tool that produced the source file reports on the origin, that report is
-the **origin scan**. A ruleset is written for source files of any origin; some facts, and the
-extraction policy, speak only to what an origin offers, and are absent or have no effect for one
-that offers nothing of the kind. Today the one kind of origin scan is MakeMKV's scan of the disc
-title a file was read from.
+**Ingestion** is taking a source in and preparing it for the library. A **source** is a file as it
+physically is, registered with the input spec its producer describes it by
+([sources](../sources/spec.md), [input-specs](../input-specs/spec.md)); a **binding** says which
+entry of the library is made from which segments of which sources ([bindings](../bindings/spec.md));
+applying a ruleset to a binding makes a recipe for each of the ruleset's outputs
+([recipes](../recipes/spec.md)). A ruleset is written for sources from anywhere — a disc, a
+download, a recording, a file already on hand; some facts, and the extraction policy, speak only to
+what a producer observed or can do, and are absent or have no effect where it observed or can do
+nothing of the kind.
 
 This spec is the whole of what a ruleset can say and how it is kept: the document, every element
 and attribute, every fact a rule may test and the values it takes, every operator and action, how
 rules are chosen between, what is refused, and how a silo stores rulesets. How facts are
-discovered from a file, and what resolving a ruleset produces, are [recipes](../recipes/spec.md);
+derived, and what applying a ruleset produces, are [recipes](../recipes/spec.md);
 how a recipe becomes an `ffmpeg` invocation is [encoding](../encoding/spec.md); the routes that
 read and store rulesets are [read-api](../read-api/spec.md). This spec covers the ruleset parts of
 `Sources/SiloKit` and `Sources/SiloStore/RulesetStore.swift`.

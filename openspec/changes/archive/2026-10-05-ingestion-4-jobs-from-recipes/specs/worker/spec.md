@@ -17,7 +17,8 @@ recorded duration, never above 1.
 - **THEN** the output is `<job id>.mkv` in the work folder, made by the recipe's own arguments
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, which
-asserts the `<job id>.mkv` name). The not-ready arm is pinned by nothing yet.
+asserts the `<job id>.mkv` name; `aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`, for
+the concat input). The not-ready arm is pinned by nothing yet.
 
 ## ADDED Requirements
 
@@ -32,4 +33,4 @@ segments of one source SHALL be reached once.
 - **WHEN** a node claims a job of two segments, holding the first's source and not the second's
 - **THEN** it opens the first in place and fetches the second into the work folder
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`). Reaching two segments of one source once is pinned by nothing yet.

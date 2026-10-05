@@ -13,8 +13,9 @@ import Wire
 import FoundationNetworking
 #endif
 
-/// The job's states and every transition between them, in one place, with the store as the only
-/// thing it writes. The controllers translate; the embedded node calls this directly.
+/// The job's states and every transition between them, in one place, with the job store as the
+/// only thing it writes but for the one recipe a job commits. The controllers translate; the
+/// embedded node calls this directly.
 @Singleton
 package struct JobService: Sendable, JobsAPI {
     package static let leaseLength: TimeInterval = 120
@@ -22,15 +23,19 @@ package struct JobService: Sendable, JobsAPI {
 
     private let config: SiloConfig
     private let jobs: JobStore
-    private let rulesets: RulesetStore
+    private let sources: SourceStore
+    private let bindings: BindingStore
+    private let recipes: RecipeStore
     private let index: Index
     private let logger = Logger(label: "silo.jobs")
 
     @Inject
-    package init(config: SiloConfig, jobs: JobStore, rulesets: RulesetStore, index: Index) {
+    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, index: Index) {
         self.config = config
         self.jobs = jobs
-        self.rulesets = rulesets
+        self.sources = sources
+        self.bindings = bindings
+        self.recipes = recipes
         self.index = index
     }
 
@@ -47,76 +52,33 @@ package struct JobService: Sendable, JobsAPI {
         return job
     }
 
-    // MARK: - The tool's side
+    // MARK: - The operator's side
 
-    package func register(source: FileRef, discName: String?, probe: ProbedSource?, makeMKV: MakeMKVFacts?) throws -> Job {
-        let job = Job(source: source, discName: discName, probe: probe, makeMKV: makeMKV)
+    /// A job from a draft recipe: the recipe is committed, so one recipe is run by one job, and the
+    /// job is pending. Refused while any source of the recipe's binding has no copy, since no node
+    /// could fetch it; the recipe then stays a draft.
+    package func make(from id: String) throws -> Job {
+        guard let recipe = recipes.recipe(id) else { throw NoSuchRecipe() }
+        guard recipe.state == .draft else { throw CommittedRecipe(reason: "recipe \(id) is committed; a job has been made from it") }
+        guard let binding = bindings.binding(recipe.binding) else { throw Unrunnable(reason: "recipe \(id)'s binding \(recipe.binding) is gone") }
+        for segment in binding.segments where sources.source(segment.source)?.copies.isEmpty ?? true {
+            throw Unrunnable(reason: "source \(segment.source) has no copy; no node could fetch it")
+        }
+        do {
+            _ = try recipes.commit(id)
+        } catch let error as RecipeStoreError {
+            throw CommittedRecipe(reason: error.description)
+        }
+        let job = Job(recipe: id, requirements: recipe.recipe.encoders.sorted())
         try jobs.insert(job)
-        logger.info("registered \(job.id) from \(source.holder)")
+        logger.info("made \(job.id) from recipe \(id), needs \(job.requirements)")
         return job
-    }
-
-    /// The assignment lands: facts are merged, the recipe resolved, and the job is pending. A
-    /// stream no rule decides is refused here, with the stream, while the disc is in the drive.
-    package func assign(_ id: String, _ assignment: Assignment) throws -> Job {
-        guard let current = jobs.job(id) else { throw NoSuchJob() }
-        guard [.unassigned, .pending, .failed].contains(current.state) else { throw WrongState(current.state, "cannot be assigned") }
-        guard let probe = current.probe else { throw BadAssignment(reason: "the job carries no probe of its source; the tool must send what ffprobe saw") }
-        guard config.library(assignment.library) != nil else { throw BadAssignment(reason: "no library \(assignment.library)") }
-        guard let ruleset = try rulesets.ruleset(named: assignment.ruleset, version: assignment.rulesetVersion) else {
-            throw BadAssignment(reason: "no ruleset \(assignment.ruleset)\(assignment.rulesetVersion.map { "@\($0)" } ?? "")")
-        }
-        let lineage: [SmdKit.Container]
-        do {
-            lineage = try assignment.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
-        } catch {
-            throw BadAssignment(reason: "a container document cannot be read: \(error.localizedDescription)")
-        }
-        guard let target = lineage.last else { throw BadAssignment(reason: "an assignment needs the item's container") }
-        let entries = target.sequences.flatMap(\.items) + target.extras
-        guard let entry = entries.first(where: { $0.id == assignment.item }) else {
-            throw BadAssignment(reason: "\(target.displayTitle) has no item \(assignment.item)")
-        }
-        var roles: [Int: AudioRole] = [:]
-        for track in assignment.tracks {
-            guard let feature = target.features.first(where: { $0.id == track.feature }) else {
-                throw BadAssignment(reason: "\(target.displayTitle) has no feature \(track.feature)")
-            }
-            if let audio = track.audio {
-                roles[audio] = switch feature.type {
-                case .commentary: .commentary
-                case .isolatedMusic: .isolatedMusic
-                default: .other
-                }
-            }
-        }
-        let facts = SourceFacts(probe: probe, makeMKV: current.makeMKV, roles: roles, kind: entry.type, profile: assignment.profile)
-        let recipe: Recipe
-        do {
-            recipe = try RecipeResolver.resolve(facts, with: ruleset, mappings: assignment.tracks)
-        } catch let error as ResolutionError {
-            throw Unresolvable(reason: error.description)
-        }
-        var stored = assignment
-        stored.rulesetVersion = ruleset.version
-        let updated = try jobs.update(id) { job in
-            job.assignment = stored
-            job.facts = facts
-            job.recipe = recipe
-            job.requirements = recipe.encoders.sorted()
-            job.state = .pending
-            job.failure = nil
-            job.lease = nil
-            job.progress = nil
-        }
-        logger.info("assigned \(id): \(recipe.decisions.count) streams, needs \(recipe.encoders.sorted())")
-        return updated!
     }
 
     package func cancel(_ id: String) throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
         switch current.state {
-        case .unassigned, .pending, .encoded, .failed:
+        case .pending, .encoded, .failed:
             return try jobs.update(id) { $0.state = .cancelled; $0.lease = nil }!
         case .claimed, .encoding:
             // The node learns at its next progress report and stops; its fail report finalises.
@@ -130,7 +92,7 @@ package struct JobService: Sendable, JobsAPI {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
         guard [.failed, .cancelled].contains(current.state) else { throw WrongState(current.state, "cannot be retried") }
         return try jobs.update(id) { job in
-            job.state = job.recipe == nil ? .unassigned : .pending
+            job.state = .pending
             job.attempts.removeAll()
             job.failure = nil
             job.lease = nil
@@ -142,16 +104,22 @@ package struct JobService: Sendable, JobsAPI {
 
     // MARK: - JobsAPI, the node's side
 
-    /// The first pending job the node can do, preferring one whose source it already holds, leased
-    /// to it. Lapsed leases are reclaimed first, so a job a vanished node held is offered again.
-    package func claim(node: String, capabilities: Set<String>) async throws -> Job? {
+    /// The first pending job the node can do, preferring one of whose every source it holds a copy,
+    /// leased to it, with what the node needs to run it. Lapsed leases are reclaimed first, so a job a
+    /// vanished node held is offered again.
+    package func claim(node: String, capabilities: Set<String>) async throws -> Claim? {
         try reclaimLapsed()
-        return try jobs.updateFirst(
+        // Which jobs the node holds every source of, worked out before the job store's lock is taken.
+        let held = Set(jobs.all().filter { $0.state == .pending }.filter { job in
+            guard let sources = self.sources(of: job), !sources.isEmpty else { return false }
+            return sources.allSatisfy { source in source.copies.contains { $0.holder == node } }
+        }.map(\.id))
+        let leased = try jobs.updateFirst(
             where: { $0.state == .pending && Set($0.requirements).isSubset(of: capabilities) },
             sortedBy: { a, b in
-                let aLocal = a.source.holder == node
-                let bLocal = b.source.holder == node
-                return aLocal != bLocal ? aLocal : a.createdAt < b.createdAt
+                let aHeld = held.contains(a.id)
+                let bHeld = held.contains(b.id)
+                return aHeld != bHeld ? aHeld : a.createdAt < b.createdAt
             }
         ) { job in
             job.state = .claimed
@@ -159,6 +127,35 @@ package struct JobService: Sendable, JobsAPI {
             job.attempts.append(Attempt(node: node))
             job.progress = nil
         }
+        return leased.map { claim(of: $0, by: node) }
+    }
+
+    /// A leased job with its committed recipe and each of its binding's segments: one copy of the
+    /// segment's source, the claimant's own first, and the segment's span in seconds. A job whose
+    /// recipe, binding or copies have gone is handed over without its recipe, which the node fails.
+    private func claim(of job: Job, by node: String) -> Claim {
+        let unrunnable = Claim(job: job, recipe: nil, segments: [])
+        guard let recipe = recipes.recipe(job.recipe), let binding = bindings.binding(recipe.binding) else { return unrunnable }
+        var held: [String: Source] = [:]
+        for segment in binding.segments {
+            if let source = sources.source(segment.source) { held[source.id] = source }
+        }
+        guard let joined = try? JoinedMedia(binding.segments, specs: held.mapValues(\.input)) else { return unrunnable }
+        var segments: [ClaimedSegment] = []
+        for timed in joined.segments {
+            let copies = held[timed.source]?.copies ?? []
+            guard let copy = copies.first(where: { $0.holder == node }) ?? copies.first else { return unrunnable }
+            segments.append(timed.isWhole
+                ? ClaimedSegment(source: timed.source, copy: copy)
+                : ClaimedSegment(source: timed.source, copy: copy, start: timed.start, end: timed.end))
+        }
+        return Claim(job: job, recipe: recipe, segments: segments)
+    }
+
+    /// The sources a job's recipe's binding is made from, or nil when the recipe or binding has gone.
+    private func sources(of job: Job) -> [Source]? {
+        guard let recipe = recipes.recipe(job.recipe), let binding = bindings.binding(recipe.binding) else { return nil }
+        return binding.segments.compactMap { sources.source($0.source) }
     }
 
     package func report(_ id: String, progress: JobProgress) async throws -> JobState {
@@ -241,13 +238,16 @@ package struct JobService: Sendable, JobsAPI {
     // MARK: - Placement
 
     /// Fetches the output from the node that holds it into the library's own filesystem, places
-    /// it as the assignment says, and re-scans so the index learns of it.
+    /// it as the recipe's binding says, in the profile of the recipe's output, and re-scans so the
+    /// index learns of it.
     package func place(_ id: String) async throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
-        guard current.state == .encoded, let output = current.output, let assignment = current.assignment else {
+        guard current.state == .encoded, let output = current.output, let stored = recipes.recipe(current.recipe),
+            let binding = bindings.binding(stored.binding)
+        else {
             throw WrongState(current.state, "cannot be placed")
         }
-        guard let library = config.library(assignment.library) else { throw NoSuchLibrary() }
+        guard let library = config.library(binding.library) else { throw NoSuchLibrary() }
         _ = try jobs.update(id) { $0.state = .placing }
 
         do {
@@ -261,14 +261,14 @@ package struct JobService: Sendable, JobsAPI {
             } else {
                 try await Self.fetch(output, to: staged)
             }
-            let lineage = try assignment.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
-            var presentation = Presentation(alternative: assignment.alternative, profile: assignment.profile, file: "")
-            presentation.tracks = current.recipe?.tracks(for: assignment.tracks) ?? assignment.tracks
-            presentation.chapters = assignment.chapters
-            presentation.source = assignment.source
+            let lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
+            var presentation = Presentation(alternative: binding.alternative, profile: stored.recipe.output.profile, file: "")
+            presentation.tracks = stored.recipe.tracks(for: binding.tracks)
+            presentation.chapters = binding.chapters
+            presentation.source = binding.source
             let placement: Placement
             do {
-                placement = try Placer.compute(PlacementRequest(library: library.root, lineage: lineage, item: assignment.item, presentation: presentation, source: staged))
+                placement = try Placer.compute(PlacementRequest(library: library.root, lineage: lineage, item: binding.item, presentation: presentation, source: staged))
             } catch let error as PlacementError {
                 throw PlacementRefusedError(reason: error.localizedDescription)
             }
@@ -313,7 +313,8 @@ package struct WrongState: Error, CustomStringConvertible {
     }
     package var description: String { "a \(state.rawValue) job \(what)" }
 }
-package struct BadAssignment: Error {
+/// A recipe no job can be made from: a source of its binding that no node holds, or its binding gone.
+package struct Unrunnable: Error {
     package var reason: String
 }
 package struct PlacementRefusedError: Error, LocalizedError {

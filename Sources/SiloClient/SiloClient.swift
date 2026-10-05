@@ -3,12 +3,13 @@
 
 import Foundation
 import SiloKit
+import SmdSidecar
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
 
-/// The silo's API from a client's side: the ingestion tool registering a rip, a node claiming
-/// work, the operator's command line. Hand-written over SiloKit's own types rather than generated,
+/// The silo's API from a client's side: a producer registering sources, binding them and making
+/// jobs of their recipes, a node claiming work, the operator's command line. Hand-written over SiloKit's own types rather than generated,
 /// so that a client needs nothing but Foundation.
 public struct SiloClient: Sendable, JobsAPI {
     public let baseURL: URL
@@ -21,24 +22,132 @@ public struct SiloClient: Sendable, JobsAPI {
         self.session = session
     }
 
-    // MARK: - Jobs
+    // MARK: - Sources
 
-    public struct NewJob: Hashable, Sendable, Codable {
-        public var source: FileRef
-        public var discName: String?
-        public var probe: ProbedSource?
-        public var makeMKV: MakeMKVFacts?
+    /// A source as the silo renders it: each copy without the secret that guards its file.
+    public struct SourceRecord: Hashable, Sendable, Codable {
+        public var id: String
+        public var input: InputSpec
+        public var key: NaturalKey?
+        public var copies: [Copy]
+        public var createdAt: Date
 
-        public init(source: FileRef, discName: String? = nil, probe: ProbedSource? = nil, makeMKV: MakeMKVFacts? = nil) {
-            self.source = source
-            self.discName = discName
-            self.probe = probe
-            self.makeMKV = makeMKV
+        public struct Copy: Hashable, Sendable, Codable {
+            public var holder: String
+            public var url: URL
+            public var path: String?
+            public var sizeBytes: Int64?
         }
     }
 
-    public func createJob(_ job: NewJob) async throws -> Job {
-        try await send("POST", "/v1/jobs", body: job)
+    public struct NewSource: Hashable, Sendable, Codable {
+        public var input: InputSpec
+        public var key: NaturalKey?
+        public var copy: FileRef?
+
+        public init(input: InputSpec, key: NaturalKey? = nil, copy: FileRef? = nil) {
+            self.input = input
+            self.key = key
+            self.copy = copy
+        }
+    }
+
+    /// Registers a source, or answers the one its natural key already names, taking the copy given.
+    public func registerSource(_ source: NewSource) async throws -> SourceRecord {
+        try await send("POST", "/v1/sources", body: source)
+    }
+
+    public func sources() async throws -> [SourceRecord] {
+        try await send("GET", "/v1/sources")
+    }
+
+    public func source(_ id: String) async throws -> SourceRecord {
+        try await send("GET", "/v1/sources/\(id)")
+    }
+
+    public func addCopy(_ copy: FileRef, to source: String) async throws -> SourceRecord {
+        try await send("POST", "/v1/sources/\(source)/copies", body: copy)
+    }
+
+    public func removeCopy(on node: String, from source: String) async throws -> SourceRecord {
+        try await send("DELETE", "/v1/sources/\(source)/copies/\(node)")
+    }
+
+    // MARK: - Bindings and recipes
+
+    /// A binding as a producer sends it, before the silo has given it an id.
+    public struct NewBinding: Hashable, Sendable, Codable {
+        public var library: String
+        public var containers: [String]
+        public var item: String
+        public var alternative: String?
+        public var tracks: [TrackMapping]
+        public var chapters: [Chapter]
+        public var source: SourceRef?
+        public var segments: [Binding.Segment]
+
+        public init(
+            library: String, containers: [String], item: String, alternative: String? = nil, tracks: [TrackMapping] = [],
+            chapters: [Chapter] = [], source: SourceRef? = nil, segments: [Binding.Segment]
+        ) {
+            self.library = library
+            self.containers = containers
+            self.item = item
+            self.alternative = alternative
+            self.tracks = tracks
+            self.chapters = chapters
+            self.source = source
+            self.segments = segments
+        }
+    }
+
+    /// A binding as the silo renders it, with the ids of its recipes, oldest first.
+    public struct BindingRecord: Hashable, Sendable, Decodable {
+        public var binding: Binding
+        public var recipes: [String]
+
+        private enum CodingKeys: String, CodingKey { case recipes }
+
+        public init(from decoder: any Decoder) throws {
+            binding = try Binding(from: decoder)
+            recipes = try decoder.container(keyedBy: CodingKeys.self).decode([String].self, forKey: .recipes)
+        }
+    }
+
+    public func makeBinding(_ binding: NewBinding) async throws -> BindingRecord {
+        try await send("POST", "/v1/bindings", body: binding)
+    }
+
+    public func binding(_ id: String) async throws -> BindingRecord {
+        try await send("GET", "/v1/bindings/\(id)")
+    }
+
+    /// Applies a ruleset to a binding, making a draft recipe for each output the application names.
+    public func apply(_ application: Application, to binding: String) async throws -> [StoredRecipe] {
+        try await send("POST", "/v1/bindings/\(binding)/recipes", body: application)
+    }
+
+    public func recipe(_ id: String) async throws -> StoredRecipe {
+        try await send("GET", "/v1/recipes/\(id)")
+    }
+
+    /// Replaces a draft's adjustments; none gives back what the rules decided.
+    public func adjust(_ recipe: String, _ adjustments: [Adjustment]) async throws -> StoredRecipe {
+        try await send("PUT", "/v1/recipes/\(recipe)/adjustments", body: adjustments)
+    }
+
+    public func discard(_ recipe: String) async throws {
+        let (data, status) = try await request("DELETE", "/v1/recipes/\(recipe)", body: Nothing?.none)
+        guard (200..<300).contains(status) else { throw SiloClientError.status(status, String(decoding: data, as: UTF8.self)) }
+    }
+
+    // MARK: - Jobs
+
+    struct NewJob: Codable { var recipe: String }
+
+    /// A job from a draft recipe, which it commits.
+    public func createJob(recipe: String) async throws -> Job {
+        try await send("POST", "/v1/jobs", body: NewJob(recipe: recipe))
     }
 
     public func jobs(state: JobState? = nil) async throws -> [Job] {
@@ -47,10 +156,6 @@ public struct SiloClient: Sendable, JobsAPI {
 
     public func job(_ id: String) async throws -> Job {
         try await send("GET", "/v1/jobs/\(id)")
-    }
-
-    public func assign(_ id: String, _ assignment: Assignment) async throws -> Job {
-        try await send("PUT", "/v1/jobs/\(id)/assignment", body: assignment)
     }
 
     public func cancel(_ id: String) async throws -> Job {
@@ -72,11 +177,15 @@ public struct SiloClient: Sendable, JobsAPI {
     struct CompleteRequest: Codable { var output: FileRef; var result: EncodeResult }
     struct FailRequest: Codable { var reason: String }
 
-    struct ClaimReply: Codable { var job: Job? }
+    struct ClaimReply: Codable {
+        var job: Job?
+        var recipe: StoredRecipe?
+        var segments: [ClaimedSegment]?
+    }
 
-    public func claim(node: String, capabilities: Set<String>) async throws -> Job? {
+    public func claim(node: String, capabilities: Set<String>) async throws -> Claim? {
         let reply: ClaimReply = try await send("POST", "/v1/jobs/claim", body: ClaimRequest(node: node, capabilities: capabilities.sorted()))
-        return reply.job
+        return reply.job.map { Claim(job: $0, recipe: reply.recipe, segments: reply.segments ?? []) }
     }
 
     public func report(_ job: String, progress: JobProgress) async throws -> JobState {

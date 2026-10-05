@@ -10,7 +10,7 @@ public enum RecipeResolver {
     /// scope whose conditions all hold decides. A stream no rule decides is an error naming the
     /// stream and its facts, never a silent copy.
     ///
-    /// `mappings` is the assignment's feature map, used only to warn when a mapped stream is
+    /// `mappings` is the binding's feature map, used only to warn when a mapped stream is
     /// dropped; the renumbered map is `recipe.tracks(for:)`.
     public static func resolve(_ facts: SourceFacts, with ruleset: Ruleset, mappings: [TrackMapping] = []) throws(ResolutionError) -> Recipe {
         var decisions: [StreamDecision] = []

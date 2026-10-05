@@ -6,8 +6,9 @@
 ## Purpose
 
 The worker is the node's work loop, run until it is stopped: claim a job — the silo preferring
-one whose source the claiming node already holds — open the source locally or fetch it from its
-holder by range, encode it as the recipe says, probe the output, check its layout against the
+one of whose every source the claiming node holds a copy — open each of its segments' sources
+locally or fetch it from its holder by range, encode the segments as the recipe says, as one concat
+input when there are several or a span of one, probe the output, check its layout against the
 recipe (a mismatch fails the job), keep the silo posted — every progress report renews the lease,
 so progress doubles as heartbeat, and a cancellation rides back in the answer — report completion
 with where the output is, and serve the output so the silo can fetch it at placement. One worker
@@ -119,18 +120,21 @@ SHALL be fetched not at all, and a finished fetch SHALL be checked against it, f
 Pinned by: `Tests/SiloTests/FileServerTests.swift` (`aPublishedFileIsFetchedByRangeWithItsSecretAndByNothingElse`).
 
 ### Requirement: The recipe becomes one encode in the work folder
-A claimed job with no recipe or no merged facts SHALL fail at once, with
+A claimed job whose answer carries no recipe SHALL fail at once, with
 `job <id> has no recipe to run`. Otherwise the worker SHALL clear any stale output and encode the
-source to `<job id>.<the recipe's output extension>` in the work folder, run with the one
-argument list the recipe spells for that input and output; ffmpeg's own progress SHALL become the
-job's progress, the fraction the seconds done over the source's recorded duration, never above 1.
+job's segments — one whole segment as its file, several or a span as one concat input, as
+[encoding](../encoding/spec.md) describes — to `<job id>.<the recipe's output extension>` in the
+work folder, run with the one argument list the recipe spells for that input and output; ffmpeg's
+own progress SHALL become the job's progress, the fraction the seconds done over the recipe's
+recorded duration, never above 1.
 
 #### Scenario: the recipe decides the output
 - **WHEN** a pending job whose recipe produces an `mkv` is run
 - **THEN** the output is `<job id>.mkv` in the work folder, made by the recipe's own arguments
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, which
-asserts the `<job id>.mkv` name). The not-ready arm is pinned by nothing yet.
+asserts the `<job id>.mkv` name; `aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`, for
+the concat input). The not-ready arm is pinned by nothing yet.
 
 ### Requirement: Progress doubles as heartbeat, and the answer carries the cancel
 While an encode runs the worker SHALL report the latest progress every progress interval — five
@@ -196,3 +200,16 @@ permitted, so the ingestion tool links it as easily as the node does.
 - **THEN** the client throws `the silo answered 401`, and the loop logs it and polls again
 
 Pinned by: nothing yet.
+
+### Requirement: Each of a job's segments is opened where it is or fetched
+For each segment the claim hands it, the worker SHALL reach the segment's copy as the requirements
+above describe for a source: opened in place when the copy names this node as its holder with a
+local path, or is a `file://` URL; otherwise fetched by range into the work folder, as
+`<job id>.<n>.source.<ext>` for the segment at position `n` from one, resuming by offset. Two
+segments of one source SHALL be reached once.
+
+#### Scenario: two segments, one held and one fetched
+- **WHEN** a node claims a job of two segments, holding the first's source and not the second's
+- **THEN** it opens the first in place and fetches the second into the work folder
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput`). Reaching two segments of one source once is pinned by nothing yet.

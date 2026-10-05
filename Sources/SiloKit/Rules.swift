@@ -8,7 +8,7 @@ import Foundation
 /// `Silo.md`, *Encoding rules*.
 public struct Ruleset: Hashable, Sendable, Codable {
     public var name: String
-    /// Assigned by the silo when the ruleset is stored; nil in a file that has not been. A job
+    /// Assigned by the silo when the ruleset is stored; nil in a file that has not been. A recipe
     /// names the version it resolved against, and a version is immutable once stored.
     public var version: Int?
     public var extraction: ExtractionPolicy

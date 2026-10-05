@@ -53,6 +53,21 @@ struct ArgumentsTests {
         #expect(recipe.tracks(for: [TrackMapping(feature: "commentary1", audio: 3)]) == [TrackMapping(feature: "commentary1", audio: 2)])
     }
 
+    @Test func severalSegmentsOrASpanAreOneConcatInput() throws {
+        let recipe = try RecipeResolver.resolve(Self.episode, with: Self.household)
+        let list = URL(fileURLWithPath: "/work/j.concat")
+        let concat = recipe.ffmpegArguments(input: .concat(list: list), output: URL(fileURLWithPath: "/out/Part One.mkv"))
+        let file = recipe.ffmpegArguments(input: URL(fileURLWithPath: "/in/t00.mkv"), output: URL(fileURLWithPath: "/out/Part One.mkv"))
+        #expect(Array(concat[8..<14]) == ["-f", "concat", "-safe", "0", "-i", "/work/j.concat"], "given in place of -i <input>")
+        #expect(Array(concat[14...]) == Array(file[10...]), "and the rest as for one file, so the stream indices are the joined media's")
+
+        // An episode out of a play-all title, then a film across two discs, one of them oddly named.
+        #expect(ConcatList([ConcatList.Piece(file: URL(fileURLWithPath: "/rips/title.mkv"), inpoint: 1497.6, outpoint: 2995.2)]).text
+            == "ffconcat version 1.0\nfile '/rips/title.mkv'\ninpoint 1497.6\noutpoint 2995.2\n")
+        #expect(ConcatList([ConcatList.Piece(file: URL(fileURLWithPath: "/rips/disc1.mkv")), ConcatList.Piece(file: URL(fileURLWithPath: "/rips/Joe's disc2.mkv"))]).text
+            == "ffconcat version 1.0\nfile '/rips/disc1.mkv'\nfile '/rips/Joe'\\''s disc2.mkv'\n")
+    }
+
     @Test func aReencodedVideoCarriesItsFilters() throws {
         let facts = SourceFacts(kind: .featurette, video: VideoFacts(absoluteIndex: 0, codec: "mpeg2video", width: 352, height: 288, interlaced: true))
         let recipe = try RecipeResolver.resolve(facts, with: Self.household)
