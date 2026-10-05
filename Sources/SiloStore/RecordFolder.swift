@@ -7,7 +7,9 @@ import Synchronization
 /// Records as the silo keeps most of its state: one JSON file each in a folder, read once at start
 /// and held in memory, every change written whole and atomically, every read-modify-write under one
 /// lock. The shape the job and source stores already have, shared here by the stores that are
-/// nothing more than it.
+/// nothing more than it. It is the class — the one instance that owns the `Mutex`, which cannot be
+/// copied — so the stores built on it need not be: they are structs, and a copy of one holds the
+/// same folder.
 final class RecordFolder<Record: Codable & Sendable>: Sendable {
     let folder: URL
     private let id: @Sendable (Record) -> String

@@ -6,7 +6,7 @@ import SiloKit
 
 /// Bindings as the silo keeps them: one JSON file each under `<state>/bindings`. A binding is never
 /// changed once made, so the store adds and reads and does nothing else.
-public final class BindingStore: Sendable {
+public struct BindingStore: Sendable {
     private let folder: RecordFolder<Binding>
 
     public init(folder: URL) throws {
@@ -25,7 +25,7 @@ public final class BindingStore: Sendable {
 
 /// Recipes as the silo keeps them: one JSON file each under `<state>/recipes`. A draft's
 /// adjustments change and a draft may be discarded; a committed recipe is refused both.
-public final class RecipeStore: Sendable {
+public struct RecipeStore: Sendable {
     private let folder: RecordFolder<StoredRecipe>
 
     public init(folder: URL) throws {
