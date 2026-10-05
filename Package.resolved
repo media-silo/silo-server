@@ -1,5 +1,5 @@
 {
-  "originHash" : "9cd1a5b69c996048c60c17901e8e3a0165625ab5937c7e9f73fb0ca26bc2f6d5",
+  "originHash" : "6e758e813e8d70c02236573700d38d7e84f18c5f9354d9bb32bdfc944f4e8a1d",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -294,7 +294,7 @@
       "location" : "https://github.com/swift-wire/wire-mvc.git",
       "state" : {
         "branch" : "main",
-        "revision" : "1227d3249002bab6c2fb1f00ceb247b75a68ac6f"
+        "revision" : "abae22105076270043fd53b6aafe0f6677bde2d9"
       }
     },
     {
