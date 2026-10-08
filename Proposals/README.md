@@ -33,8 +33,10 @@ deltas in `openspec/changes/`, as that README describes.
   the recipes a binding resolves to, one for each output the ruleset declares, which the producer
   may adjust before they are committed; and the job, which only runs a committed recipe.
 - [Layered rulesets](LayeredRulesets.md) — the rules that decide an entry come in layers, nearest
-  first: a container's own rules in its `.smd`, then its ancestors', then the ruleset applied, which
-  is the library's standard unless an application names another. A ruleset has branches, applied to
-  the bindings the operator chooses and promoted to be the standard. Each recipe records exactly
-  which rules made it, and the silo reports which placed presentations the current rules would make
-  differently, and whether their bindings' sources can be had.
+  first: a binding's own rules, where a person's decision about one entry lives, then each
+  container's, kept as versioned files beside its `.smd`, then the ruleset applied, which is the
+  library's standard unless an application names another. A ruleset has branches, applied to the
+  bindings the operator chooses and promoted to be the standard. Each placed presentation's `.smd`
+  records its binding and every set of rules that made it, and the silo checks in the background
+  which placed presentations the current rules would make differently, and whether their bindings'
+  sources can be had.

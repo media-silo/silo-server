@@ -1,12 +1,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 the media-silo project authors -->
 
-# Layered rulesets, step 2: Branches
+# Layered rulesets, step 3: Branches
 
 ## Why
 A trial set of rules is a branch of a ruleset's standard, applied to the bindings the operator
 chooses, and promoted to be the standard by a fast-forward that never loses what the standard
-gained. Step 2 of three. Proposal: [Layered rulesets](../../../Proposals/LayeredRulesets.md).
+gained. Step 3 of four. Proposal: [Layered rulesets](../../../Proposals/LayeredRulesets.md).
 
 ## What Changes
 - Versions record their branch and parent; numbers stay one sequence per ruleset.
