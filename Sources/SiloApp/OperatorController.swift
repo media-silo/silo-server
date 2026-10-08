@@ -13,8 +13,8 @@ import Wire
 import WireMVC
 import WireOpenAPI
 
-/// The operations that change the silo: a scan, and storing a ruleset. Grouped here so that one
-/// middleware on the controller is the whole of the operator gate.
+/// The operations that change the silo: a scan, a placement, a library's standard, and storing a
+/// ruleset. Grouped here so that one middleware on the controller is the whole of the operator gate.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 @Middleware(RouteMiddleware.requireOperator)
@@ -22,12 +22,32 @@ package struct OperatorController {
     private let config: SiloConfig
     private let index: Index
     private let store: RulesetStore
+    private let settings: SettingsStore
 
     @Inject
-    package init(config: SiloConfig, index: Index, store: RulesetStore) {
+    package init(config: SiloConfig, index: Index, store: RulesetStore, settings: SettingsStore) {
         self.config = config
         self.index = index
         self.store = store
+        self.settings = settings
+    }
+
+    /// Names the library's standard, or clears it: written through to `settings.json` at once, so
+    /// the next application that names no ruleset takes it.
+    @Operation
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    @ErrorResponse(NoSuchRuleset.self, .notFound)
+    package func setLibraryRuleset(@Path library: String, @JSONBody body: Components.Schemas.LibraryRuleset) async throws -> Components.Schemas.Library {
+        guard config.library(library) != nil else { throw NoSuchLibrary() }
+        if let name = body.ruleset {
+            guard try store.latestVersion(of: name) != nil else { throw NoSuchRuleset() }
+        }
+        let updated = try settings.update { settings in
+            guard let position = settings.libraries.firstIndex(where: { $0.id == library }) else { return }
+            settings.libraries[position].ruleset = body.ruleset
+        }
+        let ruleset = updated.libraries.first { $0.id == library }?.ruleset
+        return Components.Schemas.Library(id: library, ruleset: ruleset, containers: try LibraryCounts(index: index).containers(in: library), presentations: try LibraryCounts(index: index).presentations(in: library))
     }
 
     @Operation
@@ -53,7 +73,6 @@ package struct OperatorController {
         var presentation = Presentation(alternative: body.alternative, profile: body.profile, file: "")
         presentation.tracks = (body.tracks ?? []).map { TrackMapping(feature: $0.feature, audio: $0.audio, subtitle: $0.subtitle) }
         presentation.chapters = (body.chapters ?? []).map { Chapter(index: $0.index, title: $0.title) }
-        presentation.source = body.source.map { SourceRef(disc: $0.disc, playlist: $0.playlist) }
         let request = PlacementRequest(library: library.root, lineage: lineage, item: body.item, presentation: presentation, source: URL(fileURLWithPath: body.file))
         let placement: Placement
         do {

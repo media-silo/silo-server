@@ -84,7 +84,7 @@ struct Encode: AsyncParsableCommand {
         for index in descriptive { roles[index] = .descriptive }
         for index in music { roles[index] = .isolatedMusic; mappings.append(TrackMapping(feature: "music", audio: index)) }
 
-        let facts = SourceFacts(input: spec, roles: roles, kind: kind.map(EntryType.init(rawValue:)), profile: made.profile)
+        let facts = SourceFacts(input: spec, roles: roles, kind: kind.flatMap(EntryType.init(rawValue:)), profile: made.profile)
 
         let recipe: Recipe
         do {

@@ -28,4 +28,4 @@ ruleset reader refuses, naming the refusal.
   folder
 - **THEN** the walk reports an error on that sidecar, `rules version 5 is not there`
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`theWalkReportsAContainersRulesThatCannotBeRead`).

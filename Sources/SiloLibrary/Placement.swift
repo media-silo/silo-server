@@ -91,7 +91,7 @@ public enum Placer {
             }
         }
         let entries = target.sequences.flatMap(\.items).map { ($0, false) } + target.extras.map { ($0, true) }
-        guard let (entry, isExtra) = entries.first(where: { $0.0.id == request.item }) else {
+        guard let (entry, isExtra) = entries.first(where: { $0.0.id?.value == request.item }) else {
             throw PlacementError.unknownItem(request.item, in: target.id)
         }
 

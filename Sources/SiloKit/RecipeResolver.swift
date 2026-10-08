@@ -10,24 +10,29 @@ public enum RecipeResolver {
     /// scope whose conditions all hold decides. A stream no rule decides is an error naming the
     /// stream and its facts, never a silent copy.
     ///
+    /// `layers` are the stack above the ruleset, nearest first: each is tried, layer by layer, before
+    /// the ruleset's own rules, and the first rule that matches anywhere decides. The outputs are
+    /// the ruleset's alone.
+    ///
     /// `mappings` is the binding's feature map, used only to warn when a mapped stream is
     /// dropped; the renumbered map is `recipe.tracks(for:)`.
-    public static func resolve(_ facts: SourceFacts, with ruleset: Ruleset, mappings: [TrackMapping] = []) throws(ResolutionError) -> Recipe {
+    public static func resolve(_ facts: SourceFacts, with ruleset: Ruleset, layers: [RulesLayer] = [], mappings: [TrackMapping] = []) throws(ResolutionError) -> Recipe {
         var decisions: [StreamDecision] = []
+        let stack = layers.map { (DecisionLayer.layer($0.subject), $0.rules) } + [(DecisionLayer.ruleset(ruleset.name), ruleset.rules)]
 
         if let video = facts.video {
-            decisions.append(try decide(.video, index: 1, absoluteIndex: video.absoluteIndex, selector: .video, facts: facts, ruleset: ruleset))
+            decisions.append(try decide(.video, index: 1, absoluteIndex: video.absoluteIndex, selector: .video, facts: facts, stack: stack))
         }
         for audio in facts.audio {
-            decisions.append(try decide(.audio, index: audio.index, absoluteIndex: audio.absoluteIndex, selector: .audio(audio.index), facts: facts, ruleset: ruleset))
+            decisions.append(try decide(.audio, index: audio.index, absoluteIndex: audio.absoluteIndex, selector: .audio(audio.index), facts: facts, stack: stack))
         }
         for subtitle in facts.subtitles {
-            decisions.append(try decide(.subtitle, index: subtitle.index, absoluteIndex: subtitle.absoluteIndex, selector: .subtitle(subtitle.index), facts: facts, ruleset: ruleset))
+            decisions.append(try decide(.subtitle, index: subtitle.index, absoluteIndex: subtitle.absoluteIndex, selector: .subtitle(subtitle.index), facts: facts, stack: stack))
         }
 
         let layout = OutputLayout(keeping: decisions)
         return Recipe(
-            ruleset: RulesetRef(ruleset), decisions: decisions, output: ruleset.output(for: facts.profile), layout: layout,
+            ruleset: RulesetRef(ruleset), layers: layers.map(\.reference), decisions: decisions, output: ruleset.output(for: facts.profile), layout: layout,
             warnings: warnings(layout: layout, mappings: mappings, hasVideo: facts.video != nil)
         )
     }
@@ -53,17 +58,21 @@ public enum RecipeResolver {
 
     private static func decide(
         _ kind: StreamKind, index: Int, absoluteIndex: Int, selector: StreamSelector,
-        facts: SourceFacts, ruleset: Ruleset
+        facts: SourceFacts, stack: [(DecisionLayer, [Rule])]
     ) throws(ResolutionError) -> StreamDecision {
         let scope: Scope = switch kind {
         case .video: .video
         case .audio: .audio
         case .subtitle: .subtitle
         }
-        for (position, rule) in ruleset.rules(in: scope) {
-            let holds = rule.conditions.allSatisfy { $0.holds(facts.value($0.fact, for: selector)) }
-            if holds {
-                return StreamDecision(kind: kind, sourceIndex: index, sourceAbsoluteIndex: absoluteIndex, rule: rule.id ?? "#\(position)", action: rule.action)
+        for (layer, rules) in stack {
+            // A rule is named by its position among its own layer's rules of every scope, as a
+            // ruleset's are.
+            for (position, rule) in rules.enumerated() where rule.scope == scope {
+                let holds = rule.conditions.allSatisfy { $0.holds(facts.value($0.fact, for: selector)) }
+                if holds {
+                    return StreamDecision(kind: kind, sourceIndex: index, sourceAbsoluteIndex: absoluteIndex, rule: rule.id ?? "#\(position + 1)", layer: layer, action: rule.action)
+                }
             }
         }
         throw ResolutionError(kind: kind, sourceIndex: index, facts: describe(selector, in: facts))

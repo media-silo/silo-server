@@ -68,7 +68,7 @@ package struct RulesetController {
         let mappings: [TrackMapping] = try Mapping.transcode(body.mappings ?? [])
         return try ruleset.outputs.map { output in
             let facts = SourceFacts(
-                input: joined.spec, roles: roles, kind: body.kind.map(EntryType.init(rawValue:)),
+                input: joined.spec, roles: roles, kind: body.kind.flatMap(EntryType.init(rawValue:)),
                 profile: output.profile, duration: joined.duration
             )
             do {

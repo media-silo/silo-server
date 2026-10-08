@@ -178,6 +178,37 @@ public enum RulesetFile {
         return Ruleset(name: name, version: version, extraction: extraction, rules: rules, outputs: outputs)
     }
 
+    /// A version of a container's or a binding's rules: one root `<rules>` of rule elements, read as
+    /// a ruleset's are, and nothing else — no extraction and no outputs, which are a library's
+    /// ruleset's alone. Refused whole, as a ruleset is.
+    public static func layerRules(from data: Data) throws -> [Rule] {
+        let parser = XMLParser(data: data)
+        let parsed = parser.parse()
+        if let error = parser.parserError {
+            throw RulesetFileError.malformed(error.localizedDescription)
+        }
+        guard parsed, !data.isEmpty else { throw RulesetFileError.malformed("not well-formed XML") }
+        let document: XMLDocument
+        do {
+            document = try XMLDocument(data: data, options: [])
+        } catch {
+            throw RulesetFileError.malformed(error.localizedDescription)
+        }
+        guard let root = document.rootElement(), root.name == "rules" else {
+            throw RulesetFileError.notLayerRules
+        }
+        var rules: [Rule] = []
+        for case let element as XMLElement in root.children ?? [] {
+            switch element.name {
+            case "video", "audio", "subtitle":
+                rules.append(try rule(from: element, scope: Scope(rawValue: element.name!)!))
+            default:
+                throw RulesetFileError.notALayerElement(element.name ?? "?")
+            }
+        }
+        return rules
+    }
+
     private static func rule(from element: XMLElement, scope: Scope) throws -> Rule {
         let id = element.attribute("id")
         let label = id ?? scope.rawValue
@@ -280,6 +311,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
     case noAction(rule: String)
     case multipleActions(rule: String)
     case outputMadeTwice(profile: String?)
+    case notLayerRules
+    case notALayerElement(String)
 
     public var description: String {
         switch self {
@@ -297,6 +330,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
         case .multipleActions(let rule): "rule \(rule) has more than one action"
         case .outputMadeTwice(let profile?): "the profile \(profile) is made twice"
         case .outputMadeTwice(nil): "the unqualified output is made twice"
+        case .notLayerRules: "the document is not rooted at <rules>"
+        case .notALayerElement(let name): "<\(name)> is not an element of a container's or a binding's rules"
         }
     }
 }

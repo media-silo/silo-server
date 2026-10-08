@@ -67,7 +67,7 @@ no language tag — is **absent**. What an input spec holds is specified in
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`,
 `aRulesetSurvivesTheFile`), `Tests/SiloKitTests/FactsTests.swift`
-(`losslessIsAFunctionOfCodecAndProfile`), `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`). A stream by its index is pinned by nothing yet.
+(`losslessIsAFunctionOfCodecAndProfile`), `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`), `Tests/SiloKitTests/LayerTests.swift` (`aRulePicksOneStreamByItsIndex`).
 
 ## ADDED Requirements
 
@@ -88,7 +88,7 @@ SHALL stand ahead of the layers of the containers above it.
 - **WHEN** a container's version in force holds an `<output container="mp4"/>` element
 - **THEN** it is refused, saying `<output>` is not an element of a container's rules
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloKitTests/LayerTests.swift` (`aLayersRulesAreReadAsARulesetsAndNothingElse`), `Tests/SiloTests/StackTests.swift` (`anApplicationResolvesThroughTheLineagesRulesInForce`).
 
 ### Requirement: An entry's rules are a stack of layers, nearest first
 The rules that decide an entry SHALL be a stack of layers: every layer the entry has, nearest first,
@@ -115,4 +115,4 @@ the extraction policy SHALL be the applied ruleset's alone.
 - **THEN** every audio stream of every item below it is copied, and no audio rule of the ruleset
   applied decides any of them
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloKitTests/LayerTests.swift` (`aContainersRuleSpeaksFirstAndTheRestFallThrough`, `theNearerContainerWins`, `aConditionlessContainerRuleEndsItsScope`).

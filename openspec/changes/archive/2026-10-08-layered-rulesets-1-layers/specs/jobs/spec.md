@@ -27,4 +27,4 @@ writes made. Any failure along the way SHALL return the job to `encoded` with th
   answers its presentation id (and the media route serves it by range), the serial's sidecar names
   the binding and the recipe's ruleset version on the presentation, and a second place is 409
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, for the `- mobile` naming and the file moved out of the work folder). The presentation's provenance is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, for the `- mobile` naming and the file moved out of the work folder). `Tests/SiloTests/StackTests.swift` (`aPlacedPresentationRecordsItsBindingAndTheRulesThatMadeIt`, for the presentation's provenance).

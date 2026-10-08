@@ -10,29 +10,29 @@ import Testing
 
 struct IndexTests {
     static let series: Container = {
-        var series = Container(id: ContainerID("0000000000000001")!, type: .series, title: "Doctor Who", year: 1963, yearInTitle: true, externalRefs: [ExternalRef(provider: .tvdb, value: "76107")])
-        series.sequences = [Sequence(id: "seasons", items: [Entry(id: "s13", type: .container, container: season.id)])]
+        var series = Container(id: ContainerID("0000000000000001")!, type: .series, title: Title("Doctor Who")!, year: 1963, yearInTitle: true, externalRefs: [ExternalRef(provider: .tvdb, value: "76107")])
+        series.sequences = [Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s13")!, container: season.id))])]
         return series
     }()
     static let season: Container = {
-        var season = Container(id: ContainerID("0000000000000002")!, type: .season, title: "Season 13")
-        season.sequences = [Sequence(id: "stories", items: [Entry(id: "pyramids", type: .container, container: serial.id)])]
+        var season = Container(id: ContainerID("0000000000000002")!, type: .season, title: Title("Season 13")!)
+        season.sequences = [Sequence(id: "stories", items: [.child(Entry.Child(id: ItemID("pyramids")!, container: serial.id))])]
         return season
     }()
     static let serial: Container = {
-        var serial = Container(id: ContainerID("0000000000000003")!, type: .serial, typeLabel: "Story", title: "Pyramids of Mars")
+        var serial = Container(id: ContainerID("0000000000000003")!, type: .serial, typeLabel: "Story", title: Title("Pyramids of Mars")!)
         serial.alternatives = [Alternative(id: "broadcast", sequence: "parts", title: "Broadcast version")]
         serial.defaultAlternative = "broadcast"
         serial.sequences = [Sequence(id: "parts", items: [
-            Entry(id: "part1", type: .episode, title: "Part One", externalRefs: [ExternalRef(provider: .tvdb, value: "1")]),
-            Entry(id: "part2", type: .episode, title: "Part Two"),
+            .leaf(Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One", externalRefs: [ExternalRef(provider: .tvdb, value: "1")])),
+            .leaf(Entry.Leaf(id: ItemID("part2")!, type: .episode, title: "Part Two")),
         ])]
-        serial.extras = [Entry(id: "now-and-then", type: .featurette, title: "Now and Then")]
+        serial.extras = [.leaf(Entry.Leaf(id: ItemID("now-and-then")!, type: .featurette, title: "Now and Then"))]
         return serial
     }()
     static let unlisted: Container = {
-        var behind = Container(id: ContainerID("0000000000000004")!, type: .series, title: "Behind the Sofa", listed: false)
-        behind.sequences = [Sequence(id: "all", items: [Entry(id: "ep1", type: .episode, title: "Pyramids of Mars")])]
+        var behind = Container(id: ContainerID("0000000000000004")!, type: .series, title: Title("Behind the Sofa")!, listed: false)
+        behind.sequences = [Sequence(id: "all", items: [.leaf(Entry.Leaf(id: ItemID("ep1")!, type: .episode, title: "Pyramids of Mars"))])]
         return behind
     }()
 
@@ -70,11 +70,11 @@ struct IndexTests {
         #expect(try index.roots().map(\.displayTitle) == ["Doctor Who (1963)"])
         #expect(try index.roots(listedOnly: false).map(\.displayTitle) == ["Behind the Sofa", "Doctor Who (1963)"])
         let serial = try #require(try index.container(Self.serial.id))
-        #expect(serial.parent == Self.season.id.rawValue)
+        #expect(serial.parent == Self.season.id.value)
         #expect(serial.folder == "Doctor Who (1963)/Season 13/Pyramids of Mars")
         #expect(serial.typeLabel == "Story")
         #expect(try index.sidecar(Self.serial.id)?.container == Self.serial)
-        #expect(try index.children(of: Self.series.id).map(\.id) == [Self.season.id.rawValue])
+        #expect(try index.children(of: Self.series.id).map(\.id) == [Self.season.id.value])
         #expect(try index.items(of: Self.serial.id).map(\.id) == ["part1", "part2", "now-and-then"])
         #expect(try index.items(of: Self.serial.id).map(\.isExtra) == [false, false, true])
 
@@ -88,8 +88,8 @@ struct IndexTests {
         #expect(try index.presentation(mobile.id) == mobile)
         #expect(mobile.id == IndexedPresentation.id(library: "main", path: mobile.path))
 
-        #expect(try index.lookup(provider: .tvdb, value: "76107").map(\.id) == [Self.series.id.rawValue])
-        #expect(try index.lookup(provider: .tvdb, value: "1").map(\.id) == [Self.serial.id.rawValue], "an item's reference names its container")
+        #expect(try index.lookup(provider: .tvdb, value: "76107").map(\.id) == [Self.series.id.value])
+        #expect(try index.lookup(provider: .tvdb, value: "1").map(\.id) == [Self.serial.id.value], "an item's reference names its container")
         #expect(try index.search("pyramids").map { "\($0.container)/\($0.item ?? "-")" } == ["0000000000000003/-", "0000000000000004/ep1"])
         #expect(try index.search("part").map(\.title) == ["Part One", "Part Two"])
     }

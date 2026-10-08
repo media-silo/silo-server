@@ -10,6 +10,9 @@ import SmdSidecar
 /// `Silo.md`, *Recipes*.
 public struct Recipe: Hashable, Sendable, Codable {
     public var ruleset: RulesetRef
+    /// The layers above the ruleset it was resolved through, nearest first, each with the version
+    /// and digest that find its rules again. The stack is these, then the ruleset.
+    public var layers: [RecipeLayer]
     /// In source order: the video stream, then each audio stream, then each subtitle stream.
     public var decisions: [StreamDecision]
     public var output: OutputPolicy
@@ -19,8 +22,9 @@ public struct Recipe: Hashable, Sendable, Codable {
     /// is a reasonable thing to make.
     public var warnings: [String]
 
-    public init(ruleset: RulesetRef, decisions: [StreamDecision], output: OutputPolicy, layout: OutputLayout, warnings: [String] = []) {
+    public init(ruleset: RulesetRef, layers: [RecipeLayer] = [], decisions: [StreamDecision], output: OutputPolicy, layout: OutputLayout, warnings: [String] = []) {
         self.ruleset = ruleset
+        self.layers = layers
         self.decisions = decisions
         self.output = output
         self.layout = layout
@@ -88,17 +92,20 @@ public struct StreamDecision: Hashable, Sendable, Codable {
     /// From one, among source streams of the kind.
     public var sourceIndex: Int
     public var sourceAbsoluteIndex: Int
-    /// The rule's id, or its position in the ruleset as `#n` when it has none.
+    /// The rule's id, or its position among its layer's rules as `#n` when it has none.
     public var rule: String
+    /// The layer the rule came from; the resolver always sets it.
+    public var layer: DecisionLayer?
     public var action: Action
     /// When a person adjusted the stream: the action the rule chose, and why it was replaced.
     public var adjusted: Adjusted?
 
-    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, rule: String, action: Action, adjusted: Adjusted? = nil) {
+    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, rule: String, layer: DecisionLayer? = nil, action: Action, adjusted: Adjusted? = nil) {
         self.kind = kind
         self.sourceIndex = sourceIndex
         self.sourceAbsoluteIndex = sourceAbsoluteIndex
         self.rule = rule
+        self.layer = layer
         self.action = action
         self.adjusted = adjusted
     }

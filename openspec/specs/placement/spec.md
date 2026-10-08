@@ -132,12 +132,13 @@ The command SHALL take the library folder, a clone of the data repository the co
 read from, the container by id — refusing anything that is not sixteen lowercase hexadecimal
 characters with `<value> is not a container id: sixteen lowercase hex characters` — the item by id,
 an optional alternative and profile, repeatable `--track feature=audio:N[,subtitle:M]` and
-`--chapter N=title`, an optional `--source disc=playlist`, a `--copy` flag, a `--dry-run` flag, and
+`--chapter N=title`, a `--copy` flag, a `--dry-run` flag, and
 the finished file as its argument. It SHALL walk parents up from the named container to build the
 lineage, compute the placement, print the declared writes and every finding, exit with failure
 when the placement is inapplicable, make no writes on `--dry-run`, and otherwise apply the
 placement and print `placed as <file>`. The writes are shown first, so the dry run differs from a
-real run only in that nothing moves.
+real run only in that nothing moves. A file placed this way records no provenance: it was made
+by no binding and no rules the silo knows.
 
 #### Scenario: the dry run shows the writes and makes none
 - **WHEN** `silo-ctl place --library ~/Library --repository ~/data --container 0123456789abcdef --item part1 --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv` is run
@@ -152,8 +153,8 @@ operator controller, behind the operator's bearer token: a request without an
 a library the silo does not serve SHALL be refused 404. The request body SHALL be a JSON
 `PlaceRequest`: `containers` — the container the item is in and every container above it, root
 first, each as its repository XML document — `item`, and the `file` as a path the silo can
-reach, all required; `alternative`, `profile`, `tracks`, `chapters`, `source`, `copy` and
-`dryRun` optional. A container document that cannot be read, a lineage that does not hold
+reach, all required; `alternative`, `profile`, `tracks`, `chapters`, `copy` and `dryRun`
+optional; a presentation placed this way records no provenance. A container document that cannot be read, a lineage that does not hold
 together, or an item the container does not have SHALL be refused 400 with a problem detail,
 and no placement SHALL be computed over them.
 

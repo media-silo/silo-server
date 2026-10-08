@@ -39,16 +39,17 @@ enum Mapping {
         let byItem = Dictionary(grouping: presentations, by: \.item)
         func items(_ entries: [Entry]) -> [Components.Schemas.Item] {
             entries.map { entry in
-                let listed = (entry.id.flatMap { byItem[$0] } ?? []).filter { profile == nil || $0.profile == profile }
-                let described = entry.id.flatMap { sidecar.presentations[$0] } ?? []
+                let id = entry.id?.value
+                let listed = (id.flatMap { byItem[$0] } ?? []).filter { profile == nil || $0.profile == profile }
+                let described = id.flatMap { sidecar.presentations[$0] } ?? []
                 return Components.Schemas.Item(
-                    id: entry.id,
-                    _type: entry.type?.rawValue,
+                    id: id,
+                    _type: entry.type?.rawValue ?? (entry.childContainer != nil ? "container" : nil),
                     title: entry.title,
                     outline: entry.outline,
                     optional: entry.optional,
-                    container: entry.container?.rawValue,
-                    ref: entry.ref.map { ref in ref.container.map { "\($0.rawValue)#\(ref.item)" } ?? ref.item },
+                    container: entry.childContainer?.value,
+                    ref: entry.reference.map { ref in ref.container.map { "\($0.value)#\(ref.item.value)" } ?? ref.item.value },
                     externalRefs: entry.externalRefs.map { Components.Schemas.ExternalRef(provider: $0.provider.rawValue, value: $0.value) },
                     presentations: listed.compactMap { indexed in
                         guard let presentation = described.first(where: { $0.file == indexed.file }) else { return nil }
@@ -58,7 +59,8 @@ enum Mapping {
                             profile: presentation.profile,
                             displayName: sidecar.displayName(of: presentation),
                             file: presentation.file,
-                            source: presentation.source.map { Components.Schemas.SourceRef(disc: $0.disc, playlist: $0.playlist) },
+                            source: presentation.source.map(Self.source),
+                            transform: presentation.transform.map(Self.transform),
                             tracks: presentation.tracks.map { Components.Schemas.TrackMapping(feature: $0.feature, audio: $0.audio, subtitle: $0.subtitle) },
                             chapters: presentation.chapters.map { Components.Schemas.Chapter(index: $0.index, title: $0.title) }
                         )
@@ -89,6 +91,23 @@ enum Mapping {
             children: children.map(summary),
             externalRefs: container.externalRefs.map { Components.Schemas.ExternalRef(provider: $0.provider.rawValue, value: $0.value) }
         )
+    }
+
+    /// Where a presentation came from, as its sidecar records it.
+    static func source(_ source: PresentationSource) -> Components.Schemas.PresentationSource {
+        Components.Schemas.PresentationSource(binding: source.binding, segments: source.segments.map { segment in
+            .init(scheme: segment.key?.scheme, value: segment.key?.value, from: segment.chapters?.from, to: segment.chapters?.to)
+        })
+    }
+
+    /// How a presentation was made, as its sidecar records it.
+    static func transform(_ transform: Transform) -> Components.Schemas.Transform {
+        Components.Schemas.Transform(ruleset: transform.ruleset, version: transform.version, layers: transform.layers.map { layer in
+            switch layer.subject {
+            case .binding(let id): .init(binding: id, version: layer.version, digest: layer.digest)
+            case .container(let id): .init(container: id.value, version: layer.version, digest: layer.digest)
+            }
+        })
     }
 
     static func finding(_ finding: SiloLibrary.Finding) -> Components.Schemas.Finding {

@@ -15,7 +15,7 @@ public enum Validator {
 
         var seen: Set<String> = []
         for entry in container.sequences.flatMap(\.items) + container.extras {
-            guard let id = entry.id else { continue }
+            guard let id = entry.id?.value else { continue }
             if !seen.insert(id).inserted {
                 findings.append(Finding(.error, "item id \(id) is used twice"))
             }
@@ -35,7 +35,7 @@ public enum Validator {
         let features = Set(container.features.map(\.id))
         let items = Dictionary(container.sequences.flatMap(\.items).map { ($0, false) } + container.extras.map { ($0, true) }, uniquingKeysWith: { first, _ in first })
             .reduce(into: [String: (entry: Entry, isExtra: Bool)]()) { result, pair in
-                if let id = pair.key.id { result[id] = (pair.key, pair.value) }
+                if let id = pair.key.id?.value { result[id] = (pair.key, pair.value) }
             }
 
         for (id, presentations) in sidecar.presentations.sorted(by: { $0.key < $1.key }) {

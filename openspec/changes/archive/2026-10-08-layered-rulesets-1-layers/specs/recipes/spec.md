@@ -60,7 +60,7 @@ is the same operation again. `GET /v1/recipes/{id}` SHALL answer one recipe, wit
   and a ruleset is applied to the binding
 - **THEN** the answer is 422 naming the container, and nothing is stored
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, `aBindingOrAnApplicationThatCannotBeMadeKeepsNothing`). Applying a newer version of a ruleset to a binding that holds a committed recipe, the library's standard, and container rules are pinned by nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, `aBindingOrAnApplicationThatCannotBeMadeKeepsNothing`). `Tests/SiloTests/StackTests.swift` (`anApplicationResolvesThroughTheLineagesRulesInForce`, `aContainersRulesThatCannotBeReadRefuseTheApplication`, `anApplicationNamingNoRulesetTakesTheLibrarysStandard`). Applying a newer version of a ruleset to a binding that holds a committed recipe is pinned by nothing yet.
 
 ## ADDED Requirements
 
@@ -76,7 +76,7 @@ rules.
 - **THEN** the video's decision names rule `#1` of the layer named by the container's id, and the
   audio's names rule `lossless-main` of the layer `household`
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloKitTests/LayerTests.swift` (`aContainersRuleSpeaksFirstAndTheRestFallThrough`, `theNearerContainerWins`).
 
 ### Requirement: A recipe records the stack it was resolved through
 A recipe SHALL record its stack, nearest first: for each layer above the ruleset, whose it is — a
@@ -91,4 +91,4 @@ force has moved on.
 - **THEN** the recipe still names version 4 and its digest, and version 4's file still holds the rules
   the recipe was resolved through
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloKitTests/LayerTests.swift` (`aStackIsSpeltInJSONAsTheSidecarSpellsIt`), `Tests/SiloTests/StackTests.swift` (`anApplicationResolvesThroughTheLineagesRulesInForce`, for a layer outliving its version in force).
