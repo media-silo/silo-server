@@ -16,21 +16,24 @@ import WireOpenAPI
 package struct LibraryController {
     private let config: SiloConfig
     private let index: Index
+    private let settings: SettingsStore
 
     @Inject
-    package init(config: SiloConfig, index: Index) {
+    package init(config: SiloConfig, index: Index, settings: SettingsStore) {
         self.config = config
         self.index = index
+        self.settings = settings
     }
 
     @Operation
     package func listLibraries() async throws -> [Components.Schemas.Library] {
-        try config.libraries.map { library in
-            let rows = try index.roots(in: library.id, listedOnly: false)
-            let presentations = try rows.reduce(0) { total, root in
-                total + (try countPresentations(under: root.containerID))
-            }
-            return Components.Schemas.Library(id: library.id, containers: try countContainers(under: rows.map(\.containerID)), presentations: presentations)
+        let counts = LibraryCounts(index: index)
+        let standards = Dictionary(settings.current.libraries.map { ($0.id, $0.ruleset) }, uniquingKeysWith: { first, _ in first })
+        return try config.libraries.map { library in
+            Components.Schemas.Library(
+                id: library.id, ruleset: standards[library.id] ?? nil,
+                containers: try counts.containers(in: library.id), presentations: try counts.presentations(in: library.id)
+            )
         }
     }
 
@@ -63,9 +66,15 @@ package struct LibraryController {
         try index.search(q).map { Components.Schemas.SearchHit(container: $0.container, item: $0.item, title: $0.title) }
     }
 
-    private func countContainers(under roots: [ContainerID]) throws -> Int {
+}
+
+/// What a library holds, counted down from its roots through the index.
+struct LibraryCounts {
+    let index: Index
+
+    func containers(in library: String) throws -> Int {
         var total = 0
-        var pending = roots
+        var pending = try index.roots(in: library, listedOnly: false).map(\.containerID)
         while let next = pending.popLast() {
             total += 1
             pending += try index.children(of: next).map(\.containerID)
@@ -73,9 +82,9 @@ package struct LibraryController {
         return total
     }
 
-    private func countPresentations(under root: ContainerID) throws -> Int {
+    func presentations(in library: String) throws -> Int {
         var total = 0
-        var pending = [root]
+        var pending = try index.roots(in: library, listedOnly: false).map(\.containerID)
         while let next = pending.popLast() {
             total += try index.presentations(of: next).count
             pending += try index.children(of: next).map(\.containerID)

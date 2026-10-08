@@ -27,7 +27,9 @@ download, a recording, a file already on hand; some facts, and the extraction po
 what a producer observed or can do, and are absent or have no effect where it observed or can do
 nothing of the kind.
 
-This spec is the whole of what a ruleset can say and how it is kept: the document, every element
+A container's rules, kept as versioned files beside its `.smd`, are written in the same language
+and stacked ahead of the ruleset applied, nearest first; the first rule that matches anywhere in the
+stack decides. This spec is the whole of what a ruleset can say and how it is kept: the document, every element
 and attribute, every fact a rule may test and the values it takes, every operator and action, how
 rules are chosen between, what is refused, and how a silo stores rulesets. How facts are
 derived, and what applying a ruleset produces, are [recipes](../recipes/spec.md);
@@ -217,6 +219,7 @@ scope, where it describes the stream being decided.
 | `video.interlaced` | video | flag | whether the stream is interlaced | the input spec |
 | `video.hdr` | video | text | `hdr10` or `hlg`; absent for SDR video | derived from the input spec's transfer characteristic |
 | `video.bitDepth` | video | number | bits per sample, such as `8` or `10` | the input spec |
+| `audio.index` | audio | number | the stream's place from one among the joined media's audio streams, as `<track>` and the feature map count it | the input spec's order |
 | `audio.codec` | audio | text | the codec as `ffmpeg` names it: `truehd`, `dts`, `ac3`, `eac3`, `aac`, `flac`, `pcm_s24le`, … | the input spec |
 | `audio.lossless` | audio | flag | whether the stream is lossless: TrueHD, MLP, FLAC, ALAC, WavPack, TTA, APE, any PCM, and DTS-HD Master Audio | derived from the codec and its profile |
 | `audio.channels` | audio | number | channel count, such as `2` or `6` | the input spec |
@@ -225,6 +228,7 @@ scope, where it describes the stream being decided.
 | `audio.region` | audio | text | the region, such as `GB`, `BR` or `419`; absent when the tag names none | the region subtag of the input spec's language tag |
 | `audio.role` | audio | text | what the stream is for: `main`, `commentary`, `isolatedMusic`, `descriptive` or `other` | derived from the binding's feature map, then the input spec's marks |
 | `audio.core` | audio | flag | whether the stream is the lossy core extracted from inside a lossless track | derived from the input spec's `coreOf` |
+| `subtitle.index` | subtitle | number | as `audio.index`, among the subtitle streams | as `audio.index` |
 | `subtitle.codec` | subtitle | text | the codec as `ffmpeg` names it: `hdmv_pgs_subtitle`, `dvd_subtitle`, `subrip`, … | the input spec |
 | `subtitle.language` | subtitle | text | as `audio.language` | as `audio.language` |
 | `subtitle.script` | subtitle | text | as `audio.script` | as `audio.script` |
@@ -253,9 +257,14 @@ no language tag — is **absent**. What an input spec holds is specified in
   `<when fact="audio.region" is="419"/>`, and a source has audio tagged `es-419` and `es-ES`
 - **THEN** the rule holds for the first stream and not the second
 
+#### Scenario: one stream by its index
+- **WHEN** an `<audio>` rule carries `<when fact="audio.index" is="2"/>`, and an entry has three audio
+  streams
+- **THEN** the rule holds for the second audio stream and for no other
+
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`,
 `aRulesetSurvivesTheFile`), `Tests/SiloKitTests/FactsTests.swift`
-(`losslessIsAFunctionOfCodecAndProfile`), `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`).
+(`losslessIsAFunctionOfCodecAndProfile`), `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`), `Tests/SiloKitTests/LayerTests.swift` (`aRulePicksOneStreamByItsIndex`).
 
 ### Requirement: A condition applies exactly one of seven operators
 A `<when>` SHALL carry exactly one operator attribute besides `fact`:
@@ -503,3 +512,49 @@ each scope, last; and output `mkv`.
   `#4`, `#5` and `#6`
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`theExampleFileIsTheProposalsRules`).
+
+### Requirement: A container's rules are a layer written in the ruleset language
+The version files a container's `<rules>` names, as [library](../library/spec.md) describes, SHALL
+each hold one root `<rules>` element of rule elements — `<video>`, `<audio>` and `<subtitle>` — read
+exactly as the rules of a ruleset are read, and nothing else: an `<extraction>`, `<output>` or any
+other element SHALL be refused as not an element of a container's rules. A version is refused whole,
+as a ruleset is, and its unnamed rules are named `#n` by their position among its rules. A version
+file once written SHALL NOT be edited by the silo: a change is the next version. A container's layer
+SHALL stand ahead of the layers of the containers above it.
+
+#### Scenario: a container's rules read as a ruleset's
+- **WHEN** a container's version in force holds `<video id="keep"><when fact="kind" ne="episode"/><copy/></video>`
+- **THEN** it reads as one video rule named `keep`
+
+#### Scenario: no outputs in a container's rules
+- **WHEN** a container's version in force holds an `<output container="mp4"/>` element
+- **THEN** it is refused, saying `<output>` is not an element of a container's rules
+
+Pinned by: `Tests/SiloKitTests/LayerTests.swift` (`aLayersRulesAreReadAsARulesetsAndNothingElse`), `Tests/SiloTests/StackTests.swift` (`anApplicationResolvesThroughTheLineagesRulesInForce`).
+
+### Requirement: An entry's rules are a stack of layers, nearest first
+The rules that decide an entry SHALL be a stack of layers: every layer the entry has, nearest first,
+as the requirements on each kind of layer place them, and last the ruleset applied, at the version
+resolved. A container with no sidecar, or whose sidecar has no `<rules>`, contributes no layer. For
+each stream, the rules of the stream's scope SHALL be tried layer by layer, and within a layer in
+document order; the first that matches decides, and no later rule in any layer is consulted. Every
+output SHALL be resolved through the same stack, with `profile` set to its profile. The outputs and
+the extraction policy SHALL be the applied ruleset's alone.
+
+#### Scenario: a container's rule speaks first
+- **WHEN** the ruleset applied encodes every lossless audio stream as FLAC, the item's container has
+  one rule copying lossless audio, and the entry has one lossless audio stream and one lossy one
+- **THEN** the lossless stream is copied by the container's rule, and the lossy stream falls
+  through to the ruleset's rules
+
+#### Scenario: the nearer container wins
+- **WHEN** a serial's rules copy commentaries, the series holding it has rules dropping them, and an
+  episode of the serial has a commentary
+- **THEN** the commentary is copied by the serial's rule
+
+#### Scenario: a condition-less container rule ends its scope
+- **WHEN** a container's rules hold `<audio><copy/></audio>`
+- **THEN** every audio stream of every item below it is copied, and no audio rule of the ruleset
+  applied decides any of them
+
+Pinned by: `Tests/SiloKitTests/LayerTests.swift` (`aContainersRuleSpeaksFirstAndTheRestFallThrough`, `theNearerContainerWins`, `aConditionlessContainerRuleEndsItsScope`).

@@ -23,12 +23,13 @@ Documentation: [README](../../../README.md).
 `POST /v1/bindings`, behind the operator's token, SHALL take a binding: the library, the item's
 container lineage as repository documents, the item, and its optional alternative; the feature map,
 mapping the last container's features to streams by kind and index from one among streams of the
-kind; the chapter names the presentation will carry; an optional source reference for the sidecar
-to record; and one or more segments, each a source's id and optionally a span of its chapters,
+kind; the chapter names the presentation will carry; and one or more segments, each a source's id and optionally a span of its chapters,
 `from` and `to` inclusive. A binding SHALL name no ruleset: applying one is its own operation, as
 [recipes](../recipes/spec.md) describes, and making a binding SHALL resolve nothing. The silo SHALL
-mint the binding's id, keep the binding as one JSON file under its state directory, and never change
-a binding once made.
+mint the binding's id, a lowercased UUID that is also the binding's id in the shared store should it
+be contributed, keep the binding as one JSON file under its state directory, and never change
+a binding once made. What the sidecar records of where a presentation came from is derived
+from the binding — its id and its segments' sources' natural keys — and never given beside it.
 
 #### Scenario: an episode out of a play-all title
 - **WHEN** the operator binds part two of a serial to chapter 2 of a source whose chapters are its

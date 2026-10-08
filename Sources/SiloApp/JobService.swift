@@ -265,7 +265,8 @@ package struct JobService: Sendable, JobsAPI {
             var presentation = Presentation(alternative: binding.alternative, profile: stored.recipe.output.profile, file: "")
             presentation.tracks = stored.recipe.tracks(for: binding.tracks)
             presentation.chapters = binding.chapters
-            presentation.source = binding.source
+            presentation.source = provenanceSource(of: binding)
+            presentation.transform = Self.transform(of: stored.recipe)
             let placement: Placement
             do {
                 placement = try Placer.compute(PlacementRequest(library: library.root, lineage: lineage, item: binding.item, presentation: presentation, source: staged))
@@ -289,6 +290,31 @@ package struct JobService: Sendable, JobsAPI {
             }
             throw error
         }
+    }
+
+    /// Where a placed presentation came from, as its sidecar records it: the binding, by id, with a
+    /// copy of its segments, each its source's natural key when it has one and its chapter span.
+    private func provenanceSource(of binding: Binding) -> PresentationSource {
+        PresentationSource(binding: binding.id, segments: binding.segments.map { segment in
+            PresentationSource.Segment(
+                key: sources.source(segment.source)?.key.map { SmdSidecar.NaturalKey(scheme: $0.scheme, value: $0.value) },
+                chapters: segment.chapters.map { SmdSidecar.ChapterSpan(from: $0.from, to: $0.to) }
+            )
+        })
+    }
+
+    /// How a placed presentation was made, as its sidecar records it: the recipe's stack — its
+    /// layers, nearest first, then the ruleset. Nil for a recipe whose ruleset was never stored, and
+    /// so has no version to name.
+    private static func transform(of recipe: Recipe) -> Transform? {
+        guard let version = recipe.ruleset.version else { return nil }
+        return Transform(ruleset: recipe.ruleset.name, version: version, layers: recipe.layers.compactMap { layer in
+            let subject: Transform.Layer.Subject? = switch layer.subject {
+            case .binding(let id): .binding(id)
+            case .container(let id): ContainerID(id).map(Transform.Layer.Subject.container)
+            }
+            return subject.map { Transform.Layer($0, version: layer.version, digest: layer.digest) }
+        })
     }
 
     private static func fetch(_ file: FileRef, to destination: URL) async throws {

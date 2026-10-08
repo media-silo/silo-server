@@ -28,7 +28,7 @@ public struct SiloClient: Sendable, JobsAPI {
     public struct SourceRecord: Hashable, Sendable, Codable {
         public var id: String
         public var input: InputSpec
-        public var key: NaturalKey?
+        public var key: SiloKit.NaturalKey?
         public var copies: [Copy]
         public var createdAt: Date
 
@@ -42,10 +42,10 @@ public struct SiloClient: Sendable, JobsAPI {
 
     public struct NewSource: Hashable, Sendable, Codable {
         public var input: InputSpec
-        public var key: NaturalKey?
+        public var key: SiloKit.NaturalKey?
         public var copy: FileRef?
 
-        public init(input: InputSpec, key: NaturalKey? = nil, copy: FileRef? = nil) {
+        public init(input: InputSpec, key: SiloKit.NaturalKey? = nil, copy: FileRef? = nil) {
             self.input = input
             self.key = key
             self.copy = copy
@@ -83,12 +83,11 @@ public struct SiloClient: Sendable, JobsAPI {
         public var alternative: String?
         public var tracks: [TrackMapping]
         public var chapters: [Chapter]
-        public var source: SourceRef?
         public var segments: [Binding.Segment]
 
         public init(
             library: String, containers: [String], item: String, alternative: String? = nil, tracks: [TrackMapping] = [],
-            chapters: [Chapter] = [], source: SourceRef? = nil, segments: [Binding.Segment]
+            chapters: [Chapter] = [], segments: [Binding.Segment]
         ) {
             self.library = library
             self.containers = containers
@@ -96,7 +95,6 @@ public struct SiloClient: Sendable, JobsAPI {
             self.alternative = alternative
             self.tracks = tracks
             self.chapters = chapters
-            self.source = source
             self.segments = segments
         }
     }

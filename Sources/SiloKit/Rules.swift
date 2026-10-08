@@ -126,6 +126,7 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
     case videoInterlaced = "video.interlaced"
     case videoHDR = "video.hdr"
     case videoBitDepth = "video.bitDepth"
+    case audioIndex = "audio.index"
     case audioCodec = "audio.codec"
     case audioLossless = "audio.lossless"
     case audioChannels = "audio.channels"
@@ -134,6 +135,7 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
     case audioRegion = "audio.region"
     case audioRole = "audio.role"
     case audioCore = "audio.core"
+    case subtitleIndex = "subtitle.index"
     case subtitleCodec = "subtitle.codec"
     case subtitleLanguage = "subtitle.language"
     case subtitleScript = "subtitle.script"
@@ -145,14 +147,14 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
         switch self {
         case .kind, .profile, .format, .duration: nil
         case .videoCodec, .videoWidth, .videoHeight, .videoFrameRate, .videoInterlaced, .videoHDR, .videoBitDepth: .video
-        case .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioScript, .audioRegion, .audioRole, .audioCore: .audio
-        case .subtitleCodec, .subtitleLanguage, .subtitleScript, .subtitleRegion, .subtitleForced: .subtitle
+        case .audioIndex, .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioScript, .audioRegion, .audioRole, .audioCore: .audio
+        case .subtitleIndex, .subtitleCodec, .subtitleLanguage, .subtitleScript, .subtitleRegion, .subtitleForced: .subtitle
         }
     }
 
     public var isNumeric: Bool {
         switch self {
-        case .duration, .videoWidth, .videoHeight, .videoFrameRate, .videoBitDepth, .audioChannels: true
+        case .duration, .videoWidth, .videoHeight, .videoFrameRate, .videoBitDepth, .audioIndex, .audioChannels, .subtitleIndex: true
         default: false
         }
     }
@@ -297,6 +299,7 @@ extension SourceFacts {
         case .videoInterlaced: return video.map { .flag($0.interlaced) } ?? .absent
         case .videoHDR: return video?.hdr.map { .text($0.rawValue) } ?? .absent
         case .videoBitDepth: return video?.bitDepth.map { .number(Double($0)) } ?? .absent
+        case .audioIndex: return audioFacts(stream).map { .number(Double($0.index)) } ?? .absent
         case .audioCodec: return audioFacts(stream).map { .text($0.codec) } ?? .absent
         case .audioLossless: return audioFacts(stream).map { .flag($0.lossless) } ?? .absent
         case .audioChannels: return audioFacts(stream).map { .number(Double($0.channels)) } ?? .absent
@@ -305,6 +308,7 @@ extension SourceFacts {
         case .audioRegion: return audioFacts(stream)?.region.map(FactValue.text) ?? .absent
         case .audioRole: return audioFacts(stream).map { .text($0.role.rawValue) } ?? .absent
         case .audioCore: return audioFacts(stream).map { .flag($0.core) } ?? .absent
+        case .subtitleIndex: return subtitleFacts(stream).map { .number(Double($0.index)) } ?? .absent
         case .subtitleCodec: return subtitleFacts(stream).map { .text($0.codec) } ?? .absent
         case .subtitleLanguage: return subtitleFacts(stream)?.language.map(FactValue.text) ?? .absent
         case .subtitleScript: return subtitleFacts(stream)?.script.map(FactValue.text) ?? .absent

@@ -70,7 +70,11 @@ public final class SettingsStore: Sendable {
             try change(&settings)
             var values = state.values
             values["name"] = .string(settings.name)
-            values["libraries"] = .array(settings.libraries.map { .object(["id": .string($0.id), "path": .string($0.root.path)]) })
+            values["libraries"] = .array(settings.libraries.map { library in
+                var entry: [String: JSONValue] = ["id": .string(library.id), "path": .string(library.root.path)]
+                if let ruleset = library.ruleset { entry["ruleset"] = .string(ruleset) }
+                return .object(entry)
+            })
             values["embeddedNode"] = .bool(settings.embeddedNode)
             values["advertise"] = .bool(settings.advertise)
             if file.path != "/dev/null" {
@@ -89,7 +93,13 @@ public final class SettingsStore: Sendable {
             guard case .object(let library) = entry, case .string(let id)? = library["id"], case .string(let path)? = library["path"], !id.isEmpty, !path.isEmpty else {
                 throw ConfigurationFile.wrongKind("libraries", "a list of libraries, each an id and a path", file)
             }
-            return LibraryConfig(id: id, root: URL(fileURLWithPath: path, isDirectory: true))
+            let ruleset: String?
+            switch library["ruleset"] {
+            case nil, .null?: ruleset = nil
+            case .string(let name)? where !name.isEmpty: ruleset = name
+            default: throw ConfigurationFile.wrongKind("libraries", "a list of libraries, each an id, a path and optionally the name of its ruleset", file)
+            }
+            return LibraryConfig(id: id, root: URL(fileURLWithPath: path, isDirectory: true), ruleset: ruleset)
         }
         return Settings(
             name: try ConfigurationFile.string("name", in: values, file: file),

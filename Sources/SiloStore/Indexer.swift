@@ -10,10 +10,14 @@ import SmdSidecar
 public struct LibraryConfig: Hashable, Sendable, Codable {
     public var id: String
     public var root: URL
+    /// The library's standard: the ruleset an application to one of its bindings takes when it
+    /// names none. Nil for a library with no standard.
+    public var ruleset: String?
 
-    public init(id: String, root: URL) {
+    public init(id: String, root: URL, ruleset: String? = nil) {
         self.id = id
         self.root = root
+        self.ruleset = ruleset
     }
 }
 
@@ -91,7 +95,7 @@ public enum Indexer {
             report.unchanged += 1
             id = container.containerID
             children = Dictionary(uniqueKeysWithValues: try index.children(of: id).map { ($0.containerID, "\($0.folder.dropFirst(folder.count + 1))/\(SidecarFile.fileName)") })
-            if container.parent != parent?.rawValue { try index.setParent(parent, of: id) }
+            if container.parent != parent?.value { try index.setParent(parent, of: id) }
         } else {
             let document: Data
             let sidecar: Sidecar

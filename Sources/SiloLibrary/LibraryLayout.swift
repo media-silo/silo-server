@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloKit
 import SmdKit
 import SmdSidecar
 
@@ -28,7 +29,7 @@ public enum LibraryLayout {
 
     public static func folderName(for container: Container) -> String {
         let name = sanitise(container.displayTitle)
-        return name.isEmpty ? container.id.rawValue : name
+        return name.isEmpty ? container.id.value : name
     }
 
     /// The `smd` path a parent's sidecar records for a child: the child's folder, inside the
@@ -41,7 +42,7 @@ public enum LibraryLayout {
     /// default alternative. The item is its title, or its id when it has none.
     public static func fileName(for item: Entry, displayName: String?, fileExtension: String) -> String {
         var stem = sanitise(item.title ?? "")
-        if stem.isEmpty { stem = item.id ?? "item" }
+        if stem.isEmpty { stem = item.id?.value ?? "item" }
         if let displayName, !sanitise(displayName).isEmpty {
             stem += " - \(sanitise(displayName))"
         }

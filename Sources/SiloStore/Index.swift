@@ -100,7 +100,7 @@ public struct Index: Sendable {
     }
 
     public func container(_ id: ContainerID) throws -> IndexedContainer? {
-        try queue.read { db in try IndexedContainer.fetchOne(db, key: id.rawValue) }
+        try queue.read { db in try IndexedContainer.fetchOne(db, key: id.value) }
     }
 
     /// The container's sidecar, parsed from the bytes the row keeps.
@@ -111,19 +111,19 @@ public struct Index: Sendable {
 
     public func children(of id: ContainerID) throws -> [IndexedContainer] {
         try queue.read { db in
-            try IndexedContainer.filter(Column("parent") == id.rawValue).order(Column("displayTitle")).fetchAll(db)
+            try IndexedContainer.filter(Column("parent") == id.value).order(Column("displayTitle")).fetchAll(db)
         }
     }
 
     public func items(of id: ContainerID) throws -> [IndexedItem] {
         try queue.read { db in
-            try IndexedItem.filter(Column("container") == id.rawValue).order(Column("position")).fetchAll(db)
+            try IndexedItem.filter(Column("container") == id.value).order(Column("position")).fetchAll(db)
         }
     }
 
     public func presentations(of id: ContainerID) throws -> [IndexedPresentation] {
         try queue.read { db in
-            try IndexedPresentation.filter(Column("container") == id.rawValue).order(Column("item"), Column("id")).fetchAll(db)
+            try IndexedPresentation.filter(Column("container") == id.value).order(Column("item"), Column("id")).fetchAll(db)
         }
     }
 
@@ -192,7 +192,7 @@ public struct Index: Sendable {
 
     func setParent(_ parent: ContainerID?, of child: ContainerID) throws {
         try queue.write { db in
-            try db.execute(sql: "UPDATE container SET parent = ? WHERE id = ?", arguments: [parent?.rawValue, child.rawValue])
+            try db.execute(sql: "UPDATE container SET parent = ? WHERE id = ?", arguments: [parent?.value, child.value])
         }
     }
 }
@@ -296,8 +296,8 @@ struct IndexEntry {
     init(sidecar: Sidecar, document: Data, library: String, folder: String, parent: ContainerID?, modified: Date?, size: Int?) {
         let container = sidecar.container
         self.container = IndexedContainer(
-            id: container.id.rawValue, library: library, folder: folder, parent: parent?.rawValue,
-            type: container.type.rawValue, title: container.title, displayTitle: container.displayTitle,
+            id: container.id.value, library: library, folder: folder, parent: parent?.value,
+            type: container.type.rawValue, title: container.title.rawValue, displayTitle: container.displayTitle,
             year: container.year, typeLabel: container.typeLabel, outline: container.outline,
             listed: container.listed, document: document
         )
@@ -305,14 +305,14 @@ struct IndexEntry {
         var position = 0
         for sequence in container.sequences {
             for entry in sequence.items {
-                guard let id = entry.id else { continue }
-                items.append(IndexedItem(container: container.id.rawValue, id: id, position: position, sequence: sequence.id, isExtra: false, type: entry.type?.rawValue, title: entry.title, childContainer: entry.container?.rawValue))
+                guard let id = entry.id?.value else { continue }
+                items.append(IndexedItem(container: container.id.value, id: id, position: position, sequence: sequence.id, isExtra: false, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
                 position += 1
             }
         }
         for entry in container.extras {
-            guard let id = entry.id else { continue }
-            items.append(IndexedItem(container: container.id.rawValue, id: id, position: position, sequence: nil, isExtra: true, type: entry.type?.rawValue, title: entry.title, childContainer: entry.container?.rawValue))
+            guard let id = entry.id?.value else { continue }
+            items.append(IndexedItem(container: container.id.value, id: id, position: position, sequence: nil, isExtra: true, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
             position += 1
         }
         self.items = items
@@ -321,18 +321,26 @@ struct IndexEntry {
                 let path = folder.isEmpty ? presentation.file : "\(folder)/\(presentation.file)"
                 return IndexedPresentation(
                     id: IndexedPresentation.id(library: library, path: path), library: library,
-                    container: container.id.rawValue, item: item, alternative: presentation.alternative,
+                    container: container.id.value, item: item, alternative: presentation.alternative,
                     profile: presentation.profile, file: presentation.file, path: path
                 )
             }
         }
-        var refs = container.externalRefs.map { IndexedExternalRef(container: container.id.rawValue, item: nil, provider: $0.provider.rawValue, value: $0.value) }
+        var refs = container.externalRefs.map { IndexedExternalRef(container: container.id.value, item: nil, provider: $0.provider.rawValue, value: $0.value) }
         for entry in container.sequences.flatMap(\.items) + container.extras {
             for ref in entry.externalRefs {
-                refs.append(IndexedExternalRef(container: container.id.rawValue, item: entry.id, provider: ref.provider.rawValue, value: ref.value))
+                refs.append(IndexedExternalRef(container: container.id.value, item: entry.id?.value, provider: ref.provider.rawValue, value: ref.value))
             }
         }
         self.externalRefs = Array(Set(refs))
-        self.sidecar = IndexedSidecar(library: library, path: folder.isEmpty ? SidecarFile.fileName : "\(folder)/\(SidecarFile.fileName)", container: container.id.rawValue, modified: modified?.timeIntervalSince1970, size: size)
+        self.sidecar = IndexedSidecar(library: library, path: folder.isEmpty ? SidecarFile.fileName : "\(folder)/\(SidecarFile.fileName)", container: container.id.value, modified: modified?.timeIntervalSince1970, size: size)
+    }
+}
+
+extension Entry {
+    /// What the index records as an item's type: a leaf's own, or `container` for a child, as the
+    /// sidecar's `<item type>` spells it.
+    fileprivate var indexedType: String? {
+        type?.rawValue ?? (childContainer != nil ? "container" : nil)
     }
 }

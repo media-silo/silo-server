@@ -100,8 +100,9 @@ The two files are divided by whether an operator route can change the setting.
 `silo.json` holds what none can — the `serverID`, and the `host` and `port` the
 silo listens on, `0.0.0.0` and `8742` by default — and is read at startup, so an
 edit takes effect at the next restart. `settings.json` holds what routes change
-— the `name`, the `libraries`, `embeddedNode` and `advertise` — and is the
-silo's to manage while it runs: `PATCH /v1/settings` changes the name, the
+— the `name`, the `libraries` (each an `id`, a `path` and optionally the `ruleset`
+that is its standard), `embeddedNode` and `advertise` — and is the silo's to manage
+while it runs: `PATCH /v1/settings` changes the name, the
 embedded node and advertising, and each change takes effect at once. Edit the
 file by hand only while the silo is stopped. The
 silo writes both files with their defaults on its first boot, fills in a key

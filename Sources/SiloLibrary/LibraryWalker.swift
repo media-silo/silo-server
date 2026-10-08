@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloKit
 import SmdKit
 import SmdSidecar
 
@@ -127,6 +128,9 @@ public enum LibraryWalker {
             modified: attributes?[.modificationDate] as? Date,
             size: (attributes?[.size] as? NSNumber)?.intValue
         )
+        if let rules = sidecar.rules {
+            checkRules(rules, in: folder, sidecar: relative, findings: &findings)
+        }
         for (child, path) in sidecar.children.sorted(by: { $0.value < $1.value }) {
             guard LibraryLayout.isInside(path), path.hasSuffix("/\(LibraryLayout.sidecarFileName)") else {
                 findings.append(Finding(.error, path: relative, "child \(child) is at \"\(path)\", which is not a sidecar inside this folder"))
@@ -143,6 +147,24 @@ public enum LibraryWalker {
             }
         }
         return node
+    }
+
+    /// A container's rules in force: inside its folder, there, and rules the reader takes. Each is
+    /// an error, since an application through them would be refused.
+    private static func checkRules(_ rules: SidecarRules, in folder: URL, sidecar relative: String, findings: inout [Finding]) {
+        guard LibraryLayout.isInside(rules.activeFile) else {
+            findings.append(Finding(.error, path: relative, "rules are at \"\(rules.path)\", which is not inside this folder"))
+            return
+        }
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent(rules.activeFile)) else {
+            findings.append(Finding(.error, path: relative, "rules version \(rules.activeVersion) is not there"))
+            return
+        }
+        do {
+            _ = try RulesetFile.layerRules(from: data)
+        } catch {
+            findings.append(Finding(.error, path: relative, "rules version \(rules.activeVersion): \(error)"))
+        }
     }
 
     /// A path under the root, relative to it. Textual first, because a placement names folders

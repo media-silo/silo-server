@@ -39,9 +39,6 @@ struct Place: AsyncParsableCommand {
     @Option(help: "A chapter's name, as N=title. Repeatable.")
     var chapter: [String] = []
 
-    @Option(help: "Where the file was ripped from, as disc=playlist.")
-    var source: String?
-
     @Flag(help: "Copy the file into place rather than moving it.")
     var copy = false
 
@@ -74,11 +71,6 @@ struct Place: AsyncParsableCommand {
         var presentation = Presentation(alternative: alternative, profile: profile, file: "")
         presentation.tracks = try track.map(Self.parseTrack)
         presentation.chapters = try chapter.map(Self.parseChapter)
-        if let source {
-            let parts = source.split(separator: "=", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { throw ValidationError("--source takes disc=playlist") }
-            presentation.source = SourceRef(disc: parts[0], playlist: parts[1])
-        }
 
         let libraryURL = URL(fileURLWithPath: library, isDirectory: true)
         let request = PlacementRequest(library: libraryURL, lineage: lineage, item: item, presentation: presentation, source: URL(fileURLWithPath: file))

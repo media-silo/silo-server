@@ -19,4 +19,4 @@ not have, or a name it holds no ruleset under, SHALL be 404 and change nothing.
 - **WHEN** the operator sets a library's ruleset to a name no ruleset is stored under
 - **THEN** the answer is 404, and `settings.json` is as it was
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibraryNamesItsStandardRuleset`), `Tests/SiloStoreTests/RulesLayerFileTests.swift` (`aLibrarysRulesetIsKeptInTheSettingsFile`), `Tests/SiloTests/StackTests.swift` (`anApplicationNamingNoRulesetTakesTheLibrarysStandard`).

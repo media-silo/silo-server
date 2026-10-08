@@ -21,14 +21,12 @@ public struct Binding: Hashable, Sendable, Codable {
     public var tracks: [TrackMapping]
     /// The chapter names the presentation will carry.
     public var chapters: [Chapter]
-    /// What the sidecar records as the presentation's source, when there is one.
-    public var source: SourceRef?
     public var segments: [Segment]
     public var createdAt: Date
 
     public init(
         id: String = UUID().uuidString.lowercased(), library: String, containers: [String], item: String, alternative: String? = nil,
-        tracks: [TrackMapping] = [], chapters: [Chapter] = [], source: SourceRef? = nil, segments: [Segment], createdAt: Date = .now
+        tracks: [TrackMapping] = [], chapters: [Chapter] = [], segments: [Segment], createdAt: Date = .now
     ) {
         self.id = id
         self.library = library
@@ -37,7 +35,6 @@ public struct Binding: Hashable, Sendable, Codable {
         self.alternative = alternative
         self.tracks = tracks
         self.chapters = chapters
-        self.source = source
         self.segments = segments
         self.createdAt = createdAt
     }
@@ -66,14 +63,14 @@ public struct Binding: Hashable, Sendable, Codable {
     }
 }
 
-/// A ruleset applied to a binding: which ruleset, at which version — the latest when nil — and which
-/// of its outputs to make — every one when nil.
+/// A ruleset applied to a binding: which ruleset — the binding's library's standard when nil — at
+/// which version — the latest when nil — and which of its outputs to make — every one when nil.
 public struct Application: Hashable, Sendable, Codable {
-    public var ruleset: String
+    public var ruleset: String?
     public var version: Int?
     public var outputs: [OutputChoice]?
 
-    public init(ruleset: String, version: Int? = nil, outputs: [OutputChoice]? = nil) {
+    public init(ruleset: String? = nil, version: Int? = nil, outputs: [OutputChoice]? = nil) {
         self.ruleset = ruleset
         self.version = version
         self.outputs = outputs
@@ -327,7 +324,7 @@ extension Recipe {
         }
         let layout = OutputLayout(keeping: decisions)
         return Recipe(
-            ruleset: ruleset, decisions: decisions, output: output, layout: layout,
+            ruleset: ruleset, layers: layers, decisions: decisions, output: output, layout: layout,
             warnings: RecipeResolver.warnings(layout: layout, mappings: mappings, hasVideo: decisions.contains { $0.kind == .video })
         )
     }

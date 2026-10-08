@@ -20,19 +20,19 @@ import WireMVCTesting
 /// `SILO_STATE_DIR` alone.
 enum Fixture {
     static let series: Container = {
-        var series = Container(id: ContainerID("0000000000000001")!, type: .series, title: "Doctor Who", year: 1963, yearInTitle: true, externalRefs: [ExternalRef(provider: .tvdb, value: "76107")])
-        series.sequences = [Sequence(id: "seasons", items: [Entry(id: "s13", type: .container, container: serial.id)])]
+        var series = Container(id: ContainerID("0000000000000001")!, type: .series, title: Title("Doctor Who")!, year: 1963, yearInTitle: true, externalRefs: [ExternalRef(provider: .tvdb, value: "76107")])
+        series.sequences = [Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s13")!, container: serial.id))])]
         return series
     }()
     static let serial: Container = {
-        var serial = Container(id: ContainerID("0000000000000003")!, type: .serial, typeLabel: "Story", title: "Pyramids of Mars")
+        var serial = Container(id: ContainerID("0000000000000003")!, type: .serial, typeLabel: "Story", title: Title("Pyramids of Mars")!)
         serial.alternatives = [Alternative(id: "broadcast", sequence: "parts", title: "Broadcast version")]
         serial.defaultAlternative = "broadcast"
         serial.features = [Feature(id: "commentary1", type: .commentary, title: "Commentary")]
-        serial.sequences = [Sequence(id: "parts", items: [Entry(id: "part1", type: .episode, title: "Part One"), Entry(id: "part2", type: .episode, title: "Part Two"), Entry(id: "part3", type: .episode, title: "Part Three")])]
+        serial.sequences = [Sequence(id: "parts", items: [.leaf(Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One")), .leaf(Entry.Leaf(id: ItemID("part2")!, type: .episode, title: "Part Two")), .leaf(Entry.Leaf(id: ItemID("part3")!, type: .episode, title: "Part Three"))])]
         return serial
     }()
-    static let unlisted = Container(id: ContainerID("0000000000000004")!, type: .series, title: "Behind the Sofa", listed: false)
+    static let unlisted = Container(id: ContainerID("0000000000000004")!, type: .series, title: Title("Behind the Sofa")!, listed: false)
 
     static let mediaBytes = Data((0..<3000).map { UInt8($0 % 251) })
 
@@ -754,6 +754,35 @@ extension ServerTests {
             let kept = try await client.get("/v1/bindings/\(binding.id)")
             #expect(kept.status == 200, "the binding was never wrong; the rules were incomplete")
             #expect(try kept.json(BindingBody.self).recipes.isEmpty, "and nothing of the failed application is kept")
+        }
+    }
+}
+
+/// A library's standard, set over the API. Last, because it stores a ruleset of its own and the
+/// listing of rulesets earlier in the suite counts them.
+extension ServerTests {
+    @Test func aLibraryNamesItsStandardRuleset() async throws {
+        try await withClient { client in
+            // A ruleset of its own, so that no other test's versions move.
+            let document = Fixture.household.replacingOccurrences(of: #"name="household""#, with: #"name="standard""#)
+            let ruleset = RulesetDocumentBody(name: "standard", document: document)
+            _ = try await client.send("PUT", "/v1/rulesets/standard", body: try JSONEncoder().encode(ruleset), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
+            let headers = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
+
+            #expect(try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":"standard"}"#.utf8), headers: ["Content-Type": "application/json"]).status == 401)
+            #expect(try await client.send("PUT", "/v1/libraries/other/ruleset", body: Data(#"{"ruleset":"standard"}"#.utf8), headers: headers).status == 404)
+            let unknown = try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":"nothing"}"#.utf8), headers: headers)
+            #expect(unknown.status == 404, "a ruleset the silo does not hold")
+            #expect(!(try await client.get("/v1/libraries").bodyText.contains("\"ruleset\"")), "and nothing changed")
+
+            let set = try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":"standard"}"#.utf8), headers: headers)
+            #expect(set.status == 200)
+            #expect(set.bodyText.contains("\"ruleset\":\"standard\""))
+            #expect(try await client.get("/v1/libraries").bodyText.contains("\"ruleset\":\"standard\""), "the listing names it")
+
+            let cleared = try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":null}"#.utf8), headers: headers)
+            #expect(cleared.status == 200)
+            #expect(!(try await client.get("/v1/libraries").bodyText.contains("\"ruleset\"")))
         }
     }
 }

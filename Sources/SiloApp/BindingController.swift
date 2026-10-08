@@ -96,13 +96,12 @@ private struct NewBinding: Decodable {
     var alternative: String?
     var tracks: [TrackMapping]?
     var chapters: [SmdSidecar.Chapter]?
-    var source: SourceRef?
     var segments: [Binding.Segment]
 
     var binding: Binding {
         Binding(
             library: library, containers: containers, item: item, alternative: alternative, tracks: tracks ?? [],
-            chapters: chapters ?? [], source: source, segments: segments
+            chapters: chapters ?? [], segments: segments
         )
     }
 }

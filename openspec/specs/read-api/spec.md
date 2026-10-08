@@ -54,7 +54,8 @@ the sidecar's `type`, `title`, `displayTitle`, `year`, `typeLabel`, `outline`,
 `participants`, `sequences`, `extrasAnchor`, `extras`, `externalRefs`, and its
 child containers as summaries; an `Item` SHALL carry its `optional`, `ref`,
 `externalRefs` and `presentations`; a `Presentation` SHALL carry `id`,
-`alternative`, `profile`, `displayName`, `file`, `source`, `tracks` and
+`alternative`, `profile`, `displayName`, `file`, `source` — its binding and
+segments — `transform` — its ruleset, version and layers — `tracks` and
 `chapters`, with a track's `audio` and `subtitle` counting from one among the
 streams of that kind. The mapping SHALL run one way only: the API is a
 projection of the model, never a place the model is edited.

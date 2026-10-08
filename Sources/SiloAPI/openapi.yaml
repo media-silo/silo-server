@@ -194,6 +194,36 @@ paths:
                 items:
                   $ref: "#/components/schemas/Library"
 
+  /libraries/{library}/ruleset:
+    put:
+      operationId: setLibraryRuleset
+      summary: Name the library's standard ruleset
+      description: >
+        The ruleset an application to a binding into this library takes when it names none; a null
+        name clears it. Written through to settings.json and applied at once. Operator only.
+      tags: [Libraries]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LibraryRuleset"
+      responses:
+        "200":
+          description: The library, naming its standard.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library, or no ruleset by that name.
+
   /libraries/{library}/scan:
     post:
       operationId: scanLibrary
@@ -1385,6 +1415,9 @@ components:
       properties:
         id:
           type: string
+        ruleset:
+          type: string
+          description: The library's standard, which an application naming no ruleset takes.
         containers:
           type: integer
         presentations:
@@ -1417,6 +1450,13 @@ components:
         text:
           type: string
 
+    LibraryRuleset:
+      type: object
+      properties:
+        ruleset:
+          type: string
+          description: The ruleset's name; absent or null clears the library's standard.
+
     PlaceRequest:
       type: object
       required: [containers, item, file]
@@ -1440,8 +1480,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Chapter"
-        source:
-          $ref: "#/components/schemas/SourceRef"
         file:
           type: string
           description: The finished file, as a path the silo can reach.
@@ -1520,8 +1558,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Chapter"
-        source:
-          $ref: "#/components/schemas/SourceRef"
         segments:
           type: array
           items:
@@ -1567,8 +1603,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Chapter"
-        source:
-          $ref: "#/components/schemas/SourceRef"
         segments:
           type: array
           items:
@@ -1585,10 +1619,10 @@ components:
     Application:
       description: A ruleset applied to a binding.
       type: object
-      required: [ruleset]
       properties:
         ruleset:
           type: string
+          description: The ruleset to apply; the binding's library's own when absent.
         version:
           type: integer
           description: The ruleset's version; the latest when absent.
@@ -2195,7 +2229,9 @@ components:
         file:
           type: string
         source:
-          $ref: "#/components/schemas/SourceRef"
+          $ref: "#/components/schemas/PresentationSource"
+        transform:
+          $ref: "#/components/schemas/Transform"
         tracks:
           type: array
           items:
@@ -2205,14 +2241,50 @@ components:
           items:
             $ref: "#/components/schemas/Chapter"
 
-    SourceRef:
+    PresentationSource:
+      description: The binding a presentation was made from, with a copy of its segments.
       type: object
-      required: [disc, playlist]
+      required: [binding, segments]
       properties:
-        disc:
+        binding:
           type: string
-        playlist:
+        segments:
+          type: array
+          items:
+            type: object
+            properties:
+              scheme:
+                type: string
+              value:
+                type: string
+              from:
+                type: integer
+              to:
+                type: integer
+
+    Transform:
+      description: Every set of rules that made a presentation, nearest first, then the ruleset.
+      type: object
+      required: [ruleset, version, layers]
+      properties:
+        ruleset:
           type: string
+        version:
+          type: integer
+        layers:
+          type: array
+          items:
+            type: object
+            required: [version]
+            properties:
+              binding:
+                type: string
+              container:
+                type: string
+              version:
+                type: integer
+              digest:
+                type: string
 
     TrackMapping:
       type: object
@@ -2413,6 +2485,21 @@ components:
       properties:
         ruleset:
           $ref: "#/components/schemas/RulesetRef"
+        layers:
+          description: The layers above the ruleset the recipe was resolved through, nearest first.
+          type: array
+          items:
+            type: object
+            required: [version, digest]
+            properties:
+              container:
+                type: string
+              binding:
+                type: string
+              version:
+                type: integer
+              digest:
+                type: string
         decisions:
           type: array
           items:
@@ -2447,6 +2534,16 @@ components:
           type: integer
         rule:
           type: string
+        layer:
+          description: The layer the rule came from, by one key — the ruleset's name, or a container's or a binding's id.
+          type: object
+          properties:
+            ruleset:
+              type: string
+            container:
+              type: string
+            binding:
+              type: string
         action:
           $ref: "#/components/schemas/Action"
         adjusted:
