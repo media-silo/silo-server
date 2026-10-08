@@ -117,6 +117,26 @@ enum Mapping {
         Components.Schemas.Branch(name: branch.name, base: branch.base, head: branch.head, upToDateWith: branch.upToDateWith, closed: branch.closed)
     }
 
+    /// An out-of-date presentation as the report renders it: where it is, what made it and what the
+    /// rules would now make, and its binding's sources with their copies, never their secrets.
+    static func outOfDate(_ reported: CheckService.Reported) throws -> Components.Schemas.OutOfDatePresentation {
+        let presentation = reported.presentation
+        let madeBy: Components.Schemas.CheckedStack = try transcode(reported.recipe.recipe.stack)
+        let checkedAgainst: Components.Schemas.CheckedStack = try transcode(reported.check.checkedAgainst)
+        let changes: [Components.Schemas.OutOfDatePresentation.changesPayloadPayload] = try transcode(reported.check.changes)
+        var sources: [Components.Schemas.OutOfDatePresentation.sourcesPayloadPayload] = []
+        for source in reported.sources {
+            let copies: [Components.Schemas.SourceCopy] = try transcode(source.copies)
+            sources.append(Components.Schemas.OutOfDatePresentation.sourcesPayloadPayload(id: source.id, copies: copies))
+        }
+        let outcome: Components.Schemas.OutOfDatePresentation.outcomePayload = reported.check.outcome == .unresolvable ? .unresolvable : .outOfDate
+        return Components.Schemas.OutOfDatePresentation(
+            presentation: presentation?.id, container: presentation?.container, item: presentation?.item,
+            file: presentation?.file, profile: presentation?.profile, recipe: reported.recipe.id, outcome: outcome,
+            madeBy: madeBy, checkedAgainst: checkedAgainst, changes: changes, reason: reported.check.reason, sources: sources
+        )
+    }
+
     static func finding(_ finding: SiloLibrary.Finding) -> Components.Schemas.Finding {
         Components.Schemas.Finding(severity: finding.severity == .error ? .error : .warning, path: finding.path, text: finding.text)
     }

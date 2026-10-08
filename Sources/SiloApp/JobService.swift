@@ -28,11 +28,13 @@ package struct JobService: Sendable, JobsAPI {
     private let recipes: RecipeStore
     private let index: Index
     private let stagedRules: BindingRulesStore
+    private let checks: CheckSignal
     private let logger = Logger(label: "silo.jobs")
 
     @Inject
-    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, index: Index, stagedRules: BindingRulesStore) {
+    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, index: Index, stagedRules: BindingRulesStore, checks: CheckSignal) {
         self.stagedRules = stagedRules
+        self.checks = checks
         self.config = config
         self.jobs = jobs
         self.sources = sources
@@ -302,10 +304,13 @@ package struct JobService: Sendable, JobsAPI {
             }
             _ = try Indexer.scan(library, into: index)
             let destination = LibraryWalker.relativePath(of: placement.destination, in: library.root)
-            return try jobs.update(id) { job in
+            let placed = try jobs.update(id) { job in
                 job.state = .placed
                 job.placement = PlacementSummary(destination: destination, presentation: IndexedPresentation.id(library: library.id, path: destination), writes: placement.describe(relativeTo: library.root))
             }!
+            // A new presentation, never checked: the check records it against the rules in force.
+            checks.request()
+            return placed
         } catch {
             _ = try jobs.update(id) { job in
                 job.state = .encoded

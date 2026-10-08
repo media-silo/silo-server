@@ -23,13 +23,15 @@ package struct OperatorController {
     private let index: Index
     private let store: RulesetStore
     private let settings: SettingsStore
+    private let checks: CheckSignal
 
     @Inject
-    package init(config: SiloConfig, index: Index, store: RulesetStore, settings: SettingsStore) {
+    package init(config: SiloConfig, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal) {
         self.config = config
         self.index = index
         self.store = store
         self.settings = settings
+        self.checks = checks
     }
 
     /// Names the library's standard, or clears it: written through to `settings.json` at once, so
@@ -55,6 +57,8 @@ package struct OperatorController {
     package func scanLibrary(@Path library: String) async throws -> Components.Schemas.ScanReport {
         guard let library = config.library(library) else { throw NoSuchLibrary() }
         let report = try Indexer.scan(library, into: index)
+        // A walk may find a container's rules moved to another version.
+        checks.request()
         return Components.Schemas.ScanReport(read: report.read, unchanged: report.unchanged, removed: report.removed, findings: report.findings.map(Mapping.finding))
     }
 
@@ -107,6 +111,7 @@ package struct OperatorController {
         let version: Int
         do {
             version = try store.store(data, as: name, branch: body.branch, upToDateWith: body.upToDateWith)
+            checks.request()
         } catch let error as RulesetFileError {
             throw BadRuleset(reason: error.description)
         } catch let error as RulesetStoreError {
@@ -137,7 +142,9 @@ package struct OperatorController {
     @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     package func promoteBranch(@Path name: String, @Path branch: String) async throws -> Components.Schemas.RulesetSummary {
         do {
-            return Components.Schemas.RulesetSummary(name: name, version: try store.promote(branch, of: name))
+            let version = try store.promote(branch, of: name)
+            checks.request()
+            return Components.Schemas.RulesetSummary(name: name, version: version)
         } catch let error as RulesetStoreError {
             if case .noSuchBranch = error { throw NoSuchRuleset() }
             throw BranchConflict(reason: error.description)
