@@ -129,9 +129,25 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("GET", "/v1/recipes/\(id)")
     }
 
-    /// Replaces a draft's adjustments; none gives back what the rules decided.
-    public func adjust(_ recipe: String, _ adjustments: [Adjustment]) async throws -> StoredRecipe {
-        try await send("PUT", "/v1/recipes/\(recipe)/adjustments", body: adjustments)
+
+    /// A binding's own rules: the version in force, its document, and every version there is.
+    public struct BindingRulesRecord: Hashable, Sendable, Codable {
+        public var activeVersion: Int?
+        public var document: String?
+        public var versions: [Int]
+    }
+
+    private struct NewBindingRules: Codable { var document: String }
+
+    public func rules(of binding: String) async throws -> BindingRulesRecord {
+        try await send("GET", "/v1/bindings/\(binding)/rules")
+    }
+
+    /// Stores a binding's next version of its rules — a person's decision about that one entry —
+    /// and makes it the version in force. Apply the rules to the binding again for a draft that
+    /// carries it.
+    public func setRules(_ document: String, of binding: String) async throws -> BindingRulesRecord {
+        try await send("PUT", "/v1/bindings/\(binding)/rules", body: NewBindingRules(document: document))
     }
 
     public func discard(_ recipe: String) async throws {

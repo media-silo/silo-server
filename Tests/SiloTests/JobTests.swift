@@ -24,6 +24,7 @@ struct JobServiceTests {
         let sources: SourceStore
         let recipes: RecipeStore
         let settings: SettingsStore
+        let stagedRules: BindingRulesStore
         let bindingService: BindingService
         let service: JobService
         let index: Index
@@ -41,8 +42,9 @@ struct JobServiceTests {
             _ = try rulesets.store(Data(Self.household.utf8), as: "household")
             index = try Index(at: nil)
             settings = SettingsStore(Settings(name: "Silo on test", libraries: config.libraries))
-            bindingService = BindingService(config: config, settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes)
-            service = JobService(config: config, jobs: store, sources: sources, bindings: bindings, recipes: recipes, index: index)
+            stagedRules = try BindingRulesStore(folder: root.appendingPathComponent("State/binding-rules"))
+            bindingService = BindingService(config: config, settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes, staged: stagedRules)
+            service = JobService(config: config, jobs: store, sources: sources, bindings: bindings, recipes: recipes, index: index, stagedRules: stagedRules)
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }

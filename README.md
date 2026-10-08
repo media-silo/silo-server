@@ -45,8 +45,8 @@ One package, in the order its parts arrived:
   for what a client reads (libraries, containers with their presentations,
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
   and what an operator changes (a scan, a stored ruleset, the settings, a
-  registered source and its copies, a binding and the draft recipes it resolves to, an
-  adjusted or discarded draft, and a job made from a draft), on the swift-wire
+  registered source and its copies, a binding, its own rules and the draft recipes it resolves to, a
+  discarded draft, and a job made from a draft), on the swift-wire
   stack; and beside the document, two routes that stream, the file a
   presentation is with `Range`, and the container as its sidecar.
 - `FileServing`, `SiloClient` and `SiloWorker` — the parts every participant

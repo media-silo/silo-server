@@ -108,36 +108,4 @@ struct BindingTests {
         #expect(SourceFacts(input: sdr).video?.hdr == nil)
         #expect(SourceFacts(input: spec).audio[4].role == .commentary, "the commentary mark, when no feature is mapped")
     }
-
-    @Test func anAdjustmentReplacesADecisionAndRecordsWhatItReplaced() throws {
-        let resolved = try RecipeResolver.resolve(.episode, with: .household)
-        #expect(resolved.encoders == ["flac", "aac"])
-        let kept = try resolved.adjusted(by: [Adjustment(kind: .audio, index: 1, action: .copy, note: "keep the Atmos object track")], mappings: [])
-        let audio1 = try #require(kept.audio.first)
-        #expect(audio1.action == .copy)
-        #expect(audio1.rule == "lossless-main", "the decision still names its rule")
-        #expect(audio1.adjusted == Adjusted(ruleAction: .encode(EncodeSettings(codec: "flac")), note: "keep the Atmos object track"))
-        #expect(kept.encoders == ["aac"], "flac leaves the encoders when nothing else needs it")
-        #expect(try resolved.adjusted(by: [], mappings: []) == resolved, "no adjustments, the rules' recipe")
-    }
-
-    @Test func aDroppedStreamRenumbersTheRestAndWarns() throws {
-        let resolved = try RecipeResolver.resolve(.episode, with: .household)
-        let mappings = [TrackMapping(feature: "commentary1", audio: 2)]
-        let dropped = try resolved.adjusted(by: [Adjustment(kind: .audio, index: 2, action: .drop)], mappings: mappings)
-        #expect(dropped.layout.streams(of: .audio).map(\.sourceIndex) == [1, 3])
-        #expect(dropped.layout.streams(of: .audio).map(\.outputIndex) == [1, 2])
-        #expect(dropped.warnings == ["feature commentary1 is mapped to audio 2, which this recipe drops"])
-    }
-
-    @Test func anAdjustmentThatNamesNothingOrTwiceIsRefused() throws {
-        let resolved = try RecipeResolver.resolve(.episode, with: .household)
-        #expect(throws: AdjustmentError.noSuchStream(kind: .audio, index: 4)) {
-            try resolved.adjusted(by: [Adjustment(kind: .audio, index: 4, action: .copy)], mappings: [])
-        }
-        #expect(throws: AdjustmentError.adjustedTwice(kind: .audio, index: 1)) {
-            try resolved.adjusted(by: [Adjustment(kind: .audio, index: 1, action: .copy), Adjustment(kind: .audio, index: 1, action: .drop)], mappings: [])
-        }
-        #expect(AdjustmentError.noSuchStream(kind: .audio, index: 4).description == "the recipe has no audio 4 to adjust")
-    }
 }

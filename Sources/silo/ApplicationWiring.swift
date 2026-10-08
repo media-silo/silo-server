@@ -51,6 +51,11 @@ package enum ApplicationWiring {
     }
 
     @Provides
+    package static func bindingRules(config: SiloConfig) throws -> BindingRulesStore {
+        try BindingRulesStore(folder: config.stateDirectory.appendingPathComponent("binding-rules", isDirectory: true))
+    }
+
+    @Provides
     package static func nodes(config: SiloConfig) throws -> NodeStore {
         try NodeStore(folder: config.stateDirectory.appendingPathComponent("nodes", isDirectory: true))
     }

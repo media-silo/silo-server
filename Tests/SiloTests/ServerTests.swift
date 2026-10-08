@@ -622,7 +622,11 @@ extension ServerTests {
         var binding: String
         var state: String
         var recipe: Recipe
-        var adjustments: [Adjustment]
+    }
+    struct BindingRulesBody: Decodable {
+        var activeVersion: Int?
+        var document: String?
+        var versions: [Int]
     }
 
     /// A ruleset of two outputs, whose mobile output scales its video.
@@ -689,18 +693,27 @@ extension ServerTests {
             #expect(try await client.get("/v1/bindings/nothing").status == 404)
             #expect(try await client.get("/v1/recipes/\(drafts[0].id)").json(StoredRecipeBody.self).recipe.audio.first?.rule == "lossless-main")
 
-            // The producer's last word: keep the PCM, not FLAC.
-            let adjustment = #"[ { "kind": "audio", "index": 1, "action": { "copy": {} }, "note": "keep the PCM" } ]"#
-            let adjusted = try await client.send("PUT", "/v1/recipes/\(drafts[0].id)/adjustments", body: Data(adjustment.utf8), headers: Self.operatorHeaders)
-            #expect(adjusted.status == 200)
-            let after = try adjusted.json(StoredRecipeBody.self)
-            #expect(after.recipe.audio.first?.action == .copy)
-            #expect(after.recipe.audio.first?.adjusted == Adjusted(ruleAction: .encode(EncodeSettings(codec: "flac")), note: "keep the PCM"))
-            #expect(after.recipe.audio.first?.rule == "lossless-main")
-            let nothing = #"[ { "kind": "audio", "index": 4, "action": { "copy": {} } } ]"#
-            let bad = try await client.send("PUT", "/v1/recipes/\(drafts[0].id)/adjustments", body: Data(nothing.utf8), headers: Self.operatorHeaders)
-            #expect(bad.status == 400)
-            #expect(bad.bodyText.contains("the recipe has no audio 4 to adjust"))
+            // The producer's last word: keep the PCM, not FLAC — as the binding's own rules.
+            let keepPCM = Data(#"{ "document": "<rules><audio id=\"keep-the-pcm\"><when fact=\"audio.index\" is=\"1\"/><copy/></audio></rules>" }"#.utf8)
+            #expect(try await client.send("PUT", "/v1/bindings/\(binding.id)/rules", body: keepPCM, headers: ["Content-Type": "application/json"]).status == 401)
+            #expect(try await client.send("PUT", "/v1/bindings/nothing/rules", body: keepPCM, headers: Self.operatorHeaders).status == 404)
+            let refusedRules = try await client.send("PUT", "/v1/bindings/\(binding.id)/rules", body: Data(#"{ "document": "<rules><output container=\"mp4\"/></rules>" }"#.utf8), headers: Self.operatorHeaders)
+            #expect(refusedRules.status == 400)
+            #expect(refusedRules.bodyText.contains("is not an element of a container's or a binding's rules"))
+            let storedRules = try await client.send("PUT", "/v1/bindings/\(binding.id)/rules", body: keepPCM, headers: Self.operatorHeaders)
+            #expect(storedRules.status == 200)
+            #expect(try storedRules.json(BindingRulesBody.self).activeVersion == 1)
+            let rules = try await client.get("/v1/bindings/\(binding.id)/rules")
+            #expect(rules.status == 200, "a binding's rules are read openly")
+            #expect(try rules.json(BindingRulesBody.self).versions == [1])
+            #expect(try rules.json(BindingRulesBody.self).document?.contains("keep-the-pcm") == true)
+            #expect(try await client.get("/v1/recipes/\(drafts[0].id)").json(StoredRecipeBody.self).recipe.audio.first?.rule == "lossless-main", "storing them changes no recipe")
+            #expect(try await client.send("PUT", "/v1/recipes/\(drafts[0].id)/adjustments", body: Data("[]".utf8), headers: Self.operatorHeaders).status != 200, "and a draft is no longer adjusted")
+            let reapplied = try await client.send("POST", "/v1/bindings/\(binding.id)/recipes", body: Self.application("two", version: version, outputs: #"[ {} ]"#), headers: Self.operatorHeaders)
+            let decided = try #require(try reapplied.json([StoredRecipeBody].self).first?.recipe.audio.first)
+            #expect(decided.action == .copy)
+            #expect(decided.rule == "keep-the-pcm")
+            #expect(decided.layer == .layer(.binding(binding.id)), "the decision names the binding's rules")
 
             #expect(try await client.send("DELETE", "/v1/recipes/\(drafts[1].id)", headers: Self.operatorHeaders).status == 204)
             #expect(try await client.get("/v1/recipes/\(drafts[1].id)").status == 404)
@@ -713,8 +726,8 @@ extension ServerTests {
             _ = try await client.send("PUT", "/v1/rulesets/copyall", body: try JSONEncoder().encode(copyAll), headers: Self.operatorHeaders)
             let other = try await client.send("POST", "/v1/bindings/\(binding.id)/recipes", body: Self.application("copyall"), headers: Self.operatorHeaders)
             #expect(try other.json([StoredRecipeBody].self).map(\.recipe.ruleset.name) == ["copyall"], "another ruleset applied to the same binding")
-            #expect(try await client.get("/v1/recipes/\(drafts[0].id)").json(StoredRecipeBody.self).adjustments.count == 1, "and the earlier draft as it was")
-            #expect(try await client.get("/v1/bindings/\(binding.id)").json(BindingBody.self).recipes.count == 3)
+            #expect(try await client.get("/v1/recipes/\(drafts[0].id)").json(StoredRecipeBody.self).recipe.audio.first?.rule == "lossless-main", "and the earlier draft as it was")
+            #expect(try await client.get("/v1/bindings/\(binding.id)").json(BindingBody.self).recipes.count == 4)
         }
     }
 

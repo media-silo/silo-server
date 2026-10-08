@@ -38,8 +38,7 @@ public enum RecipeResolver {
     }
 
     /// What a person should read before the encode: a feature mapped to a stream the layout drops,
-    /// and a source with no video. A function of the layout, so an adjusted recipe warns as the
-    /// rules' own would.
+    /// and a source with no video. A function of the layout alone.
     public static func warnings(layout: OutputLayout, mappings: [TrackMapping], hasVideo: Bool) -> [String] {
         var warnings: [String] = []
         for mapping in mappings {

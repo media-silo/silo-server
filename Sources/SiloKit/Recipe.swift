@@ -97,17 +97,14 @@ public struct StreamDecision: Hashable, Sendable, Codable {
     /// The layer the rule came from; the resolver always sets it.
     public var layer: DecisionLayer?
     public var action: Action
-    /// When a person adjusted the stream: the action the rule chose, and why it was replaced.
-    public var adjusted: Adjusted?
 
-    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, rule: String, layer: DecisionLayer? = nil, action: Action, adjusted: Adjusted? = nil) {
+    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, rule: String, layer: DecisionLayer? = nil, action: Action) {
         self.kind = kind
         self.sourceIndex = sourceIndex
         self.sourceAbsoluteIndex = sourceAbsoluteIndex
         self.rule = rule
         self.layer = layer
         self.action = action
-        self.adjusted = adjusted
     }
 
     public var isKept: Bool {

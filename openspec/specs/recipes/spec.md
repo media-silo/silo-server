@@ -226,45 +226,16 @@ is the same operation again. `GET /v1/recipes/{id}` SHALL answer one recipe, wit
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, `aBindingOrAnApplicationThatCannotBeMadeKeepsNothing`). `Tests/SiloTests/StackTests.swift` (`anApplicationResolvesThroughTheLineagesRulesInForce`, `aContainersRulesThatCannotBeReadRefuseTheApplication`, `anApplicationNamingNoRulesetTakesTheLibrarysStandard`). Applying a newer version of a ruleset to a binding that holds a committed recipe is pinned by nothing yet.
 
-### Requirement: An adjustment replaces a draft's decision and is recorded with what it replaced
-`PUT /v1/recipes/{id}/adjustments`, behind the operator's token, SHALL replace a draft recipe's
-adjustments with those given and answer the recipe. An adjustment SHALL name a stream by kind and by
-its index from one among streams of its kind, give an action — `copy`, `drop`, or `encode` with the
-settings a rule's `<encode>` carries — and optionally a note. Adjustments SHALL be applied to the
-decisions the ruleset made: each replaces the action of its stream's decision, which SHALL keep the
-rule that decided it and record the action the rule chose and the note. The layout, the renumbered
-feature map, the warnings and the encoders the recipe needs SHALL then follow from the adjusted
-decisions. An adjustment naming a stream the recipe has no decision for, or a second for one
-stream, SHALL be 400 naming it; any adjustment to a committed recipe SHALL be 409. An empty set
-SHALL restore the decisions the ruleset made.
-
-#### Scenario: a stream kept that the rules would encode
-- **WHEN** `lossless-main` encodes audio 1 as FLAC in a draft, and its adjustments are set to give
-  audio 1 `copy` with the note "keep the Atmos object track"
-- **THEN** the recipe copies audio 1, its decision still names `lossless-main` and records that the
-  rule chose FLAC and the note, and `flac` leaves the recipe's encoders when no other stream needs it
-
-#### Scenario: a stream dropped renumbers the rest
-- **WHEN** an adjustment drops audio 2 of three, and a feature is mapped to audio 2
-- **THEN** the layout holds the source's audio 1 and 3 as output audio 1 and 2, and the recipe warns
-  that the feature is mapped to a stream this recipe drops
-
-#### Scenario: a committed recipe is not adjusted
-- **WHEN** adjustments are put to a recipe a job has been made from
-- **THEN** the answer is 409, and the recipe is as it was
-
-Pinned by: `Tests/SiloKitTests/BindingTests.swift` (`anAdjustmentReplacesADecisionAndRecordsWhatItReplaced`, `aDroppedStreamRenumbersTheRestAndWarns`, `anAdjustmentThatNamesNothingOrTwiceIsRefused`), `Tests/SiloStoreTests/RecipeStoreTests.swift` (`aDraftIsAdjustedAndRestored`, `aCommittedRecipeNeverChanges`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`).
-
 ### Requirement: A recipe is committed once, and never changes after
 Making a job from a draft recipe SHALL commit it, and a committed recipe SHALL NOT change: neither
-its decisions, its adjustments nor its ruleset version. `DELETE /v1/recipes/{id}`, behind the
-operator's token, SHALL discard a draft and SHALL be 409 for a committed recipe.
+its decisions, its stack nor its ruleset version. `DELETE /v1/recipes/{id}`, behind the operator's
+token, SHALL discard a draft and SHALL be 409 for a committed recipe.
 
 #### Scenario: a draft discarded
 - **WHEN** the operator discards a draft no job was made from
 - **THEN** the recipe is gone, and its binding's other recipes are as they were
 
-Pinned by: `Tests/SiloStoreTests/RecipeStoreTests.swift` (`aCommittedRecipeNeverChanges`, `aDraftIsDiscardedAndTheRestStay`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`). Committing by making a job is pinned by nothing yet: jobs are made from recipes in the fourth step.
+Pinned by: `Tests/SiloStoreTests/RecipeStoreTests.swift` (`aCommittedRecipeNeverChanges`, `aDraftIsDiscardedAndTheRestStay`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`). Committing by making a job is pinned by `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`).
 
 ### Requirement: A decision names the layer its rule came from
 Each decision in a recipe SHALL name, beside its rule, the layer the rule came from: the ruleset

@@ -23,4 +23,4 @@ decision someone made and stay until removed on purpose.
 - **WHEN** an item names a binding's rules and none of its presentations names that binding
 - **THEN** the walk reports a warning naming the binding and the item
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`theWalkReportsABindingsRulesItCannotUseOrThatNothingUses`, `rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile`).
