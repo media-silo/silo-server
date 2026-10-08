@@ -26,4 +26,4 @@ rules SHALL change no recipe: a draft that should carry them is made by applying
 - **THEN** version 2's file is written in the library's `rules/bindings/<binding id>` folder, and the
   item's `<rules>` for the binding names version 2
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, for the routes).

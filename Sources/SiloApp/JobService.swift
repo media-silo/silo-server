@@ -27,10 +27,12 @@ package struct JobService: Sendable, JobsAPI {
     private let bindings: BindingStore
     private let recipes: RecipeStore
     private let index: Index
+    private let stagedRules: BindingRulesStore
     private let logger = Logger(label: "silo.jobs")
 
     @Inject
-    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, index: Index) {
+    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, index: Index, stagedRules: BindingRulesStore) {
+        self.stagedRules = stagedRules
         self.config = config
         self.jobs = jobs
         self.sources = sources
@@ -276,7 +278,28 @@ package struct JobService: Sendable, JobsAPI {
             guard placement.isApplicable else {
                 throw PlacementRefusedError(reason: placement.errors.map(\.description).joined(separator: "; "))
             }
+            // A binding's rules staged in the silo move into the library with its first file: every
+            // version beside the item's sidecar, then the presentation, then the reference to the
+            // version in force, so the sidecar never names a file that is not there.
+            let stagedVersions = stagedRules.versions(of: binding.id)
+            let itemFolder = placement.sidecars.last.map { $0.url.deletingLastPathComponent() }
+            let rulesPath = "rules/bindings/\(binding.id)"
+            if let itemFolder, !stagedVersions.isEmpty {
+                let folder = itemFolder.appendingPathComponent(rulesPath, isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                for version in stagedVersions {
+                    let target = folder.appendingPathComponent("\(version).xml")
+                    guard !FileManager.default.fileExists(atPath: target.path) else { continue }
+                    try FileManager.default.copyItem(at: stagedRules.file(of: binding.id, version: version), to: target)
+                }
+            }
             try Placer.apply(placement)
+            if let itemFolder, let active = stagedVersions.last {
+                let sidecar = itemFolder.appendingPathComponent(SidecarFile.fileName)
+                try SidecarFile.data(settingRules: SidecarRules(path: rulesPath, activeVersion: active), binding: binding.id, item: binding.item, in: Data(contentsOf: sidecar))
+                    .write(to: sidecar, options: .atomic)
+                try stagedRules.remove(binding.id)
+            }
             _ = try Indexer.scan(library, into: index)
             let destination = LibraryWalker.relativePath(of: placement.destination, in: library.root)
             return try jobs.update(id) { job in

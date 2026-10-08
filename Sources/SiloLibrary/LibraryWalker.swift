@@ -131,6 +131,14 @@ public enum LibraryWalker {
         if let rules = sidecar.rules {
             checkRules(rules, in: folder, sidecar: relative, findings: &findings)
         }
+        for (item, bindings) in sidecar.bindingRules.sorted(by: { $0.key < $1.key }) {
+            for binding in bindings {
+                checkRules(binding.rules, in: folder, sidecar: relative, of: "binding \(binding.binding)", findings: &findings)
+                if !(sidecar.presentations[item]?.contains { $0.source?.binding == binding.binding } ?? false) {
+                    findings.append(Finding(.warning, path: relative, "rules for binding \(binding.binding), which no presentation of \(item) names"))
+                }
+            }
+        }
         for (child, path) in sidecar.children.sorted(by: { $0.value < $1.value }) {
             guard LibraryLayout.isInside(path), path.hasSuffix("/\(LibraryLayout.sidecarFileName)") else {
                 findings.append(Finding(.error, path: relative, "child \(child) is at \"\(path)\", which is not a sidecar inside this folder"))
@@ -151,19 +159,20 @@ public enum LibraryWalker {
 
     /// A container's rules in force: inside its folder, there, and rules the reader takes. Each is
     /// an error, since an application through them would be refused.
-    private static func checkRules(_ rules: SidecarRules, in folder: URL, sidecar relative: String, findings: inout [Finding]) {
+    private static func checkRules(_ rules: SidecarRules, in folder: URL, sidecar relative: String, of owner: String? = nil, findings: inout [Finding]) {
+        let whose = owner.map { "\($0): " } ?? ""
         guard LibraryLayout.isInside(rules.activeFile) else {
-            findings.append(Finding(.error, path: relative, "rules are at \"\(rules.path)\", which is not inside this folder"))
+            findings.append(Finding(.error, path: relative, "\(whose)rules are at \"\(rules.path)\", which is not inside this folder"))
             return
         }
         guard let data = try? Data(contentsOf: folder.appendingPathComponent(rules.activeFile)) else {
-            findings.append(Finding(.error, path: relative, "rules version \(rules.activeVersion) is not there"))
+            findings.append(Finding(.error, path: relative, "\(whose)rules version \(rules.activeVersion) is not there"))
             return
         }
         do {
             _ = try RulesetFile.layerRules(from: data)
         } catch {
-            findings.append(Finding(.error, path: relative, "rules version \(rules.activeVersion): \(error)"))
+            findings.append(Finding(.error, path: relative, "\(whose)rules version \(rules.activeVersion): \(error)"))
         }
     }
 

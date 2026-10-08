@@ -11,19 +11,7 @@ struct RecipeStoreTests {
         let facts = SourceFacts(audio: [AudioFacts(index: 1, absoluteIndex: 0, codec: "truehd", lossless: true, channels: 8)])
         let decision = StreamDecision(kind: .audio, sourceIndex: 1, sourceAbsoluteIndex: 0, rule: "lossless-main", action: .encode(EncodeSettings(codec: "flac")))
         let recipe = Recipe(ruleset: RulesetRef(name: "household", version: 3), decisions: [decision], output: OutputPolicy(), layout: OutputLayout(keeping: [decision]))
-        return StoredRecipe(binding: binding, facts: facts, resolved: recipe)
-    }
-
-    @Test func aDraftIsAdjustedAndRestored() throws {
-        let store = RecipeStore()
-        let draft = Self.draft()
-        try store.insert([draft])
-        let adjusted = try #require(try store.adjust(draft.id, [Adjustment(kind: .audio, index: 1, action: .copy)], mappings: []))
-        #expect(adjusted.recipe.audio.first?.action == .copy)
-        #expect(adjusted.resolved == draft.resolved, "what the rules decided is kept")
-        let restored = try #require(try store.adjust(draft.id, [], mappings: []))
-        #expect(restored.recipe == draft.resolved)
-        #expect(restored.adjustments.isEmpty)
+        return StoredRecipe(binding: binding, facts: facts, recipe: recipe)
     }
 
     @Test func aCommittedRecipeNeverChanges() throws {
@@ -31,10 +19,9 @@ struct RecipeStoreTests {
         let draft = Self.draft()
         try store.insert([draft])
         #expect(try store.commit(draft.id)?.state == .committed)
-        #expect(throws: RecipeStoreError.committed(draft.id)) { try store.adjust(draft.id, [Adjustment(kind: .audio, index: 1, action: .copy)], mappings: []) }
         #expect(throws: RecipeStoreError.committed(draft.id)) { try store.commit(draft.id) }
         #expect(throws: RecipeStoreError.committed(draft.id)) { try store.discard(draft.id) }
-        #expect(store.recipe(draft.id)?.recipe == draft.resolved, "and is as it was")
+        #expect(store.recipe(draft.id)?.recipe == draft.recipe, "and is as it was")
     }
 
     @Test func aDraftIsDiscardedAndTheRestStay() throws {

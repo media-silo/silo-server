@@ -23,8 +23,8 @@ public struct BindingStore: Sendable {
     public func insert(_ binding: Binding) throws { try folder.insert([binding]) }
 }
 
-/// Recipes as the silo keeps them: one JSON file each under `<state>/recipes`. A draft's
-/// adjustments change and a draft may be discarded; a committed recipe is refused both.
+/// Recipes as the silo keeps them: one JSON file each under `<state>/recipes`. A draft may be
+/// committed or discarded; a committed recipe is refused both.
 public struct RecipeStore: Sendable {
     private let folder: RecordFolder<StoredRecipe>
 
@@ -45,15 +45,6 @@ public struct RecipeStore: Sendable {
     }
 
     public func insert(_ recipes: [StoredRecipe]) throws { try folder.insert(recipes) }
-
-    /// Replaces a draft's adjustments with `adjustments`, applied to what the rules decided.
-    public func adjust(_ id: String, _ adjustments: [Adjustment], mappings: [TrackMapping]) throws -> StoredRecipe? {
-        try folder.update(id) { (recipe: inout StoredRecipe) throws -> Void in
-            guard recipe.state == .draft else { throw RecipeStoreError.committed(id) }
-            recipe.recipe = try recipe.resolved.adjusted(by: adjustments, mappings: mappings)
-            recipe.adjustments = adjustments
-        }
-    }
 
     /// Commits a draft: the one change a recipe makes after which it makes none.
     public func commit(_ id: String) throws -> StoredRecipe? {

@@ -637,33 +637,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
 
-  /recipes/{id}/adjustments:
+  /bindings/{id}/rules:
+    get:
+      operationId: getBindingRules
+      summary: A binding's own rules
+      description: The version in force with its document, and every version there is. Open, as bindings are.
+      tags: [Bindings]
+      parameters:
+        - $ref: "#/components/parameters/BindingID"
+      responses:
+        "200":
+          description: The binding's rules; no version in force when it has none.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BindingRules"
+        "404":
+          description: No such binding.
     put:
-      operationId: adjustRecipe
-      summary: Replace a draft's adjustments
-      description: An empty list gives back what the rules decided. Operator only.
+      operationId: setBindingRules
+      summary: Store a binding's next version of its rules
+      description: >
+        Read as a container's rules are, and made the version in force: kept in the silo until the
+        binding's first presentation is placed, and in the library beside the item's sidecar after.
+        Changes no recipe; apply the rules to the binding again for a draft that carries them.
+        Operator only.
       tags: [Bindings]
       security:
         - operator: []
       parameters:
-        - $ref: "#/components/parameters/RecipeID"
+        - $ref: "#/components/parameters/BindingID"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: array
-              items:
-                $ref: "#/components/schemas/Adjustment"
+              $ref: "#/components/schemas/NewBindingRules"
       responses:
         "200":
-          description: The recipe, adjusted.
+          description: The binding's rules, the new version in force.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StoredRecipe"
+                $ref: "#/components/schemas/BindingRules"
         "400":
-          description: An adjustment names a stream the recipe has no decision for, or one stream twice.
+          description: The rules are refused.
           content:
             application/json:
               schema:
@@ -671,13 +689,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
-          description: No such recipe.
-        "409":
-          description: The recipe is committed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Problem"
+          description: No such binding.
 
   /sources:
     get:
@@ -1635,9 +1647,31 @@ components:
               profile:
                 type: string
 
+    NewBindingRules:
+      type: object
+      required: [document]
+      properties:
+        document:
+          type: string
+          description: The rules, as a `<rules>` document of rule elements.
+
+    BindingRules:
+      type: object
+      required: [versions]
+      properties:
+        activeVersion:
+          type: integer
+        document:
+          type: string
+          description: The version in force's document.
+        versions:
+          type: array
+          items:
+            type: integer
+
     StoredRecipe:
       type: object
-      required: [id, binding, state, facts, resolved, recipe, adjustments, createdAt]
+      required: [id, binding, state, facts, recipe, createdAt]
       properties:
         id:
           type: string
@@ -1648,14 +1682,8 @@ components:
           enum: [draft, committed]
         facts:
           $ref: "#/components/schemas/SourceFacts"
-        resolved:
-          $ref: "#/components/schemas/Recipe"
         recipe:
           $ref: "#/components/schemas/Recipe"
-        adjustments:
-          type: array
-          items:
-            $ref: "#/components/schemas/Adjustment"
         createdAt:
           type: string
           format: date-time
@@ -2546,32 +2574,6 @@ components:
               type: string
         action:
           $ref: "#/components/schemas/Action"
-        adjusted:
-          $ref: "#/components/schemas/Adjusted"
-
-    Adjusted:
-      description: When a person adjusted the stream, the action the rule chose and why it was replaced.
-      type: object
-      required: [ruleAction]
-      properties:
-        ruleAction:
-          $ref: "#/components/schemas/Action"
-        note:
-          type: string
-
-    Adjustment:
-      type: object
-      required: [kind, index, action]
-      properties:
-        kind:
-          $ref: "#/components/schemas/StreamKind"
-        index:
-          type: integer
-          description: From one, among streams of the kind.
-        action:
-          $ref: "#/components/schemas/Action"
-        note:
-          type: string
 
     StreamKind:
       type: string

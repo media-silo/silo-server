@@ -15,4 +15,4 @@ SHALL be written as any rule is, and is what a person's decision about that one 
 - **THEN** the entry's first audio stream is copied by the binding's rule, and its other lossless
   audio streams are encoded by the container's
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`aBindingsRuleSpeaksAheadOfEveryContainers`).

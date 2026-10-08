@@ -17,7 +17,7 @@ package struct BadApplication: Error {
     package var reason: String
 }
 package struct NoSuchRecipe: Error {}
-package struct BadAdjustment: Error {
+package struct BadBindingRules: Error {
     package var reason: String
 }
 package struct CommittedRecipe: Error {
@@ -37,10 +37,12 @@ package struct BindingService: Sendable {
     private let sources: SourceStore
     private let bindings: BindingStore
     private let recipes: RecipeStore
+    private let staged: BindingRulesStore
     private let logger = Logger(label: "silo.bindings")
 
     @Inject
-    package init(config: SiloConfig, settings: SettingsStore, index: Index, rulesets: RulesetStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore) {
+    package init(config: SiloConfig, settings: SettingsStore, index: Index, rulesets: RulesetStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, staged: BindingRulesStore) {
+        self.staged = staged
         self.config = config
         self.settings = settings
         self.index = index
@@ -93,7 +95,7 @@ package struct BindingService: Sendable {
             let facts = SourceFacts(input: entry.joined.spec, roles: entry.roles, kind: entry.kind, profile: output.profile, duration: entry.joined.duration)
             do throws(ResolutionError) {
                 let recipe = try RecipeResolver.resolve(facts, with: ruleset, layers: layers, mappings: binding.tracks)
-                return StoredRecipe(binding: binding.id, facts: facts, resolved: recipe)
+                return StoredRecipe(binding: binding.id, facts: facts, recipe: recipe)
             } catch {
                 throw Unresolvable(reason: "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)")
             }
@@ -108,19 +110,6 @@ package struct BindingService: Sendable {
         return (binding, recipes.recipes(of: id))
     }
 
-    package func adjust(_ id: String, _ adjustments: [Adjustment]) throws -> StoredRecipe {
-        guard let current = recipes.recipe(id) else { throw NoSuchRecipe() }
-        let mappings = bindings.binding(current.binding)?.tracks ?? []
-        do {
-            guard let adjusted = try recipes.adjust(id, adjustments, mappings: mappings) else { throw NoSuchRecipe() }
-            return adjusted
-        } catch let error as AdjustmentError {
-            throw BadAdjustment(reason: error.description)
-        } catch let error as RecipeStoreError {
-            throw CommittedRecipe(reason: error.description)
-        }
-    }
-
     package func discard(_ id: String) throws {
         do {
             guard try recipes.discard(id) != nil else { throw NoSuchRecipe() }
@@ -131,12 +120,18 @@ package struct BindingService: Sendable {
 
     // MARK: - The stack
 
-    /// The layers above the ruleset, nearest first: the rules in force of each container of the
-    /// lineage, from the item's own up, as the index holds their sidecars now. A container with no
-    /// sidecar, or no `<rules>`, has no layer; one whose rules cannot be read refuses the application.
+    /// The layers above the ruleset, nearest first: the binding's own rules, when it has any, then
+    /// the rules in force of each container of the lineage, from the item's own up, as the index
+    /// holds their sidecars now. A container with no sidecar, or no `<rules>`, has no layer; rules
+    /// that cannot be read refuse the application.
     private func layers(of binding: Binding, lineage: [SmdKit.Container]) throws -> [RulesLayer] {
         guard let library = config.library(binding.library) else { return [] }
         var layers: [RulesLayer] = []
+        do throws(RulesLayerError) {
+            if let own = try bindingLayer(of: binding, lineage: lineage) { layers.append(own) }
+        } catch {
+            throw Unresolvable(reason: error.description)
+        }
         for container in lineage.reversed() {
             guard let row = try index.container(container.id), let reference = try index.sidecar(container.id)?.rules else { continue }
             let folder = row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
@@ -147,6 +142,88 @@ package struct BindingService: Sendable {
             }
         }
         return layers
+    }
+
+    // MARK: - A binding's own rules
+
+    /// What the library holds of a binding's rules: the folder of the container holding its item,
+    /// whether a presentation made from the binding has been placed there, and the item's
+    /// reference to the binding's rules in force, when it names one.
+    private struct Home {
+        var library: LibraryConfig
+        var folder: URL
+        var sidecar: URL
+        var placed: Bool
+        var reference: SidecarRules?
+    }
+
+    private func home(of binding: Binding, lineage: [SmdKit.Container]) throws -> Home? {
+        guard let library = config.library(binding.library), let container = lineage.last,
+              let row = try index.container(container.id), let sidecar = try index.sidecar(container.id)
+        else { return nil }
+        let folder = row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
+        return Home(
+            library: library, folder: folder, sidecar: folder.appendingPathComponent(SidecarFile.fileName),
+            placed: sidecar.presentations[binding.item]?.contains { $0.source?.binding == binding.id } ?? false,
+            reference: sidecar.bindingRules[binding.item]?.first { $0.binding == binding.id }?.rules
+        )
+    }
+
+    /// The binding's rules in force: in the library once a presentation made from it is placed, and
+    /// in the silo's staging until then.
+    private func bindingLayer(of binding: Binding, lineage: [SmdKit.Container]) throws(RulesLayerError) -> RulesLayer? {
+        let home = try? self.home(of: binding, lineage: lineage)
+        if let home, home.placed {
+            return try home.reference.map { reference throws(RulesLayerError) in try RulesLayerFile.read(.binding(binding.id), reference, in: home.folder) }
+        }
+        guard let version = staged.versions(of: binding.id).last else { return nil }
+        return try RulesLayerFile.read(.binding(binding.id), version: version, file: staged.file(of: binding.id, version: version))
+    }
+
+    /// Stores a binding's next version of its rules, making it the version in force: in the library,
+    /// the file and then the item's reference, once the binding's first presentation is placed; in
+    /// the silo's staging before that. Changes no recipe.
+    package func setRules(_ document: Data, of id: String) throws -> Int {
+        guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
+        do {
+            _ = try RulesetFile.layerRules(from: document)
+        } catch {
+            throw BadBindingRules(reason: "\(error)")
+        }
+        let lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
+        guard let home = try home(of: binding, lineage: lineage), home.placed else {
+            let version = try staged.store(document, for: id)
+            logger.info("staged version \(version) of \(id)'s rules")
+            return version
+        }
+        let reference = home.reference ?? SidecarRules(path: "rules/bindings/\(id)", activeVersion: 1)
+        let versions = home.folder.appendingPathComponent(reference.path, isDirectory: true)
+        try FileManager.default.createDirectory(at: versions, withIntermediateDirectories: true)
+        var version = max(home.reference?.activeVersion ?? 0, staged.versions(of: id).last ?? 0) + 1
+        while FileManager.default.fileExists(atPath: home.folder.appendingPathComponent(reference.file(version: version)).path) {
+            version += 1
+        }
+        try document.write(to: home.folder.appendingPathComponent(reference.file(version: version)), options: .atomic)
+        let moved = SidecarRules(path: reference.path, activeVersion: version)
+        try SidecarFile.data(settingRules: moved, binding: id, item: binding.item, in: Data(contentsOf: home.sidecar)).write(to: home.sidecar, options: .atomic)
+        _ = try Indexer.scan(home.library, into: index)
+        logger.info("wrote version \(version) of \(id)'s rules beside \(home.sidecar.path)")
+        return version
+    }
+
+    /// A binding's rules: the version in force and its document, and every version there is.
+    package func rules(of id: String) throws -> (active: Int?, document: Data?, versions: [Int]) {
+        guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
+        let lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
+        if let home = try home(of: binding, lineage: lineage), home.placed {
+            guard let reference = home.reference else { return (nil, nil, []) }
+            let folder = home.folder.appendingPathComponent(reference.path, isDirectory: true)
+            let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            let versions = files.compactMap { $0.pathExtension == "xml" ? Int($0.deletingPathExtension().lastPathComponent) : nil }.sorted()
+            return (reference.activeVersion, try? Data(contentsOf: home.folder.appendingPathComponent(reference.activeFile)), versions)
+        }
+        let versions = staged.versions(of: id)
+        return (versions.last, versions.last.flatMap { try? Data(contentsOf: staged.file(of: id, version: $0)) }, versions)
     }
 
     // MARK: - Checking

@@ -37,10 +37,16 @@ package struct BindingController {
         guard let recipe = recipes.recipe(id) else { throw NoSuchRecipe() }
         return try Mapping.transcode(recipe)
     }
+
+    @Operation
+    @ErrorResponse(NoSuchBinding.self, .notFound)
+    package func getBindingRules(@Path id: String) async throws -> Components.Schemas.BindingRules {
+        Mapping.bindingRules(try service.rules(of: id))
+    }
 }
 
-/// Bindings made, rulesets applied to them, and drafts adjusted and discarded: the producer's side,
-/// behind the operator's token.
+/// Bindings made, their own rules stored, rulesets applied to them, and drafts discarded: the
+/// producer's side, behind the operator's token.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 @Middleware(RouteMiddleware.requireOperator)
@@ -71,12 +77,11 @@ package struct BindingOperatorController {
     }
 
     @Operation
-    @ErrorResponse(NoSuchRecipe.self, .notFound)
-    @ErrorResponse(BadAdjustment.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(CommittedRecipe.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func adjustRecipe(@Path id: String, @JSONBody body: [Components.Schemas.Adjustment]) async throws -> Components.Schemas.StoredRecipe {
-        let adjustments: [Adjustment] = try Mapping.transcode(body)
-        return try Mapping.transcode(try service.adjust(id, adjustments))
+    @ErrorResponse(NoSuchBinding.self, .notFound)
+    @ErrorResponse(BadBindingRules.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
+    package func setBindingRules(@Path id: String, @JSONBody body: Components.Schemas.NewBindingRules) async throws -> Components.Schemas.BindingRules {
+        _ = try service.setRules(Data(body.document.utf8), of: id)
+        return Mapping.bindingRules(try service.rules(of: id))
     }
 
     @Operation
@@ -107,6 +112,11 @@ private struct NewBinding: Decodable {
 }
 
 extension Mapping {
+    /// A binding's rules as the API renders them.
+    static func bindingRules(_ rules: (active: Int?, document: Data?, versions: [Int])) -> Components.Schemas.BindingRules {
+        Components.Schemas.BindingRules(activeVersion: rules.active, document: rules.document.map { String(decoding: $0, as: UTF8.self) }, versions: rules.versions)
+    }
+
     /// A binding as the API renders it, with the ids of its recipes.
     static func binding(_ binding: Binding, recipes: [String]) throws -> Components.Schemas.Binding {
         struct Rendered: Encodable {

@@ -16,4 +16,4 @@ refused SHALL write none of them.
 - **THEN** the library holds both version files, the item names version 2 of the binding's rules, the
   presentation's `<transform>` names version 2, and the silo's state no longer holds them
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile`). A refused placement writing none of them is pinned by nothing yet.
