@@ -26,4 +26,4 @@ silo does not hold is 404.
   promotes `trial`
 - **THEN** the answer is 409 naming version 9, and the standard's head is still 9
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aBranchIsStartedStoredOnAndPromoted`).

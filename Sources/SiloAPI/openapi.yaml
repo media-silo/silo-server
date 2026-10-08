@@ -429,8 +429,9 @@ paths:
       operationId: storeRuleset
       summary: Store a ruleset as a new version
       description: >
-        Every store is a new version the silo numbers; a version is immutable once stored, because
-        a job names the version it resolved against. Operator only.
+        Every store is a new version the silo numbers, one sequence across all the ruleset's
+        branches; a version is immutable once stored, because a recipe names the version it was
+        resolved against. On the standard unless a branch is named. Operator only.
       tags: [Rulesets]
       security:
         - operator: []
@@ -450,13 +451,110 @@ paths:
               schema:
                 $ref: "#/components/schemas/RulesetDocument"
         "400":
-          description: The document is not a ruleset this silo can read.
+          description: The document is not a ruleset this silo can read, or the branch or version named is not there.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Problem"
         "401":
           $ref: "#/components/responses/Unauthorised"
+        "409":
+          description: The branch named has been promoted, and is closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /rulesets/{name}/branches:
+    get:
+      operationId: listBranches
+      summary: A ruleset's branches, the standard first
+      tags: [Rulesets]
+      parameters:
+        - $ref: "#/components/parameters/RulesetName"
+      responses:
+        "200":
+          description: The branches.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Branch"
+        "404":
+          description: No such ruleset.
+    post:
+      operationId: startBranch
+      summary: Start a branch from a version of the standard
+      tags: [Rulesets]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/RulesetName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewBranch"
+      responses:
+        "201":
+          description: Started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
+        "400":
+          description: The version is not on the standard, or the name is not one a branch can have.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such ruleset.
+        "409":
+          description: The ruleset already has a branch of that name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /rulesets/{name}/branches/{branch}/promote:
+    post:
+      operationId: promoteBranch
+      summary: Make a branch's head the standard's next version
+      description: >
+        A fast-forward: refused, naming them, while the standard has versions the branch has not
+        taken in. The branch closes. Operator only.
+      tags: [Rulesets]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/RulesetName"
+        - name: branch
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: The standard's new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesetSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such ruleset or branch.
+        "409":
+          description: The standard has versions the branch has not taken in, or the branch is closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 
   /rulesets/{name}/resolve:
     post:
@@ -591,6 +689,12 @@ paths:
           $ref: "#/components/responses/Unauthorised"
         "404":
           description: No such binding.
+        "409":
+          description: The branch named has been promoted, and is closed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "422":
           description: A stream no rule decides, for one of the outputs.
           content:
@@ -1635,6 +1739,9 @@ components:
         ruleset:
           type: string
           description: The ruleset to apply; the binding's library's own when absent.
+        branch:
+          type: string
+          description: The ruleset's branch, resolved at its head; the standard when absent.
         version:
           type: integer
           description: The ruleset's version; the latest when absent.
@@ -2365,9 +2472,41 @@ components:
         version:
           type: integer
           description: Assigned by the silo; ignored on a store.
+        branch:
+          type: string
+          description: On a store, the branch to store on; the standard when absent. On a read, the version's branch.
+        upToDateWith:
+          type: integer
+          description: On a store on a branch, the standard version the document takes in.
         document:
           type: string
           description: The ruleset's XML.
+
+    Branch:
+      type: object
+      required: [name, closed]
+      properties:
+        name:
+          type: string
+        base:
+          type: integer
+          description: The standard version it was started from; absent for the standard.
+        head:
+          type: integer
+        upToDateWith:
+          type: integer
+        closed:
+          type: boolean
+
+    NewBranch:
+      type: object
+      required: [name, from]
+      properties:
+        name:
+          type: string
+        from:
+          type: integer
+          description: The standard version to start from.
 
     ResolveRequest:
       type: object

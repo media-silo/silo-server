@@ -31,9 +31,17 @@ package struct RulesetController {
 
     @Operation
     @ErrorResponse(NoSuchRuleset.self, .notFound)
+    package func listBranches(@Path name: String) async throws -> [Components.Schemas.Branch] {
+        let branches = try store.branches(of: name)
+        guard !branches.isEmpty else { throw NoSuchRuleset() }
+        return branches.map(Mapping.branch)
+    }
+
+    @Operation
+    @ErrorResponse(NoSuchRuleset.self, .notFound)
     package func getRuleset(@Path name: String, @Query version: Int?) async throws -> Components.Schemas.RulesetDocument {
         guard let (found, data) = try store.document(named: name, version: version) else { throw NoSuchRuleset() }
-        return Components.Schemas.RulesetDocument(name: name, version: found, document: String(decoding: data, as: UTF8.self))
+        return Components.Schemas.RulesetDocument(name: name, version: found, branch: try store.branch(of: name, version: found), document: String(decoding: data, as: UTF8.self))
     }
 
     /// The dry run: the input specs joined as a binding's segments are, and a recipe for each of the

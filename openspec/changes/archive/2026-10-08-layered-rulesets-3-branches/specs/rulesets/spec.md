@@ -32,8 +32,8 @@ the version it was resolved against, and that version must still say what it sai
   document is stored on it, and then a document is stored on the standard
 - **THEN** the branch's version is 8 with parent 7, and the standard's is 9 with parent 7
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`rulesetsAreVersionedAndTheOperatorGateHolds`).
-The name and already-there refusals, and branches, are pinned by nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`rulesetsAreVersionedAndTheOperatorGateHolds`), `Tests/SiloStoreTests/RulesetBranchTests.swift` (`branchesShareTheSequenceAndEachVersionNamesItsParent`).
+The name and already-there refusals are pinned by nothing yet.
 
 ## ADDED Requirements
 
@@ -53,7 +53,7 @@ only when a version stored on the branch declares a later one.
 - **WHEN** a branch `trial` is started from `household@7`
 - **THEN** its head is `household@7` and it is up to date with version 7
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloStoreTests/RulesetBranchTests.swift` (`branchesShareTheSequenceAndEachVersionNamesItsParent`).
 
 ### Requirement: Promotion makes a branch's head the standard's next version, and never merges
 Promoting a branch SHALL store its head's document as the standard's next version, its parent the
@@ -78,4 +78,4 @@ the branch is brought up to date by storing a version on it that declares the st
   it is up to date with version 9, and `trial` is promoted again
 - **THEN** the standard's next version is stored with that document, and `trial` is closed
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloStoreTests/RulesetBranchTests.swift` (`promotionIsAFastForwardRefusedOverWhatTheBranchHasNotTakenIn`, `aStraightPromotionOverTheStandardsHead`).

@@ -63,15 +63,18 @@ public struct Binding: Hashable, Sendable, Codable {
     }
 }
 
-/// A ruleset applied to a binding: which ruleset — the binding's library's standard when nil — at
-/// which version — the latest when nil — and which of its outputs to make — every one when nil.
+/// A ruleset applied to a binding: which ruleset — the binding's library's standard when nil — on
+/// which branch — the standard when nil — at which version — the branch's head when nil — and
+/// which of its outputs to make — every one when nil.
 public struct Application: Hashable, Sendable, Codable {
     public var ruleset: String?
+    public var branch: String?
     public var version: Int?
     public var outputs: [OutputChoice]?
 
-    public init(ruleset: String? = nil, version: Int? = nil, outputs: [OutputChoice]? = nil) {
+    public init(ruleset: String? = nil, branch: String? = nil, version: Int? = nil, outputs: [OutputChoice]? = nil) {
         self.ruleset = ruleset
+        self.branch = branch
         self.version = version
         self.outputs = outputs
     }
