@@ -798,4 +798,42 @@ extension ServerTests {
             #expect(!(try await client.get("/v1/libraries").bodyText.contains("\"ruleset\"")))
         }
     }
+
+    @Test func aBranchIsStartedStoredOnAndPromoted() async throws {
+        try await withClient { client in
+            let headers = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
+            let document = Fixture.household.replacingOccurrences(of: #"name="household""#, with: #"name="trialset""#)
+            func store(_ branch: String? = nil, upToDateWith: Int? = nil) async throws -> (Int, Int?) {
+                struct Body: Encodable { var name: String; var branch: String?; var upToDateWith: Int?; var document: String }
+                let answer = try await client.send("PUT", "/v1/rulesets/trialset", body: try JSONEncoder().encode(Body(name: "trialset", branch: branch, upToDateWith: upToDateWith, document: document)), headers: headers)
+                return (answer.status, try? answer.json(RulesetDocumentBody.self).version)
+            }
+            #expect(try await store().1 == 1)
+
+            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"trial","from":1}"#.utf8), headers: ["Content-Type": "application/json"]).status == 401)
+            let started = try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"trial","from":1}"#.utf8), headers: headers)
+            #expect(started.status == 201)
+            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"trial","from":1}"#.utf8), headers: headers).status == 409, "a name taken")
+            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"other","from":9}"#.utf8), headers: headers).status == 400, "a version not on the standard")
+            #expect(try await store("trial").1 == 2)
+
+            // The standard moves on; promotion would lose it, until the branch takes it in.
+            #expect(try await store().1 == 3)
+            let refused = try await client.send("POST", "/v1/rulesets/trialset/branches/trial/promote", headers: headers)
+            #expect(refused.status == 409)
+            #expect(refused.bodyText.contains("has not taken in trialset@3"))
+            #expect(try await store("trial", upToDateWith: 3).1 == 4)
+            let promoted = try await client.send("POST", "/v1/rulesets/trialset/branches/trial/promote", headers: headers)
+            #expect(promoted.status == 201)
+            #expect(promoted.bodyText.contains("\"version\":5"))
+
+            struct BranchBody: Decodable { var name: String; var base: Int?; var head: Int?; var closed: Bool }
+            let branches = try await client.get("/v1/rulesets/trialset/branches").json([BranchBody].self)
+            #expect(branches.map(\.name) == ["standard", "trial"])
+            #expect(branches[0].head == 5 && branches[1].closed && branches[1].base == 1)
+            #expect(try await store("trial").0 == 409, "a closed branch takes no store")
+            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches/nowhere/promote", headers: headers).status == 404)
+            #expect(try await client.get("/v1/rulesets/nothing/branches").status == 404)
+        }
+    }
 }

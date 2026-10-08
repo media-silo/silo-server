@@ -101,16 +101,46 @@ package struct OperatorController {
 
     @Operation
     @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     package func storeRuleset(@Path name: String, @JSONBody body: Components.Schemas.RulesetDocument) async throws -> Components.Schemas.RulesetDocument {
         let data = Data(body.document.utf8)
         let version: Int
         do {
-            version = try store.store(data, as: name)
+            version = try store.store(data, as: name, branch: body.branch, upToDateWith: body.upToDateWith)
         } catch let error as RulesetFileError {
             throw BadRuleset(reason: error.description)
         } catch let error as RulesetStoreError {
+            if case .branchClosed = error { throw BranchConflict(reason: error.description) }
             throw BadRuleset(reason: error.description)
         }
-        return Components.Schemas.RulesetDocument(name: name, version: version, document: body.document)
+        return Components.Schemas.RulesetDocument(name: name, version: version, branch: body.branch ?? RulesetStore.standard, document: body.document)
+    }
+
+    @Operation
+    @JSONResponse(status: .created)
+    @ErrorResponse(NoSuchRuleset.self, .notFound)
+    @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    package func startBranch(@Path name: String, @JSONBody body: Components.Schemas.NewBranch) async throws -> Components.Schemas.Branch {
+        guard try store.latestVersion(of: name) != nil else { throw NoSuchRuleset() }
+        do {
+            return Mapping.branch(try store.startBranch(body.name, of: name, from: body.from))
+        } catch let error as RulesetStoreError {
+            if case .branchExists = error { throw BranchConflict(reason: error.description) }
+            throw BadRuleset(reason: error.description)
+        }
+    }
+
+    @Operation
+    @JSONResponse(status: .created)
+    @ErrorResponse(NoSuchRuleset.self, .notFound)
+    @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    package func promoteBranch(@Path name: String, @Path branch: String) async throws -> Components.Schemas.RulesetSummary {
+        do {
+            return Components.Schemas.RulesetSummary(name: name, version: try store.promote(branch, of: name))
+        } catch let error as RulesetStoreError {
+            if case .noSuchBranch = error { throw NoSuchRuleset() }
+            throw BranchConflict(reason: error.description)
+        }
     }
 }

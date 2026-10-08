@@ -242,7 +242,19 @@ public struct SiloClient: Sendable, JobsAPI {
     public struct RulesetDocument: Hashable, Sendable, Codable {
         public var name: String
         public var version: Int?
+        public var branch: String?
+        public var upToDateWith: Int?
         public var document: String
+    }
+
+    /// One of a ruleset's branches: where it started, its head, the standard version it takes in,
+    /// and whether it has been promoted.
+    public struct Branch: Hashable, Sendable, Codable {
+        public var name: String
+        public var base: Int?
+        public var head: Int?
+        public var upToDateWith: Int?
+        public var closed: Bool
     }
 
     public func rulesets() async throws -> [RulesetRef] {
@@ -253,8 +265,26 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("GET", "/v1/rulesets/\(name)" + (version.map { "?version=\($0)" } ?? ""))
     }
 
-    public func store(ruleset document: String, as name: String) async throws -> RulesetDocument {
-        try await send("PUT", "/v1/rulesets/\(name)", body: RulesetDocument(name: name, version: nil, document: document))
+    /// Stores a ruleset as its next version: on the standard, or on a branch, declaring the
+    /// standard version the document takes in.
+    public func store(ruleset document: String, as name: String, branch: String? = nil, upToDateWith: Int? = nil) async throws -> RulesetDocument {
+        try await send("PUT", "/v1/rulesets/\(name)", body: RulesetDocument(name: name, version: nil, branch: branch, upToDateWith: upToDateWith, document: document))
+    }
+
+    public func branches(of ruleset: String) async throws -> [Branch] {
+        try await send("GET", "/v1/rulesets/\(ruleset)/branches")
+    }
+
+    private struct NewBranch: Codable { var name: String; var from: Int }
+
+    public func startBranch(_ branch: String, of ruleset: String, from version: Int) async throws -> Branch {
+        try await send("POST", "/v1/rulesets/\(ruleset)/branches", body: NewBranch(name: branch, from: version))
+    }
+
+    /// Makes a branch's head the standard's next version; refused while the standard has versions
+    /// the branch has not taken in.
+    public func promote(_ branch: String, of ruleset: String) async throws -> RulesetRef {
+        try await send("POST", "/v1/rulesets/\(ruleset)/branches/\(branch)/promote")
     }
 
     // MARK: - Server

@@ -14,6 +14,9 @@ package struct NoSuchRuleset: Error {}
 package struct BadRuleset: Error {
     package var reason: String
 }
+package struct BranchConflict: Error {
+    package var reason: String
+}
 package struct Unresolvable: Error {
     package var reason: String
 }
@@ -108,6 +111,10 @@ enum Mapping {
             case .container(let id): .init(container: id.value, version: layer.version, digest: layer.digest)
             }
         })
+    }
+
+    static func branch(_ branch: RulesetStore.Branch) -> Components.Schemas.Branch {
+        Components.Schemas.Branch(name: branch.name, base: branch.base, head: branch.head, upToDateWith: branch.upToDateWith, closed: branch.closed)
     }
 
     static func finding(_ finding: SiloLibrary.Finding) -> Components.Schemas.Finding {

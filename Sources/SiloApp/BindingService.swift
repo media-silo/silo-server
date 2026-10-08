@@ -17,6 +17,9 @@ package struct BadApplication: Error {
     package var reason: String
 }
 package struct NoSuchRecipe: Error {}
+package struct ClosedBranch: Error {
+    package var reason: String
+}
 package struct BadBindingRules: Error {
     package var reason: String
 }
@@ -68,7 +71,18 @@ package struct BindingService: Sendable {
         guard let name = application.ruleset ?? settings.current.libraries.first(where: { $0.id == binding.library })?.ruleset else {
             throw BadApplication(reason: "the application names no ruleset, and library \(binding.library) has none of its own")
         }
-        guard let ruleset = try rulesets.ruleset(named: name, version: application.version) else {
+        let branch = application.branch ?? RulesetStore.standard
+        if branch != RulesetStore.standard {
+            guard let found = try rulesets.branches(of: name).first(where: { $0.name == branch }) else {
+                throw BadApplication(reason: "\(name) has no branch \(branch)")
+            }
+            guard !found.closed else { throw ClosedBranch(reason: "\(name)'s branch \(branch) has been promoted, and is closed") }
+        }
+        if let version = application.version, let on = try rulesets.branch(of: name, version: version), on != branch {
+            throw BadApplication(reason: "\(name)@\(version) is on \(on), not \(branch)")
+        }
+        let version = try application.version ?? rulesets.head(of: name, branch: branch)
+        guard let version, let ruleset = try rulesets.ruleset(named: name, version: version) else {
             throw BadApplication(reason: "no ruleset \(name)\(application.version.map { "@\($0)" } ?? "")")
         }
         let outputs: [OutputPolicy]

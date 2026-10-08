@@ -71,6 +71,7 @@ package struct BindingOperatorController {
     @ErrorResponse(NoSuchBinding.self, .notFound)
     @ErrorResponse(BadApplication.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(ClosedBranch.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     package func applyRuleset(@Path id: String, @JSONBody body: Components.Schemas.Application) async throws -> [Components.Schemas.StoredRecipe] {
         let application: Application = try Mapping.transcode(body)
         return try service.apply(application, to: id).map { try Mapping.transcode($0) }

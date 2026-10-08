@@ -20,4 +20,4 @@ stores nothing. A recipe SHALL need no field for its branch: its version is on e
 - **WHEN** an application names a branch that has been promoted
 - **THEN** the answer is 409, and nothing is stored
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/BranchApplicationTests.swift` (`anApplicationOnABranchTakesItsHead`).
