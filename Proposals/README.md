@@ -40,3 +40,10 @@ deltas in `openspec/changes/`, as that README describes.
   records its binding and every set of rules that made it, and the silo checks in the background
   which placed presentations the current rules would make differently, and whether their bindings'
   sources can be had.
+- [Rulesets in the console](Rulesets.md) — the operator reads, changes and tries a silo's rulesets
+  from SiloAdmin: versions and branches, each document beside the silo's reading of it, drafts
+  edited as text and checked by the silo as they are typed, a draft's impact on placed
+  presentations shown before anything is stored, stores that refuse to land on a head the editor
+  never saw, branches promoted with their impact beside them, each library's standard, and its
+  out-of-date presentations. The first of the proposals that make the console where a library's
+  structure is defined.
