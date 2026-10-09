@@ -25,6 +25,11 @@ struct JobServiceTests {
         let recipes: RecipeStore
         let settings: SettingsStore
         let stagedRules: BindingRulesStore
+        let bindings: BindingStore
+        let rulesets: RulesetStore
+        let signal: CheckSignal
+        let checks: CheckStore
+        let checkService: CheckService
         let bindingService: BindingService
         let service: JobService
         let index: Index
@@ -37,14 +42,18 @@ struct JobServiceTests {
             store = JobStore()
             sources = SourceStore()
             recipes = RecipeStore()
-            let bindings = BindingStore()
-            let rulesets = try RulesetStore(folder: root.appendingPathComponent("State/rulesets"))
+            bindings = BindingStore()
+            rulesets = try RulesetStore(folder: root.appendingPathComponent("State/rulesets"))
             _ = try rulesets.store(Data(Self.household.utf8), as: "household")
             index = try Index(at: nil)
             settings = SettingsStore(Settings(name: "Silo on test", libraries: config.libraries))
             stagedRules = try BindingRulesStore(folder: root.appendingPathComponent("State/binding-rules"))
-            bindingService = BindingService(config: config, settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes, staged: stagedRules)
-            service = JobService(config: config, jobs: store, sources: sources, bindings: bindings, recipes: recipes, index: index, stagedRules: stagedRules)
+            signal = CheckSignal()
+            checks = CheckStore()
+            let stack = RulesStack(config: config, index: index, staged: stagedRules)
+            checkService = CheckService(jobs: store, recipes: recipes, bindings: bindings, sources: sources, rulesets: rulesets, stack: stack, checks: checks, index: index, config: config)
+            bindingService = BindingService(config: config, settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes, staged: stagedRules, stack: stack, checks: signal)
+            service = JobService(config: config, jobs: store, sources: sources, bindings: bindings, recipes: recipes, index: index, stagedRules: stagedRules, checks: signal)
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }

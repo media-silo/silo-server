@@ -17,9 +17,12 @@ import WireOpenAPI
 package struct RulesetController {
     private let store: RulesetStore
 
+    private let checks: CheckService
+
     @Inject
-    package init(store: RulesetStore) {
+    package init(store: RulesetStore, checks: CheckService) {
         self.store = store
+        self.checks = checks
     }
 
     @Operation
@@ -27,6 +30,12 @@ package struct RulesetController {
         try store.names().compactMap { name in
             try store.latestVersion(of: name).map { Components.Schemas.RulesetSummary(name: name, version: $0) }
         }
+    }
+
+    @Operation
+    @ErrorResponse(NoSuchRuleset.self, .notFound)
+    package func branchImpact(@Path name: String, @Path branch: String) async throws -> [Components.Schemas.OutOfDatePresentation] {
+        try checks.impact(of: branch, of: name).map(Mapping.outOfDate)
     }
 
     @Operation

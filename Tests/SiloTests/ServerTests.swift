@@ -836,4 +836,19 @@ extension ServerTests {
             #expect(try await client.get("/v1/rulesets/nothing/branches").status == 404)
         }
     }
+
+    @Test func theOutOfDateReportAndABranchsImpactAreReadOpenly() async throws {
+        try await withClient { client in
+            let report = try await client.get("/v1/libraries/main/out-of-date")
+            #expect(report.status == 200)
+            struct ReportBody: Decodable { var presentations: [OutOfDateBody]; var pending: Int; var placedWithoutJob: Int }
+            struct OutOfDateBody: Decodable { var recipe: String; var outcome: String }
+            let body = try report.json(ReportBody.self)
+            #expect(body.placedWithoutJob >= 2, "the fixture's presentations were placed by hand")
+            #expect(try await client.get("/v1/libraries/other/out-of-date").status == 404)
+            #expect(try await client.get("/v1/rulesets/trialset/branches/trial/impact").status == 200)
+            #expect(try await client.get("/v1/rulesets/trialset/branches/nowhere/impact").status == 404)
+            #expect(try await client.get("/v1/rulesets/nothing/branches/trial/impact").status == 404)
+        }
+    }
 }

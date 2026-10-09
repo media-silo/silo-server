@@ -17,12 +17,23 @@ package struct LibraryController {
     private let config: SiloConfig
     private let index: Index
     private let settings: SettingsStore
+    private let checks: CheckService
 
     @Inject
-    package init(config: SiloConfig, index: Index, settings: SettingsStore) {
+    package init(config: SiloConfig, index: Index, settings: SettingsStore, checks: CheckService) {
         self.config = config
         self.index = index
         self.settings = settings
+        self.checks = checks
+    }
+
+    @Operation
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    package func libraryOutOfDate(@Path library: String) async throws -> Components.Schemas.OutOfDateReport {
+        let report = try checks.report(library: library)
+        return Components.Schemas.OutOfDateReport(
+            presentations: try report.outOfDate.map(Mapping.outOfDate), pending: report.pending, placedWithoutJob: report.placedWithoutJob
+        )
     }
 
     @Operation

@@ -28,7 +28,7 @@ presentation placed without a job SHALL never be checked.
   rule for that kind of stream changes from FLAC to another encode
 - **THEN** the presentation is current for that stream
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/CheckTests.swift` (`aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `aPromotionThatChangesNothingForAPresentationLeavesItCurrent`, `aPersonsDecisionStandsWhenTheRulesBeneathItChange`).
 
 ### Requirement: The silo checks placed presentations in the background and records what it finds
 The silo SHALL keep, for each presentation placed by a job, its latest check: the stack it was checked
@@ -53,7 +53,7 @@ recorded facts through rules the silo and the library already hold.
 - **WHEN** a check of forty presentations is stopped after twenty, and the silo starts again
 - **THEN** the twenty left are checked, and the twenty done are not checked again
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/CheckTests.swift` (`aContainersRulesReachThePresentationsBelowItAndNoOthers`, `aCheckStoppedHalfWayResumesWithWhatIsLeft`, `aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`).
 
 ### Requirement: An out-of-date presentation is reported with its binding's sources and their copies
 Each out-of-date presentation SHALL be reported with the sources of its recipe's binding, in segment
@@ -67,4 +67,4 @@ out-of-date presentation SHALL stay reported whatever its sources' copies.
 - **THEN** the presentation's source is that same source, now with the copy, and it can be made
   again
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/CheckTests.swift` (`aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, for the sources and their copies). A source registered again is pinned by `Tests/SiloStoreTests/SourceStoreTests.swift` (`aNaturalKeyFindsTheSourceAlreadyRegistered`), which measures that it is the same source with the copy added.

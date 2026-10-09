@@ -224,6 +224,27 @@ paths:
         "404":
           description: No such library, or no ruleset by that name.
 
+  /libraries/{library}/out-of-date:
+    get:
+      operationId: libraryOutOfDate
+      summary: The library's placed presentations the rules in force would make differently
+      description: >
+        Read from the background check's records, with how many placed presentations are still to be
+        checked and how many were placed without a job. Open, as the queue is; a copy is rendered
+        without its secret.
+      tags: [Libraries]
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutOfDateReport"
+        "404":
+          description: No such library.
+
   /libraries/{library}/scan:
     post:
       operationId: scanLibrary
@@ -555,6 +576,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Problem"
+
+  /rulesets/{name}/branches/{branch}/impact:
+    get:
+      operationId: branchImpact
+      summary: What promoting a branch would put out of date
+      description: >
+        Every placed presentation made under the ruleset's standard that the branch's head would make
+        differently, resolved on request and recorded nowhere. Open.
+      tags: [Rulesets]
+      parameters:
+        - $ref: "#/components/parameters/RulesetName"
+        - name: branch
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The presentations, as the out-of-date report gives them.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OutOfDatePresentation"
+        "404":
+          description: No such ruleset or branch.
 
   /rulesets/{name}/resolve:
     post:
@@ -1565,6 +1613,96 @@ components:
           type: string
         text:
           type: string
+
+    OutOfDateReport:
+      type: object
+      required: [presentations, pending, placedWithoutJob]
+      properties:
+        presentations:
+          type: array
+          items:
+            $ref: "#/components/schemas/OutOfDatePresentation"
+        pending:
+          type: integer
+          description: Placed presentations not yet checked against the rules in force.
+        placedWithoutJob:
+          type: integer
+          description: Presentations placed without a job, which have no recipe and are never checked.
+
+    OutOfDatePresentation:
+      type: object
+      required: [recipe, outcome, madeBy, checkedAgainst, changes, sources]
+      properties:
+        presentation:
+          type: string
+        container:
+          type: string
+        item:
+          type: string
+        file:
+          type: string
+        profile:
+          type: string
+        recipe:
+          type: string
+          description: The committed recipe that made it.
+        outcome:
+          type: string
+          enum: [outOfDate, unresolvable]
+        madeBy:
+          $ref: "#/components/schemas/CheckedStack"
+        checkedAgainst:
+          $ref: "#/components/schemas/CheckedStack"
+        changes:
+          type: array
+          items:
+            type: object
+            required: [kind, index, was, now]
+            properties:
+              kind:
+                $ref: "#/components/schemas/StreamKind"
+              index:
+                type: integer
+              was:
+                $ref: "#/components/schemas/Action"
+              now:
+                $ref: "#/components/schemas/Action"
+        reason:
+          type: string
+        sources:
+          type: array
+          description: The binding's sources, in segment order, each with the copies the silo records of it.
+          items:
+            type: object
+            required: [id, copies]
+            properties:
+              id:
+                type: string
+              copies:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourceCopy"
+
+    CheckedStack:
+      type: object
+      required: [ruleset, layers]
+      properties:
+        ruleset:
+          $ref: "#/components/schemas/RulesetRef"
+        layers:
+          type: array
+          items:
+            type: object
+            required: [version, digest]
+            properties:
+              container:
+                type: string
+              binding:
+                type: string
+              version:
+                type: integer
+              digest:
+                type: string
 
     LibraryRuleset:
       type: object
