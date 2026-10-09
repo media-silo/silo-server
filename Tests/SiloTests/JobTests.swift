@@ -315,4 +315,72 @@ struct WorkerTests {
         let duration = try #require(try await ffprobe.probe(output).duration)
         #expect(duration > 2.5 && duration < 3.5, "joined and cut: \(duration) seconds")
     }
+
+    @Test func twoSegmentsOfOneFetchedSourceAreFetchedOnce() async throws {
+        let bench = try JobServiceTests.Bench()
+        defer { bench.remove() }
+        let ffmpeg = try FFmpeg()
+        let ffprobe = try FFprobe()
+        let title = bench.root.appendingPathComponent("title.mkv")
+        try await Self.sample(title, with: ffmpeg)
+        var input = InputSpec(probe: try await ffprobe.probe(title))
+        input.chapters = [InputSpec.Chapter(index: 1, start: 0), InputSpec.Chapter(index: 2, start: 1)]
+
+        let server = try FileServer(host: "127.0.0.1", port: 0, advertisedHost: "127.0.0.1")
+        let serving = Task { try await server.run() }
+        defer { serving.cancel() }
+        var served = server.publish(title, at: "title/source")
+        served.holder = "elsewhere"
+        served.url = URL(string: "http://127.0.0.1:\(try await server.boundPort)/files/title/source")!
+        let source = try bench.sources.register(input, key: nil, copy: served).source
+        // The second chapter, then the first: one source, two segments.
+        let binding = try bench.bindingService.make(Binding(
+            library: "main", containers: JobServiceTests.Bench.containers, item: "part3",
+            segments: [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 2)), Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 1, to: 1))]
+        ))
+        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
+        let job = try bench.service.make(from: draft.id)
+
+        #expect(try await Self.worker(bench, ffmpeg: ffmpeg, ffprobe: ffprobe).runOnce() == true)
+        #expect(try bench.service.job(job.id).state == .encoded)
+        let work = bench.root.appendingPathComponent("work")
+        let fetched = work.appendingPathComponent("\(job.id).1.source.mkv")
+        #expect(FileManager.default.fileExists(atPath: fetched.path), "fetched once, named for the first segment that needs it")
+        #expect(!FileManager.default.fileExists(atPath: work.appendingPathComponent("\(job.id).2.source.mkv").path), "and not again for the second")
+        let list = try String(contentsOf: work.appendingPathComponent("\(job.id).concat"), encoding: .utf8)
+        #expect(list.components(separatedBy: "file '\(fetched.path)'").count == 3, "both segments read the one fetched file")
+    }
+
+    /// The silo's side of the claim, answering one claim with no recipe and recording what the node
+    /// then says.
+    actor NoRecipe: JobsAPI {
+        var failures: [String] = []
+        private var claimed = false
+
+        func claim(node: String, capabilities: Set<String>) async throws -> Claim? {
+            guard !claimed else { return nil }
+            claimed = true
+            return Claim(job: Job(id: "j1", state: .claimed, recipe: "gone"), recipe: nil, segments: [])
+        }
+        func report(_ job: String, progress: JobProgress) async throws -> JobState { .encoding }
+        func complete(_ job: String, output: FileRef, result: EncodeResult) async throws -> Job { Job(id: job, recipe: "gone") }
+        func fail(_ job: String, reason: String) async throws -> Job {
+            failures.append(reason)
+            return Job(id: job, state: .failed, recipe: "gone")
+        }
+    }
+
+    @Test func aClaimWithNoRecipeFailsAtOnce() async throws {
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("silo-norecipe-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let api = NoRecipe()
+        let worker = Worker(
+            api: api,
+            configuration: Worker.Configuration(nodeID: "box", workFolder: work) { _, file in FileRef(holder: "box", url: file, secret: "") },
+            ffmpeg: try FFmpeg(), ffprobe: try FFprobe()
+        )
+        #expect(try await worker.runOnce() == true)
+        #expect(await api.failures == ["job j1 has no recipe to run"])
+        #expect(!FileManager.default.fileExists(atPath: work.path), "nothing is fetched or encoded")
+    }
 }
