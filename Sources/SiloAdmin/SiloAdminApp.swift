@@ -68,6 +68,22 @@ final class ConsoleModel {
     var refusal: Refusal?
     /// The settings last read or written for a silo, by its id: what the detail pane shows.
     private(set) var settings: [AdminConsole.Silo.ID: SiloClient.SettingsReport] = [:]
+    /// Which part of a with-access silo the detail shows.
+    var section: DetailSection = .settings
+    /// The rulesets last read for a silo, by its id.
+    private(set) var rulesets: [AdminConsole.Silo.ID: [SiloClient.RulesetSummary]] = [:]
+    /// The ruleset open for a silo, by its id, at the version chosen.
+    private(set) var opened: [AdminConsole.Silo.ID: AdminConsole.OpenedRuleset] = [:]
+    /// Each library's out-of-date presentations as last read for a silo, by its id.
+    private(set) var outOfDate: [AdminConsole.Silo.ID: [AdminConsole.LibraryOutOfDate]] = [:]
+
+    enum DetailSection: String, CaseIterable, Identifiable {
+        case settings = "Settings"
+        case rulesets = "Rulesets"
+        case outOfDate = "Out of Date"
+
+        var id: String { rawValue }
+    }
 
     /// The endings an operator has to be told in words: someone else's stage runs out at a
     /// clock time, someone else finished, the silo could not be asked at all, or it refused a
@@ -127,6 +143,20 @@ final class ConsoleModel {
             if let url = URL(string: candidate), url.host != nil { urls.append(url) }
         }
         silos = await console.refresh(typedURLs: urls)
+        await refreshSection()
+    }
+
+    /// What the selected silo's detail shows, read again at the console's cadence, so that a version
+    /// stored or a check that moved on elsewhere arrives without the operator asking.
+    private func refreshSection() async {
+        guard let target = selected.single, let silo = silos.first(where: { $0.id == target }), silo.classification == .withAccess else { return }
+        switch section {
+        case .settings: break
+        case .rulesets:
+            await loadRulesets(for: silo)
+            if let current = opened[silo.id] { await open(ruleset: current.summary.name, version: current.document.version, of: silo) }
+        case .outOfDate: await loadOutOfDate(for: silo)
+        }
     }
 
     /// The dialog's confirm: the address joins the kept list, so it answers every refresh from
@@ -207,6 +237,28 @@ final class ConsoleModel {
             refusal = .noAccess
         } catch {
             refusal = .unreachable
+        }
+    }
+
+    /// Reads a with-access silo's rulesets. A failure leaves the last reading in place, as the
+    /// settings do.
+    func loadRulesets(for silo: AdminConsole.Silo) async {
+        if let read = try? await console.rulesets(of: silo) {
+            rulesets[silo.id] = read
+        }
+    }
+
+    /// Opens a ruleset at a version, or at its standard's head.
+    func open(ruleset name: String, version: Int? = nil, of silo: AdminConsole.Silo) async {
+        if let read = try? await console.open(ruleset: name, version: version, of: silo) {
+            opened[silo.id] = read
+        }
+    }
+
+    /// Reads each library's out-of-date presentations.
+    func loadOutOfDate(for silo: AdminConsole.Silo) async {
+        if let read = try? await console.outOfDate(of: silo) {
+            outOfDate[silo.id] = read
         }
     }
 
@@ -357,7 +409,7 @@ private struct DetailRoute: View {
                         .foregroundStyle(.secondary)
                 }
                 if silo.classification == .withAccess {
-                    SettingsPane(silo: silo, model: model)
+                    WithAccessPane(silo: silo, model: model)
                 }
             }
             .padding(silo.classification == .withAccess ? 20 : 40)
@@ -374,6 +426,255 @@ private struct DetailRoute: View {
         } else {
             ContentUnavailableView("Select a Silo", systemImage: "externaldrive")
         }
+    }
+}
+
+/// What the operator can read of a silo this Mac has access to, a section at a time.
+private struct WithAccessPane: View {
+    let silo: AdminConsole.Silo
+    @Bindable var model: ConsoleModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Picker("Section", selection: $model.section) {
+                ForEach(ConsoleModel.DetailSection.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 360)
+            switch model.section {
+            case .settings: SettingsPane(silo: silo, model: model)
+            case .rulesets: RulesetsPane(silo: silo, model: model)
+            case .outOfDate: OutOfDatePane(silo: silo, model: model)
+            }
+        }
+    }
+}
+
+/// The silo's rulesets: each one, and the one open — its branches and versions to choose between,
+/// and the chosen version's document as stored beside the silo's reading of it.
+private struct RulesetsPane: View {
+    let silo: AdminConsole.Silo
+    let model: ConsoleModel
+
+    var body: some View {
+        HSplitView {
+            List(model.rulesets[silo.id] ?? [], id: \.name, selection: Binding(
+                get: { model.opened[silo.id]?.summary.name },
+                set: { name in if let name { Task { await model.open(ruleset: name, of: silo) } } }
+            )) { ruleset in
+                VStack(alignment: .leading) {
+                    Text(ruleset.name)
+                    Text(ruleset.standard.map { "standard at version \($0)" } ?? "no standard")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .tag(ruleset.name)
+            }
+            .frame(minWidth: 160, idealWidth: 180, maxWidth: 240)
+            Group {
+                if let opened = model.opened[silo.id] {
+                    OpenedRulesetView(opened: opened) { version in
+                        Task { await model.open(ruleset: opened.summary.name, version: version, of: silo) }
+                    }
+                } else if model.rulesets[silo.id]?.isEmpty == true {
+                    ContentUnavailableView("No Rulesets", systemImage: "list.bullet.rectangle", description: Text("This silo holds no ruleset yet."))
+                } else {
+                    ContentUnavailableView("Select a Ruleset", systemImage: "list.bullet.rectangle")
+                }
+            }
+            .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: silo.id) { await model.loadRulesets(for: silo) }
+    }
+}
+
+/// One ruleset opened: its branches, each with its base, its head, the standard version it takes in
+/// and whether it has been promoted; the versions on the chosen branch with what each made; and the
+/// chosen version's document beside the silo's reading.
+private struct OpenedRulesetView: View {
+    let opened: AdminConsole.OpenedRuleset
+    let choose: (Int) -> Void
+
+    private var version: Int? { opened.document.version }
+    private var branch: String { opened.document.branch ?? "standard" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(opened.summary.name).font(.title3.bold())
+                Spacer()
+                Picker("Branch", selection: Binding(
+                    get: { branch },
+                    set: { chosen in
+                        if let head = opened.branches.first(where: { $0.name == chosen })?.head { choose(head) }
+                    }
+                )) {
+                    ForEach(opened.branches, id: \.name) { branch in
+                        Text(branch.label).tag(branch.name)
+                    }
+                }
+                .frame(maxWidth: 260)
+                Picker("Version", selection: Binding(get: { version ?? 0 }, set: { choose($0) })) {
+                    ForEach(versions, id: \.version) { version in
+                        Text("\(version.version) · made \(version.presentations)").tag(version.version)
+                    }
+                }
+                .frame(maxWidth: 180)
+            }
+            if let current = opened.branches.first(where: { $0.name == branch }) {
+                Text(current.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HSplitView {
+                ScrollView([.vertical, .horizontal]) {
+                    Text(opened.document.document)
+                        .font(.system(.callout, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(8)
+                }
+                .frame(minWidth: 220)
+                if let reading = opened.document.reading {
+                    ReadingView(reading: reading)
+                        .frame(minWidth: 220)
+                } else {
+                    ContentUnavailableView("No Reading", systemImage: "questionmark.text.page", description: Text("The silo sent no reading of this version."))
+                }
+            }
+        }
+    }
+
+    /// The versions on the chosen branch, newest first.
+    private var versions: [SiloClient.RulesetVersion] {
+        (opened.summary.versions ?? []).filter { $0.branch == branch }.reversed()
+    }
+}
+
+/// The silo's reading of a version: the rules grouped by scope in the order that decides between
+/// them, a scope that can leave a stream undecided marked so, then the outputs and the extraction
+/// policy.
+private struct ReadingView: View {
+    let reading: SiloClient.RulesetReading
+
+    var body: some View {
+        List {
+            ForEach(reading.byScope, id: \.scope) { group in
+                Section {
+                    ForEach(group.rules, id: \.name) { rule in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(rule.name).font(.body.monospaced())
+                                Spacer()
+                                Text(rule.action.summary).foregroundStyle(.secondary)
+                            }
+                            Text(rule.conditions.isEmpty ? "always" : rule.conditions.map(\.text).joined(separator: " and "))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text(group.scope.rawValue.capitalized)
+                        if reading.scopesWithoutCatchAll.contains(group.scope) {
+                            Label("No catch-all", systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                                .help("Every \(group.scope.rawValue) rule has conditions: a stream that meets none of them stops an application.")
+                        }
+                    }
+                }
+            }
+            Section("Outputs") {
+                ForEach(reading.outputs, id: \.self) { output in
+                    LabeledContent(output.profile ?? "unqualified", value: output.container)
+                }
+            }
+            Section("Extraction") {
+                LabeledContent("Embedded audio tracks", value: reading.extraction.includeEmbeddedAudioTracks ? "kept" : "left out")
+                LabeledContent("Subtitles", value: reading.extraction.includeSubtitles ? "kept" : "left out")
+                LabeledContent("Embedded subtitle tracks", value: reading.extraction.includeEmbeddedSubtitleTracks ? "kept" : "left out")
+            }
+        }
+    }
+}
+
+/// Each library's out-of-date presentations as the background check has found them so far, with
+/// how many it has still to check. Nothing here makes anything again.
+private struct OutOfDatePane: View {
+    let silo: AdminConsole.Silo
+    let model: ConsoleModel
+
+    var body: some View {
+        List {
+            ForEach(model.outOfDate[silo.id] ?? [], id: \.library) { library in
+                Section {
+                    if library.report.presentations.isEmpty {
+                        Text("Nothing out of date").foregroundStyle(.secondary)
+                    }
+                    ForEach(library.report.presentations, id: \.recipe) { presentation in
+                        OutOfDateRow(presentation: presentation)
+                    }
+                } header: {
+                    HStack {
+                        Text(library.library)
+                        Spacer()
+                        if library.report.pending > 0 {
+                            Text("\(library.report.pending) still to be checked")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: silo.id) { await model.loadOutOfDate(for: silo) }
+    }
+}
+
+private struct OutOfDateRow: View {
+    let presentation: SiloClient.OutOfDatePresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text([presentation.container, presentation.item].compactMap { $0 }.joined(separator: " · "))
+                if let profile = presentation.profile { Text(profile).foregroundStyle(.secondary) }
+                Spacer()
+                if !presentation.everySourceHasACopy {
+                    Label("A source has no copy", systemImage: "externaldrive.badge.exclamationmark")
+                        .foregroundStyle(.orange)
+                }
+            }
+            if let file = presentation.file {
+                Text(file).font(.caption.monospaced()).foregroundStyle(.secondary)
+            }
+            Text("Made by \(presentation.madeBy.summary); checked against \(presentation.checkedAgainst.summary)")
+                .font(.caption)
+            ForEach(presentation.changes, id: \.self) { change in
+                Text("\(change.kind.rawValue) \(change.index): \(change.was.summary) → \(change.now.summary)")
+                    .font(.caption.monospaced())
+            }
+            if presentation.outcome == .unresolvable {
+                Text(presentation.reason.map { "No longer resolves: \($0)" } ?? "No longer resolves")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if let reason = presentation.reason {
+                Text(reason).font(.caption)
+            }
+        }
+    }
+}
+
+extension SiloClient.Branch {
+    /// The picker's line: the branch, marked when it has been promoted.
+    fileprivate var label: String {
+        closed ? "\(name) (promoted)" : name
+    }
+
+    /// Where the branch stands: its base, its head, and the standard version it takes in.
+    fileprivate var detail: String {
+        guard let base else { return head.map { "The standard, at version \($0)" } ?? "The standard" }
+        return "From standard version \(base), at version \(head ?? base), up to date with standard version \(upToDateWith ?? base)" + (closed ? "; promoted, and closed" : "")
     }
 }
 
@@ -483,7 +784,7 @@ private struct SeenText: View {
 
 extension Set {
     /// The selection the detail reads: exactly one, or nothing to say.
-    fileprivate var single: Element? { count == 1 ? first : nil }
+    var single: Element? { count == 1 ? first : nil }
 }
 
 struct SiloRow<Actions: View>: View {

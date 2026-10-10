@@ -366,6 +366,51 @@ public actor AdminConsole {
         }
     }
 
+    // MARK: - Rulesets
+
+    /// A ruleset opened: its summary and branches, and one version's document as the silo stored it,
+    /// with the silo's reading of it.
+    public struct OpenedRuleset: Hashable, Sendable {
+        public var summary: SiloClient.RulesetSummary
+        public var branches: [SiloClient.Branch]
+        public var document: SiloClient.RulesetDocument
+    }
+
+    /// One library's out-of-date presentations, as the background check has found them so far.
+    public struct LibraryOutOfDate: Hashable, Sendable {
+        public var library: String
+        public var report: SiloClient.OutOfDateReport
+    }
+
+    /// The rulesets a with-access silo holds, each with every version.
+    public func rulesets(of silo: Silo) async throws -> [SiloClient.RulesetSummary] {
+        try await withOperator(silo) { try await $0.rulesets() }
+    }
+
+    /// Opens a ruleset at a version, or at its standard's head when none is named: the version the
+    /// library's applications take unless they name a branch.
+    public func open(ruleset name: String, version: Int? = nil, of silo: Silo) async throws -> OpenedRuleset {
+        try await withOperator(silo) { client in
+            guard let summary = try await client.rulesets().first(where: { $0.name == name }) else {
+                throw SiloClientError.status(404, "no ruleset \(name)")
+            }
+            let branches = try await client.branches(of: name)
+            let document = try await client.ruleset(named: name, version: version ?? summary.standard ?? summary.version)
+            return OpenedRuleset(summary: summary, branches: branches, document: document)
+        }
+    }
+
+    /// Each library's out-of-date presentations, in the order the silo lists its libraries.
+    public func outOfDate(of silo: Silo) async throws -> [LibraryOutOfDate] {
+        try await withOperator(silo) { client in
+            var reports: [LibraryOutOfDate] = []
+            for library in try await client.settings().readOnly.libraries {
+                reports.append(LibraryOutOfDate(library: library.id, report: try await client.outOfDate(in: library.id)))
+            }
+            return reports
+        }
+    }
+
     // MARK: - Forget
 
     /// Forgets a silo outright: its passkey out of this Mac's stores, its entry out of the

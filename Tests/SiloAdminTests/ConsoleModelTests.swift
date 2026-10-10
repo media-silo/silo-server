@@ -91,5 +91,51 @@ struct ConsoleModelTests {
         #expect(model.silos.first { $0.id == "s1" }?.classification == .withAccess)
         #expect(model.refusal == nil)
     }
+
+    /// The Rulesets section keeps itself current as the rest of the console does: a version stored
+    /// elsewhere arrives at the next refresh, without the operator asking for it.
+    @Test func theRulesetsSectionKeepsItselfCurrent() async throws {
+        let store = InMemoryPasskeyStore()
+        store.store("held", for: "s1")
+        let standard = Mutex(3)
+        Stub.handler.withLock {
+            $0 = { request in
+                let head = standard.withLock { $0 }
+                let versions = (1...head).map { #"{"version":\#($0),"branch":"standard","presentations":0}"# }.joined(separator: ",")
+                switch request.url?.path {
+                case "/v1/server": return (200, Self.serverInfo(bootstrap: false))
+                case "/v1/operator": return (200, Data(#"{"phase":"active"}"#.utf8))
+                case "/v1/rulesets": return (200, Data(#"[{"name":"household","version":\#(head),"standard":\#(head),"versions":[\#(versions)]}]"#.utf8))
+                case "/v1/rulesets/household/branches": return (200, Data(#"[{"name":"standard","head":\#(head),"closed":false}]"#.utf8))
+                case "/v1/rulesets/household":
+                    let version = request.url?.query?.split(separator: "=").last.flatMap { Int($0) } ?? head
+                    return (200, Data(#"{"name":"household","version":\#(version),"branch":"standard","document":"<ruleset/>"}"#.utf8))
+                default: return nil
+                }
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [Stub.self]
+        let model = ConsoleModel(console: AdminConsole(
+            registry: SiloRegistry(),
+            passkeys: store,
+            session: URLSession(configuration: configuration),
+            browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
+        ))
+
+        await model.refresh()
+        let silo = try #require(model.silos.first { $0.id == "s1" })
+        model.selected = [silo.id]
+        model.section = .rulesets
+        await model.loadRulesets(for: silo)
+        await model.open(ruleset: "household", of: silo)
+        #expect(model.opened[silo.id]?.document.version == 3, "opened at the standard's head")
+
+        standard.withLock { $0 = 4 }
+        await model.refresh()
+        #expect(model.rulesets[silo.id]?.first?.standard == 4, "the list takes the version stored elsewhere")
+        #expect(model.opened[silo.id]?.summary.versions?.map(\.version) == [1, 2, 3, 4], "and so do the open ruleset's versions")
+        #expect(model.opened[silo.id]?.document.version == 3, "while the version the operator chose stays chosen")
+    }
 }
 #endif

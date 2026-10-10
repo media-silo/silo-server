@@ -239,12 +239,92 @@ public struct SiloClient: Sendable, JobsAPI {
 
     // MARK: - Rulesets
 
+    /// A ruleset as the list gives it: its latest version, the standard's head, and every version.
+    public struct RulesetSummary: Hashable, Sendable, Codable {
+        public var name: String
+        public var version: Int
+        public var standard: Int?
+        public var versions: [RulesetVersion]?
+    }
+
+    /// One version of a ruleset: its branch, its parent, and how many placed presentations a
+    /// committed recipe naming it made.
+    public struct RulesetVersion: Hashable, Sendable, Codable {
+        public var version: Int
+        public var branch: String
+        public var parent: Int?
+        public var presentations: Int
+    }
+
     public struct RulesetDocument: Hashable, Sendable, Codable {
         public var name: String
         public var version: Int?
         public var branch: String?
         public var upToDateWith: Int?
+        public var basedOn: Int?
         public var document: String
+        /// The silo's reading of the document, on a read.
+        public var reading: RulesetReading?
+    }
+
+    /// A ruleset as the silo reads it, named by where it is stored: what a console shows beside the
+    /// document, so that it never parses one itself.
+    public struct RulesetReading: Hashable, Sendable, Codable {
+        public var name: String
+        public var extraction: ExtractionPolicy
+        /// In document order.
+        public var rules: [RuleReading]
+        public var outputs: [OutputPolicy]
+    }
+
+    /// One rule, by the name a recipe calls it by: its id, or `#n` for its position.
+    public struct RuleReading: Hashable, Sendable, Codable {
+        public var name: String
+        public var scope: Scope
+        public var conditions: [ConditionReading]
+        public var action: Action
+    }
+
+    /// A condition as the document writes it: the fact, the test's attribute and its value.
+    public struct ConditionReading: Hashable, Sendable, Codable {
+        public var fact: String
+        public var test: String
+        public var value: String
+    }
+
+    /// A library's out-of-date presentations, as the background check has found them so far.
+    public struct OutOfDateReport: Hashable, Sendable, Codable {
+        public var presentations: [OutOfDatePresentation]
+        /// Placed presentations not yet checked against the rules in force.
+        public var pending: Int
+        /// Presentations placed without a job, which have no recipe and are never checked.
+        public var placedWithoutJob: Int
+    }
+
+    /// One presentation the rules in force would make differently, or not at all.
+    public struct OutOfDatePresentation: Hashable, Sendable, Codable {
+        public enum Outcome: String, Hashable, Sendable, Codable {
+            case outOfDate, unresolvable
+        }
+
+        /// One source of the presentation's binding, with the copies nodes hold of it.
+        public struct Source: Hashable, Sendable, Codable {
+            public var id: String
+            public var copies: [SourceRecord.Copy]
+        }
+
+        public var presentation: String?
+        public var container: String?
+        public var item: String?
+        public var file: String?
+        public var profile: String?
+        public var recipe: String
+        public var outcome: Outcome
+        public var madeBy: CheckedStack
+        public var checkedAgainst: CheckedStack
+        public var changes: [StreamChange]
+        public var reason: String?
+        public var sources: [Source]
     }
 
     /// One of a ruleset's branches: where it started, its head, the standard version it takes in,
@@ -257,8 +337,13 @@ public struct SiloClient: Sendable, JobsAPI {
         public var closed: Bool
     }
 
-    public func rulesets() async throws -> [RulesetRef] {
+    public func rulesets() async throws -> [RulesetSummary] {
         try await send("GET", "/v1/rulesets")
+    }
+
+    /// A library's out-of-date presentations, from the background check's records.
+    public func outOfDate(in library: String) async throws -> OutOfDateReport {
+        try await send("GET", "/v1/libraries/\(library)/out-of-date")
     }
 
     public func ruleset(named name: String, version: Int? = nil) async throws -> RulesetDocument {
@@ -268,7 +353,7 @@ public struct SiloClient: Sendable, JobsAPI {
     /// Stores a ruleset as its next version: on the standard, or on a branch, declaring the
     /// standard version the document takes in.
     public func store(ruleset document: String, as name: String, branch: String? = nil, upToDateWith: Int? = nil) async throws -> RulesetDocument {
-        try await send("PUT", "/v1/rulesets/\(name)", body: RulesetDocument(name: name, version: nil, branch: branch, upToDateWith: upToDateWith, document: document))
+        try await send("PUT", "/v1/rulesets/\(name)", body: RulesetDocument(name: name, version: nil, branch: branch, upToDateWith: upToDateWith, basedOn: nil, document: document))
     }
 
     public func branches(of ruleset: String) async throws -> [Branch] {
