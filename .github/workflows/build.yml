@@ -10,6 +10,9 @@ jobs:
   Test:
     name: Build and test
     runs-on: ubuntu-24.04
+    # A passing run takes around twenty minutes. A test that hangs fails the job at this limit
+    # rather than holding the runner for GitHub's six hours, as one waiting on a tool once did.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       # The toolchain is the one .swift-version names, installed through Swiftly, so a new Swift

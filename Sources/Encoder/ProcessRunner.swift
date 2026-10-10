@@ -3,6 +3,13 @@
 
 import Foundation
 import Synchronization
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 /// Where the tools are. An environment variable first, so a node can point at a build of its own;
 /// then `PATH`; then the places package managers put them, for a launchd or GUI process whose
@@ -67,31 +74,11 @@ package enum ProcessRunner {
         let state = Mutex(State())
         let lines = LineSplitter()
 
-        stdout.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                for line in lines.finish() { onLine(line) }
-                state.withLock { $0.stdoutClosed = true }
-                State.resumeIfDone(state)
-            } else {
-                for line in lines.append(data) { onLine(line) }
-            }
-        }
-        stderr.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                state.withLock { $0.stderrClosed = true }
-                State.resumeIfDone(state)
-            } else {
-                state.withLock { $0.appendStderr(data) }
-            }
-        }
         process.terminationHandler = { process in
             state.withLock { $0.status = process.terminationStatus }
             State.resumeIfDone(state)
         }
+        let exited: @Sendable () -> Bool = { state.withLock { $0.status != nil } }
 
         let box = ProcessBox(process)
         return try await withTaskCancellationHandler {
@@ -99,6 +86,20 @@ package enum ProcessRunner {
                 state.withLock { $0.continuation = continuation }
                 do {
                     try process.run()
+                    // Read only once it runs: `run()` closes this process's copies of the write ends.
+                    PipeReader.start(stdout.fileHandleForReading, exited: exited) { data in
+                        for line in lines.append(data) { onLine(line) }
+                    } onEnd: {
+                        for line in lines.finish() { onLine(line) }
+                        state.withLock { $0.stdoutClosed = true }
+                        State.resumeIfDone(state)
+                    }
+                    PipeReader.start(stderr.fileHandleForReading, exited: exited) { data in
+                        state.withLock { $0.appendStderr(data) }
+                    } onEnd: {
+                        state.withLock { $0.stderrClosed = true }
+                        State.resumeIfDone(state)
+                    }
                 } catch {
                     let taken = state.withLock { state -> CheckedContinuation<Outcome, any Error>? in
                         defer { state.continuation = nil }
@@ -149,6 +150,53 @@ package enum ProcessRunner {
         func terminate() {
             if process.isRunning { process.terminate() }
         }
+    }
+}
+
+/// Reads one pipe on a thread of its own until it ends: at end-of-file, or once the tool has exited
+/// and the pipe has stayed empty for a further poll, so a write end held open anywhere but the tool
+/// cannot keep a run waiting. Not `readabilityHandler`, which on Linux can lose the end-of-file when
+/// several tools run at once: every tool exits and its pipe holds nothing more, but the handler is
+/// never called with the end, and the run waits forever.
+enum PipeReader {
+    static func start(
+        _ handle: FileHandle,
+        exited: @escaping @Sendable () -> Bool,
+        onData: @escaping @Sendable (Data) -> Void,
+        onEnd: @escaping @Sendable () -> Void
+    ) {
+        let reading = ReadingHandle(handle)
+        Thread.detachNewThread {
+            let descriptor = reading.handle.fileDescriptor
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+            var lastLook = false
+            while true {
+                var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+                let ready = poll(&poller, 1, 100)
+                if ready > 0 {
+                    let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }
+                    if count > 0 {
+                        onData(Data(buffer[0..<count]))
+                        continue
+                    }
+                    if count < 0 && (errno == EINTR || errno == EAGAIN) { continue }
+                    break
+                }
+                if ready < 0 && errno != EINTR { break }
+                // Empty for a whole poll: if the tool had already exited before it, everything it
+                // wrote has been read.
+                if lastLook { break }
+                lastLook = exited()
+            }
+            onEnd()
+        }
+    }
+
+    /// `FileHandle` is not Sendable; the reading thread is the only one that touches it, and holding
+    /// it keeps its descriptor open until the thread is done.
+    private struct ReadingHandle: @unchecked Sendable {
+        let handle: FileHandle
+        init(_ handle: FileHandle) { self.handle = handle }
     }
 }
 
