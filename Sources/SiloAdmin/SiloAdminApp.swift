@@ -76,6 +76,41 @@ final class ConsoleModel {
     private(set) var opened: [AdminConsole.Silo.ID: AdminConsole.OpenedRuleset] = [:]
     /// Each library's out-of-date presentations as last read for a silo, by its id.
     private(set) var outOfDate: [AdminConsole.Silo.ID: [AdminConsole.LibraryOutOfDate]] = [:]
+    /// The draft open for a silo, by its id: the console's alone until it is stored or discarded, and
+    /// kept here rather than in a view so that closing the section or refreshing it loses nothing.
+    private(set) var drafts: [AdminConsole.Silo.ID: Draft] = [:]
+    /// What the silo last made of each draft's text.
+    private(set) var draftChecks: [AdminConsole.Silo.ID: AdminConsole.DraftCheck] = [:]
+    private var checking: [AdminConsole.Silo.ID: Task<Void, Never>] = [:]
+    /// How long after the last keystroke a draft is checked.
+    let checkDelay: Duration
+    /// The review before a store, when one is open.
+    var review: Review?
+    /// A promotion being considered, when one is.
+    var promotion: Promotion?
+    /// The libraries last read for a silo, each with its standard.
+    private(set) var libraries: [AdminConsole.Silo.ID: [SiloClient.Library]] = [:]
+
+    /// A draft's review: its difference and impact before anything is stored, and, when another
+    /// version landed first, that version, for the draft to be re-based on it or discarded.
+    struct Review: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var draft: Draft
+        var impact: [SiloClient.OutOfDatePresentation]
+        var branches: [SiloClient.Branch]
+        var landed: SiloClient.RulesetDocument?
+    }
+
+    /// A branch's promotion: what it would put out of date, and, once refused, what it has not taken in.
+    struct Promotion: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var ruleset: String
+        var branch: String
+        var impact: [SiloClient.OutOfDatePresentation]
+        var refused: AdminConsole.PromotionRefused?
+    }
 
     enum DetailSection: String, CaseIterable, Identifiable {
         case settings = "Settings"
@@ -93,6 +128,7 @@ final class ConsoleModel {
         case noLongerInBootstrap
         case unreachable
         case settingsRefused(String)
+        case storeRefused(String)
         case noAccess
 
         var title: String {
@@ -101,6 +137,7 @@ final class ConsoleModel {
             case .noLongerInBootstrap: "Someone Finished First"
             case .unreachable: "The Silo Could Not Be Reached"
             case .settingsRefused: "The Silo Refused the Change"
+            case .storeRefused: "The Silo Refused the Store"
             case .noAccess: "No Access"
             }
         }
@@ -115,6 +152,8 @@ final class ConsoleModel {
                 "No reply; the row keeps its last-known state. Try again when the silo answers."
             case .settingsRefused(let reason):
                 "Nothing was changed: \(reason)."
+            case .storeRefused(let reason):
+                "Nothing was stored, and the draft is kept: \(reason)."
             case .noAccess:
                 "The silo no longer accepts the passkey this Mac holds for it, so its settings cannot be changed from here."
             }
@@ -128,8 +167,9 @@ final class ConsoleModel {
         case failed
     }
 
-    init(console: AdminConsole) {
+    init(console: AdminConsole, checkDelay: Duration = .milliseconds(400)) {
         self.console = console
+        self.checkDelay = checkDelay
     }
 
     /// Browses, resolves every added address, and republishes the rows. An added address that
@@ -262,6 +302,159 @@ final class ConsoleModel {
         }
     }
 
+    // MARK: Drafts
+
+    /// Opens a draft for a silo and has the silo check it at once.
+    func startDraft(_ draft: Draft, for silo: AdminConsole.Silo) {
+        drafts[silo.id] = draft
+        draftChecks[silo.id] = nil
+        scheduleCheck(for: silo, after: .zero)
+    }
+
+    /// The operator's edit: the text kept, and checked a moment after they stop typing.
+    func editDraft(_ text: String, for silo: AdminConsole.Silo) {
+        guard var draft = drafts[silo.id], draft.text != text else { return }
+        draft.text = text
+        drafts[silo.id] = draft
+        scheduleCheck(for: silo, after: checkDelay)
+    }
+
+    func discardDraft(for silo: AdminConsole.Silo) {
+        checking[silo.id]?.cancel()
+        drafts[silo.id] = nil
+        draftChecks[silo.id] = nil
+        if review?.silo.id == silo.id { review = nil }
+    }
+
+    /// Waits for the check in flight, if any: what a test needs to read the outcome.
+    func settleCheck(for silo: AdminConsole.Silo) async {
+        await checking[silo.id]?.value
+    }
+
+    /// Each keystroke cancels the check it supersedes, so only the text the operator stopped on is
+    /// sent; a reply for text that has since changed is dropped.
+    private func scheduleCheck(for silo: AdminConsole.Silo, after delay: Duration) {
+        checking[silo.id]?.cancel()
+        checking[silo.id] = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled, let self, let draft = self.drafts[silo.id] else { return }
+            guard let outcome = try? await self.console.check(draft, of: silo), !Task.isCancelled,
+                  self.drafts[silo.id]?.text == draft.text
+            else { return }
+            self.draftChecks[silo.id] = outcome
+        }
+    }
+
+    /// Opens the review: the draft's difference from its base, which needs nothing from the silo, and
+    /// its impact, which the silo resolves. Nothing is stored.
+    func beginReview(for silo: AdminConsole.Silo) async {
+        guard let draft = drafts[silo.id] else { return }
+        do {
+            let impact = try await console.impact(of: draft, of: silo)
+            let branches = draft.base == nil ? [] : (try? await console.open(ruleset: draft.ruleset, of: silo).branches) ?? []
+            review = Review(silo: silo, draft: draft, impact: impact, branches: branches)
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
+    /// Stores the reviewed draft. A new version ends the draft and opens what was stored; a version
+    /// that landed first keeps the draft and shows that version in the review.
+    func store(to target: AdminConsole.StoreTarget) async {
+        guard let review, let draft = drafts[review.silo.id] else { return }
+        do {
+            switch try await console.store(draft, to: target, of: review.silo) {
+            case .stored(let version):
+                self.review = nil
+                discardDraft(for: review.silo)
+                await loadRulesets(for: review.silo)
+                await open(ruleset: version.name, version: version.version, of: review.silo)
+            case .landedFirst(let landed):
+                self.review?.landed = landed
+            }
+        } catch let refused as AdminConsole.StoreRefused {
+            refusal = .storeRefused(refused.reason)
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
+    /// Re-bases the draft on the version that landed first, its text as it was; the review closes,
+    /// so that the next one is read against the new base.
+    func rebase(on landed: SiloClient.RulesetDocument, for silo: AdminConsole.Silo) {
+        guard let draft = drafts[silo.id] else { return }
+        review = nil
+        startDraft(draft.rebased(on: landed), for: silo)
+    }
+
+    // MARK: Promotion
+
+    func beginPromotion(of branch: String, of ruleset: String, on silo: AdminConsole.Silo) async {
+        do {
+            let impact = try await console.impact(ofBranch: branch, of: ruleset, on: silo)
+            promotion = Promotion(silo: silo, ruleset: ruleset, branch: branch, impact: impact)
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
+    /// Promotes the branch being considered. A refusal stays in the sheet, with what the branch has
+    /// not taken in.
+    func promote() async {
+        guard let promotion else { return }
+        do {
+            let version = try await console.promote(promotion.branch, of: promotion.ruleset, on: promotion.silo)
+            self.promotion = nil
+            await loadRulesets(for: promotion.silo)
+            await open(ruleset: version.name, version: version.version, of: promotion.silo)
+        } catch let refused as AdminConsole.PromotionRefused {
+            self.promotion?.refused = refused
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
+    /// A draft on the branch from its head, taking in the standard's head, for the operator to make
+    /// the branch's document say what it should of the standard's work before the promotion is
+    /// offered again.
+    func takeIn(_ standardHead: Int, on promotion: Promotion) async {
+        guard let opened = try? await console.open(ruleset: promotion.ruleset, of: promotion.silo),
+              let head = opened.branches.first(where: { $0.name == promotion.branch })?.head,
+              let branchHead = try? await console.open(ruleset: promotion.ruleset, version: head, of: promotion.silo)
+        else { refusal = .unreachable; return }
+        self.promotion = nil
+        var draft = Draft.change(branchHead.document)
+        draft.upToDateWith = standardHead
+        startDraft(draft, for: promotion.silo)
+    }
+
+    // MARK: Libraries
+
+    func loadLibraries(for silo: AdminConsole.Silo) async {
+        if let read = try? await console.libraries(of: silo) {
+            libraries[silo.id] = read
+        }
+        if rulesets[silo.id] == nil { await loadRulesets(for: silo) }
+    }
+
+    /// Names a library's standard, or clears it; the library shows what the silo answered with.
+    func setStandard(_ ruleset: String?, of library: String, on silo: AdminConsole.Silo) async {
+        do {
+            let answered = try await console.setStandard(ruleset, of: library, on: silo)
+            if let index = libraries[silo.id]?.firstIndex(where: { $0.id == library }) {
+                libraries[silo.id]?[index] = answered
+            }
+        } catch let refused as AdminConsole.SettingsRefused {
+            refusal = .settingsRefused(refused.reason)
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
     /// Forgetting is the engine's purge — passkey off this Mac, registry entry gone — so the
     /// row simply leaves on the next publish. Non-recoverable by design; the sheet said so.
     func forget(_ silo: AdminConsole.Silo) async {
@@ -335,6 +528,12 @@ struct ConsoleView: View {
                 onConfirm: { name in Task { await model.runSetup(prepared, name: name) } },
                 onCancel: { model.prepared = nil }
             )
+        }
+        .sheet(item: $model.review) { review in
+            ReviewSheet(review: review, model: model)
+        }
+        .sheet(item: $model.promotion) { promotion in
+            PromotionSheet(promotion: promotion, model: model)
         }
         .sheet(item: $model.claimTarget) { silo in
             ClaimSheet(
@@ -472,10 +671,21 @@ private struct RulesetsPane: View {
                 .tag(ruleset.name)
             }
             .frame(minWidth: 160, idealWidth: 180, maxWidth: 240)
+            .safeAreaInset(edge: .bottom) {
+                Button("New Ruleset…", systemImage: "plus") { naming = .new }
+                    .buttonStyle(.borderless)
+                    .padding(8)
+                    .disabled(model.drafts[silo.id] != nil)
+            }
             Group {
-                if let opened = model.opened[silo.id] {
-                    OpenedRulesetView(opened: opened) { version in
-                        Task { await model.open(ruleset: opened.summary.name, version: version, of: silo) }
+                if let draft = model.drafts[silo.id] {
+                    DraftEditor(silo: silo, draft: draft, model: model)
+                } else if let opened = model.opened[silo.id] {
+                    VStack(alignment: .leading, spacing: 8) {
+                        RulesetActions(silo: silo, opened: opened, model: model, naming: $naming)
+                        OpenedRulesetView(opened: opened) { version in
+                            Task { await model.open(ruleset: opened.summary.name, version: version, of: silo) }
+                        }
                     }
                 } else if model.rulesets[silo.id]?.isEmpty == true {
                     ContentUnavailableView("No Rulesets", systemImage: "list.bullet.rectangle", description: Text("This silo holds no ruleset yet."))
@@ -488,6 +698,312 @@ private struct RulesetsPane: View {
         }
         .sectionPanel()
         .task(id: silo.id) { await model.loadRulesets(for: silo) }
+        .alert(naming?.title ?? "", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
+            TextField("Name", text: $nameDraft)
+            Button("Start Draft") {
+                let name = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                switch naming {
+                case .new: model.startDraft(.starter(named: name), for: silo)
+                case .copy(let version): model.startDraft(.copy(of: version, as: name), for: silo)
+                case nil: break
+                }
+                nameDraft = ""
+            }
+            .keyboardShortcut(.defaultAction)
+            .disabled(nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) { nameDraft = "" }
+        } message: {
+            Text(naming?.message ?? "")
+        }
+    }
+
+    @State private var naming: Naming?
+    @State private var nameDraft = ""
+
+    /// A draft that needs a name before it starts: a new ruleset from the starter, or a copy.
+    enum Naming {
+        case new
+        case copy(SiloClient.RulesetDocument)
+
+        var title: String {
+            switch self {
+            case .new: "New Ruleset"
+            case .copy(let version): "Copy \(version.name) Version \(version.version ?? 0)"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .new: "It starts from a rule copying every stream of each scope, the default extraction and one output."
+            case .copy: "The copy's name attribute is changed to the new name, as an edit you can see."
+            }
+        }
+    }
+}
+
+/// What can be done from the version on screen: change it, copy it, go back to it when it is not
+/// its branch's head, and promote its branch when that is not the standard.
+private struct RulesetActions: View {
+    let silo: AdminConsole.Silo
+    let opened: AdminConsole.OpenedRuleset
+    let model: ConsoleModel
+    @Binding var naming: RulesetsPane.Naming?
+
+    private var branch: SiloClient.Branch? {
+        opened.branches.first { $0.name == (opened.document.branch ?? "standard") }
+    }
+
+    var body: some View {
+        HStack {
+            Button("Edit", systemImage: "pencil") { model.startDraft(.change(opened.document), for: silo) }
+            Button("Copy As…", systemImage: "doc.on.doc") { naming = .copy(opened.document) }
+            if let branch, let head = branch.head, head != opened.document.version, !branch.closed {
+                Button("Go Back to This Version", systemImage: "arrow.uturn.backward") {
+                    Task {
+                        await model.open(ruleset: opened.summary.name, version: head, of: silo)
+                        if let current = model.opened[silo.id]?.document {
+                            model.startDraft(.goingBack(to: opened.document, head: current), for: silo)
+                        }
+                    }
+                }
+                .help("A draft of this version's document, based on version \(head), the branch's head")
+            }
+            Spacer()
+            if let branch, branch.base != nil, !branch.closed {
+                Button("Promote \(branch.name)…", systemImage: "arrow.up.circle") {
+                    Task { await model.beginPromotion(of: branch.name, of: opened.summary.name, on: silo) }
+                }
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+    }
+}
+
+/// A draft, as text: edited in place, checked by the silo a moment after each pause, with the silo's
+/// reading of it — or its refusal, in its words — where the base's reading stood.
+private struct DraftEditor: View {
+    let silo: AdminConsole.Silo
+    let draft: Draft
+    let model: ConsoleModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Draft of \(draft.ruleset)").font(.title3.bold())
+                    Text(origin).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Discard", role: .destructive) { model.discardDraft(for: silo) }
+                Button("Review and Store…") { Task { await model.beginReview(for: silo) } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!storable)
+            }
+            HSplitView {
+                TextEditor(text: Binding(get: { model.drafts[silo.id]?.text ?? draft.text }, set: { model.editDraft($0, for: silo) }))
+                    .font(.system(.callout, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .frame(minWidth: 260)
+                Group {
+                    switch model.draftChecks[silo.id] {
+                    case .reading(let reading)?: ReadingView(reading: reading)
+                    case .refused(let reason)?:
+                        ScrollView {
+                            Label(reason, systemImage: "exclamationmark.octagon")
+                                .foregroundStyle(.red)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .padding(8)
+                        }
+                    case nil: ProgressView("Checking with the silo…")
+                    }
+                }
+                .frame(minWidth: 220, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private var origin: String {
+        var line = draft.base.map { "From version \($0)" + (draft.baseBranch.map { " on \($0)" } ?? "") } ?? "A new ruleset"
+        if let upToDateWith = draft.upToDateWith { line += ", taking in standard version \(upToDateWith)" }
+        return line
+    }
+
+    /// A draft is stored once it says something its base does not, and the silo reads it.
+    private var storable: Bool {
+        guard case .reading? = model.draftChecks[silo.id] else { return false }
+        return draft.isChanged || draft.base == nil
+    }
+}
+
+/// Lines of two texts' difference: removed in red, added in green, the rest as they were.
+private struct DifferenceView: View {
+    let lines: [LineDifference.Line]
+
+    var body: some View {
+        ScrollView([.vertical, .horizontal]) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(prefix(line.kind) + line.text)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(line.kind == .same ? Color.secondary : Color.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(background(line.kind))
+                }
+            }
+            .padding(6)
+        }
+        .frame(minHeight: 80)
+        .background(.background.secondary, in: .rect(cornerRadius: 6))
+    }
+
+    private func prefix(_ kind: LineDifference.Line.Kind) -> String {
+        switch kind {
+        case .same: "  "
+        case .removed: "- "
+        case .added: "+ "
+        }
+    }
+
+    private func background(_ kind: LineDifference.Line.Kind) -> Color {
+        switch kind {
+        case .same: .clear
+        case .removed: .red.opacity(0.15)
+        case .added: .green.opacity(0.15)
+        }
+    }
+}
+
+/// Before a store: the draft's difference from its base and what it would put out of date, then where
+/// it goes. When another version landed first, that version and how it differs from the base, with
+/// the draft kept to be re-based or discarded; the console never merges.
+private struct ReviewSheet: View {
+    let review: ConsoleModel.Review
+    let model: ConsoleModel
+
+    @State private var target = Target.baseBranch
+    @State private var newBranch = ""
+    @Environment(\.dismiss) private var dismiss
+
+    enum Target: Hashable {
+        case baseBranch, branch(String), newBranch
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let landed = review.landed {
+                Text("Version \(landed.version ?? 0) Landed First").font(.headline)
+                Text("Nothing was stored. Version \(landed.version ?? 0) was stored on \(landed.branch ?? "the standard") after this draft's base, version \(review.draft.base ?? 0). How it differs from that base:")
+                    .foregroundStyle(.secondary)
+                DifferenceView(lines: LineDifference.lines(from: review.draft.baseText, to: landed.document))
+                HStack {
+                    Button("Cancel", role: .cancel) { model.review = nil }
+                    Spacer()
+                    Button("Discard Draft", role: .destructive) { model.discardDraft(for: review.silo) }
+                    Button("Re-base on Version \(landed.version ?? 0)") { model.rebase(on: landed, for: review.silo) }
+                        .buttonStyle(.borderedProminent)
+                }
+            } else {
+                Text("Store \(review.draft.ruleset)").font(.headline)
+                Text(review.draft.base.map { "Its difference from version \($0):" } ?? "A new ruleset:")
+                    .foregroundStyle(.secondary)
+                DifferenceView(lines: review.draft.difference)
+                Text(impactLine).foregroundStyle(.secondary)
+                if !review.impact.isEmpty {
+                    List(review.impact, id: \.recipe) { OutOfDateRow(presentation: $0) }
+                        .frame(minHeight: 120)
+                }
+                if review.draft.base != nil {
+                    Picker("Store on", selection: $target) {
+                        Text(review.draft.baseBranch.map { "its base's branch, \($0)" } ?? "the standard").tag(Target.baseBranch)
+                        ForEach(review.branches.filter { $0.name != (review.draft.baseBranch ?? "standard") && !$0.closed }, id: \.name) { branch in
+                            Text("the branch \(branch.name)").tag(Target.branch(branch.name))
+                        }
+                        if (review.draft.baseBranch ?? "standard") == "standard" {
+                            Text("a new branch from version \(review.draft.base ?? 0)").tag(Target.newBranch)
+                        }
+                    }
+                    if target == .newBranch {
+                        TextField("New branch's name", text: $newBranch).textFieldStyle(.roundedBorder)
+                    }
+                }
+                HStack {
+                    Button("Cancel", role: .cancel) { model.review = nil }
+                    Spacer()
+                    Button("Store") { Task { await model.store(to: storeTarget) } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(target == .newBranch && newBranch.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 620, height: 560)
+    }
+
+    private var impactLine: String {
+        switch review.impact.count {
+        case 0: "No placed presentation would be made differently."
+        case 1: "One placed presentation would be made differently. Nothing is made again."
+        default: "\(review.impact.count) placed presentations would be made differently. Nothing is made again."
+        }
+    }
+
+    private var storeTarget: AdminConsole.StoreTarget {
+        switch target {
+        case .baseBranch: .baseBranch
+        case .branch(let name): .branch(name)
+        case .newBranch: .newBranch(newBranch.trimmingCharacters(in: .whitespaces))
+        }
+    }
+}
+
+/// A branch's promotion: what it would put out of date beside it, and, when the silo refuses, each
+/// standard version the branch has not taken in and how it differs from the branch's base.
+private struct PromotionSheet: View {
+    let promotion: ConsoleModel.Promotion
+    let model: ConsoleModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Promote \(promotion.branch)").font(.headline)
+            if let refused = promotion.refused {
+                Label(refused.reason, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(refused.notTakenIn, id: \.version) { version in
+                            Text("Standard version \(version.version ?? 0), against the branch's base\(refused.base?.version.map { ", version \($0)" } ?? ""):")
+                                .font(.callout.bold())
+                            DifferenceView(lines: LineDifference.lines(from: refused.base?.document ?? "", to: version.document))
+                        }
+                    }
+                }
+                HStack {
+                    Button("Cancel", role: .cancel) { model.promotion = nil }
+                    Spacer()
+                    if let head = refused.notTakenIn.last?.version {
+                        Button("Take In Version \(head)…") { Task { await model.takeIn(head, on: promotion) } }
+                            .buttonStyle(.borderedProminent)
+                            .help("A draft on \(promotion.branch) from its head, declaring it takes in standard version \(head)")
+                    }
+                }
+            } else {
+                Text(promotion.impact.isEmpty
+                    ? "Promoting would put no placed presentation out of date."
+                    : "Promoting would put \(promotion.impact.count) placed presentation\(promotion.impact.count == 1 ? "" : "s") out of date. Nothing is made again.")
+                    .foregroundStyle(.secondary)
+                List(promotion.impact, id: \.recipe) { OutOfDateRow(presentation: $0) }
+                    .frame(minHeight: 160)
+                HStack {
+                    Button("Cancel", role: .cancel) { model.promotion = nil }
+                    Spacer()
+                    Button("Promote") { Task { await model.promote() } }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 620, height: 520)
     }
 }
 
@@ -716,13 +1232,24 @@ private struct SettingsPane: View {
                     } footer: {
                         Text("Set in silo.json on the silo's machine. The state directory is where operator-credential.reset goes.")
                     }
-                    Section("Libraries") {
+                    Section {
                         if report.readOnly.libraries.isEmpty {
                             Text("None").foregroundStyle(.secondary)
                         }
                         ForEach(report.readOnly.libraries, id: \.id) { library in
                             LabeledContent(library.id, value: library.path)
+                            Picker("Standard", selection: Binding(
+                                get: { model.libraries[silo.id]?.first { $0.id == library.id }?.ruleset ?? "" },
+                                set: { chosen in Task { await model.setStandard(chosen.isEmpty ? nil : chosen, of: library.id, on: silo) } }
+                            )) {
+                                Text("None").tag("")
+                                ForEach(model.rulesets[silo.id] ?? [], id: \.name) { Text($0.name).tag($0.name) }
+                            }
                         }
+                    } header: {
+                        Text("Libraries")
+                    } footer: {
+                        Text("A library's standard is the ruleset an application takes when it names none.")
                     }
                 }
                 .formStyle(.grouped)
@@ -733,7 +1260,10 @@ private struct SettingsPane: View {
                 ProgressView()
             }
         }
-        .task(id: silo.id) { await model.loadSettings(for: silo) }
+        .task(id: silo.id) {
+            await model.loadSettings(for: silo)
+            await model.loadLibraries(for: silo)
+        }
     }
 
     private func save(_ patch: SiloClient.SettingsPatch) {

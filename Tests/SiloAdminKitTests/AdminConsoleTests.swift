@@ -728,6 +728,159 @@ struct AdminConsoleTests {
         #expect(!sent.withLock { $0 }.contains { $0.contains("/jobs") || $0.contains("/apply") }, "and nothing is made again")
     }
 
+    // MARK: - Changing rulesets
+
+    /// What the changing silo was sent: method, path with its query, and body.
+    private struct Asked: Sendable {
+        var method: String
+        var path: String
+        var body: String
+    }
+
+    /// A silo with access holding `household` on its standard at version `head`, with a trial branch
+    /// from version 1 up to date with it, whose stores and promotions answer as the silo's would.
+    private static func changingSilo(head: Int, asked: @escaping @Sendable (Asked) -> Void) -> @Sendable (URLRequest) throws -> (Int, Data)? {
+        { request in
+            guard let url = request.url else { return nil }
+            let method = request.httpMethod ?? "GET"
+            let body = String(decoding: Self.body(of: request) ?? Data(), as: UTF8.self)
+            asked(Asked(method: method, path: url.path + (url.query.map { "?\($0)" } ?? ""), body: body))
+            func document(_ version: Int, branch: String = "standard") -> Data {
+                Data(#"{"name":"household","version":\#(version),"branch":"\#(branch)","document":"<v\#(version)/>"}"#.utf8)
+            }
+            switch (method, url.path) {
+            case (_, "/v1/server"): return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
+            case ("POST", "/v1/rulesets/household/check"):
+                if body.contains("subtitle.forcd") { return (400, Data(#"{"detail":"subtitle.forcd is not a fact a rule can test"}"#.utf8)) }
+                return (200, Data(#"{"name":"household","extraction":{"includeEmbeddedAudioTracks":false,"includeSubtitles":true,"includeEmbeddedSubtitleTracks":true},"rules":[],"outputs":[{"container":"mkv"}]}"#.utf8))
+            case ("POST", "/v1/rulesets/household/impact"): return (200, Data("[]".utf8))
+            case ("PUT", "/v1/rulesets/household"):
+                struct Store: Decodable { var basedOn: Int?; var branch: String? }
+                let store = try JSONDecoder().decode(Store.self, from: Data(body.utf8))
+                if store.branch == nil || store.branch == "standard", let based = store.basedOn, based != head {
+                    return (409, Data(#"{"detail":"household's standard is at household@\#(head), not household@\#(based)"}"#.utf8))
+                }
+                return (201, document(head + 1, branch: store.branch ?? "standard"))
+            case ("POST", "/v1/rulesets/household/branches"):
+                return (201, Data(#"{"name":"speech","base":\#(head),"head":\#(head),"upToDateWith":\#(head),"closed":false}"#.utf8))
+            case (_, "/v1/rulesets/household/branches"):
+                return (200, Data(#"[{"name":"standard","head":\#(head),"closed":false},{"name":"trial","base":1,"head":2,"upToDateWith":1,"closed":false}]"#.utf8))
+            case (_, "/v1/rulesets"):
+                let versions = ([#"{"version":1,"branch":"standard","presentations":0}"#, #"{"version":2,"branch":"trial","parent":1,"presentations":0}"#]
+                    + (3...max(3, head)).map { #"{"version":\#($0),"branch":"standard","presentations":0}"# }).joined(separator: ",")
+                return (200, Data(#"[{"name":"household","version":\#(head),"standard":\#(head),"versions":[\#(versions)]}]"#.utf8))
+            case (_, "/v1/rulesets/household"):
+                let version = url.query.flatMap { Int($0.replacingOccurrences(of: "version=", with: "")) } ?? head
+                return (200, document(version, branch: version == 2 ? "trial" : "standard"))
+            case ("POST", "/v1/rulesets/household/branches/trial/promote"):
+                return (409, Data(#"{"detail":"household's branch trial has not taken in household@3, household@\#(head) from the standard"}"#.utf8))
+            case (_, "/v1/rulesets/household/branches/trial/impact"): return (200, Data("[]".utf8))
+            case ("PUT", "/v1/libraries/films/ruleset"):
+                return body.contains("nothing") ? (404, Data()) : (200, Data(#"{"id":"films","ruleset":"household","containers":2,"presentations":5}"#.utf8))
+            case (_, "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":2,"presentations":5}]"#.utf8))
+            default: return nil
+            }
+        }
+    }
+
+    private static func homeWithAccess(head: Int) async throws -> (AdminConsole, AdminConsole.Silo) {
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "home")
+        let console = Self.console(passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8742)], answering: Self.changingSilo(head: head) { _ in })
+        let home = try #require(await console.refresh().first { $0.id == "home" })
+        return (console, home)
+    }
+
+    @Test func aMistypedFactIsRefusedBeforeTheStore() async throws {
+        let asked = Mutex<[Asked]>([])
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        Self.answer(with: Self.changingSilo(head: 3) { request in asked.withLock { $0.append(request) } })
+        var draft = Draft.change(try await console.open(ruleset: "household", of: home).document)
+        guard case .reading = try await console.check(draft, of: home) else { Issue.record("a draft that reads is read"); return }
+        draft.text = #"<ruleset format="1" name="household"><subtitle><when fact="subtitle.forcd" is="true"/><copy/></subtitle></ruleset>"#
+        #expect(try await console.check(draft, of: home) == .refused("subtitle.forcd is not a fact a rule can test"), "the silo's words")
+        #expect(!asked.withLock { $0 }.contains { $0.method == "PUT" }, "and nothing is stored")
+    }
+
+    @Test func aStoreNamesItsBaseAndAVersionThatLandedFirstKeepsTheDraft() async throws {
+        let asked = Mutex<[Asked]>([])
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        var draft = Draft.change(try await console.open(ruleset: "household", of: home).document)
+        draft.text = "<changed/>"
+
+        // Version 4 lands from another Mac before this one stores.
+        Self.answer(with: Self.changingSilo(head: 4) { request in asked.withLock { $0.append(request) } })
+        #expect(try await console.impact(of: draft, of: home).isEmpty)
+        struct ImpactBody: Decodable, Equatable { var basedOn: Int; var document: String }
+        let impactBody = try JSONDecoder().decode(ImpactBody.self, from: Data((asked.withLock { $0 }.last?.body ?? "").utf8))
+        #expect(impactBody == ImpactBody(basedOn: 3, document: "<changed/>"), "the impact of the draft against its base")
+        guard case .landedFirst(let landed) = try await console.store(draft, to: .baseBranch, of: home) else {
+            Issue.record("a store based on 3 when the head is 4 lands nothing")
+            return
+        }
+        #expect(landed.version == 4 && landed.document == "<v4/>", "version 4 is shown, to be read against 3")
+        let put = try #require(asked.withLock { $0 }.first { $0.method == "PUT" })
+        #expect(put.body.contains(#""basedOn":3"#), "the store named its base")
+
+        let rebased = draft.rebased(on: landed)
+        guard case .stored(let stored) = try await console.store(rebased, to: .baseBranch, of: home) else {
+            Issue.record("re-based on 4, it is stored")
+            return
+        }
+        #expect(stored.version == 5)
+        #expect(LineDifference.changes(from: "<v3/>", to: landed.document).map(\.text) == ["<v3/>", "<v4/>"])
+    }
+
+    @Test func aDraftIsStoredOnANewBranchStartedFromItsBase() async throws {
+        let asked = Mutex<[Asked]>([])
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        Self.answer(with: Self.changingSilo(head: 3) { request in asked.withLock { $0.append(request) } })
+        var draft = Draft.change(try await console.open(ruleset: "household", of: home).document)
+        draft.text = "<trial/>"
+        guard case .stored = try await console.store(draft, to: .newBranch("speech"), of: home) else { Issue.record("stored"); return }
+        let sent = asked.withLock { $0 }.filter { $0.method != "GET" }
+        #expect(sent.map { "\($0.method) \($0.path)" } == ["POST /v1/rulesets/household/branches", "PUT /v1/rulesets/household"])
+        #expect(sent[0].body == #"{"from":3,"name":"speech"}"# || sent[0].body == #"{"name":"speech","from":3}"#)
+        #expect(sent[1].body.contains(#""branch":"speech""#) && sent[1].body.contains(#""basedOn":3"#), "at the new branch's head, its base")
+
+        let fresh = Draft.starter(named: "household")
+        _ = try await console.store(fresh, to: .baseBranch, of: home)
+        #expect(asked.withLock { $0 }.last { $0.method == "PUT" }?.body.contains(#""basedOn":0"#) == true, "a new ruleset is based on zero")
+    }
+
+    @Test func aRefusedPromotionNamesWhatTheBranchHasNotTakenIn() async throws {
+        let (console, home) = try await Self.homeWithAccess(head: 9)
+        #expect(try await console.impact(ofBranch: "trial", of: "household", on: home).isEmpty)
+        do {
+            _ = try await console.promote("trial", of: "household", on: home)
+            Issue.record("the standard has moved on since the branch's base")
+        } catch let refused as AdminConsole.PromotionRefused {
+            #expect(refused.notTakenIn.map(\.version) == [3, 4, 5, 6, 7, 8, 9], "every standard version since the branch is up to date with 1")
+            #expect(refused.base?.version == 1, "read against the branch's base")
+            #expect(refused.reason.contains("household@9"))
+        }
+        // A draft on the branch taking the standard's head in.
+        var takingIn = Draft.change(try await console.open(ruleset: "household", version: 2, of: home).document)
+        takingIn.upToDateWith = 9
+        let asked = Mutex<[Asked]>([])
+        Self.answer(with: Self.changingSilo(head: 9) { request in asked.withLock { $0.append(request) } })
+        _ = try await console.store(takingIn, to: .baseBranch, of: home)
+        let put = try #require(asked.withLock { $0 }.last)
+        #expect(put.body.contains(#""branch":"trial""#) && put.body.contains(#""upToDateWith":9"#) && put.body.contains(#""basedOn":2"#))
+    }
+
+    @Test func aLibrarysStandardIsNamedFromTheConsole() async throws {
+        let asked = Mutex<[Asked]>([])
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        Self.answer(with: Self.changingSilo(head: 3) { request in asked.withLock { $0.append(request) } })
+        #expect(try await console.libraries(of: home).map(\.ruleset) == [nil])
+        let library = try await console.setStandard("household", of: "films", on: home)
+        #expect(library.ruleset == "household", "the standard the silo answered with")
+        #expect(asked.withLock { $0 }.last?.body == #"{"ruleset":"household"}"#)
+        await #expect(throws: AdminConsole.SettingsRefused.self) { try await console.setStandard("nothing", of: "films", on: home) }
+    }
+
     // MARK: - Forget
 
     @Test func forgetPurgesTheRegistryAndThePasskey() async throws {

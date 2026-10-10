@@ -411,6 +411,151 @@ public actor AdminConsole {
         }
     }
 
+    // MARK: - Changing rulesets
+
+    /// What the silo made of a draft's text: its reading, or its refusal in its own words.
+    public enum DraftCheck: Hashable, Sendable {
+        case reading(SiloClient.RulesetReading)
+        case refused(String)
+    }
+
+    /// Checks a draft with the silo as a store would, storing nothing.
+    public func check(_ draft: Draft, of silo: Silo) async throws -> DraftCheck {
+        do {
+            return .reading(try await withOperator(silo) { try await $0.check(ruleset: draft.text, as: draft.ruleset) })
+        } catch SiloClientError.status(400, let body) {
+            return .refused(Self.detail(body))
+        }
+    }
+
+    /// What a draft would put out of date were it stored on its base's branch. A new ruleset made
+    /// nothing, so it puts nothing out of date.
+    public func impact(of draft: Draft, of silo: Silo) async throws -> [SiloClient.OutOfDatePresentation] {
+        guard let base = draft.base else { return [] }
+        return try await withOperator(silo) { try await $0.impact(ofDraft: draft.text, basedOn: base, of: draft.ruleset) }
+    }
+
+    /// Where a draft is stored.
+    public enum StoreTarget: Hashable, Sendable {
+        /// Its base's branch, or the standard for a new ruleset.
+        case baseBranch
+        /// Another branch of the ruleset, at that branch's head.
+        case branch(String)
+        /// A branch started from the base, which must be on the standard.
+        case newBranch(String)
+    }
+
+    /// How a store ended: the version the silo gave the draft, which ends it; or another version
+    /// that landed on the branch first, which keeps it, for the operator to re-base or discard.
+    public enum StoreOutcome: Hashable, Sendable {
+        case stored(SiloClient.RulesetDocument)
+        case landedFirst(SiloClient.RulesetDocument)
+    }
+
+    /// The silo refused the store for something other than a version landing first, in its words.
+    public struct StoreRefused: Error, Hashable {
+        public var reason: String
+    }
+
+    /// Stores a draft, naming as `basedOn` the head of the branch it goes to as the draft knows it:
+    /// its base, on its base's branch; another branch's head as the silo lists it; or the base, for a
+    /// branch started from it. The console never merges: a version that landed first is fetched and
+    /// handed back with the draft kept.
+    public func store(_ draft: Draft, to target: StoreTarget, of silo: Silo) async throws -> StoreOutcome {
+        try await withOperator(silo) { client in
+            var branch: String?
+            var basedOn: Int
+            switch target {
+            case .baseBranch:
+                branch = draft.baseBranch
+                basedOn = draft.base ?? 0
+            case .branch(let name):
+                guard let head = try await client.branches(of: draft.ruleset).first(where: { $0.name == name })?.head else {
+                    throw StoreRefused(reason: "\(draft.ruleset) has no branch \(name)")
+                }
+                branch = name
+                basedOn = head
+            case .newBranch(let name):
+                guard let base = draft.base, draft.baseBranch == nil || draft.baseBranch == "standard" else {
+                    throw StoreRefused(reason: "a branch is started from a version of the standard")
+                }
+                do {
+                    _ = try await client.startBranch(name, of: draft.ruleset, from: base)
+                } catch SiloClientError.status(let status, let body) where status == 400 || status == 409 {
+                    throw StoreRefused(reason: Self.detail(body))
+                }
+                branch = name
+                basedOn = base
+            }
+            do {
+                return .stored(try await client.store(ruleset: draft.text, as: draft.ruleset, branch: branch, upToDateWith: draft.upToDateWith, basedOn: basedOn))
+            } catch SiloClientError.status(409, let body) {
+                let line = branch ?? "standard"
+                guard let head = try await client.branches(of: draft.ruleset).first(where: { $0.name == line })?.head, head != basedOn else {
+                    throw StoreRefused(reason: Self.detail(body))
+                }
+                return .landedFirst(try await client.ruleset(named: draft.ruleset, version: head))
+            } catch SiloClientError.status(400, let body) {
+                throw StoreRefused(reason: Self.detail(body))
+            }
+        }
+    }
+
+    /// What promoting a branch would put out of date, as the silo resolves it on request.
+    public func impact(ofBranch branch: String, of ruleset: String, on silo: Silo) async throws -> [SiloClient.OutOfDatePresentation] {
+        try await withOperator(silo) { try await $0.impact(ofBranch: branch, of: ruleset) }
+    }
+
+    /// A promotion the silo refused: the standard versions the branch has not taken in, and the
+    /// branch's base they are read against.
+    public struct PromotionRefused: Error, Hashable {
+        public var reason: String
+        public var notTakenIn: [SiloClient.RulesetDocument]
+        public var base: SiloClient.RulesetDocument?
+    }
+
+    /// Promotes a branch, answering the standard's new version. A refusal names the standard versions
+    /// the branch has not taken in, with their documents and its base's, so that each can be read for
+    /// how it differs before a draft taking them in is stored on the branch.
+    public func promote(_ branch: String, of ruleset: String, on silo: Silo) async throws -> SiloClient.RulesetDocument {
+        try await withOperator(silo) { client in
+            do {
+                let promoted = try await client.promote(branch, of: ruleset)
+                return try await client.ruleset(named: ruleset, version: promoted.version)
+            } catch SiloClientError.status(409, let body) {
+                let branches = try await client.branches(of: ruleset)
+                let line = branches.first { $0.name == branch }
+                let summary = try await client.rulesets().first { $0.name == ruleset }
+                let since = line?.upToDateWith ?? line?.base ?? 0
+                let missed = (summary?.versions ?? []).filter { $0.branch == "standard" && $0.version > since }.map(\.version)
+                var documents: [SiloClient.RulesetDocument] = []
+                for version in missed { documents.append(try await client.ruleset(named: ruleset, version: version)) }
+                let base = try await line?.base.asyncMap { try await client.ruleset(named: ruleset, version: $0) }
+                throw PromotionRefused(reason: Self.detail(body), notTakenIn: documents, base: base)
+            }
+        }
+    }
+
+    /// The libraries a with-access silo lists, each with its standard.
+    public func libraries(of silo: Silo) async throws -> [SiloClient.Library] {
+        try await withOperator(silo) { try await $0.libraries() }
+    }
+
+    /// Names a library's standard, or clears it with nil; the library as the silo answers.
+    public func setStandard(_ ruleset: String?, of library: String, on silo: Silo) async throws -> SiloClient.Library {
+        do {
+            return try await withOperator(silo) { try await $0.setStandard(ruleset, of: library) }
+        } catch SiloClientError.status(let status, let body) where status == 400 || status == 404 {
+            throw SettingsRefused(reason: Self.detail(body).isEmpty ? "no ruleset \(ruleset ?? "")" : Self.detail(body))
+        }
+    }
+
+    /// A problem's detail, or the body as it came.
+    private static func detail(_ body: String) -> String {
+        struct Problem: Decodable { var detail: String }
+        return (try? SiloClient.decoder.decode(Problem.self, from: Data(body.utf8)))?.detail ?? body
+    }
+
     // MARK: - Forget
 
     /// Forgets a silo outright: its passkey out of this Mac's stores, its entry out of the
@@ -433,5 +578,13 @@ public actor AdminConsole {
             latest.append(row)
         }
         latest.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
+extension Optional {
+    /// `map`, for a transform that suspends.
+    fileprivate func asyncMap<T>(_ transform: (Wrapped) async throws -> T) async rethrows -> T? {
+        guard let self else { return nil }
+        return try await transform(self)
     }
 }

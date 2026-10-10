@@ -341,6 +341,26 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("GET", "/v1/rulesets")
     }
 
+    /// A library as the silo lists it: its standard, and how much it holds.
+    public struct Library: Hashable, Sendable, Codable {
+        public var id: String
+        /// The library's standard, which an application naming no ruleset takes.
+        public var ruleset: String?
+        public var containers: Int
+        public var presentations: Int
+    }
+
+    public func libraries() async throws -> [Library] {
+        try await send("GET", "/v1/libraries")
+    }
+
+    private struct LibraryRuleset: Codable { var ruleset: String? }
+
+    /// Names a library's standard, or clears it with nil.
+    public func setStandard(_ ruleset: String?, of library: String) async throws -> Library {
+        try await send("PUT", "/v1/libraries/\(library)/ruleset", body: LibraryRuleset(ruleset: ruleset))
+    }
+
     /// A library's out-of-date presentations, from the background check's records.
     public func outOfDate(in library: String) async throws -> OutOfDateReport {
         try await send("GET", "/v1/libraries/\(library)/out-of-date")
@@ -351,9 +371,30 @@ public struct SiloClient: Sendable, JobsAPI {
     }
 
     /// Stores a ruleset as its next version: on the standard, or on a branch, declaring the
-    /// standard version the document takes in.
-    public func store(ruleset document: String, as name: String, branch: String? = nil, upToDateWith: Int? = nil) async throws -> RulesetDocument {
-        try await send("PUT", "/v1/rulesets/\(name)", body: RulesetDocument(name: name, version: nil, branch: branch, upToDateWith: upToDateWith, basedOn: nil, document: document))
+    /// standard version the document takes in. `basedOn`, the head of that branch the document was
+    /// made from, or zero for a name that must be new, has the silo refuse with 409 when it no longer
+    /// is the head.
+    public func store(ruleset document: String, as name: String, branch: String? = nil, upToDateWith: Int? = nil, basedOn: Int? = nil) async throws -> RulesetDocument {
+        try await send("PUT", "/v1/rulesets/\(name)", body: RulesetDocument(name: name, version: nil, branch: branch, upToDateWith: upToDateWith, basedOn: basedOn, document: document))
+    }
+
+    /// Reads a document as a store under the name would, storing nothing: the reading, or the
+    /// store's refusal as `status(400, _)`.
+    public func check(ruleset document: String, as name: String) async throws -> RulesetReading {
+        try await send("POST", "/v1/rulesets/\(name)/check", body: RulesetDocument(name: name, version: nil, branch: nil, upToDateWith: nil, basedOn: nil, document: document))
+    }
+
+    private struct DraftImpact: Codable { var document: String; var basedOn: Int }
+
+    /// What a draft based on a version would put out of date, were it stored on that version's
+    /// branch. Records nothing.
+    public func impact(ofDraft document: String, basedOn version: Int, of name: String) async throws -> [OutOfDatePresentation] {
+        try await send("POST", "/v1/rulesets/\(name)/impact", body: DraftImpact(document: document, basedOn: version))
+    }
+
+    /// What promoting a branch would put out of date. Records nothing.
+    public func impact(ofBranch branch: String, of name: String) async throws -> [OutOfDatePresentation] {
+        try await send("GET", "/v1/rulesets/\(name)/branches/\(branch)/impact")
     }
 
     public func branches(of ruleset: String) async throws -> [Branch] {

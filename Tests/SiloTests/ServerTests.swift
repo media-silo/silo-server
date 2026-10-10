@@ -953,6 +953,13 @@ extension ServerTests {
             #expect(branches.map(\.name) == ["standard"])
             let report = try SiloClient.decoder.decode(SiloClient.OutOfDateReport.self, from: try await client.get("/v1/libraries/main/out-of-date").body)
             #expect(report.placedWithoutJob >= 2)
+            struct Draft: Encodable { var name = "console-read"; var document: String; var basedOn: Int? }
+            let checked = try SiloClient.decoder.decode(SiloClient.RulesetReading.self, from: try await client.post("/v1/rulesets/console-read/check", json: Draft(document: Self.drafted)).body)
+            #expect(checked == reading, "a check reads as a read does")
+            let impact = try SiloClient.decoder.decode([SiloClient.OutOfDatePresentation].self, from: try await client.post("/v1/rulesets/console-read/impact", json: Draft(document: Self.drafted, basedOn: 1)).body)
+            #expect(impact.isEmpty)
+            let libraries = try SiloClient.decoder.decode([SiloClient.Library].self, from: try await client.get("/v1/libraries").body)
+            #expect(libraries.map(\.id).contains("main"))
         }
     }
 }
