@@ -137,6 +137,23 @@ enum Mapping {
         )
     }
 
+    /// A ruleset as the silo reads it: each rule under the name a recipe calls it by, its id or its
+    /// position, and each condition as the document writes it.
+    static func reading(_ ruleset: Ruleset) throws -> Components.Schemas.RulesetReading {
+        let rules = try ruleset.rules.enumerated().map { position, rule in
+            Components.Schemas.RuleReading(
+                name: rule.id ?? "#\(position + 1)",
+                scope: Components.Schemas.StreamKind(rawValue: rule.scope.rawValue)!,
+                conditions: rule.conditions.map { condition in
+                    let (test, value) = condition.test.attribute
+                    return .init(fact: condition.fact.rawValue, test: .init(rawValue: test)!, value: value)
+                },
+                action: try transcode(rule.action)
+            )
+        }
+        return Components.Schemas.RulesetReading(name: ruleset.name, extraction: try transcode(ruleset.extraction), rules: rules, outputs: try transcode(ruleset.outputs))
+    }
+
     static func finding(_ finding: SiloLibrary.Finding) -> Components.Schemas.Finding {
         Components.Schemas.Finding(severity: finding.severity == .error ? .error : .warning, path: finding.path, text: finding.text)
     }

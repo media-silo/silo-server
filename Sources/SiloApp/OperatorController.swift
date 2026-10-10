@@ -110,13 +110,15 @@ package struct OperatorController {
         let data = Data(body.document.utf8)
         let version: Int
         do {
-            version = try store.store(data, as: name, branch: body.branch, upToDateWith: body.upToDateWith)
+            version = try store.store(data, as: name, branch: body.branch, upToDateWith: body.upToDateWith, basedOn: body.basedOn)
             checks.request()
         } catch let error as RulesetFileError {
             throw BadRuleset(reason: error.description)
         } catch let error as RulesetStoreError {
-            if case .branchClosed = error { throw BranchConflict(reason: error.description) }
-            throw BadRuleset(reason: error.description)
+            switch error {
+            case .branchClosed, .notTheHead: throw BranchConflict(reason: error.description)
+            default: throw BadRuleset(reason: error.description)
+            }
         }
         return Components.Schemas.RulesetDocument(name: name, version: version, branch: body.branch ?? RulesetStore.standard, document: body.document)
     }

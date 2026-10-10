@@ -852,3 +852,85 @@ extension ServerTests {
         }
     }
 }
+
+extension ServerTests {
+    /// Commentary first, then four rules, the fifth a condition-less copy: a ruleset read as a recipe
+    /// names its rules.
+    static let drafted = """
+        <ruleset format="1" name="something-else">
+          <video><copy/></video>
+          <audio id="commentary"><when fact="audio.role" is="commentary"/><encode codec="aac" bitrate="96k" channels="2"/></audio>
+          <audio><when fact="audio.lossless" is="true"/><when fact="audio.channels" ge="6"/><copy/></audio>
+          <subtitle><when fact="subtitle.language" in="eng, fra"/><copy/></subtitle>
+          <audio><copy/></audio>
+          <subtitle><drop/></subtitle>
+          <output container="mkv"/>
+        </ruleset>
+        """
+
+    /// A ruleset's versions and reading, a draft checked without a store, and a store based on a head;
+    /// under a name of their own, so that no other test's versions move.
+    @Test func aRulesetIsReadWholeADraftCheckedAndAStoreBasedOnItsHead() async throws {
+        try await withClient { client in
+            struct Store: Encodable { var name = "drafted"; var basedOn: Int?; var document: String }
+            func store(basedOn: Int?, _ document: String = Self.drafted) async throws -> (status: Int, text: String) {
+                let answer = try await client.send("PUT", "/v1/rulesets/drafted", body: try JSONEncoder().encode(Store(basedOn: basedOn, document: document)), headers: Self.operatorHeaders)
+                return (Int(answer.status), answer.bodyText)
+            }
+            #expect(try await store(basedOn: 0).status == 201, "a new name, based on zero")
+            #expect(try await store(basedOn: 0).status == 409, "and the name is no longer new")
+            #expect(try await store(basedOn: 1).status == 201)
+            let stale = try await store(basedOn: 1)
+            #expect(stale.status == 409, "a second editor from the same base")
+            #expect(stale.text.contains("drafted@2"), "naming the head")
+            #expect(try await store(basedOn: nil).status == 201, "without a base, whatever the head")
+
+            struct Version: Decodable, Equatable { var version: Int; var branch: String; var parent: Int?; var presentations: Int }
+            struct Summary: Decodable { var name: String; var version: Int; var standard: Int?; var versions: [Version]? }
+            let summary = try #require(try await client.get("/v1/rulesets").json([Summary].self).first { $0.name == "drafted" })
+            #expect(summary.version == 3 && summary.standard == 3)
+            #expect(summary.versions == [
+                Version(version: 1, branch: "standard", parent: nil, presentations: 0),
+                Version(version: 2, branch: "standard", parent: 1, presentations: 0),
+                Version(version: 3, branch: "standard", parent: 2, presentations: 0),
+            ])
+
+            struct Condition: Decodable, Equatable { var fact: String; var test: String; var value: String }
+            struct Rule: Decodable { var name: String; var scope: String; var conditions: [Condition]; var action: [String: Anything] }
+            struct Anything: Decodable { init(from decoder: any Decoder) {} }
+            struct Reading: Decodable { var name: String; var rules: [Rule]; var outputs: [[String: String]] }
+            struct Document: Decodable { var version: Int; var document: String; var reading: Reading? }
+            let read = try await client.get("/v1/rulesets/drafted?version=1").json(Document.self)
+            #expect(read.document == Self.drafted, "the document as it was stored")
+            let reading = try #require(read.reading)
+            #expect(reading.name == "drafted", "named by where it is stored, not by its own name attribute")
+            #expect(reading.rules.map(\.name) == ["#1", "commentary", "#3", "#4", "#5", "#6"])
+            #expect(reading.rules[1].scope == "audio" && reading.rules[1].conditions == [Condition(fact: "audio.role", test: "is", value: "commentary")])
+            #expect(reading.rules[1].action.keys.sorted() == ["encode"])
+            #expect(reading.rules[2].conditions.map(\.test) == ["is", "ge"])
+            #expect(reading.rules[3].conditions == [Condition(fact: "subtitle.language", test: "in", value: "eng,fra")])
+            #expect(reading.rules[4].scope == "audio" && reading.rules[4].conditions.isEmpty && reading.rules[4].action.keys.sorted() == ["copy"])
+
+            // A check reads as a store reads, refuses as a store refuses, and stores nothing.
+            let mistyped = Self.drafted.replacingOccurrences(of: #"fact="audio.role""#, with: #"fact="subtitle.forcd""#)
+            let checked = try await client.post("/v1/rulesets/drafted/check", json: Store(document: mistyped))
+            #expect(checked.status == 400)
+            let refusal = try await store(basedOn: nil, mistyped)
+            #expect(refusal.status == 400)
+            #expect(checked.bodyText == refusal.text, "the detail a store would give")
+            let good = try await client.post("/v1/rulesets/drafted/check", json: Store(document: Self.drafted))
+            #expect(good.status == 200)
+            #expect(try good.json(Reading.self).rules.count == 6, "the reading a read of it would carry")
+            #expect(try await client.get("/v1/rulesets").json([Summary].self).first { $0.name == "drafted" }?.version == 3, "no version is added")
+
+            // A draft's impact, openly: nothing placed was made by this ruleset, so nothing changes.
+            struct Impact: Encodable { var document: String; var basedOn: Int }
+            let impact = try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: Self.drafted, basedOn: 3))
+            #expect(impact.status == 200)
+            #expect(impact.bodyText == "[]")
+            #expect(try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: mistyped, basedOn: 3)).status == 400)
+            #expect(try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: Self.drafted, basedOn: 9)).status == 404)
+            #expect(try await client.post("/v1/rulesets/nothing/impact", json: Impact(document: Self.drafted, basedOn: 1)).status == 404)
+        }
+    }
+}
