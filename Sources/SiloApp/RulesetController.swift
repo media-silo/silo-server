@@ -11,7 +11,8 @@ import Wire
 import WireMVC
 import WireOpenAPI
 
-/// Rulesets, read: the list, one document, and the dry run of the resolver.
+/// Rulesets, read: the list, one document, a draft checked and its impact, and the dry run of the
+/// resolver. Nothing here stores anything, so none of it is the operator's.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 package struct RulesetController {
@@ -25,10 +26,45 @@ package struct RulesetController {
         self.checks = checks
     }
 
+    /// Each ruleset with every version: its branch, its parent and what it made.
     @Operation
     package func listRulesets() async throws -> [Components.Schemas.RulesetSummary] {
         try store.names().compactMap { name in
-            try store.latestVersion(of: name).map { Components.Schemas.RulesetSummary(name: name, version: $0) }
+            guard let latest = try store.latestVersion(of: name) else { return nil }
+            let made = checks.made(by: name)
+            let versions = try store.versions(of: name).map { version in
+                Components.Schemas.RulesetVersion(
+                    version: version, branch: try store.branch(of: name, version: version) ?? RulesetStore.standard,
+                    parent: try store.parent(of: name, version: version), presentations: made[version] ?? 0
+                )
+            }
+            return Components.Schemas.RulesetSummary(name: name, version: latest, standard: try store.head(of: name, branch: RulesetStore.standard), versions: versions)
+        }
+    }
+
+    /// A document read as a store would read it, and nothing stored.
+    @Operation
+    @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
+    package func checkRuleset(@Path name: String, @JSONBody body: Components.Schemas.RulesetDocument) async throws -> Components.Schemas.RulesetReading {
+        try Mapping.reading(try read(body.document, as: name))
+    }
+
+    /// What a draft would put out of date were it the head of its base's branch, recorded nowhere.
+    @Operation
+    @ErrorResponse(NoSuchRuleset.self, .notFound)
+    @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
+    package func draftImpact(@Path name: String, @JSONBody body: Components.Schemas.DraftImpactRequest) async throws -> [Components.Schemas.OutOfDatePresentation] {
+        let draft = try read(body.document, as: name)
+        return try checks.impact(ofDraft: draft, basedOn: body.basedOn, of: name).map(Mapping.outOfDate)
+    }
+
+    private func read(_ document: String, as name: String) throws -> Ruleset {
+        do {
+            return try store.read(Data(document.utf8), as: name)
+        } catch let error as RulesetFileError {
+            throw BadRuleset(reason: error.description)
+        } catch let error as RulesetStoreError {
+            throw BadRuleset(reason: error.description)
         }
     }
 
@@ -50,7 +86,11 @@ package struct RulesetController {
     @ErrorResponse(NoSuchRuleset.self, .notFound)
     package func getRuleset(@Path name: String, @Query version: Int?) async throws -> Components.Schemas.RulesetDocument {
         guard let (found, data) = try store.document(named: name, version: version) else { throw NoSuchRuleset() }
-        return Components.Schemas.RulesetDocument(name: name, version: found, branch: try store.branch(of: name, version: found), document: String(decoding: data, as: UTF8.self))
+        guard let ruleset = try store.ruleset(named: name, version: found) else { throw NoSuchRuleset() }
+        return Components.Schemas.RulesetDocument(
+            name: name, version: found, branch: try store.branch(of: name, version: found),
+            document: String(decoding: data, as: UTF8.self), reading: try Mapping.reading(ruleset)
+        )
     }
 
     /// The dry run: the input specs joined as a binding's segments are, and a recipe for each of the

@@ -62,15 +62,30 @@ public final class RulesetStore: Sendable {
         return ruleset
     }
 
+    /// A document read as a store would read it under the name, named by it and numbered by
+    /// nothing: what a store would refuse, this throws, with the same error.
+    public func read(_ data: Data, as name: String) throws -> Ruleset {
+        guard Self.isName(name) else { throw RulesetStoreError.invalidName(name) }
+        var ruleset = try RulesetFile.ruleset(from: data)
+        ruleset.name = name
+        ruleset.version = nil
+        return ruleset
+    }
+
     /// Stores a document as the next version of the name, having read it first: a document this
     /// reader refuses is not stored. On the standard when no branch is named; on a branch, that
     /// branch's next version, declaring with `upToDateWith` the standard version it takes in.
-    /// Returns the version.
-    public func store(_ data: Data, as name: String, branch: String? = nil, upToDateWith: Int? = nil) throws -> Int {
-        guard Self.isName(name) else { throw RulesetStoreError.invalidName(name) }
-        _ = try RulesetFile.ruleset(from: data)
+    /// `basedOn`, when given, is the head of that branch the document was made from, or zero for a
+    /// name that must be new; the store goes ahead only if it still is. Returns the version.
+    public func store(_ data: Data, as name: String, branch: String? = nil, upToDateWith: Int? = nil, basedOn: Int? = nil) throws -> Int {
+        _ = try read(data, as: name)
         return try lock.withLock { _ in
             let onBranch = branch.flatMap { $0 == Self.standard ? nil : $0 }
+            if let basedOn {
+                let head = try head(of: name, branch: onBranch ?? Self.standard)
+                let fresh = basedOn == 0 ? try latestVersion(of: name) == nil : head == basedOn
+                guard fresh else { throw RulesetStoreError.notTheHead(name: name, branch: onBranch ?? Self.standard, basedOn: basedOn, head: head) }
+            }
             var record = VersionRecord(branch: Self.standard, parent: try head(of: name, branch: Self.standard))
             var updatedBranch: BranchRecord?
             if let onBranch {
@@ -241,6 +256,7 @@ public enum RulesetStoreError: Error, Equatable, CustomStringConvertible {
     case branchClosed(name: String, branch: String)
     case notOnStandard(name: String, version: Int)
     case notTakenIn(name: String, branch: String, versions: [Int])
+    case notTheHead(name: String, branch: String, basedOn: Int, head: Int?)
 
     public var description: String {
         switch self {
@@ -252,6 +268,8 @@ public enum RulesetStoreError: Error, Equatable, CustomStringConvertible {
         case .notOnStandard(let name, let version): "\(name)@\(version) is not on the standard"
         case .notTakenIn(let name, let branch, let versions):
             "\(name)'s branch \(branch) has not taken in \(versions.map { "\(name)@\($0)" }.joined(separator: ", ")) from the standard"
+        case .notTheHead(let name, let branch, let basedOn, let head):
+            "\(name)'s \(branch) is at \(head.map { "\(name)@\($0)" } ?? "no version"), not \(basedOn == 0 ? "new" : "\(name)@\(basedOn)")"
         }
     }
 }

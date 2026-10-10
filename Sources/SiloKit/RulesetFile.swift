@@ -47,15 +47,8 @@ public enum RulesetFile {
             for condition in rule.conditions {
                 let when = XMLElement(name: "when")
                 when.set("fact", condition.fact.rawValue)
-                switch condition.test {
-                case .equal(let value): when.set("is", value)
-                case .notEqual(let value): when.set("ne", value)
-                case .oneOf(let values): when.set("in", values.joined(separator: ","))
-                case .less(let value): when.set("lt", Self.number(value))
-                case .lessOrEqual(let value): when.set("le", Self.number(value))
-                case .greater(let value): when.set("gt", Self.number(value))
-                case .greaterOrEqual(let value): when.set("ge", Self.number(value))
-                }
+                let (test, value) = condition.test.attribute
+                when.set(test, value)
                 element.addChild(when)
             }
             element.addChild(actionElement(rule.action))
@@ -116,7 +109,7 @@ public enum RulesetFile {
         }
     }
 
-    private static func number(_ value: Double) -> String {
+    static func number(_ value: Double) -> String {
         value == value.rounded() && abs(value) < 1e15 ? String(Int(value)) : String(value)
     }
 
@@ -385,5 +378,20 @@ extension XMLElement {
 
     func child(_ name: String) -> XMLElement? {
         elements(forName: name).first
+    }
+}
+
+extension Condition.Test {
+    /// The test as a document writes it: the attribute's name, and its value as text.
+    public var attribute: (name: String, value: String) {
+        switch self {
+        case .equal(let value): ("is", value)
+        case .notEqual(let value): ("ne", value)
+        case .oneOf(let values): ("in", values.joined(separator: ","))
+        case .less(let value): ("lt", RulesetFile.number(value))
+        case .lessOrEqual(let value): ("le", RulesetFile.number(value))
+        case .greater(let value): ("gt", RulesetFile.number(value))
+        case .greaterOrEqual(let value): ("ge", RulesetFile.number(value))
+        }
     }
 }

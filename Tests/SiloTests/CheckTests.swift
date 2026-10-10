@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloAPI
 import SiloKit
 import SiloLibrary
 import SiloStore
@@ -139,5 +140,39 @@ struct CheckTests {
         #expect(try bench.checkService.pass() == 2, "the rest, and not the one already done")
         #expect(try bench.checkService.report(library: "main").pending == 0)
         #expect(try bench.checkService.report(library: "main").outOfDate.count == 3)
+    }
+
+    @Test func aDraftsImpactIsWhatTheCheckFindsOnceItIsInForce() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let changed = try await Self.placed(bench, name: "changed")
+        _ = try await Self.placed(bench, item: "feature", containers: [String(decoding: ContainerFile.data(for: Self.film), as: UTF8.self)], name: "unchanged")
+        _ = try bench.checkService.pass()
+
+        let draft = try bench.rulesets.read(Data(Self.speech96k.utf8), as: "household")
+        let impact = try bench.checkService.impact(ofDraft: draft, basedOn: 1, of: "household")
+        #expect(impact.map(\.recipe.id) == [changed.recipe], "the film has no commentary for the draft to change")
+        #expect(impact.first?.check.changes.map(\.index) == [2])
+        #expect(try bench.rulesets.versions(of: "household") == [1], "and nothing is stored")
+        #expect(throws: NoSuchRuleset.self) { try bench.checkService.impact(ofDraft: draft, basedOn: 9, of: "household") }
+
+        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", basedOn: 1)
+        #expect(try bench.checkService.pass() == 2)
+        let report = try bench.checkService.report(library: "main")
+        #expect(report.outOfDate.map(\.recipe.id) == impact.map(\.recipe.id), "the impact was the outcome")
+        #expect(report.outOfDate.first?.check.changes == impact.first?.check.changes)
+    }
+
+    @Test func eachVersionReportsThePresentationsItMade() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        for item in ["part1", "part2", "part3"] { try await Self.placed(bench, item: item, name: item) }
+        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household")
+        #expect(bench.checkService.made(by: "household") == [1: 3])
+
+        let summary = try #require(try await RulesetController(store: bench.rulesets, checks: bench.checkService).listRulesets().first { $0.name == "household" })
+        #expect(summary.versions?.map(\.presentations) == [3, 0], "three made by version 1, none by version 2")
+        #expect(summary.versions?.map(\.parent) == [nil, 1])
+        #expect(summary.standard == 2)
     }
 }

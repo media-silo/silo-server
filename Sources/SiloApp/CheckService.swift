@@ -68,11 +68,11 @@ package struct CheckService: Sendable {
         return try rulesets.ruleset(named: name, version: head)
     }
 
-    /// Resolves a placed recipe's facts again through the rules in force — or through a branch's head
-    /// in place of its ruleset's — and says what that decides otherwise.
-    private func resolveAgain(_ placed: Placed, onBranch branch: String? = nil) throws -> CheckRecord {
+    /// Resolves a placed recipe's facts again through the rules in force — or through a branch's head,
+    /// or a draft, in place of its ruleset's — and says what that decides otherwise.
+    private func resolveAgain(_ placed: Placed, onBranch branch: String? = nil, replacing draft: Ruleset? = nil) throws -> CheckRecord {
         let recorded = placed.recipe.recipe
-        guard let ruleset = try ruleset(for: recorded, onBranch: branch) else {
+        guard let ruleset = try draft ?? ruleset(for: recorded, onBranch: branch) else {
             return CheckRecord(job: placed.job.id, recipe: placed.recipe.id, checkedAgainst: recorded.stack, outcome: .unresolvable, reason: "the ruleset \(recorded.ruleset.name) is not there")
         }
         let layers: [RulesLayer]
@@ -160,6 +160,29 @@ package struct CheckService: Sendable {
             let check = try resolveAgain(placed, onBranch: branch)
             return check.outcome == .current ? nil : reported(placed, check)
         }
+    }
+
+    /// What a draft would put out of date were it stored as the head of its base's branch: every
+    /// placed presentation whose committed recipe names a version on that branch, resolved through
+    /// the draft in place of the ruleset and the rest of its stack as it stands. Records nothing.
+    package func impact(ofDraft draft: Ruleset, basedOn base: Int, of name: String) throws -> [Reported] {
+        guard let line = try rulesets.branch(of: name, version: base) else { throw NoSuchRuleset() }
+        return try placed().compactMap { placed -> Reported? in
+            let recorded = placed.recipe.recipe.ruleset
+            guard recorded.name == name, recorded.version.flatMap({ try? rulesets.branch(of: name, version: $0) }) == line else { return nil }
+            let check = try resolveAgain(placed, replacing: draft)
+            return check.outcome == .current ? nil : reported(placed, check)
+        }
+    }
+
+    /// How many placed presentations each version of a ruleset made, by version.
+    package func made(by name: String) -> [Int: Int] {
+        var counts: [Int: Int] = [:]
+        for placed in placed() where placed.recipe.recipe.ruleset.name == name {
+            guard let version = placed.recipe.recipe.ruleset.version else { continue }
+            counts[version, default: 0] += 1
+        }
+        return counts
     }
 
     private func reported(_ placed: Placed, _ check: CheckRecord) -> Reported {
