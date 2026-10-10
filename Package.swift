@@ -170,7 +170,7 @@ let package = Package(
         // and Linux keeps the logic honest.
         .target(
             name: "SiloAdminKit",
-            dependencies: ["SiloClient", "SiloDiscovery"]
+            dependencies: ["SiloClient", "SiloKit", "SiloDiscovery"]
         ),
         // The console itself: a SwiftUI window over SiloAdminKit, and nothing else. Where no
         // window server exists the target is a stub entry point, so the Linux build still

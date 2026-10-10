@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloAPI
+import SiloClient
 import SiloKit
 import SiloLibrary
 import SiloStore
@@ -161,6 +162,15 @@ struct CheckTests {
         let report = try bench.checkService.report(library: "main")
         #expect(report.outOfDate.map(\.recipe.id) == impact.map(\.recipe.id), "the impact was the outcome")
         #expect(report.outOfDate.first?.check.changes == impact.first?.check.changes)
+
+        // As the console reads it: the route's rendering decodes into SiloClient's own type whole.
+        let wire = try JSONEncoder().encode(try Mapping.outOfDate(try #require(report.outOfDate.first)))
+        let read = try SiloClient.decoder.decode(SiloClient.OutOfDatePresentation.self, from: wire)
+        #expect(read.recipe == changed.recipe && read.outcome == .outOfDate)
+        #expect(read.changes == report.outOfDate.first?.check.changes)
+        #expect(read.madeBy.ruleset == RulesetRef(name: "household", version: 1))
+        #expect(read.checkedAgainst.ruleset == RulesetRef(name: "household", version: 2))
+        #expect(read.everySourceHasACopyOnTheWire)
     }
 
     @Test func eachVersionReportsThePresentationsItMade() async throws {
@@ -175,4 +185,9 @@ struct CheckTests {
         #expect(summary.versions?.map(\.parent) == [nil, 1])
         #expect(summary.standard == 2)
     }
+}
+
+extension SiloClient.OutOfDatePresentation {
+    /// Whether every source arrived with a copy, read off the wire's own shape.
+    fileprivate var everySourceHasACopyOnTheWire: Bool { !sources.isEmpty && sources.allSatisfy { !$0.copies.isEmpty } }
 }

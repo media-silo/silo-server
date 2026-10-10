@@ -933,4 +933,26 @@ extension ServerTests {
             #expect(try await client.post("/v1/rulesets/nothing/impact", json: Impact(document: Self.drafted, basedOn: 1)).status == 404)
         }
     }
+
+    /// The console reads the silo through SiloClient's own types: the silo's answers decode into
+    /// them whole, so that what the console shows is what the silo said.
+    @Test func theConsolesTypesReadTheSilosAnswers() async throws {
+        try await withClient { client in
+            let stored = try await client.send("PUT", "/v1/rulesets/console-read", body: try JSONEncoder().encode(RulesetDocumentBody(name: "console-read", document: Self.drafted)), headers: Self.operatorHeaders)
+            #expect(stored.status == 201)
+            let summaries = try SiloClient.decoder.decode([SiloClient.RulesetSummary].self, from: try await client.get("/v1/rulesets").body)
+            let read = try #require(summaries.first { $0.name == "console-read" })
+            #expect(read.versions?.map { "\($0.version) \($0.branch) \($0.parent.map(String.init) ?? "-") \($0.presentations)" } == ["1 standard - 0"])
+            let document = try SiloClient.decoder.decode(SiloClient.RulesetDocument.self, from: try await client.get("/v1/rulesets/console-read").body)
+            let reading = try #require(document.reading)
+            #expect(reading.rules.map(\.name) == ["#1", "commentary", "#3", "#4", "#5", "#6"])
+            #expect(reading.rules[1].action == .encode(EncodeSettings(codec: "aac", bitrate: "96k", channels: 2)))
+            #expect(reading.outputs == [OutputPolicy(container: "mkv")])
+            #expect(reading.extraction == ExtractionPolicy())
+            let branches = try SiloClient.decoder.decode([SiloClient.Branch].self, from: try await client.get("/v1/rulesets/console-read/branches").body)
+            #expect(branches.map(\.name) == ["standard"])
+            let report = try SiloClient.decoder.decode(SiloClient.OutOfDateReport.self, from: try await client.get("/v1/libraries/main/out-of-date").body)
+            #expect(report.placedWithoutJob >= 2)
+        }
+    }
 }

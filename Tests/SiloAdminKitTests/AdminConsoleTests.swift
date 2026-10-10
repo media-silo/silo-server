@@ -662,6 +662,72 @@ struct AdminConsoleTests {
         #expect(registry.entry(for: "home")?.name == "Loft Silo", "and the registry keeps it")
     }
 
+    // MARK: - Rulesets
+
+    /// A silo with access holding `household`: version 3 on the standard, version 4 on a trial branch,
+    /// and version 3's audio rules every one of them conditioned.
+    private static func rulesetSilo(pending: Int = 0, asked: @escaping @Sendable (String) -> Void) -> @Sendable (URLRequest) throws -> (Int, Data)? {
+        { request in
+            guard let url = request.url else { return nil }
+            asked(url.path + (url.query.map { "?\($0)" } ?? ""))
+            switch url.path {
+            case "/v1/server": return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case "/v1/operator": return (200, Data(Self.active.utf8))
+            case "/v1/settings": return (200, Data(Self.settingsReport(name: "Home Silo").utf8))
+            case "/v1/rulesets":
+                return (200, Data(#"[{"name":"household","version":4,"standard":3,"versions":[{"version":1,"branch":"standard","presentations":3},{"version":2,"branch":"standard","parent":1,"presentations":0},{"version":3,"branch":"standard","parent":2,"presentations":1},{"version":4,"branch":"trial","parent":3,"presentations":0}]}]"#.utf8))
+            case "/v1/rulesets/household/branches":
+                return (200, Data(#"[{"name":"standard","head":3,"closed":false},{"name":"trial","base":3,"head":4,"upToDateWith":3,"closed":false}]"#.utf8))
+            case "/v1/rulesets/household":
+                let reading = ##"{"name":"household","extraction":{"includeEmbeddedAudioTracks":false,"includeSubtitles":true,"includeEmbeddedSubtitleTracks":true},"rules":[{"name":"#1","scope":"video","conditions":[],"action":{"copy":{}}},{"name":"lossless-main","scope":"audio","conditions":[{"fact":"audio.lossless","test":"is","value":"true"}],"action":{"copy":{}}},{"name":"commentary","scope":"audio","conditions":[{"fact":"audio.role","test":"is","value":"commentary"}],"action":{"encode":{"_0":{"codec":"aac","bitrate":"96k","channels":2,"filters":[],"options":{}}}}}],"outputs":[{"container":"mkv"}]}"##
+                return (200, Data(##"{"name":"household","version":3,"branch":"standard","document":"<ruleset/>","reading":\##(reading)}"##.utf8))
+            case "/v1/libraries/films/out-of-date":
+                let stack = #"{"ruleset":{"name":"household","version":1},"layers":[]}"#
+                return (200, Data(#"{"presentations":[{"container":"00000000000000f1","item":"feature","recipe":"r1","outcome":"outOfDate","madeBy":\#(stack),"checkedAgainst":{"ruleset":{"name":"household","version":3},"layers":[]},"changes":[{"kind":"audio","index":2,"was":{"copy":{}},"now":{"drop":{}}}],"sources":[{"id":"s1","copies":[]}]}],"pending":\#(pending),"placedWithoutJob":0}"#.utf8))
+            default: return nil
+            }
+        }
+    }
+
+    @Test func aRulesetOpensAtItsStandardsHeadBesideTheSilosReading() async throws {
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "home")
+        let sent = Mutex<[String]>([])
+        let console = Self.console(passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8742)], answering: Self.rulesetSilo { path in sent.withLock { $0.append(path) } })
+        let home = try row("home", in: await console.refresh())
+
+        let opened = try await console.open(ruleset: "household", of: home)
+        #expect(sent.withLock { $0 }.contains("/v1/rulesets/household?version=3"), "the standard's head, not the latest version, which is on a branch")
+        #expect(opened.document.version == 3)
+        #expect(opened.branches.map(\.name) == ["standard", "trial"])
+        #expect(opened.summary.versions?.map(\.presentations) == [3, 0, 1, 0])
+        let reading = try #require(opened.document.reading)
+        #expect(reading.byScope.map(\.scope) == [.video, .audio])
+        #expect(reading.byScope[1].rules.map(\.name) == ["lossless-main", "commentary"], "in document order within the scope")
+        #expect(reading.scopesWithoutCatchAll == [.audio], "every audio rule has conditions; the video rule has none")
+        #expect(reading.rules[2].action.summary == "encode aac 96k 2ch")
+
+        _ = try await console.open(ruleset: "household", version: 4, of: home)
+        #expect(sent.withLock { $0 }.last == "/v1/rulesets/household?version=4", "and any other version, when chosen")
+    }
+
+    @Test func eachLibrarysOutOfDateIsReadWithWhatIsStillToCheck() async throws {
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "home")
+        let sent = Mutex<[String]>([])
+        let console = Self.console(passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8742)], answering: Self.rulesetSilo(pending: 12) { path in sent.withLock { $0.append(path) } })
+        let home = try row("home", in: await console.refresh())
+
+        let reports = try await console.outOfDate(of: home)
+        #expect(reports.map(\.library) == ["films"])
+        #expect(reports[0].report.pending == 12, "twelve still to be checked")
+        let presentation = try #require(reports[0].report.presentations.first)
+        #expect(presentation.madeBy.summary == "household@1")
+        #expect(presentation.changes.map { "\($0.was.summary) → \($0.now.summary)" } == ["copy → drop"])
+        #expect(!presentation.everySourceHasACopy, "its one source has no copy")
+        #expect(!sent.withLock { $0 }.contains { $0.contains("/jobs") || $0.contains("/apply") }, "and nothing is made again")
+    }
+
     // MARK: - Forget
 
     @Test func forgetPurgesTheRegistryAndThePasskey() async throws {
