@@ -229,7 +229,7 @@ the latest number; its `standard`, the standard's head; and its `versions`, ever
 each with its `branch`, its `parent` and `presentations`, the number of placed presentations whose
 committed recipe names it. `GET /v1/rulesets/{name}` SHALL answer 200 with a `RulesetDocument`: the
 `name`, the `version`, its `branch`, the `document` as the XML that was stored, byte for byte, and the
-`reading` — the extraction policy, each rule in document order with the name a recipe calls it by
+`reading` — each rule in document order with the name a recipe calls it by
 (its `id`, or `#n` for its position), its scope, its conditions as fact, test and value, and its
 action, and the outputs; a `version` query parameter SHALL select a version other than the latest. The
 reading SHALL name the ruleset by where it was stored, whatever the document's own attributes say. A

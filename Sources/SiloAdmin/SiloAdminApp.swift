@@ -734,7 +734,7 @@ private struct RulesetsPane: View {
 
         var message: String {
             switch self {
-            case .new: "It starts from a rule copying every stream of each scope, the default extraction and one output."
+            case .new: "It starts from a rule copying every stream of each scope, and one output."
             case .copy: "The copy's name attribute is changed to the new name, as an edit you can see."
             }
         }
@@ -1071,8 +1071,7 @@ private struct OpenedRulesetView: View {
 }
 
 /// The silo's reading of a version: the rules grouped by scope in the order that decides between
-/// them, a scope that can leave a stream undecided marked so, then the outputs and the extraction
-/// policy.
+/// them, a scope that can leave a stream undecided marked so, then the outputs.
 private struct ReadingView: View {
     let reading: SiloClient.RulesetReading
 
@@ -1107,11 +1106,6 @@ private struct ReadingView: View {
                 ForEach(reading.outputs, id: \.self) { output in
                     LabeledContent(output.profile ?? "unqualified", value: output.container)
                 }
-            }
-            Section("Extraction") {
-                LabeledContent("Embedded audio tracks", value: reading.extraction.includeEmbeddedAudioTracks ? "kept" : "left out")
-                LabeledContent("Subtitles", value: reading.extraction.includeSubtitles ? "kept" : "left out")
-                LabeledContent("Embedded subtitle tracks", value: reading.extraction.includeEmbeddedSubtitleTracks ? "kept" : "left out")
             }
         }
     }

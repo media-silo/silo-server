@@ -13,7 +13,6 @@ struct RulesetFileTests {
     @Test func aRulesetSurvivesTheFile() throws {
         var ruleset = Ruleset.household
         ruleset.version = 7
-        ruleset.extraction.includeSubtitles = false
         ruleset.rules.append(Rule(
             id: "mobile", scope: .video,
             conditions: [Condition(.profile, .equal("mobile")), Condition(.videoFrameRate, .greaterOrEqual(29.97))],
@@ -51,12 +50,14 @@ struct RulesetFileTests {
         #expect(throws: RulesetFileError.notARuleset) { try RulesetFile.ruleset(from: Data("<rules/>".utf8)) }
         #expect(throws: RulesetFileError.unsupportedFormat(2)) { try RulesetFile.ruleset(from: Data("<ruleset format=\"2\" name=\"t\"/>".utf8)) }
         #expect(throws: RulesetFileError.unknownElement("rule")) { try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><rule/></ruleset>".utf8)) }
+        #expect(throws: RulesetFileError.unknownElement("extraction"), "what a source keeps is said by drop rules, not an element of its own") {
+            try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><extraction subtitles=\"false\"/></ruleset>".utf8))
+        }
         #expect(throws: RulesetFileError.self) { try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><audio>".utf8)) }
     }
 
     @Test func anEmptyRulesetHasTheToolsDefaults() throws {
         let ruleset = try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"/>".utf8))
-        #expect(ruleset.extraction == ExtractionPolicy())
         #expect(ruleset.outputs == [OutputPolicy()], "one unqualified mkv")
         #expect(ruleset.rules.isEmpty)
         #expect(ruleset.version == nil)

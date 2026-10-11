@@ -679,7 +679,7 @@ struct AdminConsoleTests {
             case "/v1/rulesets/household/branches":
                 return (200, Data(#"[{"name":"standard","head":3,"closed":false},{"name":"trial","base":3,"head":4,"upToDateWith":3,"closed":false}]"#.utf8))
             case "/v1/rulesets/household":
-                let reading = ##"{"name":"household","extraction":{"includeEmbeddedAudioTracks":false,"includeSubtitles":true,"includeEmbeddedSubtitleTracks":true},"rules":[{"name":"#1","scope":"video","conditions":[],"action":{"copy":{}}},{"name":"lossless-main","scope":"audio","conditions":[{"fact":"audio.lossless","test":"is","value":"true"}],"action":{"copy":{}}},{"name":"commentary","scope":"audio","conditions":[{"fact":"audio.role","test":"is","value":"commentary"}],"action":{"encode":{"_0":{"codec":"aac","bitrate":"96k","channels":2,"filters":[],"options":{}}}}}],"outputs":[{"container":"mkv"}]}"##
+                let reading = ##"{"name":"household","rules":[{"name":"#1","scope":"video","conditions":[],"action":{"copy":{}}},{"name":"lossless-main","scope":"audio","conditions":[{"fact":"audio.lossless","test":"is","value":"true"}],"action":{"copy":{}}},{"name":"commentary","scope":"audio","conditions":[{"fact":"audio.role","test":"is","value":"commentary"}],"action":{"encode":{"_0":{"codec":"aac","bitrate":"96k","channels":2,"filters":[],"options":{}}}}}],"outputs":[{"container":"mkv"}]}"##
                 return (200, Data(##"{"name":"household","version":3,"branch":"standard","document":"<ruleset/>","reading":\##(reading)}"##.utf8))
             case "/v1/libraries/films/out-of-date":
                 let stack = #"{"ruleset":{"name":"household","version":1},"layers":[]}"#
@@ -753,7 +753,7 @@ struct AdminConsoleTests {
             case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
             case ("POST", "/v1/rulesets/household/check"):
                 if body.contains("subtitle.forcd") { return (400, Data(#"{"detail":"subtitle.forcd is not a fact a rule can test"}"#.utf8)) }
-                return (200, Data(#"{"name":"household","extraction":{"includeEmbeddedAudioTracks":false,"includeSubtitles":true,"includeEmbeddedSubtitleTracks":true},"rules":[],"outputs":[{"container":"mkv"}]}"#.utf8))
+                return (200, Data(#"{"name":"household","rules":[],"outputs":[{"container":"mkv"}]}"#.utf8))
             case ("POST", "/v1/rulesets/household/impact"): return (200, Data("[]".utf8))
             case ("PUT", "/v1/rulesets/household"):
                 struct Store: Decodable { var basedOn: Int?; var branch: String? }

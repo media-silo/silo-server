@@ -170,7 +170,7 @@ struct ConsoleModelTests {
             case ("POST", "/v1/rulesets/household/check"):
                 state.checks.withLock { $0 += 1 }
                 if body.contains("subtitle.forcd") { return (400, Data(#"{"detail":"subtitle.forcd is not a fact a rule can test"}"#.utf8)) }
-                return (200, Data(#"{"name":"household","extraction":{"includeEmbeddedAudioTracks":false,"includeSubtitles":true,"includeEmbeddedSubtitleTracks":true},"rules":[],"outputs":[{"container":"mkv"}]}"#.utf8))
+                return (200, Data(#"{"name":"household","rules":[],"outputs":[{"container":"mkv"}]}"#.utf8))
             case ("POST", "/v1/rulesets/household/impact"):
                 let one = #"{"recipe":"r%d","outcome":"outOfDate","madeBy":{"ruleset":{"name":"household","version":3},"layers":[]},"checkedAgainst":{"ruleset":{"name":"household"},"layers":[]},"changes":[{"kind":"audio","index":2,"was":{"encode":{"_0":{"codec":"aac","bitrate":"160k","filters":[],"options":{}}}},"now":{"encode":{"_0":{"codec":"aac","bitrate":"96k","filters":[],"options":{}}}}}],"sources":[]}"#
                 return (200, Data(("[" + (1...12).map { String(format: one, $0) }.joined(separator: ",") + "]").utf8))

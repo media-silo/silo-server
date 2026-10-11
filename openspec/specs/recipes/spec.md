@@ -293,7 +293,7 @@ force, its lineage's container rules in force, then the head of the branch the r
 version is on, or of the standard once that branch is promoted — for the recipe's output, give
 decisions that differ from the ones the recipe recorded in any stream's action or its settings, or
 give a different output policy, or give no recipe. Which layer or rule decided a stream SHALL NOT be
-compared, and a change to the extraction policy SHALL NOT make a presentation out of date. A
+compared. A
 presentation placed without a job SHALL never be checked.
 
 #### Scenario: a promotion that changes a decision
