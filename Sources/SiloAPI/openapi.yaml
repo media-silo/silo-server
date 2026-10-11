@@ -2720,12 +2720,10 @@ components:
       description: >
         A ruleset as the silo reads it, named by where it is stored: what the console shows beside
         the document, so that it never parses one itself.
-      required: [name, extraction, rules, outputs]
+      required: [name, rules, outputs]
       properties:
         name:
           type: string
-        extraction:
-          $ref: "#/components/schemas/ExtractionPolicy"
         rules:
           type: array
           description: In document order.
@@ -2735,17 +2733,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OutputPolicy"
-
-    ExtractionPolicy:
-      type: object
-      required: [includeEmbeddedAudioTracks, includeSubtitles, includeEmbeddedSubtitleTracks]
-      properties:
-        includeEmbeddedAudioTracks:
-          type: boolean
-        includeSubtitles:
-          type: boolean
-        includeEmbeddedSubtitleTracks:
-          type: boolean
 
     RuleReading:
       type: object

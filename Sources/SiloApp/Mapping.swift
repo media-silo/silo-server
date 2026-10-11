@@ -151,7 +151,7 @@ enum Mapping {
                 action: try transcode(rule.action)
             )
         }
-        return Components.Schemas.RulesetReading(name: ruleset.name, extraction: try transcode(ruleset.extraction), rules: rules, outputs: try transcode(ruleset.outputs))
+        return Components.Schemas.RulesetReading(name: ruleset.name, rules: rules, outputs: try transcode(ruleset.outputs))
     }
 
     static func finding(_ finding: SiloLibrary.Finding) -> Components.Schemas.Finding {

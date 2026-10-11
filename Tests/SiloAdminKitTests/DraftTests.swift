@@ -44,7 +44,6 @@ struct DraftTests {
         let draft = Draft.starter(named: "fresh")
         let read = try RulesetFile.ruleset(from: Data(draft.text.utf8))
         #expect(read.name == "fresh")
-        #expect(read.extraction == ExtractionPolicy())
         #expect(read.rules == Scope.allCases.map { Rule(scope: $0, action: .copy) })
         #expect(read.outputs == [OutputPolicy()])
     }

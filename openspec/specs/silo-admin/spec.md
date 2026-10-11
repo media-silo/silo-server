@@ -234,7 +234,7 @@ For a silo classified with access, SiloAdmin SHALL show each ruleset the silo ho
 its branches — each with its base, its head, the standard version it is up to date with, and whether it
 has been promoted — and its versions on each, with the number of placed presentations each made. For a
 version it SHALL show the document as the silo stored it, comments and all, and beside it the silo's
-reading: the extraction policy, the rules grouped by scope in document order within each, each by the
+reading: the rules grouped by scope in document order within each, each by the
 name a recipe calls it by with its conditions and action, and the outputs. A scope whose last rule has
 conditions SHALL be marked as having no catch-all. The console SHALL draw the reading from the silo
 and SHALL NOT read a ruleset's XML itself. The section SHALL keep itself current as the rest of the
@@ -272,8 +272,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 
 ### Requirement: A draft is edited as text and checked by the silo as it is typed
 SiloAdmin SHALL edit a ruleset as its document's text, starting a draft from a version on screen — its
-base — from a copy of any version, or from the starter: the default extraction policy, a condition-less
-copy rule for each scope, and the default output. A copy's `name` attribute SHALL be changed to the new
+base — from a copy of any version, or from the starter: a condition-less copy
+rule for each scope and the default output. A copy's `name` attribute SHALL be changed to the new
 name as an edit shown in the text. As the operator types, and a moment after they stop, the console
 SHALL check the draft with the silo and show the silo's reading in place of the base's, or the silo's
 refusal in its words. A draft SHALL live in the console until it is stored or discarded, and SHALL

@@ -271,7 +271,6 @@ public struct SiloClient: Sendable, JobsAPI {
     /// document, so that it never parses one itself.
     public struct RulesetReading: Hashable, Sendable, Codable {
         public var name: String
-        public var extraction: ExtractionPolicy
         /// In document order.
         public var rules: [RuleReading]
         public var outputs: [OutputPolicy]

@@ -42,8 +42,8 @@ public struct Draft: Hashable, Sendable, Identifiable {
         Draft(ruleset: name, base: nil, baseBranch: nil, baseText: version.document, text: renamed(version.document, to: name))
     }
 
-    /// A new ruleset from the starter: the default extraction policy, a rule copying every stream of
-    /// each scope, and the default output — a document that decides every stream, to change from.
+    /// A new ruleset from the starter: a rule copying every stream of each scope, and the default
+    /// output — a document that decides every stream, to change from.
     public static func starter(named name: String) -> Draft {
         Draft(ruleset: name, base: nil, baseBranch: nil, baseText: "", text: starterText(named: name))
     }
@@ -72,7 +72,6 @@ public struct Draft: Hashable, Sendable, Identifiable {
     public static func starterText(named name: String) -> String {
         """
         <ruleset format="1" name="\(name)">
-          <extraction embeddedAudio="false" subtitles="true" embeddedSubtitles="true"/>
           <video><copy/></video>
           <audio><copy/></audio>
           <subtitle><copy/></subtitle>

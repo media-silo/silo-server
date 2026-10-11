@@ -8,8 +8,8 @@
 A ruleset is how a household writes down, once, the encoding decisions a person would otherwise
 make for every file it takes in: which streams of a source are kept, which are copied as they
 are, and which are re-encoded, and with what. It is one XML document, written and read by a
-person, that holds three things — the extraction policy a producer may apply when it makes a
-source, an ordered list of rules, and the outputs the ruleset makes, each a container in a profile.
+person, that holds two things — an ordered list of rules, and the outputs the ruleset makes, each a
+container in a profile.
 Each rule is about one kind of stream, tests facts about the file and the stream, and says what to
 do with a stream it matches. For each stream the first
 matching rule of its kind decides, and a stream no rule decides is an error, never a silent copy.
@@ -23,9 +23,10 @@ physically is, registered with the input spec its producer describes it by
 entry of the library is made from which segments of which sources ([bindings](../bindings/spec.md));
 applying a ruleset to a binding makes a recipe for each of the ruleset's outputs
 ([recipes](../recipes/spec.md)). A ruleset is written for sources from anywhere — a disc, a
-download, a recording, a file already on hand; some facts, and the extraction policy, speak only to
-what a producer observed or can do, and are absent or have no effect where it observed or can do
-nothing of the kind.
+download, a recording, a file already on hand; some facts speak only to what a producer observed,
+and are absent where it observed nothing of the kind. What a source keeps is its producer's to
+decide: a producer that can leave streams out reads the ruleset for the streams every output drops,
+through the resolver's dry run, rather than keeping a policy of its own.
 
 A container's rules, kept as versioned files beside its `.smd`, are written in the same language
 and stacked ahead of the ruleset applied, nearest first; the first rule that matches anywhere in the
@@ -44,9 +45,9 @@ Documentation: [README](../../../README.md).
 
 ## Requirements
 
-### Requirement: A ruleset is one XML document of an extraction policy, rules and outputs
+### Requirement: A ruleset is one XML document of rules and outputs
 A ruleset SHALL be a UTF-8 XML document whose root element is `<ruleset>`. The root's children
-SHALL be, in any order: at most one `<extraction>` element, any number of rule elements —
+SHALL be, in any order: any number of rule elements —
 `<video>`, `<audio>` and `<subtitle>` — and any number of `<output>` elements. Comments and
 whitespace MAY appear anywhere and mean nothing. The document order of the rule elements is
 significant, since it decides which rule wins, and so is the order of the `<output>` elements,
@@ -57,8 +58,6 @@ A complete ruleset reads:
 
 ```xml
 <ruleset format="1" name="household">
-  <extraction embeddedAudio="false" subtitles="true" embeddedSubtitles="true"/>
-
   <!-- A lossless main mix keeps everything, smaller. -->
   <audio id="lossless-main">
     <when fact="audio.lossless" is="true"/>
@@ -77,15 +76,13 @@ A complete ruleset reads:
 ```
 
 #### Scenario: the order of the rules is kept
-- **WHEN** a document holds an `<output>` element, then an `<audio>` rule named `a`, then an
-  `<extraction>` element, then an `<audio>` rule named `b`
-- **THEN** it reads as a ruleset whose rules are `a` then `b`, with that extraction policy and that
-  output
+- **WHEN** a document holds an `<output>` element, then an `<audio>` rule named `a`, then a comment,
+  then an `<audio>` rule named `b`
+- **THEN** it reads as a ruleset whose rules are `a` then `b`, with that output
 
 #### Scenario: a ruleset with nothing in it
 - **WHEN** the document is `<ruleset format="1" name="t"/>`
-- **THEN** it reads as a ruleset with no rules, the default extraction policy and one unqualified
-  `mkv` output
+- **THEN** it reads as a ruleset with no rules and one unqualified `mkv` output
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
 `aRulesetSurvivesTheFile`, `aRulesetMakesEachOutputItDeclares`).
@@ -109,37 +106,6 @@ it was stored under, whatever the document's own attributes say, and SHALL NOT r
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`);
 the store's name winning is pinned by nothing yet.
-
-### Requirement: The extraction policy says which streams a producer keeps in a source
-The `<extraction>` element SHALL carry the policy a producer applies when it obtains a source —
-which of the streams available to it the source keeps — in three optional attributes, each
-`true` or `false`:
-
-| Attribute | Means, when true | Default |
-|---|---|---|
-| `embeddedAudio` | keep the lossy core inside a lossless audio track as a stream of its own | `false` |
-| `subtitles` | keep subtitle tracks at all | `true` |
-| `embeddedSubtitles` | keep the forced-only subtitle stream derived from a subtitle track | `true` |
-
-An absent element, or an absent attribute, SHALL mean the default. The silo stores the policy with
-the ruleset and serves it to producers; it does not apply it. Each attribute speaks to streams a
-producer may be able to keep or leave out — a lossy core it could extract, a forced-only stream it
-could derive — and has no effect for a producer that has no such streams to offer. The policy
-decides what streams the source has; it takes no part in deciding what happens to them, which is
-the rules' job. It lives in the ruleset because a person deciding what is kept and how it is
-encoded is making one decision.
-
-#### Scenario: the defaults
-- **WHEN** a ruleset has no `<extraction>` element
-- **THEN** its policy keeps no embedded audio cores, keeps subtitles, and keeps the forced-only
-  subtitle streams
-
-#### Scenario: a value that is not a boolean
-- **WHEN** a ruleset carries `<extraction subtitles="yes"/>`
-- **THEN** it is refused, naming the `subtitles` attribute and the value `yes`
-
-Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
-`aRulesetSurvivesTheFile`); the refusal is pinned by nothing yet.
 
 ### Requirement: The outputs name what is made of every entry
 Each `<output>` element SHALL name one presentation the ruleset makes of every entry it is applied
@@ -445,19 +411,24 @@ refused document is used. It SHALL be refused, in these words, when:
 | two outputs have the same profile, or neither has one | `the profile <profile> is made twice`, or `the unqualified output is made twice` |
 
 where `<rule>` is the rule's `id`, or its scope's element name when it has none. An attribute the
-reader does not know SHALL be ignored, as SHALL a second `<extraction>` element.
+reader does not know SHALL be ignored. What a source keeps is not an element of a ruleset: a
+producer reads it from the rules, as the streams every output drops.
 
 #### Scenario: an element the document does not have
 - **WHEN** a ruleset's root holds a `<rule/>` element
 - **THEN** it is refused with `<rule> is not an element of a ruleset`, not skipped
+
+#### Scenario: what a source keeps is said by rules
+- **WHEN** a ruleset's root holds an `<extraction subtitles="false"/>` element
+- **THEN** it is refused with `<extraction> is not an element of a ruleset`
 
 #### Scenario: a truncated document
 - **WHEN** the document is `<ruleset format="1" name="t"><audio>` and nothing more
 - **THEN** it is refused as malformed XML, not read with its tags closed for it
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`,
-`aRuleThatCannotBeReadIsRefused`, `anOutputMadeTwiceIsRefused`); the ignored attributes and element
-are pinned by nothing yet.
+`aRuleThatCannotBeReadIsRefused`, `anOutputMadeTwiceIsRefused`); the ignored attributes are pinned by
+nothing yet.
 
 ### Requirement: A silo keeps each ruleset as the documents it was given
 A silo SHALL keep its rulesets under `rulesets/<name>/<version>.xml` in its state directory — the
@@ -506,7 +477,7 @@ Pinned by: `Tests/SiloTests/ServerTests.swift` (`rulesetsAreVersionedAndTheOpera
 The name and already-there refusals are pinned by nothing yet.
 
 ### Requirement: The example ruleset is the one the design was written with
-`Examples/household.xml` SHALL be a working ruleset: the default extraction policy; a `<video>`
+`Examples/household.xml` SHALL be a working ruleset: a `<video>`
 rule `small-extras` that re-encodes the video of an extra narrower than 576 pixels with `libx264`
 at preset `slow`, CRF 22 and `yuv420p`, deinterlacing what is marked interlaced; an `<audio>` rule
 `lossless-main` that encodes a lossless stream that is not a commentary as FLAC; an `<audio>` rule
@@ -523,7 +494,7 @@ Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`theExampleFileIsTheProp
 ### Requirement: A container's rules are a layer written in the ruleset language
 The version files a container's `<rules>` names, as [library](../library/spec.md) describes, SHALL
 each hold one root `<rules>` element of rule elements — `<video>`, `<audio>` and `<subtitle>` — read
-exactly as the rules of a ruleset are read, and nothing else: an `<extraction>`, `<output>` or any
+exactly as the rules of a ruleset are read, and nothing else: an `<output>` or any
 other element SHALL be refused as not an element of a container's rules. A version is refused whole,
 as a ruleset is, and its unnamed rules are named `#n` by their position among its rules. A version
 file once written SHALL NOT be edited by the silo: a change is the next version. A container's layer
@@ -545,8 +516,7 @@ as the requirements on each kind of layer place them, and last the ruleset appli
 resolved. A container with no sidecar, or whose sidecar has no `<rules>`, contributes no layer. For
 each stream, the rules of the stream's scope SHALL be tried layer by layer, and within a layer in
 document order; the first that matches decides, and no later rule in any layer is consulted. Every
-output SHALL be resolved through the same stack, with `profile` set to its profile. The outputs and
-the extraction policy SHALL be the applied ruleset's alone.
+output SHALL be resolved through the same stack, with `profile` set to its profile. The outputs SHALL be the applied ruleset's alone.
 
 #### Scenario: a container's rule speaks first
 - **WHEN** the ruleset applied encodes every lossless audio stream as FLAC, the item's container has

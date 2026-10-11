@@ -12,7 +12,6 @@ import FoundationXML
 ///
 /// ```xml
 /// <ruleset format="1" name="household" version="7">
-///   <extraction embeddedAudio="false" subtitles="true" embeddedSubtitles="true"/>
 ///   <audio id="commentary">
 ///     <when fact="audio.role" is="commentary"/>
 ///     <encode codec="aac" bitrate="160k" channels="2"/>
@@ -35,11 +34,6 @@ public enum RulesetFile {
         root.set("name", ruleset.name)
         root.set("version", ruleset.version.map(String.init))
 
-        let extraction = XMLElement(name: "extraction")
-        extraction.set("embeddedAudio", ruleset.extraction.includeEmbeddedAudioTracks ? "true" : "false")
-        extraction.set("subtitles", ruleset.extraction.includeSubtitles ? "true" : "false")
-        extraction.set("embeddedSubtitles", ruleset.extraction.includeEmbeddedSubtitleTracks ? "true" : "false")
-        root.addChild(extraction)
 
         for rule in ruleset.rules {
             let element = XMLElement(name: rule.scope.rawValue)
@@ -140,13 +134,6 @@ public enum RulesetFile {
         let name = try root.required("name")
         let version = try root.optionalInteger("version")
 
-        var extraction = ExtractionPolicy()
-        if let element = root.child("extraction") {
-            extraction.includeEmbeddedAudioTracks = try element.bool("embeddedAudio") ?? extraction.includeEmbeddedAudioTracks
-            extraction.includeSubtitles = try element.bool("subtitles") ?? extraction.includeSubtitles
-            extraction.includeEmbeddedSubtitleTracks = try element.bool("embeddedSubtitles") ?? extraction.includeEmbeddedSubtitleTracks
-        }
-
         var outputs: [OutputPolicy] = []
         for element in root.elements(forName: "output") {
             let output = OutputPolicy(profile: element.attribute("profile"), container: element.attribute("container") ?? "mkv")
@@ -159,7 +146,7 @@ public enum RulesetFile {
         var rules: [Rule] = []
         for case let element as XMLElement in root.children ?? [] {
             switch element.name {
-            case "extraction", "output":
+            case "output":
                 continue
             case "video", "audio", "subtitle":
                 rules.append(try rule(from: element, scope: Scope(rawValue: element.name!)!))
@@ -168,12 +155,11 @@ public enum RulesetFile {
             }
         }
 
-        return Ruleset(name: name, version: version, extraction: extraction, rules: rules, outputs: outputs)
+        return Ruleset(name: name, version: version, rules: rules, outputs: outputs)
     }
 
     /// A version of a container's or a binding's rules: one root `<rules>` of rule elements, read as
-    /// a ruleset's are, and nothing else — no extraction and no outputs, which are a library's
-    /// ruleset's alone. Refused whole, as a ruleset is.
+    /// a ruleset's are, and nothing else — no outputs, which are the applied ruleset's alone. Refused whole, as a ruleset is.
     public static func layerRules(from data: Data) throws -> [Rule] {
         let parser = XMLParser(data: data)
         let parsed = parser.parse()

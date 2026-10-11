@@ -948,7 +948,6 @@ extension ServerTests {
             #expect(reading.rules.map(\.name) == ["#1", "commentary", "#3", "#4", "#5", "#6"])
             #expect(reading.rules[1].action == .encode(EncodeSettings(codec: "aac", bitrate: "96k", channels: 2)))
             #expect(reading.outputs == [OutputPolicy(container: "mkv")])
-            #expect(reading.extraction == ExtractionPolicy())
             let branches = try SiloClient.decoder.decode([SiloClient.Branch].self, from: try await client.get("/v1/rulesets/console-read/branches").body)
             #expect(branches.map(\.name) == ["standard"])
             let report = try SiloClient.decoder.decode(SiloClient.OutOfDateReport.self, from: try await client.get("/v1/libraries/main/out-of-date").body)

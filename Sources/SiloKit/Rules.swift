@@ -3,27 +3,24 @@
 
 import Foundation
 
-/// A named, ordered list of encoding rules, with the extraction policy the ingestion tool applies
-/// at rip time beside them: the two halves of "what is kept and how" in one document.
+/// A named, ordered list of encoding rules and the outputs they make. What a source keeps is its
+/// producer's to decide; one that can choose reads the rules for what every output drops.
 /// `Silo.md`, *Encoding rules*.
 public struct Ruleset: Hashable, Sendable, Codable {
     public var name: String
     /// Assigned by the silo when the ruleset is stored; nil in a file that has not been. A recipe
     /// names the version it resolved against, and a version is immutable once stored.
     public var version: Int?
-    public var extraction: ExtractionPolicy
     public var rules: [Rule]
     /// What the ruleset makes of every entry, in the document's order: never empty, at most one
     /// output for each profile, and at most one unqualified.
     public var outputs: [OutputPolicy]
 
     public init(
-        name: String, version: Int? = nil, extraction: ExtractionPolicy = ExtractionPolicy(),
-        rules: [Rule], outputs: [OutputPolicy] = [OutputPolicy()]
+        name: String, version: Int? = nil, rules: [Rule], outputs: [OutputPolicy] = [OutputPolicy()]
     ) {
         self.name = name
         self.version = version
-        self.extraction = extraction
         self.rules = rules
         self.outputs = outputs.isEmpty ? [OutputPolicy()] : outputs
     }
@@ -239,22 +236,6 @@ public enum Filter: Hashable, Sendable, Codable {
 
     public enum DeinterlaceMode: String, Hashable, Sendable, Codable, CaseIterable {
         case auto, always
-    }
-}
-
-/// What the ingestion tool keeps when it rips: every track on the disc, minus what these leave
-/// out. The defaults are the tool's, with its reasons: the lossy core inside a lossless track is
-/// the same audio again, smaller and worse, and can be pulled out later, exactly; the forced-only
-/// subtitle stream MakeMKV derives is free, because it is dropped when it turns out empty.
-public struct ExtractionPolicy: Hashable, Sendable, Codable {
-    public var includeEmbeddedAudioTracks: Bool
-    public var includeSubtitles: Bool
-    public var includeEmbeddedSubtitleTracks: Bool
-
-    public init(includeEmbeddedAudioTracks: Bool = false, includeSubtitles: Bool = true, includeEmbeddedSubtitleTracks: Bool = true) {
-        self.includeEmbeddedAudioTracks = includeEmbeddedAudioTracks
-        self.includeSubtitles = includeSubtitles
-        self.includeEmbeddedSubtitleTracks = includeEmbeddedSubtitleTracks
     }
 }
 
