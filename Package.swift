@@ -268,7 +268,7 @@ let package = Package(
         // The client's first standalone suite: the onboarding calls, against a stubbed URLProtocol
         // so the wire shapes are pinned without a server.
         .testTarget(name: "SiloClientTests", dependencies: ["SiloClient"]),
-        .testTarget(name: "SiloAdminKitTests", dependencies: ["SiloAdminKit", "SiloClient"]),
+        .testTarget(name: "SiloAdminKitTests", dependencies: ["SiloAdminKit", "SiloClient", "SiloKit"]),
         // The window's model, which the kit's suite cannot see: the order the sheets and the
         // model hand things to each other in, against the same kind of stubbed silo.
         .testTarget(name: "SiloAdminTests", dependencies: ["SiloAdmin", "SiloAdminKit", "SiloDiscovery"]),
