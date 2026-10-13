@@ -68,7 +68,7 @@ struct EmbeddedNodeTests {
         defer { running.cancel() }
 
         let (first, firstInput) = try await sample(in: bench, named: "first.mkv")
-        let firstJob = try bench.service.make(from: try bench.draft(input: firstInput, copy: first, profile: "mobile").id)
+        let firstJob = try bench.service.make(from: try bench.resolved(input: firstInput, copy: first, profile: "mobile").id)
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(firstJob.id).state == .pending, "off, it claims nothing")
 
@@ -78,7 +78,7 @@ struct EmbeddedNodeTests {
         try settings.update { $0.embeddedNode = false }
         try await Task.sleep(for: .milliseconds(200))
         let (second, secondInput) = try await sample(in: bench, named: "second.mkv")
-        let secondJob = try bench.service.make(from: try bench.draft(input: secondInput, copy: second, profile: "mobile").id)
+        let secondJob = try bench.service.make(from: try bench.resolved(input: secondInput, copy: second, profile: "mobile").id)
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(secondJob.id).state == .pending, "off again, it claims no more")
     }

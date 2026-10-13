@@ -23,8 +23,8 @@ public struct BindingStore: Sendable {
     public func insert(_ binding: Binding) throws { try folder.insert([binding]) }
 }
 
-/// Recipes as the silo keeps them: one JSON file each under `<state>/recipes`. A draft may be
-/// committed or discarded; a committed recipe is refused both.
+/// Recipes as the silo keeps them: one JSON file each under `<state>/recipes`. A resolved recipe
+/// may be committed or discarded; a committed recipe is refused both.
 public struct RecipeStore: Sendable {
     private let folder: RecordFolder<StoredRecipe>
 
@@ -46,18 +46,18 @@ public struct RecipeStore: Sendable {
 
     public func insert(_ recipes: [StoredRecipe]) throws { try folder.insert(recipes) }
 
-    /// Commits a draft: the one change a recipe makes after which it makes none.
+    /// Commits a resolved recipe: the one change a recipe makes after which it makes none.
     public func commit(_ id: String) throws -> StoredRecipe? {
         try folder.update(id) { (recipe: inout StoredRecipe) throws -> Void in
-            guard recipe.state == .draft else { throw RecipeStoreError.committed(id) }
+            guard recipe.state == .resolved else { throw RecipeStoreError.committed(id) }
             recipe.state = .committed
         }
     }
 
-    /// Discards a draft; a committed recipe is the record of what a job ran, and stays.
+    /// Discards a resolved recipe; a committed recipe is the record of what a job ran, and stays.
     public func discard(_ id: String) throws -> StoredRecipe? {
         try folder.remove(id) { (recipe: StoredRecipe) throws -> Void in
-            guard recipe.state == .draft else { throw RecipeStoreError.committed(id) }
+            guard recipe.state == .resolved else { throw RecipeStoreError.committed(id) }
         }
     }
 }

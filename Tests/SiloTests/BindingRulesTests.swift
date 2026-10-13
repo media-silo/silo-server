@@ -23,8 +23,8 @@ struct BindingRulesTests {
 
     /// Places a job made from the binding's unqualified output.
     static func place(_ binding: Binding, in bench: JobServiceTests.Bench) async throws {
-        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household", outputs: [Application.OutputChoice()]), to: binding.id).first)
-        let job = try bench.service.make(from: draft.id)
+        let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household", outputs: [Application.OutputChoice()]), to: binding.id).first)
+        let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
         let output = bench.root.appendingPathComponent("encoded-\(job.id).mkv")
         try Fixture.mediaBytes.write(to: output)
@@ -40,11 +40,11 @@ struct BindingRulesTests {
         let binding = try Self.binding(in: bench)
         #expect(try bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 1)
 
-        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
-        #expect(draft.recipe.audio.map(\.action) == [.drop, .copy])
-        #expect(draft.recipe.audio[0].layer == .layer(.binding(binding.id)) && draft.recipe.audio[0].rule == "drop-the-first")
-        #expect(draft.recipe.audio[1].layer == .layer(.container(Fixture.serial.id.value)), "the rest falls through to the serial's")
-        #expect(draft.recipe.layers.map(\.subject) == [.binding(binding.id), .container(Fixture.serial.id.value)], "the binding's layer is nearest")
+        let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
+        #expect(resolved.recipe.audio.map(\.action) == [.drop, .copy])
+        #expect(resolved.recipe.audio[0].layer == .layer(.binding(binding.id)) && resolved.recipe.audio[0].rule == "drop-the-first")
+        #expect(resolved.recipe.audio[1].layer == .layer(.container(Fixture.serial.id.value)), "the rest falls through to the serial's")
+        #expect(resolved.recipe.layers.map(\.subject) == [.binding(binding.id), .container(Fixture.serial.id.value)], "the binding's layer is nearest")
     }
 
     @Test func rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile() async throws {
@@ -79,8 +79,8 @@ struct BindingRulesTests {
         #expect(bench.stagedRules.versions(of: binding.id).isEmpty)
         let read = try bench.bindingService.rules(of: binding.id)
         #expect(read.active == 3 && read.versions == [1, 2, 3])
-        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
-        #expect(draft.recipe.layers.first?.version == 3, "the next draft is made through the version in force")
+        let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
+        #expect(resolved.recipe.layers.first?.version == 3, "the next recipe is resolved through the version in force")
     }
 
     @Test func theWalkReportsABindingsRulesItCannotUseOrThatNothingUses() async throws {

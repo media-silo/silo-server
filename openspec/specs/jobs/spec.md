@@ -5,7 +5,7 @@
 
 ## Purpose
 
-A job is the run of one committed recipe. It is made from a draft recipe, which it commits, and it
+A job is the run of one committed recipe. It is made from a resolved recipe, which it commits, and it
 records only the run: the recipe by id, its state, its attempts, where the output is, and the
 placement that put it in the library. What the job reads is a [source](../sources/spec.md), what it
 becomes is a [binding](../bindings/spec.md), and how is the [recipe](../recipes/spec.md); a claim
@@ -88,7 +88,7 @@ offered again.
 - **THEN** the answer carries one segment: a copy of that source, secret included, from 1497.6 to
   2995.2 seconds
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`, `aClaimPrefersWhatTheNodeHoldsAndHandsOverEachSpan`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, which measures that the answer carries the recipe and the segment's copy, secret included).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aClaimPrefersWhatTheNodeHoldsAndHandsOverEachSpan`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, which measures that the answer carries the recipe and the segment's copy, secret included).
 
 ### Requirement: A progress report is the heartbeat — the lease renews, the state answers
 `POST /v1/jobs/{id}/progress` with the fraction, seconds, rate and speed the encoder reports
@@ -102,7 +102,7 @@ node. An unknown id SHALL be 404.
 - **THEN** the job is `encoding`, the stored fraction is 0.5, and over HTTP the answer's body is
   `{"state":"encoding"}`
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
 
 ### Requirement: A lapsed lease loses the attempt, and the third loss fails the job
 Whenever the queue is read or a claim is made, every `claimed` or `encoding` job whose lease has
@@ -134,7 +134,7 @@ it `failed` with the failure `the output's layout is not the recipe's`.
 - **THEN** the job is `failed` with `the output's layout is not the recipe's`, and placing it is
   refused
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`, `aMismatchedLayoutFailsAndALapsedLeaseIsReclaimed`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aMismatchedLayoutFailsAndALapsedLeaseIsReclaimed`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
 
 ### Requirement: A node gives an active job up with a reason
 `POST /v1/jobs/{id}/fail` with a reason SHALL be taken only from an active job — `claimed`,
@@ -147,7 +147,7 @@ it `cancelled`.
 - **WHEN** a node fails the job it holds with the error it hit
 - **THEN** the job is `failed` with that reason, the lease gone, the attempt's outcome `failed`
 
-Pinned by: nothing yet (the service covers the cancel-landing half — `Tests/SiloTests/JobTests.swift`, `aJobGoesFromADraftToPlaced`).
+Pinned by: nothing yet (the service covers the cancel-landing half — `Tests/SiloTests/JobTests.swift`, `aJobGoesFromResolvedToPlaced`).
 
 ### Requirement: Cancelling reaches a running job at its next progress report
 `POST /v1/jobs/{id}/cancel` SHALL land a `pending`, `encoded` or `failed` job as `cancelled` at
@@ -161,7 +161,7 @@ job already `cancelling`, `cancelled`, `placing` or `placed` SHALL be 409.
 - **THEN** the job is `cancelling`, the node's next progress report is answered `cancelling`, and
   the node's fail report makes it `cancelled` with the attempt's outcome `cancelled`
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, for cancel on a placed job being 409).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, for cancel on a placed job being 409).
 
 ### Requirement: A failed or cancelled job is offered again on retry
 `POST /v1/jobs/{id}/retry` SHALL take only a `failed` or `cancelled` job; anything else is 409.
@@ -173,7 +173,7 @@ its failure, lease, progress, output and result cleared.
 - **THEN** it is `pending` with no attempts, and claiming works again; a retry while a node is
   encoding is 409
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
 
 ### Requirement: Placement fetches the output from its holder and files it
 `POST /v1/jobs/{id}/place` SHALL take only an `encoded` job with its output present; anything else
@@ -199,7 +199,7 @@ writes made. Any failure along the way SHALL return the job to `encoded` with th
   answers its presentation id (and the media route serves it by range), the serial's sidecar names
   the binding and the recipe's ruleset version on the presentation, and a second place is 409
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, for the `- mobile` naming and the file moved out of the work folder). `Tests/SiloTests/StackTests.swift` (`aPlacedPresentationRecordsItsBindingAndTheRulesThatMadeIt`, for the presentation's provenance).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, for the `- mobile` naming and the file moved out of the work folder). `Tests/SiloTests/StackTests.swift` (`aPlacedPresentationRecordsItsBindingAndTheRulesThatMadeIt`, for the presentation's provenance).
 
 ### Requirement: The operator drives the queue with `silo-ctl jobs`
 `silo-ctl jobs` SHALL offer `list` (oldest first, with `--state` to filter), `show` (one job,
@@ -231,21 +231,21 @@ SHALL record its node, when it started and ended, and an outcome of `lost`, `fai
 segments, and where a requirement speaks of a job's source it means each of them.
 
 #### Scenario: a job freshly made
-- **WHEN** a job is made from a draft recipe
+- **WHEN** a job is made from a resolved recipe
 - **THEN** the job is `pending` with a lowercased UUID id, the recipe's id and its encoders, and no
   attempts, lease, progress, output, result, placement or failure
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromADraftToPlaced`), `Tests/SiloClientTests/SiloClientTests.swift` (`aJobIsMadeFromARecipeAndAClaimCarriesItsSegments`, for the record over the wire).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloClientTests/SiloClientTests.swift` (`aJobIsMadeFromARecipeAndAClaimCarriesItsSegments`, for the record over the wire).
 
-### Requirement: A job is made from a draft recipe whose sources can be had
+### Requirement: A job is made from a resolved recipe whose sources can be had
 `POST /v1/jobs` with a recipe's id, behind the operator's token, SHALL commit the recipe, make the job
 `pending` with the recipe's encoders sorted as its requirements, and answer 201 with it. It SHALL be
 404 for a recipe the silo does not have; 409 for a committed recipe, so one recipe is run by one job;
 and 409 naming the source when a source of the recipe's binding has no copy, since no node could
 fetch it. A job SHALL NOT be made any other way.
 
-#### Scenario: a job from a draft
-- **WHEN** the operator makes a job from a draft recipe whose source has a copy
+#### Scenario: a job from a resolved recipe
+- **WHEN** the operator makes a job from a resolved recipe whose source has a copy
 - **THEN** the answer is 201 with a `pending` job, and the recipe is committed
 
 #### Scenario: a second job from one recipe
@@ -253,10 +253,10 @@ fetch it. A job SHALL NOT be made any other way.
 - **THEN** the answer is 409, and no job is made
 
 #### Scenario: a source no node holds
-- **WHEN** the operator makes a job from a draft whose binding's only source has no copy
-- **THEN** the answer is 409 naming the source, and the recipe stays a draft
+- **WHEN** the operator makes a job from a resolved recipe whose binding's only source has no copy
+- **THEN** the answer is 409 naming the source, and the recipe stays resolved
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromADraftWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
 
 ### Requirement: Placement writes a binding's rules before the presentation names them
 Placing a job's output SHALL, when the job's binding has rules kept in the silo's state, write every

@@ -120,7 +120,7 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("GET", "/v1/bindings/\(id)")
     }
 
-    /// Applies a ruleset to a binding, making a draft recipe for each output the application names.
+    /// Applies a ruleset to a binding, making a resolved recipe for each output the application names.
     public func apply(_ application: Application, to binding: String) async throws -> [StoredRecipe] {
         try await send("POST", "/v1/bindings/\(binding)/recipes", body: application)
     }
@@ -144,7 +144,7 @@ public struct SiloClient: Sendable, JobsAPI {
     }
 
     /// Stores a binding's next version of its rules — a person's decision about that one entry —
-    /// and makes it the version in force. Apply the rules to the binding again for a draft that
+    /// and makes it the version in force. Apply the rules to the binding again for a recipe that
     /// carries it.
     public func setRules(_ document: String, of binding: String) async throws -> BindingRulesRecord {
         try await send("PUT", "/v1/bindings/\(binding)/rules", body: NewBindingRules(document: document))
@@ -159,7 +159,7 @@ public struct SiloClient: Sendable, JobsAPI {
 
     struct NewJob: Codable { var recipe: String }
 
-    /// A job from a draft recipe, which it commits.
+    /// A job from a resolved recipe, which it commits.
     public func createJob(recipe: String) async throws -> Job {
         try await send("POST", "/v1/jobs", body: NewJob(recipe: recipe))
     }
