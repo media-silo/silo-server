@@ -28,7 +28,7 @@ struct CheckTests {
     }()
 
     /// Binds an item to a source of its own, applies the household ruleset's unqualified output as
-    /// `application` says, and places a job made from the draft. Answers the job.
+    /// `application` says, and places a job made from its recipe. Answers the job.
     @discardableResult
     static func placed(_ bench: Bench, item: String = "part3", containers: [String] = Bench.containers, application: Application = Application(ruleset: "household"), name: String = UUID().uuidString) async throws -> Job {
         let source = try bench.sources.register(Bench.input, key: nil, copy: try bench.copy("\(name).mkv")).source
@@ -37,8 +37,8 @@ struct CheckTests {
         let binding = try bench.bindingService.make(Binding(library: "main", containers: containers, item: item, tracks: tracks, segments: [Binding.Segment(source: source.id)]))
         var unqualified = application
         unqualified.outputs = [Application.OutputChoice()]
-        let draft = try #require(try bench.bindingService.apply(unqualified, to: binding.id).first)
-        let job = try bench.service.make(from: draft.id)
+        let resolved = try #require(try bench.bindingService.apply(unqualified, to: binding.id).first)
+        let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
         let output = bench.root.appendingPathComponent("encoded-\(name).mkv")
         try Fixture.mediaBytes.write(to: output)
@@ -113,8 +113,8 @@ struct CheckTests {
         let source = try bench.sources.register(Bench.input, key: nil, copy: try bench.copy()).source
         let binding = try bench.bindingService.make(Binding(library: "main", containers: Bench.containers, item: "part3", tracks: [TrackMapping(feature: "commentary1", audio: 2)], segments: [Binding.Segment(source: source.id)]))
         _ = try bench.bindingService.setRules(Data(#"<rules><audio><when fact="audio.index" is="2"/><copy/></audio></rules>"#.utf8), of: binding.id)
-        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household", outputs: [Application.OutputChoice()]), to: binding.id).first)
-        let job = try bench.service.make(from: draft.id)
+        let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household", outputs: [Application.OutputChoice()]), to: binding.id).first)
+        let job = try bench.service.make(from: resolved.id)
         _ = try await bench.service.claim(node: "box", capabilities: Set(job.requirements))
         let output = bench.root.appendingPathComponent("encoded.mkv")
         try Fixture.mediaBytes.write(to: output)
@@ -122,7 +122,7 @@ struct CheckTests {
         _ = try await bench.service.place(job.id)
         _ = try bench.checkService.pass()
 
-        #expect(draft.recipe.audio[1].layer == .layer(.binding(binding.id)), "the commentary is the binding's rule's to decide")
+        #expect(resolved.recipe.audio[1].layer == .layer(.binding(binding.id)), "the commentary is the binding's rule's to decide")
         _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household")
         #expect(try bench.checkService.pass() == 1)
         #expect(bench.checks.check(of: job.id)?.outcome == .current, "and still decided so, whatever the ruleset says of commentaries")

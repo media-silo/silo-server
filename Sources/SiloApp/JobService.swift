@@ -58,12 +58,12 @@ package struct JobService: Sendable, JobsAPI {
 
     // MARK: - The operator's side
 
-    /// A job from a draft recipe: the recipe is committed, so one recipe is run by one job, and the
+    /// A job from a resolved recipe: the recipe is committed, so one recipe is run by one job, and the
     /// job is pending. Refused while any source of the recipe's binding has no copy, since no node
-    /// could fetch it; the recipe then stays a draft.
+    /// could fetch it; the recipe then stays resolved.
     package func make(from id: String) throws -> Job {
         guard let recipe = recipes.recipe(id) else { throw NoSuchRecipe() }
-        guard recipe.state == .draft else { throw CommittedRecipe(reason: "recipe \(id) is committed; a job has been made from it") }
+        guard recipe.state == .resolved else { throw CommittedRecipe(reason: "recipe \(id) is committed; a job has been made from it") }
         guard let binding = bindings.binding(recipe.binding) else { throw Unrunnable(reason: "recipe \(id)'s binding \(recipe.binding) is gone") }
         for segment in binding.segments where sources.source(segment.source)?.copies.isEmpty ?? true {
             throw Unrunnable(reason: "source \(segment.source) has no copy; no node could fetch it")

@@ -768,7 +768,7 @@ paths:
       summary: Apply a ruleset to a binding
       description: >
         Resolves the binding once for each output the application makes, at the version named or the
-        latest, and keeps a draft for each — or nothing, when any output cannot be resolved. Every
+        latest, and keeps the recipe of each — or nothing, when any output cannot be resolved. Every
         recipe the binding already has is left as it was, so applying a newer version, or another
         ruleset, is the same call again. Operator only.
       tags: [Bindings]
@@ -784,7 +784,7 @@ paths:
               $ref: "#/components/schemas/Application"
       responses:
         "201":
-          description: The new drafts.
+          description: The new recipes, each resolved.
           content:
             application/json:
               schema:
@@ -832,7 +832,7 @@ paths:
           description: No such recipe.
     delete:
       operationId: discardRecipe
-      summary: Discard a draft
+      summary: Discard a resolved recipe
       description: A committed recipe is the record of what a job ran, and is refused. Operator only.
       tags: [Bindings]
       security:
@@ -876,7 +876,7 @@ paths:
       description: >
         Read as a container's rules are, and made the version in force: kept in the silo until the
         binding's first presentation is placed, and in the library beside the item's sidecar after.
-        Changes no recipe; apply the rules to the binding again for a draft that carries them.
+        Changes no recipe; apply the rules to the binding again for a recipe that carries them.
         Operator only.
       tags: [Bindings]
       security:
@@ -1060,7 +1060,7 @@ paths:
                   $ref: "#/components/schemas/Job"
     post:
       operationId: createJob
-      summary: Make a job from a draft recipe
+      summary: Make a job from a resolved recipe
       description: >
         Commits the recipe, so one recipe is run by one job, and makes the job pending with the
         recipe's encoders as its requirements. Refused while a source of the recipe's binding has no
@@ -1988,7 +1988,7 @@ components:
           type: string
         state:
           type: string
-          enum: [draft, committed]
+          enum: [resolved, committed]
         facts:
           $ref: "#/components/schemas/SourceFacts"
         recipe:
@@ -2146,7 +2146,7 @@ components:
       properties:
         recipe:
           type: string
-          description: The id of the draft recipe the job runs.
+          description: The id of the recipe the job runs, committed when the job was made.
 
     Attempt:
       type: object

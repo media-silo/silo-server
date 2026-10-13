@@ -28,8 +28,8 @@ package struct CommittedRecipe: Error {
 }
 
 /// Bindings made, and rulesets applied to them: every check a binding must pass before it is kept,
-/// and an application of a ruleset — at a version, for some or all of its outputs — making a draft
-/// recipe for each output. A binding names no ruleset, so applying another, or the same one at a
+/// and an application of a ruleset — at a version, for some or all of its outputs — making a
+/// resolved recipe for each output. A binding names no ruleset, so applying another, or the same one at a
 /// newer version, is the same act made again.
 @Singleton
 package struct BindingService: Sendable {
@@ -68,7 +68,7 @@ package struct BindingService: Sendable {
     }
 
     /// Applies a ruleset to a binding: resolves it once for each output the application makes, and
-    /// keeps a draft for each — or, when any output cannot be resolved, keeps nothing. Every recipe
+    /// keeps the recipe of each — or, when any output cannot be resolved, keeps nothing. Every recipe
     /// the binding already has is left as it was.
     package func apply(_ application: Application, to id: String) throws -> [StoredRecipe] {
         guard let binding = bindings.binding(id) else { throw NoSuchBinding() }

@@ -39,15 +39,15 @@ struct StackTests {
         let document = #"<rules><audio id="keep-every-mix"><copy/></audio></rules>"#
         try Self.serialRules(document, version: 1, in: folder, bench: bench)
 
-        let draft = try bench.draft(copy: try bench.copy())
-        #expect(draft.recipe.audio.allSatisfy { $0.rule == "keep-every-mix" && $0.layer == .layer(.container(Fixture.serial.id.value)) }, "the serial's rule speaks first")
-        #expect(draft.recipe.video?.layer == .ruleset("household"), "and what it does not decide falls through")
-        #expect(draft.recipe.layers == [RecipeLayer(subject: .container(Fixture.serial.id.value), version: 1, digest: RulesLayerFile.digest(of: Data(document.utf8)))])
+        let resolved = try bench.resolved(copy: try bench.copy())
+        #expect(resolved.recipe.audio.allSatisfy { $0.rule == "keep-every-mix" && $0.layer == .layer(.container(Fixture.serial.id.value)) }, "the serial's rule speaks first")
+        #expect(resolved.recipe.video?.layer == .ruleset("household"), "and what it does not decide falls through")
+        #expect(resolved.recipe.layers == [RecipeLayer(subject: .container(Fixture.serial.id.value), version: 1, digest: RulesLayerFile.digest(of: Data(document.utf8)))])
 
-        // The rules move on; a draft already made keeps what it was resolved through.
+        // The rules move on; a recipe already resolved keeps what it was resolved through.
         try Self.serialRules(#"<rules><audio><drop/></audio></rules>"#, version: 2, in: folder, bench: bench)
-        #expect(bench.recipes.recipe(draft.id)?.recipe.layers.first?.version == 1)
-        #expect(try bench.draft(copy: try bench.copy("again.mkv")).recipe.layers.first?.version == 2)
+        #expect(bench.recipes.recipe(resolved.id)?.recipe.layers.first?.version == 1)
+        #expect(try bench.resolved(copy: try bench.copy("again.mkv")).recipe.layers.first?.version == 2)
     }
 
     @Test func aContainersRulesThatCannotBeReadRefuseTheApplication() throws {
@@ -56,7 +56,7 @@ struct StackTests {
         let folder = try Self.placeSerial(in: bench)
         try Self.serialRules(#"<rules><audio><copy/></audio></rules>"#, version: 1, in: folder, bench: bench)
         try FileManager.default.removeItem(at: folder.appendingPathComponent("rules/1.xml"))
-        let refusal = #expect(throws: Unresolvable.self) { try bench.draft(copy: try bench.copy()) }
+        let refusal = #expect(throws: Unresolvable.self) { try bench.resolved(copy: try bench.copy()) }
         #expect(refusal?.reason == "the rules of container \(Fixture.serial.id.value): rules version 1 is not there")
     }
 
@@ -70,8 +70,8 @@ struct StackTests {
         #expect(none?.reason == "the application names no ruleset, and library main has none of its own")
 
         try bench.settings.update { $0.libraries[0].ruleset = "household" }
-        let drafts = try bench.bindingService.apply(Application(), to: binding.id)
-        #expect(drafts.map(\.recipe.ruleset) == [RulesetRef(name: "household", version: 1), RulesetRef(name: "household", version: 1)], "both of its outputs")
+        let resolved = try bench.bindingService.apply(Application(), to: binding.id)
+        #expect(resolved.map(\.recipe.ruleset) == [RulesetRef(name: "household", version: 1), RulesetRef(name: "household", version: 1)], "both of its outputs")
     }
 
     @Test func aPlacedPresentationRecordsItsBindingAndTheRulesThatMadeIt() async throws {
@@ -87,8 +87,8 @@ struct StackTests {
             library: "main", containers: JobServiceTests.Bench.containers, item: "part3",
             segments: [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 3))]
         ))
-        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
-        let job = try bench.service.make(from: draft.id)
+        let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
+        let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
         let output = bench.root.appendingPathComponent("encoded.mkv")
         try Fixture.mediaBytes.write(to: output)

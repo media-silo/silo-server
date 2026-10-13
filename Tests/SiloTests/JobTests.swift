@@ -82,8 +82,8 @@ struct JobServiceTests {
         static let containers = [Fixture.series, Fixture.serial].map { String(decoding: ContainerFile.data(for: $0), as: UTF8.self) }
 
         /// Registers a source with the copy given, binds part three of *Pyramids of Mars* to the
-        /// segments of it given, and applies the household ruleset for one output: the draft.
-        func draft(input: InputSpec = Bench.input, copy: FileRef?, chapters: Binding.ChapterSpan? = nil, segments count: Int = 1, profile: String? = nil) throws -> StoredRecipe {
+        /// segments of it given, and applies the household ruleset for one output: the resolved recipe.
+        func resolved(input: InputSpec = Bench.input, copy: FileRef?, chapters: Binding.ChapterSpan? = nil, segments count: Int = 1, profile: String? = nil) throws -> StoredRecipe {
             let source = try sources.register(input, key: nil, copy: copy).source
             let binding = try bindingService.make(Binding(
                 library: "main", containers: Self.containers, item: "part3",
@@ -94,22 +94,22 @@ struct JobServiceTests {
         }
     }
 
-    @Test func aJobGoesFromADraftToPlaced() async throws {
+    @Test func aJobGoesFromResolvedToPlaced() async throws {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
 
-        let draft = try bench.draft(copy: try bench.copy())
-        #expect(draft.facts.audio.map(\.role) == [.main, .commentary], "the feature map decides the role; the title alone would only hint")
-        #expect(draft.recipe.decisions.map(\.rule) == ["#4", "lossless-main", "commentary"], "an episode's video is copied; a featurette's would be re-encoded")
+        let resolved = try bench.resolved(copy: try bench.copy())
+        #expect(resolved.facts.audio.map(\.role) == [.main, .commentary], "the feature map decides the role; the title alone would only hint")
+        #expect(resolved.recipe.decisions.map(\.rule) == ["#4", "lossless-main", "commentary"], "an episode's video is copied; a featurette's would be re-encoded")
 
-        let pending = try service.make(from: draft.id)
+        let pending = try service.make(from: resolved.id)
         #expect(pending.state == .pending)
-        #expect(pending.recipe == draft.id)
+        #expect(pending.recipe == resolved.id)
         #expect(pending.requirements == ["aac", "flac"])
         #expect(pending.attempts.isEmpty && pending.lease == nil && pending.output == nil && pending.failure == nil)
         #expect(pending.id == pending.id.lowercased())
-        #expect(bench.recipes.recipe(draft.id)?.state == .committed, "making the job commits its recipe")
+        #expect(bench.recipes.recipe(resolved.id)?.state == .committed, "making the job commits its recipe")
         #expect(try service.all().map(\.id) == [pending.id])
 
         #expect(try await service.claim(node: "box", capabilities: ["flac"]) == nil, "a node without aac cannot claim it")
@@ -118,7 +118,7 @@ struct JobServiceTests {
         #expect(claimed.state == .claimed)
         #expect(claimed.lease?.node == "box")
         #expect(claimed.attempts.count == 1)
-        #expect(claim.recipe?.id == draft.id)
+        #expect(claim.recipe?.id == resolved.id)
         #expect(claim.segments.map(\.copy.secret) == ["s3cret"], "the claimant is handed the secret it will fetch by")
         #expect(claim.segments.allSatisfy { $0.isWhole }, "a whole source needs no cutting")
         #expect(try await service.claim(node: "other", capabilities: ["flac", "aac"]) == nil, "claimed once")
@@ -137,7 +137,7 @@ struct JobServiceTests {
         let again = try service.retry(claimed.id)
         #expect(again.state == .pending)
         #expect(again.attempts.isEmpty)
-        #expect(again.recipe == draft.id, "the same committed recipe")
+        #expect(again.recipe == resolved.id, "the same committed recipe")
         let reclaimed = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"])).job
 
         // A finished file on this filesystem: the embedded node's case.
@@ -160,22 +160,22 @@ struct JobServiceTests {
         #expect(throws: WrongState.self) { try service.cancel(placed.id) }
     }
 
-    @Test func aJobIsMadeOnlyFromADraftWhoseSourcesCanBeHad() throws {
+    @Test func aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad() throws {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
         #expect(throws: NoSuchRecipe.self) { try service.make(from: "nothing") }
 
-        let draft = try bench.draft(copy: try bench.copy())
-        _ = try service.make(from: draft.id)
-        #expect(throws: CommittedRecipe.self) { try service.make(from: draft.id) }
+        let resolved = try bench.resolved(copy: try bench.copy())
+        _ = try service.make(from: resolved.id)
+        #expect(throws: CommittedRecipe.self) { try service.make(from: resolved.id) }
         #expect(try service.all().count == 1, "one recipe is run by one job")
 
-        let unheld = try bench.draft(copy: nil)
+        let unheld = try bench.resolved(copy: nil)
         let source = try bench.bindingService.binding(unheld.binding).binding.segments[0].source
         let refusal = #expect(throws: Unrunnable.self) { try service.make(from: unheld.id) }
         #expect(refusal?.reason == "source \(source) has no copy; no node could fetch it")
-        #expect(bench.recipes.recipe(unheld.id)?.state == .draft, "and the recipe stays a draft")
+        #expect(bench.recipes.recipe(unheld.id)?.state == .resolved, "and the recipe stays resolved")
         #expect(try service.all().count == 1)
     }
 
@@ -183,8 +183,8 @@ struct JobServiceTests {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
-        let elsewhere = try service.make(from: try bench.draft(copy: try bench.copy("a.mkv", on: "laptop")).id)
-        let held = try service.make(from: try bench.draft(copy: try bench.copy("b.mkv", on: "box"), chapters: Binding.ChapterSpan(from: 2, to: 3), segments: 2).id)
+        let elsewhere = try service.make(from: try bench.resolved(copy: try bench.copy("a.mkv", on: "laptop")).id)
+        let held = try service.make(from: try bench.resolved(copy: try bench.copy("b.mkv", on: "box"), chapters: Binding.ChapterSpan(from: 2, to: 3), segments: 2).id)
         #expect(elsewhere.createdAt <= held.createdAt)
 
         let claim = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"]))
@@ -200,7 +200,7 @@ struct JobServiceTests {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
-        let job = try service.make(from: try bench.draft(copy: try bench.copy()).id)
+        let job = try service.make(from: try bench.resolved(copy: try bench.copy()).id)
 
         let claimed = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"])).job
         let failed = try await service.complete(claimed.id, output: FileRef(holder: "box", url: URL(fileURLWithPath: "/x"), secret: ""), result: EncodeResult(streams: ["video h264"], layoutMatched: false))
@@ -255,8 +255,8 @@ struct WorkerTests {
         let ffprobe = try FFprobe()
         try await Self.sample(sample, with: ffmpeg)
         let input = InputSpec(probe: try await ffprobe.probe(sample))
-        let draft = try bench.draft(input: input, copy: FileRef(holder: "embedded", url: sample, path: sample.path, secret: ""), profile: "mobile")
-        let job = try bench.service.make(from: draft.id)
+        let resolved = try bench.resolved(input: input, copy: FileRef(holder: "embedded", url: sample, path: sample.path, secret: ""), profile: "mobile")
+        let job = try bench.service.make(from: resolved.id)
 
         let worker = Self.worker(bench, ffmpeg: ffmpeg, ffprobe: ffprobe)
         #expect(try await worker.runOnce() == true)
@@ -299,9 +299,9 @@ struct WorkerTests {
             library: "main", containers: JobServiceTests.Bench.containers, item: "part3",
             segments: [Binding.Segment(source: one.id, chapters: Binding.ChapterSpan(from: 2, to: 2)), Binding.Segment(source: two.id)]
         ))
-        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
-        #expect(draft.facts.duration.map { abs($0 - 3) < 0.1 } == true, "a second of the first and two of the second")
-        let job = try bench.service.make(from: draft.id)
+        let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
+        #expect(resolved.facts.duration.map { abs($0 - 3) < 0.1 } == true, "a second of the first and two of the second")
+        let job = try bench.service.make(from: resolved.id)
 
         #expect(try await Self.worker(bench, ffmpeg: ffmpeg, ffprobe: ffprobe).runOnce() == true)
         let encoded = try bench.service.job(job.id)
@@ -338,8 +338,8 @@ struct WorkerTests {
             library: "main", containers: JobServiceTests.Bench.containers, item: "part3",
             segments: [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 2)), Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 1, to: 1))]
         ))
-        let draft = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
-        let job = try bench.service.make(from: draft.id)
+        let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
+        let job = try bench.service.make(from: resolved.id)
 
         #expect(try await Self.worker(bench, ffmpeg: ffmpeg, ffprobe: ffprobe).runOnce() == true)
         #expect(try bench.service.job(job.id).state == .encoded)

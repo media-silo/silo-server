@@ -33,7 +33,7 @@ package struct JobController {
     }
 }
 
-/// Jobs, changed by the operator's side: made from draft recipes, cancelled, retried and placed.
+/// Jobs, changed by the operator's side: made from resolved recipes, cancelled, retried and placed.
 /// Behind the operator's token.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")

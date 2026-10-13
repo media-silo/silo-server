@@ -45,7 +45,7 @@ package struct BindingController {
     }
 }
 
-/// Bindings made, their own rules stored, rulesets applied to them, and drafts discarded: the
+/// Bindings made, their own rules stored, rulesets applied to them, and resolved recipes discarded: the
 /// producer's side, behind the operator's token.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")

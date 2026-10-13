@@ -9,7 +9,7 @@ A binding says what one entry of a library is made from: segments of one or more
 whole source or a span of its chapters, joined in order, with the entry and its feature map. It is
 checked whole before it is kept and never changed once made. It names no ruleset: a binding is a
 fact about the library, and applying a ruleset to it is a separate act, made as often as the rules
-change, which makes a draft recipe for each output. This spec covers the bindings routes, the binding
+change, which makes a resolved recipe for each output. This spec covers the bindings routes, the binding
 and the joining of its segments in `Sources/SiloKit`, `BindingService` and `BindingStore`; applying a
 ruleset to a binding is [recipes](../recipes/spec.md)'s.
 
@@ -90,12 +90,12 @@ versions SHALL be kept in the silo's state directory; from then on they SHALL be
 in the folder `rules/bindings/<binding id>` beside the sidecar of the container holding the binding's
 item, a new version written there — its file first, then the item's `<rules>` moved to it — and the
 silo's copy no longer kept. A version SHALL NOT be rewritten, wherever it is kept. Storing a binding's
-rules SHALL change no recipe: a draft that should carry them is made by applying the rules again.
+rules SHALL change no recipe: a recipe that should carry them is resolved by applying the rules again.
 
 #### Scenario: a decision before anything is placed
 - **WHEN** a producer stores rules copying audio 1 for a binding none of whose files has been placed
 - **THEN** the answer names version 1, the version is in the silo's state directory and not in the
-  library, and applying a ruleset to the binding then makes drafts whose audio 1 is copied by the
+  library, and applying a ruleset to the binding then makes recipes whose audio 1 is copied by the
   binding's rule
 
 #### Scenario: a later decision, once placed

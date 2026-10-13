@@ -3,7 +3,7 @@
 
 import Foundation
 
-/// The run of one committed recipe: made from a draft, which it commits, and only the run — the
+/// The run of one committed recipe: made from a resolved recipe, which it commits, and only the run — the
 /// file is a source, what it becomes is a binding, and how is the recipe, each its own record.
 /// `Ingestion.md`, *Jobs*.
 public struct Job: Identifiable, Hashable, Sendable, Codable {
