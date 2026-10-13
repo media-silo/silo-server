@@ -47,3 +47,10 @@ deltas in `openspec/changes/`, as that README describes.
   never saw, branches promoted with their impact beside them, each library's standard, and its
   out-of-date presentations. The first of the proposals that make the console where a library's
   structure is defined.
+- [Drafts](Drafts.md) — a draft of a ruleset is the console's working copy: kept on the Mac as it
+  is edited, listed under the branch it was based on, and committed to the silo as a store on its
+  base, refused and kept when the head has moved. The silo holds versions and never work in progress.
+  A change is tried by committing it to a branch and making trial jobs of the branch's recipes, encoded
+  like any job and kept apart from the library, before the branch is promoted. The console edits a
+  draft in a form built from the rule language that leaves everything it did not touch as written,
+  toggled with the raw text, and reads the XML itself with the silo's reader.
