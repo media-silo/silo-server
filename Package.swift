@@ -177,7 +177,7 @@ let package = Package(
         // chews the whole package.
         .executableTarget(
             name: "SiloAdmin",
-            dependencies: ["SiloAdminKit", "SiloClient"]
+            dependencies: ["SiloAdminKit", "SiloClient", "SiloKit"]
         ),
         // The node's loop, the same for a node on another machine and the one inside the silo.
         .target(

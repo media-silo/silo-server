@@ -159,6 +159,23 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
     public func isVisible(in scope: Scope) -> Bool {
         self.scope == nil || self.scope == scope
     }
+
+    /// The tests a condition on the fact may apply, as the document writes them: all seven for a
+    /// number, and otherwise only those that compare text.
+    public var tests: [String] {
+        isNumeric ? ["is", "ne", "in", "lt", "le", "gt", "ge"] : ["is", "ne", "in"]
+    }
+
+    /// The values the fact takes when they are a closed set; nil when they are open.
+    public var values: [String]? {
+        switch self {
+        case .format: SourceFormat.allCases.map(\.rawValue)
+        case .videoHDR: HDRKind.allCases.map(\.rawValue)
+        case .audioRole: AudioRole.allCases.map(\.rawValue)
+        case .videoInterlaced, .audioLossless, .audioCore, .subtitleForced: ["true", "false"]
+        default: nil
+        }
+    }
 }
 
 /// A fact's value at the moment a condition reads it.
