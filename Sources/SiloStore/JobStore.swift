@@ -92,6 +92,14 @@ public final class JobStore: Sendable {
         }
     }
 
+    /// Removes the job and its file: a trial, deleted by the operator.
+    public func remove(_ id: String) throws {
+        try jobs.withLock { jobs in
+            guard jobs.removeValue(forKey: id) != nil, folder.path != "/dev/null" else { return }
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(id).json"))
+        }
+    }
+
     private func write(_ job: Job) throws {
         guard folder.path != "/dev/null" else { return }
         let encoder = JSONEncoder()

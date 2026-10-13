@@ -8,6 +8,7 @@ import SiloLibrary
 import SiloStore
 import SmdKit
 import SmdSidecar
+import Synchronization
 import Wire
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -29,6 +30,8 @@ package struct JobService: Sendable, JobsAPI {
     private let index: Index
     private let stagedRules: BindingRulesStore
     private let checks: CheckSignal
+    /// The trial jobs whose output is being fetched, so that one is never fetched twice at once.
+    private let fetching = InFlight()
     private let logger = Logger(label: "silo.jobs")
 
     @Inject
@@ -60,8 +63,9 @@ package struct JobService: Sendable, JobsAPI {
 
     /// A job from a resolved recipe: the recipe is committed, so one recipe is run by one job, and the
     /// job is pending. Refused while any source of the recipe's binding has no copy, since no node
-    /// could fetch it; the recipe then stays resolved.
-    package func make(from id: String) throws -> Job {
+    /// could fetch it; the recipe then stays resolved. A trial job is encoded as any job is, and kept
+    /// in the trial area rather than placed.
+    package func make(from id: String, trial: Bool = false) throws -> Job {
         guard let recipe = recipes.recipe(id) else { throw NoSuchRecipe() }
         guard recipe.state == .resolved else { throw CommittedRecipe(reason: "recipe \(id) is committed; a job has been made from it") }
         guard let binding = bindings.binding(recipe.binding) else { throw Unrunnable(reason: "recipe \(id)'s binding \(recipe.binding) is gone") }
@@ -73,9 +77,9 @@ package struct JobService: Sendable, JobsAPI {
         } catch let error as RecipeStoreError {
             throw CommittedRecipe(reason: error.description)
         }
-        let job = Job(recipe: id, requirements: recipe.recipe.encoders.sorted())
+        let job = Job(recipe: id, requirements: recipe.recipe.encoders.sorted(), trial: trial)
         try jobs.insert(job)
-        logger.info("made \(job.id) from recipe \(id), needs \(job.requirements)")
+        logger.info("made \(trial ? "trial " : "")\(job.id) from recipe \(id), needs \(job.requirements)")
         return job
     }
 
@@ -87,7 +91,7 @@ package struct JobService: Sendable, JobsAPI {
         case .claimed, .encoding:
             // The node learns at its next progress report and stops; its fail report finalises.
             return try jobs.update(id) { $0.state = .cancelling }!
-        case .cancelling, .cancelled, .placing, .placed:
+        case .cancelling, .cancelled, .placing, .placed, .tried:
             throw WrongState(current.state, "cannot be cancelled")
         }
     }
@@ -179,7 +183,7 @@ package struct JobService: Sendable, JobsAPI {
     package func complete(_ id: String, output: FileRef, result: EncodeResult) async throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
         guard [.claimed, .encoding].contains(current.state) else { throw WrongState(current.state, "cannot be completed") }
-        return try jobs.update(id) { job in
+        let completed = try jobs.update(id) { job in
             job.output = output
             job.result = result
             job.lease = nil
@@ -196,6 +200,11 @@ package struct JobService: Sendable, JobsAPI {
                 job.failure = "the output's layout is not the recipe's"
             }
         }!
+        // A trial's output is fetched once it is encoded, without the node waiting on it.
+        if completed.trial, completed.state == .encoded {
+            Task { _ = try? await fetchTrial(id) }
+        }
+        return completed
     }
 
     package func fail(_ id: String, reason: String) async throws -> Job {
@@ -239,6 +248,61 @@ package struct JobService: Sendable, JobsAPI {
         }
     }
 
+    // MARK: - Trials
+
+    /// Where a trial's output is kept: `<state>/trials/<job id>.<ext>`.
+    package func trialFile(of job: Job) -> URL {
+        let ext = job.output?.url.pathExtension ?? ""
+        return config.stateDirectory.appendingPathComponent("trials", isDirectory: true)
+            .appendingPathComponent("\(job.id).\(ext.isEmpty ? "mkv" : ext)")
+    }
+
+    /// Fetches an encoded trial's output from the node that holds it into the trial area, as
+    /// placement would into a library, and makes the job `tried`. A fetch that fails leaves the job
+    /// `encoded` with the failure recorded, to be fetched again when the operator asks.
+    package func fetchTrial(_ id: String) async throws -> Job {
+        guard let current = jobs.job(id), current.trial else { throw NoSuchJob() }
+        if current.state == .tried { return current }
+        guard current.state == .encoded, let output = current.output else { throw WrongState(current.state, "has no output to fetch") }
+        guard fetching.begin(id) else { return current }
+        defer { fetching.end(id) }
+        let destination = trialFile(of: current)
+        do {
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if output.url.isFileURL {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: output.url, to: destination)
+            } else {
+                try await Self.fetch(output, to: destination)
+            }
+        } catch {
+            _ = try jobs.update(id) { $0.failure = "trial fetch: \(error.localizedDescription)" }
+            throw error
+        }
+        logger.info("tried \(id), kept at \(destination.lastPathComponent)")
+        return try jobs.update(id) { job in
+            job.state = .tried
+            job.failure = nil
+        }!
+    }
+
+    /// Every tried trial, oldest first.
+    package func trials() throws -> [Job] {
+        try all(state: .tried).filter(\.trial)
+    }
+
+    /// A tried trial, or nothing: what the trial routes answer 404 for.
+    package func trial(_ id: String) -> Job? {
+        jobs.job(id).flatMap { $0.trial && $0.state == .tried ? $0 : nil }
+    }
+
+    /// Deletes a tried trial: its output, then its record. Its recipe stays committed.
+    package func deleteTrial(_ id: String) throws {
+        guard let trial = trial(id) else { throw NoSuchJob() }
+        try? FileManager.default.removeItem(at: trialFile(of: trial))
+        try jobs.remove(id)
+    }
+
     // MARK: - Placement
 
     /// Fetches the output from the node that holds it into the library's own filesystem, places
@@ -246,6 +310,7 @@ package struct JobService: Sendable, JobsAPI {
     /// index learns of it.
     package func place(_ id: String) async throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
+        guard !current.trial else { throw TrialNeverPlaced() }
         guard current.state == .encoded, let output = current.output, let stored = recipes.recipe(current.recipe),
             let binding = bindings.binding(stored.binding)
         else {
@@ -358,6 +423,19 @@ package struct JobService: Sendable, JobsAPI {
 }
 
 package struct NoSuchJob: Error {}
+package struct TrialNeverPlaced: Error, CustomStringConvertible {
+    package var description: String { "a trial is never placed" }
+}
+
+/// Ids being worked on, so that the work is never begun twice at once.
+final class InFlight: Sendable {
+    private let ids = Mutex<Set<String>>([])
+
+    /// Whether the id was free, and is now taken.
+    func begin(_ id: String) -> Bool { ids.withLock { $0.insert(id).inserted } }
+
+    func end(_ id: String) { _ = ids.withLock { $0.remove(id) } }
+}
 package struct WrongState: Error, CustomStringConvertible {
     package var state: JobState
     package var what: String

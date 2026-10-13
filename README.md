@@ -46,9 +46,10 @@ One package, in the order its parts arrived:
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
   and what an operator changes (a scan, a stored ruleset, the settings, a
   registered source and its copies, a binding, its own rules and the recipes it resolves to, a
-  discarded recipe, and a job made from a resolved recipe), on the swift-wire
-  stack; and beside the document, two routes that stream, the file a
-  presentation is with `Range`, and the container as its sidecar.
+  discarded recipe, a job made from a resolved recipe, and a trial, kept
+  under `trials/` and never placed), on the swift-wire stack; and beside the
+  document, three routes that stream, the file a presentation is and the file
+  a trial is, each with `Range`, and the container as its sidecar.
 - `FileServing`, `SiloClient` and `SiloWorker` — the parts every participant
   shares: a file served by range to the node that needs it, guarded by a
   secret the silo hands out per job; the silo's API from a client's side over

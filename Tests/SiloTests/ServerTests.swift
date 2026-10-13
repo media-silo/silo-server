@@ -402,6 +402,54 @@ extension ServerTests {
             #expect(try await client.send("POST", "/v1/jobs/\(job.id)/cancel", headers: ["Authorization": "Bearer secret"]).status == 409)
         }
     }
+
+    @Test func yTrialsAreListedServedAndDeletedOverTheAPI() async throws {
+        try await withClient { client in
+            let rip = Fixture.root.appendingPathComponent("trial-rip.mkv")
+            try Fixture.mediaBytes.write(to: rip)
+            let ruleset = RulesetDocumentBody(name: "household", document: JobServiceTests.Bench.household)
+            _ = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders)
+            let source = try await client.post("/v1/sources", json: SiloClient.NewSource(input: JobServiceTests.Bench.input, copy: FileRef(holder: "laptop", url: rip, path: rip.path, secret: "s")), headers: Self.operatorHeaders).json(SourceBody.self)
+            let binding = try await client.post("/v1/bindings", json: SiloClient.NewBinding(
+                library: "main", containers: Self.documents, item: "part3", tracks: [TrackMapping(feature: "commentary1", audio: 2)],
+                segments: [Binding.Segment(source: source.id)]
+            ), headers: Self.operatorHeaders).json(BindingBody.self)
+            let recipe = try #require(try await client.post("/v1/bindings/\(binding.id)/recipes", json: Application(ruleset: "household"), headers: Self.operatorHeaders).json([StoredRecipeBody].self).first)
+
+            struct NewJob: Encodable { var recipe: String; var trial: Bool }
+            let created = try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id, trial: true), headers: Self.operatorHeaders)
+            #expect(created.status == 201)
+            let job = try SiloClient.decoder.decode(Job.self, from: created.body)
+            #expect(job.trial)
+
+            struct Claim: Encodable { var node: String; var capabilities: [String] }
+            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac", "aac"]), headers: ["Authorization": "Bearer secret"]).bodyText.contains(job.id))
+            let output = Fixture.root.appendingPathComponent("trial-\(job.id).mkv")
+            try Fixture.mediaBytes.write(to: output)
+            struct Complete: Encodable { var output: FileRef; var result: EncodeResult }
+            _ = try await client.post("/v1/jobs/\(job.id)/complete", json: Complete(output: FileRef(holder: "box", url: output, path: output.path, secret: ""), result: EncodeResult(streams: ["video h264"], layoutMatched: true)), headers: ["Authorization": "Bearer secret"])
+            // The fetch follows the completion; asking again waits for it, or makes it.
+            let fetched = try await client.send("POST", "/v1/trials/\(job.id)/fetch", headers: Self.operatorHeaders)
+            #expect(fetched.status == 200)
+            var trials = try await client.get("/v1/trials").bodyText
+            for _ in 0..<100 where !trials.contains(job.id) {
+                try await Task.sleep(for: .milliseconds(10))
+                trials = try await client.get("/v1/trials").bodyText
+            }
+            struct Trial: Decodable { var job: String; var ruleset: String; var version: Int?; var branch: String?; var binding: String }
+            let listed = try SiloClient.decoder.decode([Trial].self, from: Data(trials.utf8))
+            #expect(listed.map(\.job) == [job.id])
+            #expect(listed.first?.ruleset == "household" && listed.first?.branch == "standard" && listed.first?.binding == binding.id)
+            #expect(try await client.get("/v1/trials?branch=trial").bodyText == "[]", "filtered by branch")
+
+            #expect(try await client.get("/v1/trials/\(job.id)/file", headers: ["Range": "bytes=0-9"]).status == 206)
+            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: Self.operatorHeaders).bodyText.contains("a trial is never placed"))
+            #expect(try await client.send("DELETE", "/v1/trials/\(job.id)").status == 401)
+            #expect(try await client.send("DELETE", "/v1/trials/\(job.id)", headers: Self.operatorHeaders).status == 204)
+            #expect(try await client.get("/v1/trials").bodyText == "[]")
+            #expect(try await client.get("/v1/trials/\(job.id)/file").status == 404)
+        }
+    }
 }
 
 /// The node routes: a node's own two, the operator's three, and the node gate on the job routes.

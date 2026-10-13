@@ -7,21 +7,28 @@
 When a trial job is encoded, the silo SHALL fetch its output, as placement fetches one, into
 `trials/<job id>.<ext>` in its state directory, and the job SHALL become `tried`. A fetch that fails
 SHALL leave the job `encoded` with the failure recorded, and the silo SHALL fetch it again when the
-operator asks. Placing a trial job SHALL be refused with 409, saying a trial is never placed, and the
-background check SHALL never check a trial.
+operator asks. The node that reported the job complete SHALL NOT wait on the fetch. Placing a trial
+job SHALL be refused with 409, saying a trial is never placed, and the background check SHALL never
+check a trial.
 
 #### Scenario: a trial encoded
 - **WHEN** a trial job is claimed, encoded and reported complete
 - **THEN** its output is in the trial area, the job is `tried`, and placing it is 409
 
-Pinned by: nothing yet.
+#### Scenario: a node gone before the fetch
+- **WHEN** a trial job is reported complete by a node that no longer answers at its address
+- **THEN** the job stays `encoded` with the failed fetch recorded, and once the output can be had,
+  asking again makes it `tried`
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`,
+`aTrialWhoseFetchFailsStaysEncodedToBeFetchedAgain`).
 
 ## MODIFIED Requirements
 
 ### Requirement: The job record carries one committed recipe's run
 A job SHALL have an `id` (a lowercased UUID by default), a `state` of exactly one of `pending`,
 `claimed`, `encoding`, `encoded`, `placing`, `placed`, `tried`, `failed`, `cancelling` and `cancelled`,
-whether it is a `trial`,
+whether it is a `trial` — a record that does not say is not one —
 `createdAt` and `updatedAt` timestamps (`updatedAt` refreshed on every change), the `recipe` it runs
 by id, the `requirements` (the encoders the recipe needs), the `attempts`, the current `lease`, the
 latest `progress`, the `output` file reference, the `result`, the `placement` summary, and the
@@ -37,7 +44,7 @@ segments, and where a requirement speaks of a job's source it means each of them
 - **THEN** the job is `pending` with a lowercased UUID id, the recipe's id and its encoders, and no
   attempts, lease, progress, output, result, placement or failure
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloClientTests/SiloClientTests.swift` (`aJobIsMadeFromARecipeAndAClaimCarriesItsSegments`, for the record over the wire). A trial job's record is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloClientTests/SiloClientTests.swift` (`aJobIsMadeFromARecipeAndAClaimCarriesItsSegments`, for the record over the wire). `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`, for a trial's record).
 
 ### Requirement: A job is made from a resolved recipe whose sources can be had
 `POST /v1/jobs` with a recipe's id, behind the operator's token, SHALL commit the recipe, make the job
@@ -63,4 +70,4 @@ fetch it. A job SHALL NOT be made any other way.
 - **WHEN** the operator makes a trial job from a resolved recipe made by a version on a branch
 - **THEN** the answer is 201 with a `pending` trial job, and the recipe is committed
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). A trial job made is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`), `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`), for a trial.

@@ -52,7 +52,7 @@ package struct JobOperatorController {
     @ErrorResponse(CommittedRecipe.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(Unrunnable.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     package func createJob(@JSONBody body: Components.Schemas.NewJob) async throws -> Components.Schemas.Job {
-        try Mapping.transcode(try service.make(from: body.recipe))
+        try Mapping.transcode(try service.make(from: body.recipe, trial: body.trial ?? false))
     }
 
     @Operation
@@ -74,6 +74,7 @@ package struct JobOperatorController {
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     @ErrorResponse(WrongState.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
     @ErrorResponse(PlacementRefusedError.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(TrialNeverPlaced.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
     @ErrorResponse(PlacementFetchError.self, .badGateway, { Components.Schemas.Problem(detail: $0.localizedDescription) })
     package func placeJob(@Path id: String) async throws -> Components.Schemas.Job {
         try Mapping.transcode(try await service.place(id))

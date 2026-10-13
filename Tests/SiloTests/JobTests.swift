@@ -160,6 +160,71 @@ struct JobServiceTests {
         #expect(throws: WrongState.self) { try service.cancel(placed.id) }
     }
 
+    /// Waits for a trial's fetch, which follows its completion without the node waiting on it.
+    private func settled(_ id: String, in service: JobService, until done: (Job) -> Bool) async throws -> Job {
+        for _ in 0..<500 {
+            let job = try service.job(id)
+            if done(job) { return job }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return try service.job(id)
+    }
+
+    @Test func aTrialIsKeptApartFromTheLibraryAndNeverPlaced() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        let resolved = try bench.resolved(copy: try bench.copy())
+        let pending = try service.make(from: resolved.id, trial: true)
+        #expect(pending.trial && pending.state == .pending)
+        #expect(bench.recipes.recipe(resolved.id)?.state == .committed, "a trial commits its recipe, as any job does")
+
+        let claimed = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"])).job
+        #expect(claimed.id == pending.id, "claimed as any job is")
+        let output = bench.root.appendingPathComponent("trial.mkv")
+        try Fixture.mediaBytes.write(to: output)
+        _ = try await service.complete(claimed.id, output: FileRef(holder: "box", url: output, path: output.path, secret: ""), result: EncodeResult(streams: ["video h264", "audio flac", "audio aac"], layoutMatched: true))
+        let tried = try await settled(claimed.id, in: service) { $0.state != .encoded }
+        #expect(tried.state == .tried)
+        let kept = service.trialFile(of: tried)
+        #expect(kept.path == bench.config.stateDirectory.appendingPathComponent("trials/\(tried.id).mkv").path)
+        #expect(try Data(contentsOf: kept) == Fixture.mediaBytes, "its output in the trial area")
+        #expect(!FileManager.default.fileExists(atPath: output.path))
+        #expect(LibraryWalker.walk(bench.config.libraries[0].root).node(for: Fixture.serial.id) == nil, "and nothing in the library")
+
+        await #expect(throws: TrialNeverPlaced.self) { _ = try await service.place(tried.id) }
+        #expect(throws: WrongState.self) { try service.cancel(tried.id) }
+        #expect(try service.trials().map(\.id) == [tried.id])
+        #expect(try bench.checkService.pass() == 0, "the background check never sees a trial")
+
+        try service.deleteTrial(tried.id)
+        #expect(!FileManager.default.fileExists(atPath: kept.path))
+        #expect(try service.trials().isEmpty)
+        #expect(throws: NoSuchJob.self) { try service.job(tried.id) }
+        #expect(bench.recipes.recipe(resolved.id)?.state == .committed, "its recipe stays")
+        #expect(throws: NoSuchJob.self) { try service.deleteTrial(tried.id) }
+    }
+
+    @Test func aTrialWhoseFetchFailsStaysEncodedToBeFetchedAgain() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        let job = try service.make(from: try bench.resolved(copy: try bench.copy()).id, trial: true)
+        _ = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"]))
+        // A node that has gone: nothing answers at its address.
+        let gone = FileRef(holder: "box", url: URL(string: "http://127.0.0.1:9/files/out.mkv")!, secret: "s")
+        _ = try await service.complete(job.id, output: gone, result: EncodeResult(streams: [], layoutMatched: true))
+        let failed = try await settled(job.id, in: service) { $0.failure != nil }
+        #expect(failed.state == .encoded && failed.failure?.hasPrefix("trial fetch: ") == true, "encoded still, the failure recorded")
+        #expect(try service.trials().isEmpty)
+
+        let output = bench.root.appendingPathComponent("later.mkv")
+        try Fixture.mediaBytes.write(to: output)
+        _ = try bench.store.update(job.id) { $0.output = FileRef(holder: "embedded", url: output, path: output.path, secret: "") }
+        let tried = try await service.fetchTrial(job.id)
+        #expect(tried.state == .tried && tried.failure == nil, "fetched again when asked")
+    }
+
     @Test func aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad() throws {
         let bench = try Bench()
         defer { bench.remove() }

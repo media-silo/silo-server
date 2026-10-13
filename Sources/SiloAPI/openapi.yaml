@@ -1064,7 +1064,8 @@ paths:
       description: >
         Commits the recipe, so one recipe is run by one job, and makes the job pending with the
         recipe's encoders as its requirements. Refused while a source of the recipe's binding has no
-        copy, since no node could fetch it. Operator only.
+        copy, since no node could fetch it. A trial job is encoded as any job is, its output kept in
+        the silo's trial area, and never placed. Operator only.
       tags: [Jobs]
       security:
         - operator: []
@@ -1219,7 +1220,91 @@ paths:
         "404":
           description: No such job, or the binding's library is gone.
         "409":
-          description: Not encoded, or the placement is refused.
+          description: Not encoded, a trial, which is never placed, or the placement is refused.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "502":
+          description: The node holding the output did not give it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /trials:
+    get:
+      operationId: listTrials
+      summary: The tried trials
+      description: >
+        Every trial job whose output is in the trial area, oldest first, each with the ruleset
+        version that made it and the branch that version is on; its file is served by range at
+        /v1/trials/{id}/file. Open.
+      tags: [Jobs]
+      parameters:
+        - name: ruleset
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: branch
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The trials.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trial"
+
+  /trials/{id}:
+    delete:
+      operationId: deleteTrial
+      summary: Delete a trial
+      description: Its output and its job's record; its recipe stays committed. Operator only.
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No tried trial with that id.
+
+  /trials/{id}/fetch:
+    post:
+      operationId: fetchTrial
+      summary: Fetch an encoded trial's output again
+      description: >
+        The silo fetches a trial's output when it is encoded; when that fetch failed, the job is left
+        encoded with the failure recorded, and this asks again. Operator only.
+      tags: [Jobs]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/JobID"
+      responses:
+        "200":
+          description: Tried.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No trial job with that id.
+        "409":
+          description: The trial is not encoded.
           content:
             application/json:
               schema:
@@ -1832,7 +1917,7 @@ components:
 
     JobState:
       type: string
-      enum: [pending, claimed, encoding, encoded, placing, placed, failed, cancelling, cancelled]
+      enum: [pending, claimed, encoding, encoded, placing, placed, tried, failed, cancelling, cancelled]
 
     FileRef:
       type: object
@@ -2147,6 +2232,9 @@ components:
         recipe:
           type: string
           description: The id of the recipe the job runs, committed when the job was made.
+        trial:
+          type: boolean
+          description: Whether the job is a trial, kept in the trial area and never placed.
 
     Attempt:
       type: object
@@ -2221,7 +2309,7 @@ components:
 
     Job:
       type: object
-      required: [id, state, createdAt, updatedAt, recipe, requirements, attempts]
+      required: [id, state, createdAt, updatedAt, recipe, requirements, attempts, trial]
       properties:
         id:
           type: string
@@ -2256,6 +2344,35 @@ components:
           $ref: "#/components/schemas/PlacementSummary"
         failure:
           type: string
+        trial:
+          type: boolean
+
+    Trial:
+      type: object
+      required: [job, recipe, ruleset, binding, createdAt]
+      properties:
+        job:
+          type: string
+        recipe:
+          type: string
+        ruleset:
+          type: string
+        version:
+          type: integer
+          description: The ruleset version that made the trial's recipe.
+        branch:
+          type: string
+          description: The branch that version is on.
+        binding:
+          type: string
+        profile:
+          type: string
+          description: The output's profile; none for the unqualified output.
+        result:
+          $ref: "#/components/schemas/EncodeResult"
+        createdAt:
+          type: string
+          format: date-time
 
     NodeState:
       type: string
