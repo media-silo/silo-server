@@ -15,7 +15,7 @@ is not well formed.
 - **THEN** the parsed view gives way to the reader's refusal, naming the line and column where reading
   stopped, and nothing has been stored
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloAdminKitTests/DraftTests.swift` (`aDraftIsReadByTheConsoleWithTheSilosReader`).
 
 ## MODIFIED Requirements
 
@@ -74,8 +74,9 @@ The silo SHALL hold no draft.
 Pinned by: `Tests/SiloAdminKitTests/DraftTests.swift` (`aChangeIsBasedOnTheVersionItWasMadeFrom`,
 `aCopyIsRenamedAsAnEditInTheText`, `theStarterDecidesEveryStreamWithTheDefaults`),
 `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMistypedFactIsRefusedBeforeTheStore`),
-`Tests/SiloAdminTests/ConsoleModelTests.swift` (`aDraftIsCheckedAsItIsTypedAndOutlivesItsSection`).
-A draft kept on disk, listed under its branch and marked behind is pinned by nothing yet.
+`Tests/SiloAdminTests/ConsoleModelTests.swift` (`aDraftIsCheckedAsItIsTypedAndOutlivesItsSection`,
+`aDraftIsKeptOnThisMacListedUnderItsBranchAndMarkedBehind`), `Tests/SiloAdminKitTests/DraftTests.swift`
+(`draftsOutliveTheStoreThatKeptThem`, `aDraftIsBehindOnceItsBranchHasMoved`).
 
 ### Requirement: Forgetting purges the silo and its passkey
 For an unreachable silo, SiloAdmin SHALL offer to forget it. Forgetting SHALL delete any passkey
@@ -97,4 +98,4 @@ arrive as never met — a fresh registry entry, no stored passkey, no last-known
 - **WHEN** the operator forgets an unreachable silo for which this Mac keeps two drafts
 - **THEN** both drafts are deleted, and a rediscovery of the silo lists none
 
-Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`forgetPurgesTheRegistryAndThePasskey`, `aRediscoveryRestartsHistory`). Forgetting a silo's drafts is pinned by nothing yet.
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`forgetPurgesTheRegistryAndThePasskey`, `aRediscoveryRestartsHistory`).

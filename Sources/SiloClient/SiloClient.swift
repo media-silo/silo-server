@@ -267,13 +267,19 @@ public struct SiloClient: Sendable, JobsAPI {
         public var reading: RulesetReading?
     }
 
-    /// A ruleset as the silo reads it, named by where it is stored: what a console shows beside the
-    /// document, so that it never parses one itself.
+    /// A ruleset as the silo reads it, named by where it is stored: what a console shows beside a
+    /// version's document, and what it makes itself of a draft with the reader the silo runs.
     public struct RulesetReading: Hashable, Sendable, Codable {
         public var name: String
         /// In document order.
         public var rules: [RuleReading]
         public var outputs: [OutputPolicy]
+
+        public init(name: String, rules: [RuleReading], outputs: [OutputPolicy]) {
+            self.name = name
+            self.rules = rules
+            self.outputs = outputs
+        }
     }
 
     /// One rule, by the name a recipe calls it by: its id, or `#n` for its position.
@@ -282,6 +288,13 @@ public struct SiloClient: Sendable, JobsAPI {
         public var scope: Scope
         public var conditions: [ConditionReading]
         public var action: Action
+
+        public init(name: String, scope: Scope, conditions: [ConditionReading], action: Action) {
+            self.name = name
+            self.scope = scope
+            self.conditions = conditions
+            self.action = action
+        }
     }
 
     /// A condition as the document writes it: the fact, the test's attribute and its value.
@@ -289,6 +302,12 @@ public struct SiloClient: Sendable, JobsAPI {
         public var fact: String
         public var test: String
         public var value: String
+
+        public init(fact: String, test: String, value: String) {
+            self.fact = fact
+            self.test = test
+            self.value = value
+        }
     }
 
     /// A library's out-of-date presentations, as the background check has found them so far.

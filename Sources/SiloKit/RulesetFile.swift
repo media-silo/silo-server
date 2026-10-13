@@ -116,7 +116,7 @@ public enum RulesetFile {
         let parser = XMLParser(data: data)
         let parsed = parser.parse()
         if let error = parser.parserError {
-            throw RulesetFileError.malformed(error.localizedDescription)
+            throw RulesetFileError.malformed("line \(parser.lineNumber), column \(parser.columnNumber): \(error.localizedDescription)")
         }
         guard parsed else { throw RulesetFileError.malformed("not well-formed XML") }
         let document: XMLDocument
@@ -164,7 +164,7 @@ public enum RulesetFile {
         let parser = XMLParser(data: data)
         let parsed = parser.parse()
         if let error = parser.parserError {
-            throw RulesetFileError.malformed(error.localizedDescription)
+            throw RulesetFileError.malformed("line \(parser.lineNumber), column \(parser.columnNumber): \(error.localizedDescription)")
         }
         guard parsed, !data.isEmpty else { throw RulesetFileError.malformed("not well-formed XML") }
         let document: XMLDocument

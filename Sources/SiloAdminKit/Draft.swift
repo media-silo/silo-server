@@ -3,11 +3,13 @@
 
 import Foundation
 import SiloClient
+import SiloKit
 
 /// A ruleset being changed: its document's text as the operator edits it, and the version it was made
 /// from, its base, which a store names so that the silo can refuse one that would land on a head the
-/// operator never saw. A draft is the console's alone until it is stored or discarded.
-public struct Draft: Hashable, Sendable, Identifiable {
+/// operator never saw. A draft is the console's working copy, kept on this Mac by a `DraftStore`
+/// until it is stored or discarded; the silo holds versions, and never a draft.
+public struct Draft: Hashable, Sendable, Identifiable, Codable {
     public let id: UUID
     /// The ruleset it is stored as.
     public var ruleset: String
@@ -20,9 +22,12 @@ public struct Draft: Hashable, Sendable, Identifiable {
     public var text: String
     /// The standard version the draft takes in, when it is stored on a branch catching up with it.
     public var upToDateWith: Int?
+    /// When the text last changed.
+    public var edited: Date
 
-    public init(ruleset: String, base: Int?, baseBranch: String?, baseText: String, text: String, upToDateWith: Int? = nil) {
+    public init(ruleset: String, base: Int?, baseBranch: String?, baseText: String, text: String, upToDateWith: Int? = nil, edited: Date = .now) {
         self.id = UUID()
+        self.edited = edited
         self.ruleset = ruleset
         self.base = base
         self.baseBranch = baseBranch
@@ -66,6 +71,43 @@ public struct Draft: Hashable, Sendable, Identifiable {
     /// Whether the text says anything other than its base.
     public var isChanged: Bool { text != baseText }
 
+    /// The branch it is listed under: its base's, the standard for a draft of a new ruleset.
+    public var branch: String { baseBranch ?? "standard" }
+
+    /// Whether its base is no longer its branch's head, as the silo's list of rulesets says: a store
+    /// would be refused, so it is to be re-based first. A new ruleset's draft is never behind.
+    public func isBehind(in rulesets: [SiloClient.RulesetSummary]) -> Bool {
+        guard let base, let summary = rulesets.first(where: { $0.name == ruleset }) else { return false }
+        let head = (summary.versions ?? []).filter { $0.branch == branch }.map(\.version).max()
+        return head.map { $0 != base } ?? false
+    }
+
+    /// The draft read by this console with the reader the silo runs: the rules and outputs, named by
+    /// the ruleset it is stored as, or the reader's refusal in its words. What only the silo can say —
+    /// whether the name is free and the base still the head — waits for the silo.
+    public var reading: DraftReading {
+        do {
+            let read = try RulesetFile.ruleset(from: Data(text.utf8))
+            return .reading(SiloClient.RulesetReading(
+                name: ruleset,
+                rules: read.rules.enumerated().map { position, rule in
+                    SiloClient.RuleReading(
+                        name: rule.id ?? "#\(position + 1)",
+                        scope: rule.scope,
+                        conditions: rule.conditions.map { condition in
+                            let (test, value) = condition.test.attribute
+                            return SiloClient.ConditionReading(fact: condition.fact.rawValue, test: test, value: value)
+                        },
+                        action: rule.action
+                    )
+                },
+                outputs: read.outputs
+            ))
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+
     /// The text's difference from its base, line by line.
     public var difference: [LineDifference.Line] { LineDifference.lines(from: baseText, to: text) }
 
@@ -90,6 +132,12 @@ public struct Draft: Hashable, Sendable, Identifiable {
         renamed.replaceSubrange(attribute, with: #"name="\#(name)""#)
         return renamed
     }
+}
+
+/// What the console makes of a draft's text itself.
+public enum DraftReading: Hashable, Sendable {
+    case reading(SiloClient.RulesetReading)
+    case refused(String)
 }
 
 /// Two texts' difference, line by line: what a store would change, shown before it is made.
