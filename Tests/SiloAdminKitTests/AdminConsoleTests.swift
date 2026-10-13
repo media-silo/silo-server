@@ -4,6 +4,7 @@
 import Foundation
 import SiloAdminKit
 import SiloClient
+import SiloKit
 import SiloDiscovery
 import Synchronization
 import Testing
@@ -881,6 +882,73 @@ struct AdminConsoleTests {
         #expect(library.ruleset == "household", "the standard the silo answered with")
         #expect(asked.withLock { $0 }.last?.body == #"{"ruleset":"household"}"#)
         await #expect(throws: AdminConsole.SettingsRefused.self) { try await console.setStandard("nothing", of: "films", on: home) }
+    }
+
+    // MARK: - Trials
+
+    /// A recipe for binding `b1`'s commentary, its second audio stream, at the bitrate given.
+    private static func commentaryRecipe(_ id: String, binding: String = "b1", version: Int, bitrate: String) -> StoredRecipe {
+        let facts = SourceFacts(audio: [AudioFacts(index: 1, absoluteIndex: 1, codec: "flac", lossless: true, channels: 2), AudioFacts(index: 2, absoluteIndex: 2, codec: "flac", lossless: true, channels: 2)])
+        let main = StreamDecision(kind: .audio, sourceIndex: 1, sourceAbsoluteIndex: 1, rule: "lossless-main", action: .copy)
+        let commentary = StreamDecision(kind: .audio, sourceIndex: 2, sourceAbsoluteIndex: 2, rule: "commentary", action: .encode(EncodeSettings(codec: "aac", bitrate: bitrate, channels: 2)))
+        let recipe = Recipe(ruleset: RulesetRef(name: "household", version: version), decisions: [main, commentary], output: OutputPolicy(), layout: OutputLayout(keeping: [main, commentary]))
+        return StoredRecipe(id: id, binding: binding, facts: facts, recipe: recipe)
+    }
+
+    /// A silo with access whose branch `speech-96k`, at version 4, would change binding `b1`'s placed
+    /// presentation; binding `b2` cannot be resolved through it, and trial jobs are made as asked.
+    private static func tryingSilo(asked: @escaping @Sendable (Asked) -> Void) -> @Sendable (URLRequest) throws -> (Int, Data)? {
+        { request in
+            guard let url = request.url else { return nil }
+            let method = request.httpMethod ?? "GET"
+            let body = String(decoding: Self.body(of: request) ?? Data(), as: UTF8.self)
+            asked(Asked(method: method, path: url.path + (url.query.map { "?\($0)" } ?? ""), body: body))
+            let placed = Self.commentaryRecipe("placed-1", version: 3, bitrate: "160k")
+            let tried = Self.commentaryRecipe("tried-1", version: 4, bitrate: "96k")
+            switch (method, url.path) {
+            case (_, "/v1/server"): return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
+            case ("GET", "/v1/rulesets/household/branches/speech-96k/impact"):
+                return (200, Data(#"[{"presentation":"p1","container":"Pyramids of Mars","item":"Part Three","recipe":"placed-1","outcome":"outOfDate","madeBy":{"ruleset":{"name":"household","version":3},"layers":[]},"checkedAgainst":{"ruleset":{"name":"household","version":4},"layers":[]},"changes":[],"sources":[]}]"#.utf8))
+            case ("GET", "/v1/recipes/placed-1"): return (200, try SiloClient.encoder.encode(placed))
+            case ("GET", "/v1/recipes/tried-1"): return (200, try SiloClient.encoder.encode(tried))
+            case ("POST", "/v1/bindings/b1/recipes"): return (201, try SiloClient.encoder.encode([tried]))
+            case ("POST", "/v1/bindings/b2/recipes"): return (422, Data(#"{"detail":"no rule decides audio 3 (ac3 2ch en main)"}"#.utf8))
+            case ("POST", "/v1/jobs"):
+                var job = Job(id: "job-1", recipe: "tried-1", requirements: ["aac"], trial: true)
+                job.state = .pending
+                return (201, try SiloClient.encoder.encode(job))
+            case ("GET", "/v1/trials"):
+                return (200, Data(#"[{"job":"job-1","recipe":"tried-1","ruleset":"household","version":4,"branch":"speech-96k","binding":"b1","createdAt":"2026-10-14T10:00:00Z"}]"#.utf8))
+            default: return nil
+            }
+        }
+    }
+
+    @Test func aBranchsVersionIsTriedOnChosenBindingsAndComparedWithWhatIsPlaced() async throws {
+        let asked = Mutex<[Asked]>([])
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        Self.answer(with: Self.tryingSilo { request in asked.withLock { $0.append(request) } })
+
+        let candidates = try await console.trialCandidates(of: "household", branch: "speech-96k", on: home)
+        #expect(candidates.map(\.binding) == ["b1"], "the binding whose placed presentation the branch would change, offered first")
+        #expect(candidates.first?.item == "Part Three")
+
+        let started = try await console.startTrials(of: "household", branch: "speech-96k", version: 4, on: ["b1", "b2"], of: home)
+        #expect(started.first?.jobs.map(\.id) == ["job-1"] && started.first?.jobs.first?.trial == true)
+        #expect(started.last?.refusal == "no rule decides audio 3 (ac3 2ch en main)", "a binding the version cannot resolve is told in the silo's words")
+        let requests = asked.withLock { $0 }
+        #expect(requests.contains { $0.path == "/v1/bindings/b1/recipes" && $0.body.contains(#""branch":"speech-96k""#) && $0.body.contains(#""version":4"#) }, "applied at the version, on its branch")
+        #expect(requests.contains { $0.path == "/v1/jobs" && $0.body.contains(#""trial":true"#) }, "a trial job")
+        #expect(!requests.contains { $0.path.hasSuffix("/place") }, "nothing placed")
+
+        let compared = try #require(try await console.trials(of: "household", branch: "speech-96k", on: home).first)
+        #expect(compared.trial.job == "job-1")
+        #expect(compared.streams.map(\.stream) == ["audio 1", "audio 2"])
+        #expect(compared.streams.last?.placed?.summary == "encode aac 160k 2ch" && compared.streams.last?.tried?.summary == "encode aac 96k 2ch", "the commentary at 96k where it was 160k")
+        #expect(compared.streams.first?.placed == compared.streams.first?.tried, "the main mix as it was")
+        #expect(compared.trialFile.absoluteString.hasSuffix("/v1/trials/job-1/file"))
+        #expect(compared.placedFile?.absoluteString.hasSuffix("/v1/media/p1") == true, "both files to play")
     }
 
     // MARK: - Forget
