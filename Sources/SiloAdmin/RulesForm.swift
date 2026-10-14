@@ -35,7 +35,7 @@ struct RulesForm: View {
         List {
             ForEach(Scope.allCases, id: \.self) { scope in
                 Section {
-                    ForEach(Array(text.rules(of: scope).enumerated()), id: \.offset) { position, entry in
+                    ForEach(Array(text.rules(of: scope).enumerated()), id: \.element.element) { position, entry in
                         RuleRow(name: entry.rule.id ?? "#\(ruleNumber(of: entry.element))", rule: entry.rule)
                             .contentShape(Rectangle())
                             .onTapGesture(count: 2) { editing = RuleEdit(scope: scope, position: position, rule: entry.rule) }
@@ -60,7 +60,7 @@ struct RulesForm: View {
                 }
             }
             Section {
-                ForEach(Array(text.outputs.enumerated()), id: \.offset) { position, entry in
+                ForEach(Array(text.outputs.enumerated()), id: \.element.element) { position, entry in
                     HStack {
                         Text(entry.output.profile ?? "unqualified")
                         Spacer()
