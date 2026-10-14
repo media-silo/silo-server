@@ -87,8 +87,8 @@ final class ConsoleModel {
     private var checking: [Draft.ID: Task<Void, Never>] = [:]
     /// How long after the last keystroke a draft is saved and checked.
     let checkDelay: Duration
-    /// Whether the editor shows a draft's text or the draft parsed.
-    var draftView: DraftView = .text
+    /// Whether the editor shows a draft in the form or as its text.
+    var draftView: DraftView = .form
     /// The review before a store, when one is open.
     var review: Review?
     /// A promotion being considered, when one is.
@@ -118,8 +118,8 @@ final class ConsoleModel {
     }
 
     enum DraftView: String, CaseIterable, Identifiable {
+        case form = "Form"
         case text = "Text"
-        case parsed = "Parsed"
 
         var id: String { rawValue }
     }
@@ -908,9 +908,10 @@ private struct RulesetActions: View {
     }
 }
 
-/// A draft, as its text or parsed by this console with the reader the silo runs: the text edited in
-/// place, saved and checked by the silo a moment after each pause, with the silo's reading of it — or
-/// its refusal, in its words — where the base's reading stood.
+/// A draft, in a form built from the rule language or as its text: read by this console with the
+/// reader the silo runs, every change in the form a splice of the text, the text saved and checked by
+/// the silo a moment after each pause, with the silo's reading of it — or its refusal, in its words —
+/// where the base's reading stood.
 private struct DraftEditor: View {
     let silo: AdminConsole.Silo
     let draft: Draft
@@ -954,14 +955,11 @@ private struct DraftEditor: View {
                     }
                     .frame(minWidth: 220, maxHeight: .infinity)
                 }
-            case .parsed:
-                // This console's reading is the view, so the silo's is only its verdict: whether it
+            case .form:
+                // The form is this console's reading, so the silo's is only its verdict: whether it
                 // reads the draft too, or what only the silo can refuse.
                 SiloVerdict(check: model.draftCheck(of: silo))
-                switch draft.reading {
-                case .reading(let reading): ReadingView(reading: reading)
-                case .refused(let reason): RefusalView(reason: reason)
-                }
+                DraftForm(draft: draft) { model.editDraft($0, for: silo) }
             }
         }
     }
@@ -995,7 +993,7 @@ private struct SiloVerdict: View {
 }
 
 /// A reader's refusal, in its words.
-private struct RefusalView: View {
+struct RefusalView: View {
     let reason: String
 
     var body: some View {

@@ -36,24 +36,11 @@ public enum RulesetFile {
 
 
         for rule in ruleset.rules {
-            let element = XMLElement(name: rule.scope.rawValue)
-            element.set("id", rule.id)
-            for condition in rule.conditions {
-                let when = XMLElement(name: "when")
-                when.set("fact", condition.fact.rawValue)
-                let (test, value) = condition.test.attribute
-                when.set(test, value)
-                element.addChild(when)
-            }
-            element.addChild(actionElement(rule.action))
-            root.addChild(element)
+            root.addChild(ruleElement(rule))
         }
 
         for policy in ruleset.outputs {
-            let output = XMLElement(name: "output")
-            output.set("profile", policy.profile)
-            output.set("container", policy.container)
-            root.addChild(output)
+            root.addChild(outputElement(policy))
         }
 
         let document = XMLDocument(rootElement: root)
@@ -62,6 +49,58 @@ public enum RulesetFile {
         var data = document.xmlData(options: [.nodePrettyPrint, .nodeCompactEmptyElement])
         if data.last != UInt8(ascii: "\n") { data.append(UInt8(ascii: "\n")) }
         return data
+    }
+
+    /// One rule as an element of the document, on one line: what an edit splices in.
+    public static func element(for rule: Rule) -> String {
+        written(ruleElement(rule))
+    }
+
+    /// One output as an element of the document.
+    public static func element(for output: OutputPolicy) -> String {
+        written(outputElement(output))
+    }
+
+    /// An element as one line of XML, written here rather than by the XML library so that it reads
+    /// the same on every platform: attributes in the order they were set, an empty element closed in
+    /// its own tag.
+    private static func written(_ element: XMLElement) -> String {
+        func escaped(_ text: String, quote: Bool) -> String {
+            var escaped = text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+            if quote { escaped = escaped.replacingOccurrences(of: "\"", with: "&quot;") }
+            return escaped
+        }
+        let name = element.name ?? ""
+        let attributes = (element.attributes ?? []).map { " \($0.name ?? "")=\"\(escaped($0.stringValue ?? "", quote: true))\"" }.joined()
+        let children = (element.children ?? []).compactMap { $0 as? XMLElement }
+        if !children.isEmpty {
+            return "<\(name)\(attributes)>" + children.map(written).joined() + "</\(name)>"
+        }
+        if let text = element.stringValue, !text.isEmpty {
+            return "<\(name)\(attributes)>\(escaped(text, quote: false))</\(name)>"
+        }
+        return "<\(name)\(attributes)/>"
+    }
+
+    private static func ruleElement(_ rule: Rule) -> XMLElement {
+        let element = XMLElement(name: rule.scope.rawValue)
+        element.set("id", rule.id)
+        for condition in rule.conditions {
+            let when = XMLElement(name: "when")
+            when.set("fact", condition.fact.rawValue)
+            let (test, value) = condition.test.attribute
+            when.set(test, value)
+            element.addChild(when)
+        }
+        element.addChild(actionElement(rule.action))
+        return element
+    }
+
+    private static func outputElement(_ policy: OutputPolicy) -> XMLElement {
+        let output = XMLElement(name: "output")
+        output.set("profile", policy.profile)
+        output.set("container", policy.container)
+        return output
     }
 
     private static func actionElement(_ action: Action) -> XMLElement {
@@ -378,6 +417,24 @@ extension Condition.Test {
         case .lessOrEqual(let value): ("le", RulesetFile.number(value))
         case .greater(let value): ("gt", RulesetFile.number(value))
         case .greaterOrEqual(let value): ("ge", RulesetFile.number(value))
+        }
+    }
+    /// The test a document writes as `name="value"`, or nil when the name is not a test or a
+    /// comparison's value is not a number.
+    public init?(attribute name: String, value: String) {
+        switch name {
+        case "is": self = .equal(value)
+        case "ne": self = .notEqual(value)
+        case "in": self = .oneOf(value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        case "lt", "le", "gt", "ge":
+            guard let number = Double(value.trimmingCharacters(in: .whitespaces)) else { return nil }
+            switch name {
+            case "lt": self = .less(number)
+            case "le": self = .lessOrEqual(number)
+            case "gt": self = .greater(number)
+            default: self = .greaterOrEqual(number)
+            }
+        default: return nil
         }
     }
 }

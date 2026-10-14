@@ -20,4 +20,6 @@ the text cannot be read, the form SHALL show the reader's refusal and make no ch
 - **THEN** the form offers the seven tests, and for `audio.role` only `is`, `ne` and `in`, with its
   roles as the values
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloKitTests/RulesetTextTests.swift` (`aMoveLeavesEverythingElseAsItWas`, for the
+splice a drag makes, and `aFactOffersTheTestsAndValuesItTakes`, for what a condition offers); the form
+itself is shell rendering, and the shell has no test target.
