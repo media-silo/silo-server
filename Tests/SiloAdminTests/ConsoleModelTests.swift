@@ -195,7 +195,7 @@ struct ConsoleModelTests {
         }
     }
 
-    private func changingModel(_ state: SiloState) async throws -> (ConsoleModel, AdminConsole.Silo) {
+    private func changingModel(_ state: SiloState, drafts: DraftStore = DraftStore()) async throws -> (ConsoleModel, AdminConsole.Silo) {
         let store = InMemoryPasskeyStore()
         store.store("held", for: "s1")
         Stub.handler.withLock { $0 = Self.changingSilo(state) }
@@ -203,6 +203,7 @@ struct ConsoleModelTests {
         configuration.protocolClasses = [Stub.self]
         let model = ConsoleModel(console: AdminConsole(
             registry: SiloRegistry(),
+            drafts: drafts,
             passkeys: store,
             session: URLSession(configuration: configuration),
             browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
@@ -222,19 +223,46 @@ struct ConsoleModelTests {
         let opened = try #require(model.opened[silo.id])
         model.startDraft(.change(opened.document), for: silo)
         await model.settleCheck(for: silo)
-        guard case .reading? = model.draftChecks[silo.id] else { Issue.record("a fresh draft is read"); return }
+        guard case .reading? = model.draftCheck(of: silo) else { Issue.record("a fresh draft is read"); return }
 
-        let base = try #require(model.drafts[silo.id]).text
+        let base = try #require(model.draft(of: silo)).text
         model.editDraft(base + "<subtitle><when fact=\"subtitle.forc", for: silo)
         model.editDraft(base + #"<subtitle><when fact="subtitle.forcd" is="true"/><copy/></subtitle>"#, for: silo)
         await model.settleCheck(for: silo)
-        #expect(model.draftChecks[silo.id] == .refused("subtitle.forcd is not a fact a rule can test"), "the reading gives way to the silo's refusal")
+        #expect(model.draftCheck(of: silo) == .refused("subtitle.forcd is not a fact a rule can test"), "the reading gives way to the silo's refusal")
         #expect(state.checks.withLock { $0 } == 2, "the first draft, then only the text the typing stopped on")
 
         model.section = .outOfDate
         model.section = .rulesets
         await model.refresh()
-        #expect(model.drafts[silo.id]?.text.contains("subtitle.forcd") == true, "the draft outlives its section closing and refreshing")
+        #expect(model.draft(of: silo)?.text.contains("subtitle.forcd") == true, "the draft outlives its section closing and refreshing")
+    }
+
+    @Test func aDraftIsKeptOnThisMacListedUnderItsBranchAndMarkedBehind() async throws {
+        let file = FileManager.default.temporaryDirectory.appending(path: "drafts-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let state = SiloState(head: 3)
+        let (model, silo) = try await changingModel(state, drafts: DraftStore(file: file))
+        model.startDraft(.change(try #require(model.opened[silo.id]).document), for: silo)
+        let base = try #require(model.draft(of: silo)).text
+        model.editDraft(base + "<!-- left overnight -->", for: silo)
+        await model.settleCheck(for: silo)
+        model.closeDraft(for: silo)
+        #expect(model.draft(of: silo) == nil && model.drafts[silo.id]?.count == 1, "closed, and still listed")
+
+        // The app quits; another starts over the same file.
+        let (again, sameSilo) = try await changingModel(state, drafts: DraftStore(file: file))
+        let kept = try #require(again.drafts[sameSilo.id]?.first)
+        #expect(kept.text.hasSuffix("<!-- left overnight -->") && kept.base == 3 && kept.branch == "standard", "with the edit, under the standard")
+        #expect(!kept.isBehind(in: again.rulesets[sameSilo.id] ?? []))
+
+        state.head.withLock { $0 = 4 }
+        await again.loadRulesets(for: sameSilo)
+        #expect(kept.isBehind(in: again.rulesets[sameSilo.id] ?? []), "version 4 stored from another Mac: the draft is behind")
+        again.openDraft(kept.id, for: sameSilo)
+        await again.rebaseOnHead(for: sameSilo)
+        #expect(again.draft(of: sameSilo)?.base == 4 && again.draft(of: sameSilo)?.text == kept.text, "re-based on the head, its text as it was")
+        #expect(again.drafts[sameSilo.id]?.count == 1, "the same draft, not a second")
     }
 
     @Test func aReviewShowsTheChangeAndImpactAndALandedVersionKeepsTheDraft() async throws {
@@ -254,13 +282,13 @@ struct ConsoleModelTests {
         state.head.withLock { $0 = 4 }
         await model.store(to: .baseBranch)
         #expect(model.review?.landed?.version == 4, "version 4 is shown")
-        #expect(model.drafts[silo.id]?.base == 3, "and the draft is kept")
+        #expect(model.draft(of: silo)?.base == 3, "and the draft is kept")
 
         model.rebase(on: try #require(model.review?.landed), for: silo)
-        #expect(model.drafts[silo.id]?.base == 4 && model.review == nil, "re-based on 4")
+        #expect(model.draft(of: silo)?.base == 4 && model.review == nil, "re-based on 4")
         await model.beginReview(for: silo)
         await model.store(to: .baseBranch)
-        #expect(model.drafts[silo.id] == nil, "stored, the draft ends")
+        #expect(model.draft(of: silo) == nil && model.drafts[silo.id]?.isEmpty == true, "stored, the draft ends")
         #expect(model.opened[silo.id]?.document.version == 5, "and the new version is shown")
     }
 
@@ -273,7 +301,7 @@ struct ConsoleModelTests {
         #expect(refused.base?.version == 1)
 
         await model.takeIn(9, on: try #require(model.promotion))
-        let draft = try #require(model.drafts[silo.id])
+        let draft = try #require(model.draft(of: silo))
         #expect(draft.base == 2 && draft.baseBranch == "trial" && draft.upToDateWith == 9, "on the branch, from its head, taking 9 in")
     }
 

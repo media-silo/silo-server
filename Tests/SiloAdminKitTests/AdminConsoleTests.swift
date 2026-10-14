@@ -51,6 +51,7 @@ struct AdminConsoleTests {
     /// A console wired to the stub, its clock stopped at `clock` and its browse fixed.
     private static func console(
         registry: SiloRegistry = SiloRegistry(),
+        drafts: DraftStore = DraftStore(),
         passkeys: InMemoryPasskeyStore = InMemoryPasskeyStore(),
         discovered: [DiscoveredSilo] = [],
         answering handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)?
@@ -60,6 +61,7 @@ struct AdminConsoleTests {
         configuration.protocolClasses = [Stub.self]
         return AdminConsole(
             registry: registry,
+            drafts: drafts,
             passkeys: passkeys,
             session: URLSession(configuration: configuration),
             now: { clock },
@@ -888,7 +890,11 @@ struct AdminConsoleTests {
         try registry.merge(RegisteredSilo(id: "quiet", name: "Quiet Silo", url: URL(string: "http://quiet.local:8080")!, lastSeen: Self.clock, hasStoredPasskey: true, lastKnownAccess: true))
         let store = InMemoryPasskeyStore()
         store.store("old-key", for: "quiet")
-        let console = Self.console(registry: registry, passkeys: store) { _ in nil }
+        let drafts = DraftStore()
+        try drafts.save(Draft.starter(named: "one"), for: "quiet")
+        try drafts.save(Draft.starter(named: "two"), for: "quiet")
+        try drafts.save(Draft.starter(named: "elsewhere"), for: "other")
+        let console = Self.console(registry: registry, drafts: drafts, passkeys: store) { _ in nil }
 
         _ = await console.refresh()
         let quiet = try row("quiet", in: await console.refresh())
@@ -899,6 +905,8 @@ struct AdminConsoleTests {
         #expect(store.passkey(for: "quiet") == nil, "this Mac no longer holds the passkey")
         #expect(registry.entry(for: "quiet") == nil, "the registry keeps nothing of it")
         #expect(await console.silos.isEmpty, "the row leaves the rendered list")
+        #expect(drafts.drafts(of: "quiet").isEmpty, "and its drafts are deleted")
+        #expect(drafts.drafts(of: "other").count == 1, "another silo's are not")
     }
 
     @Test func aRediscoveryRestartsHistory() async throws {

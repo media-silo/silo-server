@@ -17,10 +17,11 @@ struct SiloAdminApp: App {
     @State private var model: ConsoleModel
 
     init() {
-        let registryFile = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appending(path: "media-silo/SiloAdmin/registry.json", directoryHint: .notDirectory)
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "media-silo/SiloAdmin", directoryHint: .isDirectory)
         let console = AdminConsole(
-            registry: SiloRegistry(file: registryFile),
+            registry: SiloRegistry(file: folder.appending(path: "registry.json", directoryHint: .notDirectory)),
+            drafts: DraftStore(file: folder.appending(path: "drafts.json", directoryHint: .notDirectory)),
             passkeys: KeychainPasskeyStore()
         )
         _model = State(initialValue: ConsoleModel(console: console))
@@ -76,14 +77,18 @@ final class ConsoleModel {
     private(set) var opened: [AdminConsole.Silo.ID: AdminConsole.OpenedRuleset] = [:]
     /// Each library's out-of-date presentations as last read for a silo, by its id.
     private(set) var outOfDate: [AdminConsole.Silo.ID: [AdminConsole.LibraryOutOfDate]] = [:]
-    /// The draft open for a silo, by its id: the console's alone until it is stored or discarded, and
-    /// kept here rather than in a view so that closing the section or refreshing it loses nothing.
-    private(set) var drafts: [AdminConsole.Silo.ID: Draft] = [:]
+    /// The drafts this Mac keeps for a silo, by its id: the draft store's, as it last gave them, with
+    /// the open draft's latest keystrokes, which reach the store a moment after the operator stops.
+    private(set) var drafts: [AdminConsole.Silo.ID: [Draft]] = [:]
+    /// The draft open in the editor for a silo, by its id.
+    private(set) var editing: [AdminConsole.Silo.ID: Draft.ID] = [:]
     /// What the silo last made of each draft's text.
-    private(set) var draftChecks: [AdminConsole.Silo.ID: AdminConsole.DraftCheck] = [:]
-    private var checking: [AdminConsole.Silo.ID: Task<Void, Never>] = [:]
-    /// How long after the last keystroke a draft is checked.
+    private(set) var draftChecks: [Draft.ID: AdminConsole.DraftCheck] = [:]
+    private var checking: [Draft.ID: Task<Void, Never>] = [:]
+    /// How long after the last keystroke a draft is saved and checked.
     let checkDelay: Duration
+    /// Whether the editor shows a draft's text or the draft parsed.
+    var draftView: DraftView = .text
     /// The review before a store, when one is open.
     var review: Review?
     /// A promotion being considered, when one is.
@@ -110,6 +115,13 @@ final class ConsoleModel {
         var branch: String
         var impact: [SiloClient.OutOfDatePresentation]
         var refused: AdminConsole.PromotionRefused?
+    }
+
+    enum DraftView: String, CaseIterable, Identifiable {
+        case text = "Text"
+        case parsed = "Parsed"
+
+        var id: String { rawValue }
     }
 
     enum DetailSection: String, CaseIterable, Identifiable {
@@ -286,6 +298,7 @@ final class ConsoleModel {
         if let read = try? await console.rulesets(of: silo) {
             rulesets[silo.id] = read
         }
+        loadDrafts(for: silo)
     }
 
     /// Opens a ruleset at a version, or at its standard's head.
@@ -304,51 +317,100 @@ final class ConsoleModel {
 
     // MARK: Drafts
 
-    /// Opens a draft for a silo and has the silo check it at once.
+    /// The draft open in the editor for a silo.
+    func draft(of silo: AdminConsole.Silo) -> Draft? {
+        editing[silo.id].flatMap { id in drafts[silo.id]?.first { $0.id == id } }
+    }
+
+    /// What the silo last made of the open draft.
+    func draftCheck(of silo: AdminConsole.Silo) -> AdminConsole.DraftCheck? {
+        editing[silo.id].flatMap { draftChecks[$0] }
+    }
+
+    /// The silo's drafts as this Mac keeps them, the open draft's unsaved keystrokes kept over them.
+    func loadDrafts(for silo: AdminConsole.Silo) {
+        let open = draft(of: silo)
+        drafts[silo.id] = console.drafts.drafts(of: silo.id).map { $0.id == open?.id ? open! : $0 }
+        if let id = editing[silo.id], drafts[silo.id]?.contains(where: { $0.id == id }) != true { editing[silo.id] = nil }
+    }
+
+    /// Keeps a new draft on this Mac, opens it, and has the silo check it at once.
     func startDraft(_ draft: Draft, for silo: AdminConsole.Silo) {
-        drafts[silo.id] = draft
-        draftChecks[silo.id] = nil
-        scheduleCheck(for: silo, after: .zero)
+        keep(draft, for: silo)
+        editing[silo.id] = draft.id
+        draftChecks[draft.id] = nil
+        scheduleCheck(of: draft.id, for: silo, after: .zero)
     }
 
-    /// The operator's edit: the text kept, and checked a moment after they stop typing.
+    /// Opens a kept draft in the editor.
+    func openDraft(_ id: Draft.ID, for silo: AdminConsole.Silo) {
+        guard drafts[silo.id]?.contains(where: { $0.id == id }) == true else { return }
+        editing[silo.id] = id
+        if draftChecks[id] == nil { scheduleCheck(of: id, for: silo, after: .zero) }
+    }
+
+    /// Closes the editor, keeping the draft.
+    func closeDraft(for silo: AdminConsole.Silo) {
+        guard let id = editing[silo.id] else { return }
+        if let draft = draft(of: silo) { keep(draft, for: silo) }
+        editing[silo.id] = nil
+        checking[id]?.cancel()
+    }
+
+    /// The operator's edit: the text kept, then saved to this Mac and checked by the silo a moment
+    /// after they stop typing.
     func editDraft(_ text: String, for silo: AdminConsole.Silo) {
-        guard var draft = drafts[silo.id], draft.text != text else { return }
+        guard var draft = draft(of: silo), draft.text != text,
+              let index = drafts[silo.id]?.firstIndex(where: { $0.id == draft.id })
+        else { return }
         draft.text = text
-        drafts[silo.id] = draft
-        scheduleCheck(for: silo, after: checkDelay)
+        draft.edited = .now
+        drafts[silo.id]?[index] = draft
+        scheduleCheck(of: draft.id, for: silo, after: checkDelay)
     }
 
+    /// Discards the open draft: off this Mac, and out of the editor.
     func discardDraft(for silo: AdminConsole.Silo) {
-        checking[silo.id]?.cancel()
-        drafts[silo.id] = nil
-        draftChecks[silo.id] = nil
+        guard let id = editing[silo.id] else { return }
+        checking[id]?.cancel()
+        try? console.drafts.remove(id, of: silo.id)
+        editing[silo.id] = nil
+        draftChecks[id] = nil
+        loadDrafts(for: silo)
         if review?.silo.id == silo.id { review = nil }
     }
 
-    /// Waits for the check in flight, if any: what a test needs to read the outcome.
+    /// Waits for the save and check in flight, if any: what a test needs to read the outcome.
     func settleCheck(for silo: AdminConsole.Silo) async {
-        await checking[silo.id]?.value
+        guard let id = editing[silo.id] else { return }
+        await checking[id]?.value
     }
 
-    /// Each keystroke cancels the check it supersedes, so only the text the operator stopped on is
-    /// sent; a reply for text that has since changed is dropped.
-    private func scheduleCheck(for silo: AdminConsole.Silo, after delay: Duration) {
-        checking[silo.id]?.cancel()
-        checking[silo.id] = Task { [weak self] in
+    private func keep(_ draft: Draft, for silo: AdminConsole.Silo) {
+        try? console.drafts.save(draft, for: silo.id)
+        loadDrafts(for: silo)
+        if let index = drafts[silo.id]?.firstIndex(where: { $0.id == draft.id }) { drafts[silo.id]?[index] = draft }
+    }
+
+    /// Each keystroke cancels the save and check it supersedes, so only the text the operator stopped
+    /// on is saved and sent; a reply for text that has since changed is dropped.
+    private func scheduleCheck(of id: Draft.ID, for silo: AdminConsole.Silo, after delay: Duration) {
+        checking[id]?.cancel()
+        checking[id] = Task { [weak self] in
             if delay > .zero { try? await Task.sleep(for: delay) }
-            guard !Task.isCancelled, let self, let draft = self.drafts[silo.id] else { return }
+            guard !Task.isCancelled, let self, let draft = self.drafts[silo.id]?.first(where: { $0.id == id }) else { return }
+            try? self.console.drafts.save(draft, for: silo.id)
             guard let outcome = try? await self.console.check(draft, of: silo), !Task.isCancelled,
-                  self.drafts[silo.id]?.text == draft.text
+                  self.drafts[silo.id]?.first(where: { $0.id == id })?.text == draft.text
             else { return }
-            self.draftChecks[silo.id] = outcome
+            self.draftChecks[id] = outcome
         }
     }
 
     /// Opens the review: the draft's difference from its base, which needs nothing from the silo, and
     /// its impact, which the silo resolves. Nothing is stored.
     func beginReview(for silo: AdminConsole.Silo) async {
-        guard let draft = drafts[silo.id] else { return }
+        guard let draft = draft(of: silo) else { return }
         do {
             let impact = try await console.impact(of: draft, of: silo)
             let branches = draft.base == nil ? [] : (try? await console.open(ruleset: draft.ruleset, of: silo).branches) ?? []
@@ -361,7 +423,7 @@ final class ConsoleModel {
     /// Stores the reviewed draft. A new version ends the draft and opens what was stored; a version
     /// that landed first keeps the draft and shows that version in the review.
     func store(to target: AdminConsole.StoreTarget) async {
-        guard let review, let draft = drafts[review.silo.id] else { return }
+        guard let review, let draft = draft(of: review.silo) else { return }
         do {
             switch try await console.store(draft, to: target, of: review.silo) {
             case .stored(let version):
@@ -381,12 +443,22 @@ final class ConsoleModel {
         }
     }
 
-    /// Re-bases the draft on the version that landed first, its text as it was; the review closes,
-    /// so that the next one is read against the new base.
+    /// Re-bases the open draft on the version that landed first, its text as it was; the review
+    /// closes, so that the next one is read against the new base.
     func rebase(on landed: SiloClient.RulesetDocument, for silo: AdminConsole.Silo) {
-        guard let draft = drafts[silo.id] else { return }
+        guard let draft = draft(of: silo) else { return }
         review = nil
         startDraft(draft.rebased(on: landed), for: silo)
+    }
+
+    /// Re-bases the open draft on its branch's head as the silo has it now: for a draft listed as behind.
+    func rebaseOnHead(for silo: AdminConsole.Silo) async {
+        guard let draft = draft(of: silo), draft.base != nil,
+              let opened = try? await console.open(ruleset: draft.ruleset, of: silo),
+              let head = opened.branches.first(where: { $0.name == draft.branch })?.head,
+              let landed = try? await console.open(ruleset: draft.ruleset, version: head, of: silo)
+        else { refusal = .unreachable; return }
+        rebase(on: landed.document, for: silo)
     }
 
     // MARK: Promotion
@@ -461,6 +533,8 @@ final class ConsoleModel {
         forgetTarget = nil
         await console.forget(silo)
         silos = await console.silos
+        drafts[silo.id] = nil
+        editing[silo.id] = nil
     }
 }
 
@@ -656,29 +730,56 @@ private struct RulesetsPane: View {
     let silo: AdminConsole.Silo
     let model: ConsoleModel
 
+    /// A row of the sidebar: a ruleset the silo holds, or a draft this Mac keeps.
+    enum Item: Hashable {
+        case ruleset(String)
+        case draft(Draft.ID)
+    }
+
+    /// Every ruleset the silo holds or this Mac has a draft of, by name.
+    private var names: [String] {
+        let held = (model.rulesets[silo.id] ?? []).map(\.name)
+        let drafted = (model.drafts[silo.id] ?? []).map(\.ruleset).filter { !held.contains($0) }
+        return (held + Set(drafted)).sorted()
+    }
+
     var body: some View {
         HSplitView {
-            List(model.rulesets[silo.id] ?? [], id: \.name, selection: Binding(
-                get: { model.opened[silo.id]?.summary.name },
-                set: { name in if let name { Task { await model.open(ruleset: name, of: silo) } } }
-            )) { ruleset in
-                VStack(alignment: .leading) {
-                    Text(ruleset.name)
-                    Text(ruleset.standard.map { "standard at version \($0)" } ?? "no standard")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            List(selection: Binding<Item?>(
+                get: { model.editing[silo.id].map(Item.draft) ?? model.opened[silo.id].map { .ruleset($0.summary.name) } },
+                set: { item in
+                    switch item {
+                    case .ruleset(let name)?:
+                        model.closeDraft(for: silo)
+                        Task { await model.open(ruleset: name, of: silo) }
+                    case .draft(let id)?: model.openDraft(id, for: silo)
+                    case nil: break
+                    }
                 }
-                .tag(ruleset.name)
+            )) {
+                ForEach(names, id: \.self) { name in
+                    let summary = model.rulesets[silo.id]?.first { $0.name == name }
+                    VStack(alignment: .leading) {
+                        Text(name)
+                        Text(summary.map { $0.standard.map { "standard at version \($0)" } ?? "no standard" } ?? "not on the silo yet")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .tag(summary == nil ? nil : Item.ruleset(name))
+                    ForEach((model.drafts[silo.id] ?? []).filter { $0.ruleset == name }) { draft in
+                        DraftRow(draft: draft, behind: draft.isBehind(in: model.rulesets[silo.id] ?? []))
+                            .tag(Item.draft(draft.id))
+                    }
+                }
             }
-            .frame(minWidth: 160, idealWidth: 180, maxWidth: 240)
+            .frame(minWidth: 160, idealWidth: 200, maxWidth: 260)
             .safeAreaInset(edge: .bottom) {
                 Button("New Ruleset…", systemImage: "plus") { naming = .new }
                     .buttonStyle(.borderless)
                     .padding(8)
-                    .disabled(model.drafts[silo.id] != nil)
             }
             Group {
-                if let draft = model.drafts[silo.id] {
+                if let draft = model.draft(of: silo) {
                     DraftEditor(silo: silo, draft: draft, model: model)
                 } else if let opened = model.opened[silo.id] {
                     VStack(alignment: .leading, spacing: 8) {
@@ -741,6 +842,33 @@ private struct RulesetsPane: View {
     }
 }
 
+/// A draft in the sidebar, under its ruleset: the branch it is listed under, its base, and whether
+/// that base is no longer the branch's head.
+private struct DraftRow: View {
+    let draft: Draft
+    let behind: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "pencil.line").foregroundStyle(.secondary)
+            VStack(alignment: .leading) {
+                Text("Draft on \(draft.branch)")
+                Text((draft.base.map { "from version \($0), " } ?? "") + "edited \(draft.edited.formatted(.relative(presentation: .named)))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if behind {
+                Text("Behind")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 4)
+                    .background(.orange.opacity(0.25), in: Capsule())
+                    .help("The branch has moved since this draft's base; re-base it before storing")
+            }
+        }
+        .padding(.leading, 12)
+    }
+}
+
 /// What can be done from the version on screen: change it, copy it, go back to it when it is not
 /// its branch's head, and promote its branch when that is not the standard.
 private struct RulesetActions: View {
@@ -780,8 +908,9 @@ private struct RulesetActions: View {
     }
 }
 
-/// A draft, as text: edited in place, checked by the silo a moment after each pause, with the silo's
-/// reading of it — or its refusal, in its words — where the base's reading stood.
+/// A draft, as its text or parsed by this console with the reader the silo runs: the text edited in
+/// place, saved and checked by the silo a moment after each pause, with the silo's reading of it — or
+/// its refusal, in its words — where the base's reading stood.
 private struct DraftEditor: View {
     let silo: AdminConsole.Silo
     let draft: Draft
@@ -795,31 +924,44 @@ private struct DraftEditor: View {
                     Text(origin).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Picker("View", selection: Binding(get: { model.draftView }, set: { model.draftView = $0 })) {
+                    ForEach(ConsoleModel.DraftView.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                if behind {
+                    Button("Re-base on the Head") { Task { await model.rebaseOnHead(for: silo) } }
+                }
                 Button("Discard", role: .destructive) { model.discardDraft(for: silo) }
                 Button("Review and Store…") { Task { await model.beginReview(for: silo) } }
                     .buttonStyle(.borderedProminent)
                     .disabled(!storable)
             }
-            HSplitView {
-                TextEditor(text: Binding(get: { model.drafts[silo.id]?.text ?? draft.text }, set: { model.editDraft($0, for: silo) }))
-                    .font(.system(.callout, design: .monospaced))
-                    .autocorrectionDisabled()
-                    .frame(minWidth: 260)
-                Group {
-                    switch model.draftChecks[silo.id] {
-                    case .reading(let reading)?: ReadingView(reading: reading)
-                    case .refused(let reason)?:
-                        ScrollView {
-                            Label(reason, systemImage: "exclamationmark.octagon")
-                                .foregroundStyle(.red)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-                                .padding(8)
+            switch model.draftView {
+            case .text:
+                HSplitView {
+                    TextEditor(text: Binding(get: { model.draft(of: silo)?.text ?? draft.text }, set: { model.editDraft($0, for: silo) }))
+                        .font(.system(.callout, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .frame(minWidth: 260)
+                    Group {
+                        switch model.draftCheck(of: silo) {
+                        case .reading(let reading)?: ReadingView(reading: reading)
+                        case .refused(let reason)?: RefusalView(reason: reason)
+                        case nil: ProgressView("Checking with the silo…")
                         }
-                    case nil: ProgressView("Checking with the silo…")
                     }
+                    .frame(minWidth: 220, maxHeight: .infinity)
                 }
-                .frame(minWidth: 220, maxHeight: .infinity)
+            case .parsed:
+                // This console's reading is the view, so the silo's is only its verdict: whether it
+                // reads the draft too, or what only the silo can refuse.
+                SiloVerdict(check: model.draftCheck(of: silo))
+                switch draft.reading {
+                case .reading(let reading): ReadingView(reading: reading)
+                case .refused(let reason): RefusalView(reason: reason)
+                }
             }
         }
     }
@@ -832,8 +974,38 @@ private struct DraftEditor: View {
 
     /// A draft is stored once it says something its base does not, and the silo reads it.
     private var storable: Bool {
-        guard case .reading? = model.draftChecks[silo.id] else { return false }
+        guard case .reading? = model.draftCheck(of: silo) else { return false }
         return draft.isChanged || draft.base == nil
+    }
+
+    private var behind: Bool { draft.isBehind(in: model.rulesets[silo.id] ?? []) }
+}
+
+/// What the silo made of the draft as last saved, in a line.
+private struct SiloVerdict: View {
+    let check: AdminConsole.DraftCheck?
+
+    var body: some View {
+        switch check {
+        case .reading?: Label("The silo reads it", systemImage: "checkmark.circle").foregroundStyle(.green).font(.caption)
+        case .refused(let reason)?: Label("The silo refuses it: \(reason)", systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption).textSelection(.enabled)
+        case nil: Label("Checking with the silo…", systemImage: "clock").foregroundStyle(.secondary).font(.caption)
+        }
+    }
+}
+
+/// A reader's refusal, in its words.
+private struct RefusalView: View {
+    let reason: String
+
+    var body: some View {
+        ScrollView {
+            Label(reason, systemImage: "exclamationmark.octagon")
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(8)
+        }
     }
 }
 

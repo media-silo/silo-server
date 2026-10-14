@@ -5,8 +5,8 @@ import Foundation
 import SiloClient
 import SiloKit
 
-/// What the console says of a ruleset, drawn from the silo's reading of it and never from its XML:
-/// the reading is the silo's, and these only arrange it.
+/// What the console says of a ruleset, drawn from a reading of it — the silo's of a version, or the
+/// console's own of a draft, made with the reader the silo runs — which these only arrange.
 extension SiloClient.RulesetReading {
     /// The rules of each scope that has any, in document order within it: the order that decides
     /// between them, since the first rule of a scope whose conditions all hold decides a stream.

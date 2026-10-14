@@ -92,6 +92,8 @@ public actor AdminConsole {
     }
 
     private let registry: SiloRegistry
+    /// The drafts this Mac keeps for each silo.
+    public nonisolated let drafts: DraftStore
     private let passkeys: any PasskeyStore
     private let session: URLSession
     private let now: @Sendable () -> Date
@@ -115,12 +117,14 @@ public actor AdminConsole {
 
     public init(
         registry: SiloRegistry = SiloRegistry(),
+        drafts: DraftStore = DraftStore(),
         passkeys: any PasskeyStore,
         session: URLSession = .shared,
         now: @escaping @Sendable () -> Date = { .now },
         browse: (@Sendable () async throws -> [DiscoveredSilo])? = nil
     ) {
         self.registry = registry
+        self.drafts = drafts
         self.passkeys = passkeys
         self.session = session
         self.now = now
@@ -559,11 +563,12 @@ public actor AdminConsole {
     // MARK: - Forget
 
     /// Forgets a silo outright: its passkey out of this Mac's stores, its entry out of the
-    /// registry, its row out of the console. The act for a silo that has gone quiet — should
-    /// it answer again, it arrives as never met.
+    /// registry, its drafts deleted, its row out of the console. The act for a silo that has gone
+    /// quiet — should it answer again, it arrives as never met.
     public func forget(_ silo: Silo) {
         passkeys.remove(for: silo.id)
         try? registry.remove(silo.id)
+        try? drafts.removeAll(of: silo.id)
         liveness.removeValue(forKey: silo.id)
         latest.removeAll { $0.id == silo.id }
     }
