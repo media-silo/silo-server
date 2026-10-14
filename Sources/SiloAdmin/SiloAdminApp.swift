@@ -95,6 +95,26 @@ final class ConsoleModel {
     var promotion: Promotion?
     /// The libraries last read for a silo, each with its standard.
     private(set) var libraries: [AdminConsole.Silo.ID: [SiloClient.Library]] = [:]
+    /// A branch's version being tried, while its bindings are chosen.
+    var trying: Trying?
+    /// The trial jobs this console started for a silo, by its id, as the silo last had them.
+    private(set) var trialJobs: [AdminConsole.Silo.ID: [AdminConsole.TrialJob]] = [:]
+    /// What starting trials could not do, binding by binding, in the silo's words.
+    private(set) var trialRefusals: [AdminConsole.Silo.ID: [String]] = [:]
+    /// The tried trials of the open version's branch, each beside what its binding placed.
+    private(set) var trials: [AdminConsole.Silo.ID: [AdminConsole.TrialComparison]] = [:]
+
+    /// A branch's version to try, and the bindings to try it on: those its impact lists offered
+    /// first, and any other the operator names.
+    struct Trying: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var ruleset: String
+        var branch: String
+        var version: Int
+        var candidates: [AdminConsole.TrialCandidate]
+        var chosen: Set<String> = []
+    }
 
     /// A draft's review: its difference and impact before anything is stored, and, when another
     /// version landed first, that version, for the draft to be re-based on it or discarded.
@@ -207,6 +227,7 @@ final class ConsoleModel {
         case .rulesets:
             await loadRulesets(for: silo)
             if let current = opened[silo.id] { await open(ruleset: current.summary.name, version: current.document.version, of: silo) }
+            await loadTrials(for: silo)
         case .outOfDate: await loadOutOfDate(for: silo)
         }
     }
@@ -301,11 +322,13 @@ final class ConsoleModel {
         loadDrafts(for: silo)
     }
 
-    /// Opens a ruleset at a version, or at its standard's head.
+    /// Opens a ruleset at a version, or at its standard's head, with its branch's trials.
     func open(ruleset name: String, version: Int? = nil, of silo: AdminConsole.Silo) async {
+        let before = opened[silo.id].map { ($0.summary.name, $0.document.branch) }
         if let read = try? await console.open(ruleset: name, version: version, of: silo) {
             opened[silo.id] = read
         }
+        if before.map({ $0 != (name, opened[silo.id]?.document.branch) }) ?? true { await loadTrials(for: silo) }
     }
 
     /// Reads each library's out-of-date presentations.
@@ -502,6 +525,60 @@ final class ConsoleModel {
         startDraft(draft, for: promotion.silo)
     }
 
+    // MARK: Trials
+
+    /// Starts choosing the bindings to try the version on screen on, its branch's impact offered first.
+    func beginTrying(_ version: SiloClient.RulesetDocument, on silo: AdminConsole.Silo) async {
+        guard let number = version.version, let branch = version.branch, branch != "standard" else { return }
+        do {
+            let candidates = try await console.trialCandidates(of: version.name, branch: branch, on: silo)
+            trying = Trying(silo: silo, ruleset: version.name, branch: branch, version: number, candidates: candidates, chosen: Set(candidates.map(\.binding)))
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
+    /// Makes a trial job of every recipe the version makes for the chosen bindings. Places nothing.
+    func startTrials(_ trying: Trying) async {
+        self.trying = nil
+        do {
+            let started = try await console.startTrials(of: trying.ruleset, branch: trying.branch, version: trying.version, on: trying.chosen.sorted(), of: trying.silo)
+            trialJobs[trying.silo.id, default: []].append(contentsOf: started.flatMap(\.jobs))
+            trialRefusals[trying.silo.id] = started.compactMap { start in start.refusal.map { "\(start.binding): \($0)" } }
+            await loadTrials(for: trying.silo)
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
+    /// The trial jobs this console started, as far as each has got, and the tried trials of the open
+    /// version's branch beside what was placed.
+    func loadTrials(for silo: AdminConsole.Silo) async {
+        let started = trialJobs[silo.id] ?? []
+        if !started.isEmpty, let now = try? await console.trialJobs(started.map(\.id), on: silo) {
+            trialJobs[silo.id] = now
+        }
+        guard let version = opened[silo.id]?.document, let branch = version.branch, branch != "standard" else {
+            trials[silo.id] = nil
+            return
+        }
+        if let read = try? await console.trials(of: version.name, branch: branch, on: silo) {
+            trials[silo.id] = read
+        }
+    }
+
+    func deleteTrial(_ job: String, on silo: AdminConsole.Silo) async {
+        do {
+            try await console.deleteTrial(job, on: silo)
+            trialJobs[silo.id]?.removeAll { $0.id == job }
+            await loadTrials(for: silo)
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
     // MARK: Libraries
 
     func loadLibraries(for silo: AdminConsole.Silo) async {
@@ -608,6 +685,9 @@ struct ConsoleView: View {
         }
         .sheet(item: $model.promotion) { promotion in
             PromotionSheet(promotion: promotion, model: model)
+        }
+        .sheet(item: $model.trying) { trying in
+            TrialSheet(trying: trying, model: model)
         }
         .sheet(item: $model.claimTarget) { silo in
             ClaimSheet(
@@ -787,6 +867,9 @@ private struct RulesetsPane: View {
                         OpenedRulesetView(opened: opened) { version in
                             Task { await model.open(ruleset: opened.summary.name, version: version, of: silo) }
                         }
+                        if !(model.trialJobs[silo.id] ?? []).isEmpty || !(model.trials[silo.id] ?? []).isEmpty || !(model.trialRefusals[silo.id] ?? []).isEmpty {
+                            TrialsPanel(silo: silo, model: model)
+                        }
                     }
                 } else if model.rulesets[silo.id]?.isEmpty == true {
                     ContentUnavailableView("No Rulesets", systemImage: "list.bullet.rectangle", description: Text("This silo holds no ruleset yet."))
@@ -898,6 +981,10 @@ private struct RulesetActions: View {
             }
             Spacer()
             if let branch, branch.base != nil, !branch.closed {
+                Button("Try…", systemImage: "testtube.2") {
+                    Task { await model.beginTrying(opened.document, on: silo) }
+                }
+                .help("Encode this version for chosen bindings, to compare with what is placed; nothing is placed")
                 Button("Promote \(branch.name)…", systemImage: "arrow.up.circle") {
                     Task { await model.beginPromotion(of: branch.name, of: opened.summary.name, on: silo) }
                 }
@@ -988,6 +1075,141 @@ private struct SiloVerdict: View {
         case .reading?: Label("The silo reads it", systemImage: "checkmark.circle").foregroundStyle(.green).font(.caption)
         case .refused(let reason)?: Label("The silo refuses it: \(reason)", systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption).textSelection(.enabled)
         case nil: Label("Checking with the silo…", systemImage: "clock").foregroundStyle(.secondary).font(.caption)
+        }
+    }
+}
+
+/// Choosing the bindings to try a branch's version on: those its impact lists, chosen at first, and
+/// any other by its id.
+private struct TrialSheet: View {
+    let trying: ConsoleModel.Trying
+    let model: ConsoleModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var chosen: Set<String> = []
+    @State private var other = ""
+    @State private var others: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Try \(trying.ruleset) Version \(trying.version) on \(trying.branch)").font(.headline)
+            Text("Each binding chosen is resolved through this version and encoded as a trial, kept apart from the library to compare with what is placed. Nothing is placed.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            List {
+                Section(trying.candidates.isEmpty ? "The branch changes nothing placed" : "What the branch would change") {
+                    ForEach(trying.candidates) { candidate in
+                        Toggle(isOn: Binding(get: { chosen.contains(candidate.binding) }, set: { if $0 { chosen.insert(candidate.binding) } else { chosen.remove(candidate.binding) } })) {
+                            VStack(alignment: .leading) {
+                                Text([candidate.container, candidate.item].compactMap { $0 }.joined(separator: " › "))
+                                Text(candidate.profile ?? "unqualified").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                Section("Other bindings") {
+                    ForEach(others, id: \.self) { Text($0).font(.body.monospaced()) }
+                    HStack {
+                        TextField("Binding id", text: $other)
+                        Button("Add") {
+                            let id = other.trimmingCharacters(in: .whitespaces)
+                            if !id.isEmpty, !others.contains(id) { others.append(id); chosen.insert(id) }
+                            other = ""
+                        }
+                    }
+                }
+            }
+            .frame(minHeight: 220)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Make Trials") {
+                    var started = trying
+                    started.chosen = chosen
+                    Task { await model.startTrials(started) }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(chosen.isEmpty)
+            }
+        }
+        .padding()
+        .frame(minWidth: 480)
+        .onAppear { chosen = trying.chosen }
+    }
+}
+
+/// The trials of the version's branch: the jobs still encoding, and each tried trial beside what its
+/// binding placed, stream by stream, with both files to play.
+private struct TrialsPanel: View {
+    let silo: AdminConsole.Silo
+    let model: ConsoleModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Trials").font(.headline)
+            ForEach(model.trialRefusals[silo.id] ?? [], id: \.self) { refusal in
+                Label(refusal, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.caption)
+            }
+            ForEach((model.trialJobs[silo.id] ?? []).filter { $0.state.rawValue != "tried" }, id: \.id) { job in
+                HStack {
+                    Text(job.id.prefix(8)).font(.caption.monospaced())
+                    Text(job.state.rawValue)
+                    if let fraction = job.progress?.fraction, job.state.rawValue == "encoding" {
+                        ProgressView(value: fraction).frame(width: 120)
+                    }
+                    if let failure = job.failure { Text(failure).foregroundStyle(.red).font(.caption) }
+                }
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(model.trials[silo.id] ?? [], id: \.trial.job) { compared in
+                        TrialRow(compared: compared) { Task { await model.deleteTrial(compared.trial.job, on: silo) } }
+                    }
+                }
+            }
+            .frame(maxHeight: 260)
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+private struct TrialRow: View {
+    let compared: AdminConsole.TrialComparison
+    let delete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("\(compared.trial.binding.prefix(8)) · \(compared.trial.profile ?? "unqualified") · \(compared.trial.ruleset)@\(compared.trial.version ?? 0)")
+                    .font(.callout.monospaced())
+                Spacer()
+                Button("Play Trial") { NSWorkspace.shared.open(compared.trialFile) }
+                Button("Play Placed") { if let url = compared.placedFile { NSWorkspace.shared.open(url) } }
+                    .disabled(compared.placedFile == nil)
+                Button("Delete", role: .destructive, action: delete)
+            }
+            .controlSize(.small)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
+                GridRow {
+                    Text("Stream").bold()
+                    Text("Placed").bold()
+                    Text("Trial").bold()
+                }
+                ForEach(compared.streams, id: \.stream) { stream in
+                    GridRow {
+                        Text(stream.stream)
+                        Text(stream.placed?.summary ?? "—")
+                        Text(stream.tried?.summary ?? "—")
+                            .foregroundStyle(stream.placed == stream.tried ? Color.primary : Color.orange)
+                    }
+                }
+            }
+            .font(.caption)
+            if compared.placedFile == nil {
+                Text("No placed presentation of this binding is one the branch would change, so there is none to compare with.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

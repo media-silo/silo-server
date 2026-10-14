@@ -157,11 +157,48 @@ public struct SiloClient: Sendable, JobsAPI {
 
     // MARK: - Jobs
 
-    struct NewJob: Codable { var recipe: String }
+    struct NewJob: Codable { var recipe: String; var trial: Bool? }
 
-    /// A job from a resolved recipe, which it commits.
-    public func createJob(recipe: String) async throws -> Job {
-        try await send("POST", "/v1/jobs", body: NewJob(recipe: recipe))
+    /// A job from a resolved recipe, which it commits; a trial is kept in the silo's trial area and
+    /// never placed.
+    public func createJob(recipe: String, trial: Bool = false) async throws -> Job {
+        try await send("POST", "/v1/jobs", body: NewJob(recipe: recipe, trial: trial ? true : nil))
+    }
+
+    // MARK: - Trials
+
+    /// A tried trial: its job, the ruleset version that made its recipe and the branch that version
+    /// is on, its binding and output, and how the encode went.
+    public struct Trial: Hashable, Sendable, Codable {
+        public var job: String
+        public var recipe: String
+        public var ruleset: String
+        public var version: Int?
+        public var branch: String?
+        public var binding: String
+        public var profile: String?
+        public var result: EncodeResult?
+        public var createdAt: Date
+    }
+
+    public func trials(ruleset: String? = nil, branch: String? = nil) async throws -> [Trial] {
+        let query = [ruleset.map { "ruleset=\($0)" }, branch.map { "branch=\($0)" }].compactMap { $0 }.joined(separator: "&")
+        return try await send("GET", "/v1/trials" + (query.isEmpty ? "" : "?" + query))
+    }
+
+    public func deleteTrial(_ job: String) async throws {
+        let (data, status) = try await request("DELETE", "/v1/trials/\(job)", body: Nothing?.none)
+        guard (200..<300).contains(status) else { throw SiloClientError.status(status, String(decoding: data, as: UTF8.self)) }
+    }
+
+    /// Where a trial's output is served, by range, openly.
+    public func trialFileURL(_ job: String) -> URL {
+        baseURL.appending(path: "v1/trials/\(job)/file")
+    }
+
+    /// Where a placed presentation is served, by range, openly.
+    public func mediaURL(_ presentation: String) -> URL {
+        baseURL.appending(path: "v1/media/\(presentation)")
     }
 
     public func jobs(state: JobState? = nil) async throws -> [Job] {
