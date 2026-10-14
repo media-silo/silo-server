@@ -4,7 +4,7 @@
 <ruleset format="1" name="household">
     <!-- An extra below standard-definition width: small, and never HEVC. -->
     <video id="small-extras">
-        <when fact="kind" in="featurette,interview,deletedScene,behindTheScenes,trailer,scene,short,clip"/>
+        <when fact="extra" is="true"/>
         <when fact="video.width" lt="576"/>
         <encode codec="libx264" preset="slow" crf="22" pixelFormat="yuv420p">
             <deinterlace mode="auto"/>

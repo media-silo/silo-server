@@ -32,6 +32,27 @@ struct BindingRulesTests {
         _ = try await bench.service.place(job.id)
     }
 
+    @Test func anExtraIsWhereItsContainerFilesItWhateverItsKind() throws {
+        let bench = try JobServiceTests.Bench()
+        defer { bench.remove() }
+        var serial = Fixture.serial
+        serial.sequences = [Sequence(id: "parts", items: [.leaf(Entry.Leaf(id: ItemID("film")!, type: .movie, title: "The Film"))])]
+        serial.extras = [.leaf(Entry.Leaf(id: ItemID("documentary")!, type: .movie, title: "The Making Of"))]
+        let containers = [Fixture.series, serial].map { String(decoding: ContainerFile.data(for: $0), as: UTF8.self) }
+        let source = try bench.sources.register(JobServiceTests.Bench.input, key: nil, copy: try bench.copy()).source
+        func resolved(_ item: String) throws -> StoredRecipe {
+            let binding = try bench.bindingService.make(Binding(library: "main", containers: containers, item: item, segments: [Binding.Segment(source: source.id)]))
+            return try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
+        }
+
+        let extra = try resolved("documentary")
+        #expect(extra.facts.kind == .movie && extra.facts.extra == true, "a film filed among the extras is an extra")
+        #expect(extra.recipe.video?.rule == "small-extras")
+        let main = try resolved("film")
+        #expect(main.facts.kind == .movie && main.facts.extra == false)
+        #expect(main.recipe.video?.rule == "#4", "the same film in a sequence is not")
+    }
+
     @Test func aBindingsRuleSpeaksAheadOfEveryContainers() throws {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }

@@ -81,7 +81,7 @@ SILO_STATE_DIR=~/silo-state swift run silo
 SILO_URL=http://localhost:8742 SILO_TOKEN=secret swift run silo-ctl jobs list
 swift run silo-node                       # on another machine; finds the silo, waits to be approved
 SILO_URL=http://localhost:8742 SILO_TOKEN=secret swift run silo-ctl nodes approve <id>
-swift run silo-ctl encode --ruleset Examples/household.xml --kind featurette --commentary 2 in.mkv out.mkv
+swift run silo-ctl encode --ruleset Examples/household.xml --kind featurette --extra --commentary 2 in.mkv out.mkv
 swift run silo-ctl place --library ~/Library --repository ~/data --container 0123456789abcdef --item part1 \
     --track commentary1=audio:2 --chapter "1=Opening titles" --dry-run out.mkv
 ```

@@ -5,8 +5,9 @@
 
 ### Requirement: Facts are derived once from a binding, its sources and an output
 `SourceFacts` SHALL be derived, in one place, from a binding, the input spec of its first segment's
-source, and one output of its ruleset. `kind` SHALL be the item's, from the lineage; `extra` SHALL be true when the lineage's last
-container holds the item in its extras and false when it holds it in a sequence; `profile` SHALL
+source, and one output of its ruleset. `kind` SHALL be the item's, from the lineage; `extra` SHALL
+be true when the lineage's last container holds the item in its extras and false when it holds it in
+a sequence; `profile` SHALL
 be the output's; `format` SHALL be the first segment's `medium`; `duration` SHALL be the joined
 spans' length; and an audio stream a feature is mapped to SHALL take its role from that feature —
 `commentary` for a commentary, `isolatedMusic` for isolated music, `other` otherwise. The first video

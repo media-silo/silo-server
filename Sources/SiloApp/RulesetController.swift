@@ -126,7 +126,7 @@ package struct RulesetController {
         return try ruleset.outputs.map { output in
             let facts = SourceFacts(
                 input: joined.spec, roles: roles, kind: body.kind.flatMap(EntryType.init(rawValue:)),
-                profile: output.profile, duration: joined.duration
+                extra: body.extra, profile: output.profile, duration: joined.duration
             )
             do {
                 return try Mapping.transcode(try RecipeResolver.resolve(facts, with: ruleset, mappings: mappings))

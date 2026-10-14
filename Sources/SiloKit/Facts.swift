@@ -14,6 +14,9 @@ public struct SourceFacts: Hashable, Sendable, Codable {
     /// The item's kind from the binding: episode, movie, featurette and the other extra types. Nil
     /// when nothing says, which is why a ruleset's catch-alls are written last.
     public var kind: EntryType?
+    /// Whether the item is an extra: held in its container's extras rather than in a sequence,
+    /// whatever its kind. Nil when nothing says, as for a dry run that leaves it out.
+    public var extra: Bool?
     /// The profile the file is being made into. Nil for the unqualified presentation.
     public var profile: String?
     public var format: SourceFormat?
@@ -30,6 +33,7 @@ public struct SourceFacts: Hashable, Sendable, Codable {
 
     public init(
         kind: EntryType? = nil,
+        extra: Bool? = nil,
         profile: String? = nil,
         format: SourceFormat? = nil,
         duration: Double? = nil,
@@ -39,6 +43,7 @@ public struct SourceFacts: Hashable, Sendable, Codable {
         hints: [FactHint] = []
     ) {
         self.kind = kind
+        self.extra = extra
         self.profile = profile
         self.format = format
         self.duration = duration

@@ -9,8 +9,7 @@
 <path>` (required), an optional `--input <json file>` holding the input's input spec, an optional
 `--profile` naming which of the ruleset's outputs to make — the unqualified one when left out — and
 the binding as the command line knows it — `--kind`, `--extra`, which makes the `extra` fact true and
-false when left out, `--format dvd|bluray|uhd`, the medium the
-plain-file producer cannot know, and
+false when left out, `--format dvd|bluray|uhd`, the medium the plain-file producer cannot know, and
 repeatable `--commentary`, `--descriptive` and `--music` stream numbers counted from one among
 audio, of which commentary and music also map the features `commentary` and `music` — then the
 positional input and output paths, the output required unless `--dry-run` is given. Without

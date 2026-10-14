@@ -171,8 +171,8 @@ Pinned by: `Tests/EncoderTests/IntegrationTests.swift` (`theEncodersAreListed`).
 `silo-ctl encode` SHALL encode one file from one ruleset with no server: it takes `--ruleset
 <path>` (required), an optional `--input <json file>` holding the input's input spec, an optional
 `--profile` naming which of the ruleset's outputs to make — the unqualified one when left out — and
-the binding as the command line knows it — `--kind`, `--format dvd|bluray|uhd`, the medium the
-plain-file producer cannot know, and
+the binding as the command line knows it — `--kind`, `--extra`, which makes the `extra` fact true and
+false when left out, `--format dvd|bluray|uhd`, the medium the plain-file producer cannot know, and
 repeatable `--commentary`, `--descriptive` and `--music` stream numbers counted from one among
 audio, of which commentary and music also map the features `commentary` and `music` — then the
 positional input and output paths, the output required unless `--dry-run` is given. Without
@@ -190,7 +190,7 @@ progress line on standard error, re-probe the output, verify it against the layo
 error and exit failing.
 
 #### Scenario: dry run shows the recipe and encodes nothing
-- **WHEN** `silo-ctl encode --ruleset Examples/household.xml --kind featurette --dry-run in.mkv` runs
+- **WHEN** `silo-ctl encode --ruleset Examples/household.xml --kind featurette --extra --dry-run in.mkv` runs
 - **THEN** the input is described by the plain-file producer, the decision table prints, and no
   output path is required and no encode happens
 

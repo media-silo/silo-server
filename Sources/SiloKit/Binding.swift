@@ -187,9 +187,10 @@ public enum BindingError: Error, Hashable, Sendable, CustomStringConvertible {
 
 extension SourceFacts {
     /// The facts a rule tests, derived in one place from what a producer observed, what the binding
-    /// knows of the entry — its kind and the role each mapped audio stream takes from its feature —
-    /// and the output being made. `Ingestion.md`: observed by the producer, derived by the silo.
-    public init(input spec: InputSpec, roles: [Int: AudioRole] = [:], kind: EntryType? = nil, profile: String? = nil, duration: Double? = nil) {
+    /// knows of the entry — its kind, whether it is an extra, and the role each mapped audio stream
+    /// takes from its feature — and the output being made. `Ingestion.md`: observed by the producer,
+    /// derived by the silo.
+    public init(input spec: InputSpec, roles: [Int: AudioRole] = [:], kind: EntryType? = nil, extra: Bool? = nil, profile: String? = nil, duration: Double? = nil) {
         var hints = spec.notes.map { FactHint(stream: $0.stream, text: $0.text) }
 
         let videos = spec.streams.filter { $0.kind == .video }
@@ -253,6 +254,7 @@ extension SourceFacts {
 
         self.init(
             kind: kind,
+            extra: extra,
             profile: profile,
             format: spec.medium,
             duration: duration ?? spec.duration,
