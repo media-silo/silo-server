@@ -24,8 +24,12 @@ public struct Job: Identifiable, Hashable, Sendable, Codable {
     public var placement: PlacementSummary?
     /// Why the job failed, when it did.
     public var failure: String?
+    /// Whether the job is a trial: encoded to be looked at, its output kept in the silo's trial area,
+    /// and never placed.
+    public var trial: Bool
 
-    public init(id: String = UUID().uuidString.lowercased(), state: JobState = .pending, createdAt: Date = .now, recipe: String, requirements: [String] = []) {
+    public init(id: String = UUID().uuidString.lowercased(), state: JobState = .pending, createdAt: Date = .now, recipe: String, requirements: [String] = [], trial: Bool = false) {
+        self.trial = trial
         self.id = id
         self.state = state
         self.createdAt = createdAt
@@ -44,10 +48,33 @@ public struct Job: Identifiable, Hashable, Sendable, Codable {
     public var isActive: Bool {
         [.claimed, .encoding, .cancelling].contains(state)
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, state, createdAt, updatedAt, recipe, requirements, attempts, lease, progress, output, result, placement, failure, trial
+    }
+
+    /// A record written before trials were is not one.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        state = try container.decode(JobState.self, forKey: .state)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        recipe = try container.decode(String.self, forKey: .recipe)
+        requirements = try container.decode([String].self, forKey: .requirements)
+        attempts = try container.decode([Attempt].self, forKey: .attempts)
+        lease = try container.decodeIfPresent(Lease.self, forKey: .lease)
+        progress = try container.decodeIfPresent(JobProgress.self, forKey: .progress)
+        output = try container.decodeIfPresent(FileRef.self, forKey: .output)
+        result = try container.decodeIfPresent(EncodeResult.self, forKey: .result)
+        placement = try container.decodeIfPresent(PlacementSummary.self, forKey: .placement)
+        failure = try container.decodeIfPresent(String.self, forKey: .failure)
+        trial = try container.decodeIfPresent(Bool.self, forKey: .trial) ?? false
+    }
 }
 
 public enum JobState: String, Hashable, Sendable, Codable, CaseIterable {
-    case pending, claimed, encoding, encoded, placing, placed, failed, cancelling, cancelled
+    case pending, claimed, encoding, encoded, placing, placed, tried, failed, cancelling, cancelled
 }
 
 /// A file where it is, served by the node that holds it. `path` is for the holder's own use, so
