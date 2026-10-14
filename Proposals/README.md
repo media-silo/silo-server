@@ -54,3 +54,7 @@ deltas in `openspec/changes/`, as that README describes.
   like any job and kept apart from the library, before the branch is promoted. The console edits a
   draft in a form built from the rule language that leaves everything it did not touch as written,
   toggled with the raw text, and reads the XML itself with the silo's reader.
+- [Extras](Extras.md) — a rule can ask whether the item it decides is an extra, as a fact of its own
+  taken from where its container files it, rather than by listing the types an extra might have; and
+  the types an extra is classified by are a vocabulary SmdKit names, Emby's `ExtraType`, which the
+  console offers when a rule tests an item's kind.
