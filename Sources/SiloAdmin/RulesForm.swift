@@ -125,8 +125,8 @@ private struct Heading: View {
     }
 }
 
-/// A rule or an output as a row: a handle to drag it by, what it is, and its edit button; swiped,
-/// or from its menu, edited or deleted, and double-clicked, edited.
+/// A rule or an output as a row: a handle to drag it by, what it is, and its edit and remove buttons,
+/// removing as a condition's row does; from its menu, edited or deleted, and double-clicked, edited.
 private struct ItemRow<Content: View>: View {
     let edit: () -> Void
     let delete: () -> Void
@@ -141,16 +141,16 @@ private struct ItemRow<Content: View>: View {
                 .buttonStyle(.borderless)
                 .labelStyle(.iconOnly)
                 .help("Edit")
+            Button("Remove", systemImage: "minus.circle", action: delete)
+                .buttonStyle(.borderless)
+                .labelStyle(.iconOnly)
+                .help("Remove")
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: edit)
         .contextMenu {
             Button("Edit…", action: edit)
             Button("Delete", role: .destructive, action: delete)
-        }
-        .swipeActions(edge: .trailing) {
-            Button("Delete", systemImage: "trash", role: .destructive, action: delete)
-            Button("Edit", systemImage: "pencil", action: edit).tint(.accentColor)
         }
     }
 }

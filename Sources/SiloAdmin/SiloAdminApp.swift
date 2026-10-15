@@ -878,7 +878,7 @@ private struct RulesetsPane: View {
                             TrialsPanel(silo: silo, model: model)
                         }
                     }
-                } else if model.rulesets[silo.id]?.isEmpty == true {
+                } else if model.rulesets[silo.id]?.isEmpty == true, (model.drafts[silo.id] ?? []).isEmpty {
                     ContentUnavailableView("No Rulesets", systemImage: "list.bullet.rectangle", description: Text("This silo holds no ruleset yet."))
                 } else {
                     ContentUnavailableView("Select a Ruleset", systemImage: "list.bullet.rectangle")
@@ -1079,7 +1079,7 @@ private struct SiloVerdict: View {
 
     var body: some View {
         switch check {
-        case .reading?: Label("The silo reads it", systemImage: "checkmark.circle").foregroundStyle(.green).font(.caption)
+        case .reading?: Label("Silo validated", systemImage: "checkmark.circle").foregroundStyle(.green).font(.caption)
         case .refused(let reason)?: Label("The silo refuses it: \(reason)", systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption).textSelection(.enabled)
         case nil: Label("Checking with the silo…", systemImage: "clock").foregroundStyle(.secondary).font(.caption)
         }
