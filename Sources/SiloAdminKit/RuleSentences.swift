@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloKit
+import SmdKit
 
 /// A rule as the console's form reads it to a person: what decides, in words rather than the
 /// document's attributes. The document is unchanged by any of this; it is only how it is shown.
@@ -68,10 +69,12 @@ extension FactKey {
         return self.scope == scope && rawValue.hasPrefix(prefix) ? String(rawValue.dropFirst(prefix.count)) : rawValue
     }
 
-    /// Values an open fact is commonly met with, offered beside the field that takes any: codecs
-    /// as `ffprobe` names them. Empty for a fact with none to suggest; a closed fact's are `values`.
+    /// Values an open fact is commonly met with, offered beside the field that takes any: an
+    /// item's types as SmdKit names them, a main item's and then an extra's, and codecs as
+    /// `ffprobe` names them. Empty for a fact with none to suggest; a closed fact's are `values`.
     public var suggestedValues: [String] {
         switch self {
+        case .kind: ([EntryType.episode, .movie] + EntryType.extraTypes).map(\.rawValue)
         case .videoCodec: ["h264", "hevc", "av1", "vp9", "mpeg2video", "vc1"]
         case .audioCodec: ["truehd", "dts", "eac3", "ac3", "aac", "flac", "opus", "mp3", "pcm_s16le", "pcm_s24le"]
         case .subtitleCodec: ["hdmv_pgs_subtitle", "dvd_subtitle", "subrip", "ass"]
