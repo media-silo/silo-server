@@ -625,15 +625,22 @@ struct ConsoleView: View {
     var body: some View {
         Group {
             if model.silos.isEmpty {
-                // Hand-rolled so the buttons size to fit their text —
+                // Bonjour is browsing from launch, so an empty list is a search in progress, not
+                // an absence — the address entry stays as a quiet link for when discovery can't
+                // reach a silo. Hand-rolled so the link sizes to fit its text —
                 // ContentUnavailableView caps its action width and truncates on macOS.
                 VStack(spacing: 12) {
-                    Image(systemName: "externaldrive")
+                    Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 48))
                         .foregroundStyle(.secondary)
-                    Text("No Silos")
+                        .symbolEffect(.variableColor.iterative.reversing)
+                    Text("Searching for Silos…")
                         .font(.title2.bold())
-                    Button("Add Manually") { model.addingByAddress = true }
+                    Text("Silos on your network appear here as they're found.")
+                        .foregroundStyle(.secondary)
+                    Button("Add a Silo by Address…") { model.addingByAddress = true }
+                        .buttonStyle(.link)
+                        .padding(.top, 8)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
