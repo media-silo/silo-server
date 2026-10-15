@@ -174,7 +174,8 @@ scope, where it describes the stream being decided.
 
 | Fact | Scope | Shape | Values | Comes from |
 |---|---|---|---|---|
-| `kind` | file | text | what the item is: `episode`, `movie`, `featurette`, or another type of extra the container names, such as `interview`, `deletedScene`, `behindTheScenes`, `trailer`, `scene`, `short`, `clip` | the binding's item |
+| `kind` | file | text | what the item is: `episode`, `movie`, or, for an extra, one of the types SmdKit names for extras — `featurette`, `behindTheScenes`, `deletedScene`, `interview`, `trailer`, `scene`, `short`, `clip`, `themeSong`, `themeVideo` — or another type the container gives | the binding's item |
+| `extra` | file | flag | whether the item is an extra: held in its container's extras rather than in a sequence, whatever its `kind` | the binding's item's place in its container |
 | `profile` | file | text | the profile of the output being made, such as `mobile`; absent for the unqualified output | the output being resolved |
 | `format` | file | text | the physical medium the source came from: `dvd`, `bluray` or `uhd`; absent for one that came from none | the first segment's input spec's `medium` |
 | `duration` | file | number | seconds | the binding's joined spans |
@@ -223,6 +224,11 @@ no language tag — is **absent**. What an input spec holds is specified in
   `<when fact="audio.region" is="419"/>`, and a source has audio tagged `es-419` and `es-ES`
 - **THEN** the rule holds for the first stream and not the second
 
+#### Scenario: an extra by where it is filed
+- **WHEN** a `<video>` rule carries `<when fact="extra" is="true"/>`, and one binding's item is held in
+  its container's extras with the type `movie`, and another's in a sequence with the type `movie`
+- **THEN** the rule holds for the first item's video and not the second's
+
 #### Scenario: one stream by its index
 - **WHEN** an `<audio>` rule carries `<when fact="audio.index" is="2"/>`, and an entry has three audio
   streams
@@ -230,7 +236,8 @@ no language tag — is **absent**. What an input spec holds is specified in
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`,
 `aRulesetSurvivesTheFile`), `Tests/SiloKitTests/FactsTests.swift`
-(`losslessIsAFunctionOfCodecAndProfile`), `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`), `Tests/SiloKitTests/LayerTests.swift` (`aRulePicksOneStreamByItsIndex`).
+(`losslessIsAFunctionOfCodecAndProfile`), `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`), `Tests/SiloKitTests/LayerTests.swift` (`aRulePicksOneStreamByItsIndex`),
+`Tests/SiloTests/BindingRulesTests.swift` (`anExtraIsWhereItsContainerFilesItWhateverItsKind`).
 
 ### Requirement: A condition applies exactly one of seven operators
 A `<when>` SHALL carry exactly one operator attribute besides `fact`:
@@ -478,7 +485,7 @@ The name and already-there refusals are pinned by nothing yet.
 
 ### Requirement: The example ruleset is the one the design was written with
 `Examples/household.xml` SHALL be a working ruleset: a `<video>`
-rule `small-extras` that re-encodes the video of an extra narrower than 576 pixels with `libx264`
+rule `small-extras` that re-encodes the video of an extra, by the `extra` fact, narrower than 576 pixels with `libx264`
 at preset `slow`, CRF 22 and `yuv420p`, deinterlacing what is marked interlaced; an `<audio>` rule
 `lossless-main` that encodes a lossless stream that is not a commentary as FLAC; an `<audio>` rule
 `commentary` that encodes a commentary as two-channel AAC at 160k; a condition-less copy rule for

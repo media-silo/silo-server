@@ -78,8 +78,10 @@ struct BindingTests {
             ],
             notes: [InputSpec.Note(stream: 2, text: "a core")]
         )
-        let facts = SourceFacts(input: spec, roles: [5: .isolatedMusic], kind: .movie, profile: "mobile", duration: 100)
+        let facts = SourceFacts(input: spec, roles: [5: .isolatedMusic], kind: .movie, extra: true, profile: "mobile", duration: 100)
         #expect(facts.kind == .movie)
+        #expect(facts.value(.extra, for: .video) == .flag(true), "a file fact, visible to a rule of every scope")
+        #expect(SourceFacts(input: spec).value(.extra, for: .video) == .absent, "absent when nothing says")
         #expect(facts.profile == "mobile")
         #expect(facts.format == .bluray, "the medium stands in for the format")
         #expect(facts.duration == 100)

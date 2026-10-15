@@ -21,6 +21,11 @@ struct Encode: AsyncParsableCommand {
     @Option(help: "The item's kind: episode, movie, featurette, interview, trailer…")
     var kind: String?
 
+    /// A file encoded on its own is a main item unless it is said to be otherwise, so the fact is
+    /// false rather than absent when this is left out.
+    @Flag(help: "The item is an extra, held in its container's extras rather than a sequence.")
+    var extra = false
+
     @Option(help: "Which of the ruleset's outputs to make, by its profile: mobile…; the unqualified output when left out.")
     var profile: String?
 
@@ -84,7 +89,7 @@ struct Encode: AsyncParsableCommand {
         for index in descriptive { roles[index] = .descriptive }
         for index in music { roles[index] = .isolatedMusic; mappings.append(TrackMapping(feature: "music", audio: index)) }
 
-        let facts = SourceFacts(input: spec, roles: roles, kind: kind.flatMap(EntryType.init(rawValue:)), profile: made.profile)
+        let facts = SourceFacts(input: spec, roles: roles, kind: kind.flatMap(EntryType.init(rawValue:)), extra: extra, profile: made.profile)
 
         let recipe: Recipe
         do {

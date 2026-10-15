@@ -113,6 +113,7 @@ public struct Condition: Hashable, Sendable, Codable {
 /// never matches.
 public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
     case kind
+    case extra
     case profile
     case format
     case duration
@@ -142,7 +143,7 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
     /// Nil for a file-level fact.
     public var scope: Scope? {
         switch self {
-        case .kind, .profile, .format, .duration: nil
+        case .kind, .extra, .profile, .format, .duration: nil
         case .videoCodec, .videoWidth, .videoHeight, .videoFrameRate, .videoInterlaced, .videoHDR, .videoBitDepth: .video
         case .audioIndex, .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioScript, .audioRegion, .audioRole, .audioCore: .audio
         case .subtitleIndex, .subtitleCodec, .subtitleLanguage, .subtitleScript, .subtitleRegion, .subtitleForced: .subtitle
@@ -172,7 +173,7 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
         case .format: SourceFormat.allCases.map(\.rawValue)
         case .videoHDR: HDRKind.allCases.map(\.rawValue)
         case .audioRole: AudioRole.allCases.map(\.rawValue)
-        case .videoInterlaced, .audioLossless, .audioCore, .subtitleForced: ["true", "false"]
+        case .extra, .videoInterlaced, .audioLossless, .audioCore, .subtitleForced: ["true", "false"]
         default: nil
         }
     }
@@ -287,6 +288,7 @@ extension SourceFacts {
     public func value(_ key: FactKey, for stream: StreamSelector) -> FactValue {
         switch key {
         case .kind: return kind.map { .text($0.rawValue) } ?? .absent
+        case .extra: return extra.map(FactValue.flag) ?? .absent
         case .profile: return profile.map(FactValue.text) ?? .absent
         case .format: return format.map { .text($0.rawValue) } ?? .absent
         case .duration: return duration.map(FactValue.number) ?? .absent

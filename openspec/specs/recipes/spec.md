@@ -128,7 +128,9 @@ Pinned by: `Tests/SiloKitTests/FactsTests.swift` (`losslessIsAFunctionOfCodecAnd
 
 ### Requirement: Facts are derived once from a binding, its sources and an output
 `SourceFacts` SHALL be derived, in one place, from a binding, the input spec of its first segment's
-source, and one output of its ruleset. `kind` SHALL be the item's, from the lineage; `profile` SHALL
+source, and one output of its ruleset. `kind` SHALL be the item's, from the lineage; `extra` SHALL
+be true when the lineage's last container holds the item in its extras and false when it holds it in
+a sequence; `profile` SHALL
 be the output's; `format` SHALL be the first segment's `medium`; `duration` SHALL be the joined
 spans' length; and an audio stream a feature is mapped to SHALL take its role from that feature —
 `commentary` for a commentary, `isolatedMusic` for isolated music, `other` otherwise. The first video
@@ -162,11 +164,17 @@ from one among the streams of their kind — the way a player's menu counts and 
 - **WHEN** an audio stream at index 3 is titled "Commentary with the director" and nothing marks it
 - **THEN** its role stays `main` and a hint on stream 3 reads: titled "Commentary with the director" but nothing marks it a commentary; assign it to a feature if it is one
 
+#### Scenario: an extra and an episode
+- **WHEN** one binding's item is held in its container's extras and another's in a sequence
+- **THEN** the first's facts have `extra` true and the second's `extra` false, and each recipe records
+  it
+
 #### Scenario: an episode's duration
 - **WHEN** a binding spans chapter 2 of a source whose chapters start at 0, 1497.6 and 2995.2 seconds
 - **THEN** the `duration` fact is 1497.6
 
-Pinned by: `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`, `anEpisodeOutOfAPlayAllTitleIsItsChapterSpan`).
+Pinned by: `Tests/SiloKitTests/BindingTests.swift` (`factsAreDerivedFromWhatWasObserved`, `anEpisodeOutOfAPlayAllTitleIsItsChapterSpan`),
+`Tests/SiloTests/BindingRulesTests.swift` (`anExtraIsWhereItsContainerFilesItWhateverItsKind`).
 
 ### Requirement: Applying a ruleset to a binding makes a resolved recipe for each output
 `POST /v1/bindings/{id}/recipes`, behind the operator's token, SHALL apply a ruleset to a binding:

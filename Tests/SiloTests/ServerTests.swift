@@ -195,8 +195,8 @@ struct ServerTests {
                 InputSpec.Stream(index: 1, kind: .audio, codec: "flac", channels: 2),
                 InputSpec.Stream(index: 2, kind: .audio, codec: "ac3", channels: 2, marks: [.commentary]),
             ])
-            struct Resolve: Encodable { var inputs: [InputSpec]; var kind: String?; var mappings: [TrackMapping] }
-            let resolved = try await client.post("/v1/rulesets/household/resolve", json: Resolve(inputs: [featurette], kind: "featurette", mappings: [TrackMapping(feature: "c", audio: 2)]))
+            struct Resolve: Encodable { var inputs: [InputSpec]; var kind: String?; var extra: Bool?; var mappings: [TrackMapping] }
+            let resolved = try await client.post("/v1/rulesets/household/resolve", json: Resolve(inputs: [featurette], kind: "featurette", extra: true, mappings: [TrackMapping(feature: "c", audio: 2)]))
             #expect(resolved.status == 200)
             let recipes = try resolved.json([Recipe].self)
             #expect(recipes.count == 1, "a recipe for each of the ruleset's outputs")
@@ -211,6 +211,25 @@ struct ServerTests {
             let undecided = try await client.post("/v1/rulesets/strict/resolve", json: Resolve(inputs: [featurette], kind: "featurette", mappings: []))
             #expect(undecided.status == 422)
             #expect(undecided.bodyText.contains("no rule decides audio 1"))
+        }
+    }
+
+    @Test func theDryRunTakesWhetherTheItemIsAnExtra() async throws {
+        // After the household ruleset is stored, whose first video rule holds for an extra's
+        // narrow video.
+        try await withClient { client in
+            let narrow = InputSpec(streams: [
+                InputSpec.Stream(index: 0, kind: .video, codec: "mpeg2video", width: 352, height: 288),
+                InputSpec.Stream(index: 1, kind: .audio, codec: "ac3", channels: 2),
+            ])
+            struct Resolve: Encodable { var inputs: [InputSpec]; var kind: String?; var extra: Bool? }
+            var rules: [String?] = []
+            for extra in [true, false, nil] as [Bool?] {
+                let resolved = try await client.post("/v1/rulesets/household/resolve", json: Resolve(inputs: [narrow], kind: "movie", extra: extra))
+                #expect(resolved.status == 200)
+                rules.append(try resolved.json([Recipe].self).first?.video?.rule)
+            }
+            #expect(rules == ["small-extras", "#4", "#4"], "left out, the fact is absent and the rule does not hold")
         }
     }
 

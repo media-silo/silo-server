@@ -110,7 +110,7 @@ package struct BindingService: Sendable {
         }
         let layers = try stack.layers(of: binding, lineage: entry.lineage)
         let made = try outputs.map { output in
-            let facts = SourceFacts(input: entry.joined.spec, roles: entry.roles, kind: entry.kind, profile: output.profile, duration: entry.joined.duration)
+            let facts = SourceFacts(input: entry.joined.spec, roles: entry.roles, kind: entry.kind, extra: entry.extra, profile: output.profile, duration: entry.joined.duration)
             do throws(ResolutionError) {
                 let recipe = try RecipeResolver.resolve(facts, with: ruleset, layers: layers, mappings: binding.tracks)
                 return StoredRecipe(binding: binding.id, facts: facts, recipe: recipe)
@@ -188,10 +188,13 @@ package struct BindingService: Sendable {
 
     // MARK: - Checking
 
-    /// What a binding knows of its entry, once it is checked: the item's kind, the role each mapped
-    /// audio stream takes from its feature, and the segments joined.
+    /// What a binding knows of its entry, once it is checked: the item's kind, whether it is an
+    /// extra, the role each mapped audio stream takes from its feature, and the segments joined.
     private struct Entry {
         var kind: EntryType?
+        /// Whether the container holds the item in its extras rather than a sequence: where it is
+        /// filed, whatever its kind, by the same test placement files it under `extras/`.
+        var extra: Bool
         var roles: [Int: AudioRole]
         var joined: JoinedMedia
         /// The item's container and every one above it, root first.
@@ -207,8 +210,8 @@ package struct BindingService: Sendable {
             throw BadBinding(reason: "a container document cannot be read: \(error.localizedDescription)")
         }
         guard let target = lineage.last else { throw BadBinding(reason: "a binding needs the item's container") }
-        let entries = target.sequences.flatMap(\.items) + target.extras
-        guard let item = entries.first(where: { $0.id?.value == binding.item }) else {
+        let inSequence = target.sequences.flatMap(\.items).first { $0.id?.value == binding.item }
+        guard let item = inSequence ?? target.extras.first(where: { $0.id?.value == binding.item }) else {
             throw BadBinding(reason: "\(target.displayTitle) has no item \(binding.item)")
         }
         if let alternative = binding.alternative, !target.alternatives.contains(where: { $0.id == alternative }) {
@@ -247,6 +250,6 @@ package struct BindingService: Sendable {
                 throw BadBinding(reason: "feature \(track.feature) is mapped to subtitle \(subtitle), which the joined media does not have")
             }
         }
-        return Entry(kind: item.type, roles: roles, joined: joined, lineage: lineage)
+        return Entry(kind: item.type, extra: inSequence == nil, roles: roles, joined: joined, lineage: lineage)
     }
 }

@@ -296,7 +296,8 @@ Pinned by: `Tests/SiloTests/ServerTests.swift`
 
 ### Requirement: The resolver runs as a dry run
 `POST /v1/rulesets/{name}/resolve` with a JSON `ResolveRequest` — one or more input specs, joined in
-order as a binding's segments are, and what a binding would add to them: the optional `kind`, the
+order as a binding's segments are, and what a binding would add to them: the optional `kind` and
+`extra`, each absent when left out, the
 `roles` of the audio streams a feature map names, and the track `mappings` for renumbering — SHALL
 answer 200 with a `Recipe` for each of the ruleset's outputs, in the ruleset's order, resolved
 against its latest version, or the version `?version=` names: each with its `ruleset` as
@@ -313,12 +314,17 @@ nothing is encoded.
 - **THEN** the 200 answer holds one recipe, whose decisions name the rules `lossless-main` and
   `commentary` for the two audio streams, and whose ruleset reads `household@2`
 
+#### Scenario: an extra resolved without a binding
+- **WHEN** the same input spec is posted with `extra` true against a ruleset whose first video rule
+  holds when `extra` is true
+- **THEN** the recipe's video decision names that rule, and posted without `extra` it does not
+
 #### Scenario: a stream no rule decides
 - **WHEN** the same input spec is posted against a ruleset whose only rule is a video catch-all
 - **THEN** the answer is 422 with `no rule decides audio 1` in the problem detail
 
 Pinned by: `Tests/SiloTests/ServerTests.swift`
-(`rulesetsAreVersionedAndTheOperatorGateHolds`).
+(`rulesetsAreVersionedAndTheOperatorGateHolds`, `theDryRunTakesWhetherTheItemIsAnExtra`).
 
 ### Requirement: The operator's credential gates mutation; the server is told itself through its state directory
 Every mutation route on this surface — the scan and the ruleset store — SHALL

@@ -2928,6 +2928,11 @@ components:
         kind:
           type: string
           description: What the item is, as a binding's lineage would say.
+        extra:
+          type: boolean
+          description: >-
+            Whether the item is an extra, held in its container's extras rather than a sequence, as
+            a binding's lineage would say. Absent when left out.
         roles:
           type: array
           description: The role each audio stream a feature map names takes from its feature.
@@ -2951,6 +2956,8 @@ components:
       properties:
         kind:
           type: string
+        extra:
+          type: boolean
         profile:
           type: string
         format:
