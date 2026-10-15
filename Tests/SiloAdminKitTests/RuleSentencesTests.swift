@@ -44,6 +44,15 @@ struct RuleSentencesTests {
         #expect(FactKey.format.name(in: .video) == "format")
     }
 
+    @Test func aKindIsOfferedFromTheTypesSmdKitNames() {
+        #expect(FactKey.kind.suggestedValues == [
+            "episode", "movie", "featurette", "behindTheScenes", "deletedScene", "interview", "trailer", "scene", "short", "clip",
+            "themeSong", "themeVideo",
+        ])
+        #expect(FactKey.kind.values == nil, "offered beside a field that takes any type")
+        #expect(FactKey.extra.values == ["true", "false"])
+    }
+
     @Test func anEncodeIsOfferedByCodecAndWritesItsEncoder() {
         #expect(Scope.video.codecs.first?.codec == "h264")
         #expect(Scope.audio.codecs.first?.codec == "aac")
