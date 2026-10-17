@@ -6,20 +6,29 @@
 ### Requirement: The console shows a silo's settings, and changes what routes may change
 For a silo classified with access, SiloAdmin SHALL show the settings `GET /v1/settings` reports. The
 name, the embedded node and advertising SHALL be editable through `PATCH /v1/settings`; the
-libraries SHALL be managed as the libraries requirement below sets out; and the `silo.json` settings
-and the state directory SHALL be shown read-only, as facts of the silo's machine. A refusal from the
-silo SHALL be shown in words, naming the reason the silo gave.
+libraries SHALL be managed as the libraries requirement below sets out, each shown with the ruleset
+that is its standard, which the operator MAY name or clear through
+`PUT /v1/libraries/{library}/ruleset`; and the `silo.json` settings and the state directory SHALL be
+shown read-only, as facts of the silo's machine. A refusal from the silo SHALL be shown in words,
+naming the reason the silo gave.
 
 #### Scenario: the machine's facts are read-only
 - **WHEN** the operator opens a silo's settings
 - **THEN** its host, port and state directory are shown and cannot be edited, and its name,
   embedded node and advertising can
 
+#### Scenario: a library's standard named
+- **WHEN** the operator names `household` as a library's standard from the console
+- **THEN** the route is sent, and the library shows the standard the silo answered with
+
 #### Scenario: an edit applies without a restart
 - **WHEN** the operator turns the embedded node on from the console
 - **THEN** the patch is sent, and the settings shown are the ones the silo answered with
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`settingsAreAskedWithTheHeldPasskey`,
+`aSettingsChangeSendsOnlyWhatChangedAndARenameIsRendered`, `aLibrarysStandardIsNamedFromTheConsole`),
+`Tests/SiloAdminTests/ConsoleModelTests.swift` (`aLibrarysStandardShowsWhatTheSiloAnswered`), which pin
+the engine and the model the pane is drawn from; the pane itself is pinned by nothing yet.
 
 ## ADDED Requirements
 
