@@ -53,7 +53,7 @@ package struct AppBootstrap {
             }
             let (settings, settingsReport) = try SettingsStore.open(in: state.url, defaultName: "Silo on \(ProcessInfo.processInfo.hostName)")
             log(settingsReport, for: SettingsStore.fileName, to: logger)
-            return AppInputs(siloConfig: try SiloConfig(silo: silo, settings: settings.current, stateDirectory: state.url), settings: settings)
+            return AppInputs(siloConfig: SiloConfig(silo: silo, settings: settings.current, stateDirectory: state.url), settings: settings)
         } catch {
             // A clean failure rather than a trap: a service manager reads a trap as a crash, and
             // this is a configuration the owner has to correct.

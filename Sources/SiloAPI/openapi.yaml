@@ -9,7 +9,8 @@ info:
 
     Two routes stream bytes and are served beside this document rather than described in it, since
     an operation buffers its body whole: GET /v1/media/{presentation} is the file, with Range,
-    ETag and Accept-Ranges, 206 for a part and 416 for a range the file cannot satisfy; and
+    ETag and Accept-Ranges, 206 for a part, 416 for a range the file cannot satisfy and 503 while
+    the presentation's library is unavailable; and
     GET /v1/containers/{id}/smd is the container as its sidecar, as application/xml.
 
 servers:
@@ -1724,7 +1725,7 @@ components:
 
     Library:
       type: object
-      required: [id, containers, presentations]
+      required: [id, containers, presentations, available]
       properties:
         id:
           type: string
@@ -1735,6 +1736,11 @@ components:
           type: integer
         presentations:
           type: integer
+        available:
+          type: boolean
+          description: >
+            False while the library's folder is missing, or its last walk found no container where
+            the index holds some. Its containers stay browsable, and its media answer 503.
 
     ScanReport:
       type: object

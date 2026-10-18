@@ -20,14 +20,16 @@ import WireOpenAPI
 @Middleware(RouteMiddleware.requireOperator)
 package struct OperatorController {
     private let config: SiloConfig
+    private let libraries: Libraries
     private let index: Index
     private let store: RulesetStore
     private let settings: SettingsStore
     private let checks: CheckSignal
 
     @Inject
-    package init(config: SiloConfig, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal) {
+    package init(config: SiloConfig, libraries: Libraries, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal) {
         self.config = config
+        self.libraries = libraries
         self.index = index
         self.store = store
         self.settings = settings
@@ -49,14 +51,18 @@ package struct OperatorController {
             settings.libraries[position].ruleset = body.ruleset
         }
         let ruleset = updated.libraries.first { $0.id == library }?.ruleset
-        return Components.Schemas.Library(id: library, ruleset: ruleset, containers: try LibraryCounts(index: index).containers(in: library), presentations: try LibraryCounts(index: index).presentations(in: library))
+        return Components.Schemas.Library(
+            id: library, ruleset: ruleset,
+            containers: try LibraryCounts(index: index).containers(in: library), presentations: try LibraryCounts(index: index).presentations(in: library),
+            available: libraries.isAvailable(library)
+        )
     }
 
     @Operation
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     package func scanLibrary(@Path library: String) async throws -> Components.Schemas.ScanReport {
         guard let library = config.library(library) else { throw NoSuchLibrary() }
-        let report = try Indexer.scan(library, into: index)
+        let report = try libraries.walk(library) ?? ScanReport()
         // A walk may find a container's rules moved to another version.
         checks.request()
         return Components.Schemas.ScanReport(read: report.read, unchanged: report.unchanged, removed: report.removed, findings: report.findings.map(Mapping.finding))

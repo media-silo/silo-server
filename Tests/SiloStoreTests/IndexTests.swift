@@ -131,6 +131,30 @@ struct IndexTests {
         #expect(try index.count() == (containers: 1, presentations: 0))
     }
 
+    /// An unmounted mount point is an empty folder, not a missing one: a walk of it would forget
+    /// the whole library, so it is not applied, and neither is a walk of a folder that has gone.
+    @Test func anEmptyMountPointForgetsNothing() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        try sandbox.place([Self.series, Self.season, Self.serial], item: "part1")
+        let index = try Index(at: nil)
+        _ = try Indexer.scan(sandbox.library, into: index)
+
+        let aside = sandbox.root.appendingPathComponent("Library (unmounted)")
+        try FileManager.default.moveItem(at: sandbox.library.root, to: aside)
+        try FileManager.default.createDirectory(at: sandbox.library.root, withIntermediateDirectories: true)
+        #expect(throws: LibraryUnavailable.empty) { try Indexer.scan(sandbox.library, into: index) }
+        #expect(try index.count() == (containers: 3, presentations: 1))
+
+        try FileManager.default.removeItem(at: sandbox.library.root)
+        #expect(throws: LibraryUnavailable.missing) { try Indexer.scan(sandbox.library, into: index) }
+        #expect(try index.count() == (containers: 3, presentations: 1))
+
+        // A library the index holds nothing for may well be empty: that walk is applied.
+        try FileManager.default.createDirectory(at: sandbox.library.root, withIntermediateDirectories: true)
+        #expect(try Indexer.scan(LibraryConfig(id: "new", root: sandbox.library.root), into: index).read == 0)
+    }
+
     @Test func theIndexIsAFileThatCanBeThrownAway() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }

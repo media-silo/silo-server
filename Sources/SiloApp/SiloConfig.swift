@@ -23,12 +23,9 @@ package struct SiloConfig: Sendable {
         self.libraries = libraries
     }
 
-    /// The two files, as startup opened them. A library whose folder does not exist stops the boot,
-    /// naming the library.
-    package init(silo: SiloFile, settings: Settings, stateDirectory: URL) throws {
-        for library in settings.libraries where !FileManager.default.fileExists(atPath: library.root.path) {
-            throw SiloConfigError.missingLibrary(library)
-        }
+    /// The two files, as startup opened them. A library whose folder does not exist is unavailable,
+    /// not fatal: `Libraries` says so, and the boot goes on.
+    package init(silo: SiloFile, settings: Settings, stateDirectory: URL) {
         self.init(
             serverID: silo.serverID,
             host: silo.host,
@@ -40,15 +37,5 @@ package struct SiloConfig: Sendable {
 
     package func library(_ id: String) -> LibraryConfig? {
         libraries.first { $0.id == id }
-    }
-}
-
-package enum SiloConfigError: Error, CustomStringConvertible {
-    case missingLibrary(LibraryConfig)
-
-    package var description: String {
-        switch self {
-        case .missingLibrary(let library): "library \(library.id) is at \(library.root.path), which does not exist"
-        }
     }
 }
