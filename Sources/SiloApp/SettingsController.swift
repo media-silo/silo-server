@@ -53,13 +53,16 @@ package struct SettingsController {
 
     private func report(_ settings: Settings) -> Components.Schemas.SettingsReport {
         Components.Schemas.SettingsReport(
-            editable: Components.Schemas.EditableSettings(name: settings.name, embeddedNode: settings.embeddedNode, advertise: settings.advertise),
+            editable: Components.Schemas.EditableSettings(
+                libraries: settings.libraries.map { Components.Schemas.LibrarySetting(id: $0.id, path: $0.root.path) },
+                name: settings.name, embeddedNode: settings.embeddedNode, advertise: settings.advertise
+            ),
             readOnly: Components.Schemas.MachineSettings(
                 serverID: config.serverID,
                 host: config.host,
                 port: config.port,
-                stateDirectory: config.stateDirectory.path,
-                libraries: settings.libraries.map { Components.Schemas.LibrarySetting(id: $0.id, path: $0.root.path) }
+                libraryRoots: config.libraryRoots.map(\.path),
+                stateDirectory: config.stateDirectory.path
             )
         )
     }

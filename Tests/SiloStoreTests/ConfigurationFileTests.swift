@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloKit
 import Testing
 @testable import SiloStore
 
@@ -26,18 +27,47 @@ struct ConfigurationFileTests {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let (silo, siloReport) = try SiloFile.open(in: folder)
+        let (silo, siloReport) = try SiloFile.open(in: folder, defaultLibraryRoots: ["/srv", "/media", "/mnt"])
         #expect(siloReport.created)
         #expect(UUID(uuidString: silo.serverID) != nil)
         #expect(silo.host == "0.0.0.0")
         #expect(silo.port == 8742)
+        #expect(silo.libraryRoots == ["/srv", "/media", "/mnt"])
 
         let (settings, settingsReport) = try SettingsStore.open(in: folder, defaultName: "Silo on cupboard")
         #expect(settingsReport.created)
         #expect(settings.current == Settings(name: "Silo on cupboard", libraries: [], embeddedNode: false, advertise: true))
 
         let onDisk = try JSONDecoder().decode([String: JSONValue].self, from: read("silo.json", in: folder))
-        #expect(onDisk == ["serverID": .string(silo.serverID), "host": .string("0.0.0.0"), "port": .integer(8742)])
+        #expect(onDisk == [
+            "serverID": .string(silo.serverID), "host": .string("0.0.0.0"), "port": .integer(8742),
+            "libraryRoots": .array([.string("/srv"), .string("/media"), .string("/mnt")]),
+        ])
+    }
+
+    /// The roots a fresh file is given, by platform and by whom the silo runs as, as the state
+    /// directory's default is chosen.
+    @Test func theDefaultRootsAreWhereAHouseholdsMediaAre() {
+        #expect(SiloFile.defaultLibraryRoots(platform: .macOS, isRoot: false, home: "/Users/simon") == ["/Volumes", "/Users/simon/Movies"])
+        #expect(SiloFile.defaultLibraryRoots(platform: .macOS, isRoot: true, home: "/var/root") == ["/Volumes"])
+        #expect(SiloFile.defaultLibraryRoots(platform: .linux, isRoot: true, home: "/root") == ["/srv", "/media", "/mnt"])
+        #expect(SiloFile.defaultLibraryRoots(platform: .linux, isRoot: false, home: "/home/silo") == ["/srv", "/media", "/mnt"])
+    }
+
+    @Test func rootsEmptiedByTheOwnerStayEmpty() throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let complete = #"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "libraryRoots": []}"#
+        try write(complete, "silo.json", in: folder)
+        let (silo, report) = try SiloFile.open(in: folder, defaultLibraryRoots: ["/srv"])
+        #expect(silo.libraryRoots == [])
+        #expect(report == ConfigurationFileReport())
+        #expect(String(decoding: try read("silo.json", in: folder), as: UTF8.self) == complete, "not rewritten")
+
+        try write(#"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "libraryRoots": ["media"]}"#, "silo.json", in: folder)
+        #expect(throws: ConfigurationFileError(file: folder.appendingPathComponent("silo.json"), reason: #""libraryRoots" must be a list of absolute paths"#)) {
+            try SiloFile.open(in: folder)
+        }
     }
 
     @Test func aGapIsFilledAndACompleteFileIsNotRewritten() throws {
@@ -45,9 +75,9 @@ struct ConfigurationFileTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         try write(#"{"serverID": "abc", "port": 9000}"#, "silo.json", in: folder)
 
-        let (silo, report) = try SiloFile.open(in: folder)
-        #expect(silo == SiloFile(serverID: "abc", host: "0.0.0.0", port: 9000))
-        #expect(report.filled == ["host"])
+        let (silo, report) = try SiloFile.open(in: folder, defaultLibraryRoots: ["/Volumes"])
+        #expect(silo == SiloFile(serverID: "abc", host: "0.0.0.0", port: 9000, libraryRoots: ["/Volumes"]))
+        #expect(report.filled == ["host", "libraryRoots"])
         #expect(!report.defaulted("serverID"), "the ServerID was read, not minted")
 
         let filled = try read("silo.json", in: folder)
@@ -83,7 +113,7 @@ struct ConfigurationFileTests {
     @Test func anUnknownKeyIsReportedAndKeptThroughWrites() throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        try write(#"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "prot": 9000}"#, "silo.json", in: folder)
+        try write(#"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "libraryRoots": [], "prot": 9000}"#, "silo.json", in: folder)
         let (silo, report) = try SiloFile.open(in: folder)
         #expect(report.unknown == ["prot"])
         #expect(silo.port == 8742, "the typo does not move the port")

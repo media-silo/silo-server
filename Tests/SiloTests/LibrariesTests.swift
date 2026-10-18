@@ -19,6 +19,7 @@ struct LibrariesTests {
         let root: URL
         let present: LibraryConfig
         let late: LibraryConfig
+        let settings: SettingsStore
         let index: Index
         let libraries: Libraries
 
@@ -28,13 +29,10 @@ struct LibrariesTests {
             late = LibraryConfig(id: "films", root: root.appendingPathComponent("Films"))
             try FileManager.default.createDirectory(at: present.root, withIntermediateDirectories: true)
             try Self.place(Fixture.thirdMan, into: present.root, from: root)
-            let config = SiloConfig(
-                silo: SiloFile(serverID: "s1", host: "127.0.0.1", port: 0),
-                settings: Settings(name: "Silo on test", libraries: [present, late]),
-                stateDirectory: root.appendingPathComponent("State")
-            )
+            let config = SiloConfig(silo: SiloFile(serverID: "s1", host: "127.0.0.1", port: 0, libraryRoots: [root.path]), stateDirectory: root.appendingPathComponent("State"))
+            settings = SettingsStore(Settings(name: "Silo on test", libraries: [present, late]))
             index = try Index(at: nil)
-            libraries = Libraries(config: config, index: index, checks: CheckSignal())
+            libraries = Libraries(config: config, settings: settings, index: index, checks: CheckSignal())
         }
 
         static func place(_ film: Container, into library: URL, from root: URL) throws {
@@ -202,5 +200,26 @@ struct LibrariesTests {
         let source = root.appendingPathComponent("\(UUID().uuidString).mkv")
         try Data("video".utf8).write(to: source)
         return try Placer.compute(PlacementRequest(library: library, lineage: [series, season, serial], item: "part1", presentation: Presentation(file: ""), source: source))
+    }
+
+    @Test func withTheRootsEmptiedNothingIsAddedOverTheNetwork() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-roots-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("films"), withIntermediateDirectories: true)
+        let settings = SettingsStore(Settings(name: "Silo on test"))
+        let libraries = Libraries(
+            config: SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root, libraryRoots: []),
+            settings: settings, index: try Index(at: nil), checks: CheckSignal()
+        )
+        await #expect(throws: OutsideTheRoots.self) { try await libraries.add(id: "films", path: root.appendingPathComponent("films").path) }
+        #expect(settings.current.libraries.isEmpty)
+    }
+
+    @Test func aRootIsMatchedByWholeComponents() {
+        #expect(Libraries.path("/srv/media/films", liesWithin: "/srv/media"))
+        #expect(Libraries.path("/srv/media", liesWithin: "/srv/media"))
+        #expect(!Libraries.path("/srv/media2/films", liesWithin: "/srv/media"))
+        #expect(!Libraries.path("/etc", liesWithin: "/srv"))
+        #expect(Libraries.path("/anything", liesWithin: "/"))
     }
 }

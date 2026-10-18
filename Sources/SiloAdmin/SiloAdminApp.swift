@@ -1626,10 +1626,10 @@ private struct SettingsPane: View {
                         Text("Set in silo.json on the silo's machine. The state directory is where operator-credential.reset goes.")
                     }
                     Section {
-                        if report.readOnly.libraries.isEmpty {
+                        if report.editable.libraries.isEmpty {
                             Text("None").foregroundStyle(.secondary)
                         }
-                        ForEach(report.readOnly.libraries, id: \.id) { library in
+                        ForEach(report.editable.libraries, id: \.id) { library in
                             LabeledContent(library.id, value: library.path)
                             Picker("Standard", selection: Binding(
                                 get: { model.libraries[silo.id]?.first { $0.id == library.id }?.ruleset ?? "" },

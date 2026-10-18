@@ -36,6 +36,8 @@ enum Fixture {
     /// The films of a second library, `away`, whose folder the tests take away and bring back.
     static let thirdMan = film("0000000000000010", "The Third Man", 1949)
     static let brief = film("0000000000000011", "Brief Encounter", 1945)
+    /// A film in a folder within the suite's one library root, which the tests add and remove.
+    static let casablanca = film("0000000000000012", "Casablanca", 1942)
 
     static func film(_ id: String, _ title: String, _ year: Int) -> Container {
         var film = Container(id: ContainerID(id)!, type: .movie, title: Title(title)!, year: year, yearInTitle: true)
@@ -64,12 +66,20 @@ enum Fixture {
         place([series, serial], item: "part1", profile: "mobile", tracks: [TrackMapping(feature: "commentary1", audio: 2)])
         place([thirdMan], item: "feature", into: away)
         place([brief], item: "feature", into: away)
+        // The library root: a folder of films to add, and a link inside it that leads outside.
+        let media = root.appendingPathComponent("Media")
+        place([casablanca], item: "feature", into: media.appendingPathComponent("films"))
+        try! FileManager.default.createDirectory(at: root.appendingPathComponent("Outside"), withIntermediateDirectories: true)
+        try! FileManager.default.createSymbolicLink(at: media.appendingPathComponent("escape"), withDestinationURL: root.appendingPathComponent("Outside"))
         try! SidecarFile.data(for: Sidecar(container: unlisted)).write(to: {
             let folder = library.appendingPathComponent("Behind the Sofa")
             try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             return folder.appendingPathComponent("container.smd")
         }())
         let state = root.appendingPathComponent("State")
+        try! Data("""
+            {"libraryRoots": ["\(media.path)"]}
+            """.utf8).write(to: state.appendingPathComponent("silo.json"))
         try! Data("""
             {"libraries": [{"id": "main", "path": "\(library.path)"}, {"id": "away", "path": "\(away.path)"}]}
             """.utf8).write(to: state.appendingPathComponent("settings.json"))
@@ -312,6 +322,49 @@ struct ServerTests {
         }
     }
 
+    /// A library added over the network lies within the roots `silo.json` names, is walked before the
+    /// answer and served without a restart; removed, it is forgotten, and its files stay.
+    @Test func aLibraryIsAddedWithinTheRootsAndRemovedLeavingItsFiles() async throws {
+        struct NewLibrary: Encodable { var id: String; var path: String }
+        let media = Fixture.root.appendingPathComponent("Media")
+        let settingsFile = Fixture.root.appendingPathComponent("State/settings.json")
+        try await withClient { client in
+            let films = NewLibrary(id: "films", path: media.appendingPathComponent("films").path)
+            #expect(try await client.post("/v1/libraries", json: films).status == 401)
+
+            let added = try await client.post("/v1/libraries", json: films, headers: Self.operatorHeaders)
+            #expect(added.status == 201)
+            let library = try added.json(LibraryBody.self)
+            #expect(library.id == "films")
+            #expect(library.available)
+            #expect(library.presentations == 1, "walked before the answer")
+            #expect(try await client.get("/v1/libraries").json([LibraryBody].self).map(\.id).contains("films"), "listed without a restart")
+            let film = try await client.get("/v1/containers/\(Fixture.casablanca.id)")
+            let id = try #require(try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id)
+            #expect(try await client.get("/v1/media/\(id)").status == 200, "and served")
+            #expect(try String(contentsOf: settingsFile, encoding: .utf8).contains(films.path), "written to settings.json")
+
+            let taken = try await client.post("/v1/libraries", json: films, headers: Self.operatorHeaders)
+            #expect(taken.status == 409)
+            let before = try Data(contentsOf: settingsFile)
+            let escape = try await client.post("/v1/libraries", json: NewLibrary(id: "escape", path: media.appendingPathComponent("escape").path), headers: Self.operatorHeaders)
+            #expect(escape.status == 403, "a link inside a root that leads outside it")
+            #expect(escape.bodyText.contains("lies within none of the library roots"))
+            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "outside", path: Fixture.root.appendingPathComponent("Outside").path), headers: Self.operatorHeaders).status == 403)
+            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "gone", path: media.appendingPathComponent("gone").path), headers: Self.operatorHeaders).status == 422)
+            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "relative", path: "Media/films"), headers: Self.operatorHeaders).status == 422)
+            #expect(try Data(contentsOf: settingsFile) == before, "nothing refused is written")
+
+            #expect(try await client.send("DELETE", "/v1/libraries/films").status == 401)
+            #expect(try await client.send("DELETE", "/v1/libraries/films", headers: Self.operatorHeaders).status == 204)
+            #expect(!(try await client.get("/v1/libraries").json([LibraryBody].self).map(\.id).contains("films")))
+            #expect(try await client.get("/v1/containers/\(Fixture.casablanca.id)").status == 404, "its rows leave the index")
+            #expect(!(try String(contentsOf: settingsFile, encoding: .utf8).contains(films.path)))
+            #expect(FileManager.default.fileExists(atPath: media.appendingPathComponent("films/Casablanca (1942)/container.smd").path), "and its files stay")
+            #expect(try await client.send("DELETE", "/v1/libraries/films", headers: Self.operatorHeaders).status == 404)
+        }
+    }
+
     @Test func rangesAreParsedAsTheSpecificationSays() {
         #expect(ByteRange.parse(nil, size: 100) == .whole)
         #expect(ByteRange.parse("bytes=0-49", size: 100) == .part(0, 49))
@@ -452,6 +505,9 @@ extension ServerTests {
             #expect(try await client.get("/v1/recipes/\(recipe.id)").json(StoredRecipeBody.self).state == "committed")
             #expect(try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id), headers: Self.operatorHeaders).status == 409, "one recipe, one job")
             #expect(try await client.get("/v1/jobs?state=pending").bodyText.contains(job.id))
+            let held = try await client.send("DELETE", "/v1/libraries/main", headers: Self.operatorHeaders)
+            #expect(held.status == 409, "a live job files into the library")
+            #expect(held.bodyText.contains(job.id))
             #expect(try await client.get("/v1/jobs?state=placed").bodyText == "[]")
             #expect(try await client.get("/v1/jobs/nothing").status == 404)
 
@@ -603,9 +659,9 @@ extension ServerTests {
 
     @Test func theSettingsAreReportedAndPatchedWhole() async throws {
         struct Report: Decodable {
-            struct Editable: Decodable, Equatable { var name: String; var embeddedNode: Bool; var advertise: Bool }
+            struct Editable: Decodable, Equatable { var name: String; var embeddedNode: Bool; var advertise: Bool; var libraries: [Library] }
             struct Library: Decodable, Equatable { var id: String; var path: String }
-            struct ReadOnly: Decodable { var serverID: String; var host: String; var port: Int; var stateDirectory: String; var libraries: [Library] }
+            struct ReadOnly: Decodable { var serverID: String; var host: String; var port: Int; var libraryRoots: [String]; var stateDirectory: String }
             var editable: Editable
             var readOnly: ReadOnly
         }
@@ -623,7 +679,8 @@ extension ServerTests {
             #expect(before.readOnly.port == 8742)
             struct Info: Decodable { var id: String; var name: String }
             #expect(before.readOnly.serverID == (try await client.get("/v1/server").json(Info.self)).id)
-            #expect(before.readOnly.libraries == [
+            #expect(before.readOnly.libraryRoots == [Fixture.root.appendingPathComponent("Media").path])
+            #expect(before.editable.libraries == [
                 Report.Library(id: "main", path: Fixture.root.appendingPathComponent("Library").path),
                 Report.Library(id: "away", path: Fixture.root.appendingPathComponent("Away").path),
             ])
@@ -636,7 +693,7 @@ extension ServerTests {
 
             let patched = try await client.send("PATCH", "/v1/settings", body: Data(#"{"name": "Living Room Silo"}"#.utf8), headers: operatorHeaders)
             #expect(patched.status == 200)
-            #expect(try patched.json(Report.self).editable == Report.Editable(name: "Living Room Silo", embeddedNode: false, advertise: before.editable.advertise))
+            #expect(try patched.json(Report.self).editable == Report.Editable(name: "Living Room Silo", embeddedNode: false, advertise: before.editable.advertise, libraries: before.editable.libraries))
             #expect(try await client.get("/v1/server").json(Info.self).name == "Living Room Silo", "the server goes by it at once")
             let onDisk = try JSONDecoder().decode([String: JSONValue].self, from: Data(contentsOf: state.appendingPathComponent("settings.json")))
             #expect(onDisk["name"] == .string("Living Room Silo"), "written to settings.json, so it survives a restart")

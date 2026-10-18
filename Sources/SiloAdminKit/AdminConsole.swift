@@ -409,7 +409,7 @@ public actor AdminConsole {
     public func outOfDate(of silo: Silo) async throws -> [LibraryOutOfDate] {
         try await withOperator(silo) { client in
             var reports: [LibraryOutOfDate] = []
-            for library in try await client.settings().readOnly.libraries {
+            for library in try await client.settings().editable.libraries {
                 reports.append(LibraryOutOfDate(library: library.id, report: try await client.outOfDate(in: library.id)))
             }
             return reports

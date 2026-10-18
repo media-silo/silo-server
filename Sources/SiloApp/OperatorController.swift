@@ -13,8 +13,9 @@ import Wire
 import WireMVC
 import WireOpenAPI
 
-/// The operations that change the silo — a placement, a library's standard, and storing a ruleset —
-/// and the one read that names paths inside a library, its last walk. Grouped here so that one
+/// The operations that change the silo — adding and removing a library, a placement, a library's
+/// standard, and storing a ruleset — and the one read that names paths inside a library, its last
+/// walk. Grouped here so that one
 /// middleware on the controller is the whole of the operator gate.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
@@ -25,14 +26,40 @@ package struct OperatorController {
     private let store: RulesetStore
     private let settings: SettingsStore
     private let checks: CheckSignal
+    private let jobs: JobService
 
     @Inject
-    package init(libraries: Libraries, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal) {
+    package init(libraries: Libraries, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal, jobs: JobService) {
+        self.jobs = jobs
         self.libraries = libraries
         self.index = index
         self.store = store
         self.settings = settings
         self.checks = checks
+    }
+
+    @Operation
+    @JSONResponse(status: .created)
+    @ErrorResponse(LibraryTaken.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(OutsideTheRoots.self, .forbidden, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(BadLibrary.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
+    package func addLibrary(@JSONBody body: Components.Schemas.NewLibrary) async throws -> Components.Schemas.Library {
+        let library = try await libraries.add(id: body.id, path: body.path)
+        return try listing(library.id, ruleset: library.ruleset)
+    }
+
+    /// Forgets a library — its entry in `settings.json` and its rows in the index — and leaves every
+    /// file under it where it is. Refused while a job not yet in a final state names it.
+    @Operation
+    @ResponseStatus(.noContent)
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    @ErrorResponse(LibraryHeld.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    package func removeLibrary(@Path library: String) async throws {
+        guard libraries.library(library) != nil else { throw NoSuchLibrary() }
+        if let job = jobs.liveJob(in: library) {
+            throw LibraryHeld(reason: "job \(job.id) is \(job.state.rawValue) and files into \(library)")
+        }
+        try await libraries.remove(library)
     }
 
     /// Names the library's standard, or clears it: written through to `settings.json` at once, so
@@ -49,10 +76,14 @@ package struct OperatorController {
             guard let position = settings.libraries.firstIndex(where: { $0.id == library }) else { return }
             settings.libraries[position].ruleset = body.ruleset
         }
-        let ruleset = updated.libraries.first { $0.id == library }?.ruleset
+        return try listing(library, ruleset: updated.libraries.first { $0.id == library }?.ruleset)
+    }
+
+    private func listing(_ library: String, ruleset: String?) throws -> Components.Schemas.Library {
+        let counts = LibraryCounts(index: index)
         return Components.Schemas.Library(
             id: library, ruleset: ruleset,
-            containers: try LibraryCounts(index: index).containers(in: library), presentations: try LibraryCounts(index: index).presentations(in: library),
+            containers: try counts.containers(in: library), presentations: try counts.presentations(in: library),
             available: libraries.isAvailable(library)
         )
     }

@@ -10,6 +10,11 @@ import SmdSidecar
 
 package struct NoSuchContainer: Error {}
 package struct NoSuchLibrary: Error {}
+
+/// A library a job not yet in a final state files into, which cannot be removed until it is.
+package struct LibraryHeld: Error {
+    package var reason: String
+}
 package struct NoSuchRuleset: Error {}
 package struct BadRuleset: Error {
     package var reason: String

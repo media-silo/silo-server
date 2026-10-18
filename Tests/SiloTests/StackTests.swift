@@ -15,7 +15,7 @@ import Testing
 struct StackTests {
     /// The serial's folder once a file of it has been placed, and the index told of it.
     static func placeSerial(in bench: JobServiceTests.Bench) throws -> URL {
-        let library = bench.config.libraries[0]
+        let library = bench.library
         let file = bench.root.appendingPathComponent("part1.mkv")
         try Data("video".utf8).write(to: file)
         try Placer.apply(try Placer.compute(PlacementRequest(library: library.root, lineage: [Fixture.series, Fixture.serial], item: "part1", presentation: Presentation(file: ""), source: file)))
@@ -29,7 +29,7 @@ struct StackTests {
         try Data(document.utf8).write(to: folder.appendingPathComponent("rules/\(version).xml"))
         let sidecar = folder.appendingPathComponent(SidecarFile.fileName)
         try SidecarFile.data(settingRules: SidecarRules(activeVersion: version), in: Data(contentsOf: sidecar)).write(to: sidecar)
-        _ = try Indexer.scan(bench.config.libraries[0], into: bench.index)
+        _ = try Indexer.scan(bench.library, into: bench.index)
     }
 
     @Test func anApplicationResolvesThroughTheLineagesRulesInForce() throws {

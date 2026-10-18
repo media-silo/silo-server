@@ -59,6 +59,14 @@ package struct JobService: Sendable, JobsAPI {
         return job
     }
 
+    /// A job not yet in a final state whose binding is into `library`: what holds a library from
+    /// being removed.
+    package func liveJob(in library: String) -> Job? {
+        jobs.all().first { job in
+            !job.state.isFinal && recipes.recipe(job.recipe).flatMap { bindings.binding($0.binding) }?.library == library
+        }
+    }
+
     // MARK: - The operator's side
 
     /// A job from a resolved recipe: the recipe is committed, so one recipe is run by one job, and the
@@ -316,7 +324,7 @@ package struct JobService: Sendable, JobsAPI {
         else {
             throw WrongState(current.state, "cannot be placed")
         }
-        guard let library = config.library(binding.library) else { throw NoSuchLibrary() }
+        guard let library = libraries.library(binding.library) else { throw NoSuchLibrary() }
         _ = try jobs.update(id) { $0.state = .placing }
 
         do {

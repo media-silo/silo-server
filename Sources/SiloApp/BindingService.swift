@@ -33,7 +33,6 @@ package struct CommittedRecipe: Error {
 /// newer version, is the same act made again.
 @Singleton
 package struct BindingService: Sendable {
-    private let config: SiloConfig
     private let settings: SettingsStore
     private let index: Index
     private let rulesets: RulesetStore
@@ -47,12 +46,11 @@ package struct BindingService: Sendable {
     private let logger = Logger(label: "silo.bindings")
 
     @Inject
-    package init(config: SiloConfig, settings: SettingsStore, index: Index, rulesets: RulesetStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, staged: BindingRulesStore, stack: RulesStack, libraries: Libraries, checks: CheckSignal) {
+    package init(settings: SettingsStore, index: Index, rulesets: RulesetStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, staged: BindingRulesStore, stack: RulesStack, libraries: Libraries, checks: CheckSignal) {
         self.staged = staged
         self.stack = stack
         self.libraries = libraries
         self.checks = checks
-        self.config = config
         self.settings = settings
         self.index = index
         self.rulesets = rulesets
@@ -204,7 +202,7 @@ package struct BindingService: Sendable {
     }
 
     private func entry(of binding: Binding) throws -> Entry {
-        guard config.library(binding.library) != nil else { throw BadBinding(reason: "no library \(binding.library)") }
+        guard libraries.library(binding.library) != nil else { throw BadBinding(reason: "no library \(binding.library)") }
         let lineage: [SmdKit.Container]
         do {
             lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }

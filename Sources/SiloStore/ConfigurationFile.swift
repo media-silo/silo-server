@@ -2,6 +2,15 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloKit
+
+#if canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#elseif canImport(Darwin)
+import Darwin
+#endif
 
 /// Any JSON value, kept exactly: the form a configuration file is held in, so that a key the silo
 /// does not know survives the silo writing the file back. Decoded in a fixed order — a boolean
@@ -168,9 +177,9 @@ enum ConfigurationFile {
     }
 }
 
-/// `silo.json`: what no operator route changes. The ServerID, the bind host and the port, read once
-/// at startup; the silo writes the file only then, to create it or fill a key it lacks, so an
-/// owner's edit never races a route and takes effect at the next restart.
+/// `silo.json`: what no operator route changes. The ServerID, the bind host, the port and the
+/// library roots, read once at startup; the silo writes the file only then, to create it or fill a
+/// key it lacks, so an owner's edit never races a route and takes effect at the next restart.
 public struct SiloFile: Hashable, Sendable {
     public static let fileName = "silo.json"
     public static let defaultHost = "0.0.0.0"
@@ -179,26 +188,54 @@ public struct SiloFile: Hashable, Sendable {
     public var serverID: String
     public var host: String
     public var port: Int
+    /// The folders within which a library added over the network must lie, as absolute paths. Empty
+    /// means nothing is added over the network. Placement writes into libraries, so these bound where
+    /// the network can make the silo write, and the network cannot be the one to widen them.
+    public var libraryRoots: [String]
 
-    public init(serverID: String, host: String = SiloFile.defaultHost, port: Int = SiloFile.defaultPort) {
+    public init(serverID: String, host: String = SiloFile.defaultHost, port: Int = SiloFile.defaultPort, libraryRoots: [String] = []) {
         self.serverID = serverID
         self.host = host
         self.port = port
+        self.libraryRoots = libraryRoots
+    }
+
+    /// The roots a fresh `silo.json` is given, chosen as the state directory's default is: where a
+    /// household's media already are. On a Mac every external drive and mounted share is under
+    /// `/Volumes`, and a library on the internal disk is most often in the user's `Movies` — named on
+    /// its own because `/Volumes`'s link to the boot volume resolves to `/`, outside every root. On
+    /// Linux, the places the filesystem conventions give served data, removable media and mounts.
+    public static func defaultLibraryRoots(platform: StateDirectory.Platform, isRoot: Bool, home: String) -> [String] {
+        switch platform {
+        case .macOS: isRoot ? ["/Volumes"] : ["/Volumes", home + "/Movies"]
+        case .linux: ["/srv", "/media", "/mnt"]
+        }
+    }
+
+    /// The same, for this process.
+    public static var defaultLibraryRoots: [String] {
+        defaultLibraryRoots(platform: .current, isRoot: geteuid() == 0, home: NSHomeDirectory())
     }
 
     /// Opens `silo.json` in `folder`, minting the ServerID where the file has none.
-    public static func open(in folder: URL) throws -> (SiloFile, ConfigurationFileReport) {
+    public static func open(in folder: URL, defaultLibraryRoots roots: [String] = SiloFile.defaultLibraryRoots) throws -> (SiloFile, ConfigurationFileReport) {
         let file = folder.appendingPathComponent(fileName)
         let (values, report) = try ConfigurationFile.open(file, defaults: [
             "serverID": { .string(UUID().uuidString.lowercased()) },
             "host": { .string(defaultHost) },
             "port": { .integer(defaultPort) },
+            "libraryRoots": { .array(roots.map(JSONValue.string)) },
         ])
         let serverID = try ConfigurationFile.string("serverID", in: values, file: file)
         guard !serverID.isEmpty else { throw ConfigurationFile.wrongKind("serverID", "a non-empty string", file) }
         let port = try ConfigurationFile.integer("port", in: values, file: file)
         guard (0...65535).contains(port) else { throw ConfigurationFile.wrongKind("port", "a port number, 0 to 65535", file) }
-        return (SiloFile(serverID: serverID, host: try ConfigurationFile.string("host", in: values, file: file), port: port), report)
+        guard case .array(let entries)? = values["libraryRoots"] else { throw ConfigurationFile.wrongKind("libraryRoots", "a list of absolute paths", file) }
+        let libraryRoots = try entries.map { entry -> String in
+            guard case .string(let path) = entry, path.hasPrefix("/") else { throw ConfigurationFile.wrongKind("libraryRoots", "a list of absolute paths", file) }
+            return path
+        }
+        return (SiloFile(serverID: serverID, host: try ConfigurationFile.string("host", in: values, file: file), port: port, libraryRoots: libraryRoots), report)
     }
 }
 

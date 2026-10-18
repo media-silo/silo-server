@@ -133,9 +133,9 @@ paths:
       summary: The silo's settings, and the facts of its machine
       description: >
         Every key of settings.json and of silo.json, and the resolved state directory. What an
-        operator route changes is under `editable`; what none does — the silo.json keys, the state
-        directory, and the libraries until they grow routes of their own — is under `readOnly`.
-        Operator only.
+        operator route changes is under `editable` — the libraries among them, which the library
+        routes change rather than the patch; what none does — the silo.json keys, the library roots
+        among them, and the state directory — is under `readOnly`. Operator only.
       tags: [Server]
       security:
         - operator: []
@@ -194,6 +194,77 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Library"
+    post:
+      operationId: addLibrary
+      summary: Add a library, within the library roots
+      description: >
+        The path must be absolute, must be a folder that exists, and once symbolic links are resolved
+        must lie within one of silo.json's library roots, which only the machine's owner writes; the
+        id must be new. The library is written to settings.json, walked, and answered, and is served
+        without a restart. Operator only.
+      tags: [Libraries]
+      security:
+        - operator: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewLibrary"
+      responses:
+        "201":
+          description: The library, walked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "403":
+          description: The path lies within no library root, or the silo has none.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: There is a library by that id already.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: The path is not absolute or not a folder that exists, or the id is not a name.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /libraries/{library}:
+    delete:
+      operationId: removeLibrary
+      summary: Remove a library, leaving its files where they are
+      description: >
+        The library leaves settings.json and its rows leave the index; nothing on disk is touched,
+        no sidecar and no media file. Refused while a job not yet placed, tried or cancelled files
+        into it. Moving a library is removing it and adding it again. Operator only.
+      tags: [Libraries]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library.
+        "409":
+          description: A job not yet in a final state files into the library; the detail names it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
 
   /libraries/{library}/ruleset:
     put:
@@ -1669,8 +1740,13 @@ components:
     EditableSettings:
       type: object
       description: What an operator route changes, from settings.json.
-      required: [name, embeddedNode, advertise]
+      required: [name, embeddedNode, advertise, libraries]
       properties:
+        libraries:
+          type: array
+          description: Changed through the library routes, not the settings patch.
+          items:
+            $ref: "#/components/schemas/LibrarySetting"
         name:
           type: string
         embeddedNode:
@@ -1682,8 +1758,8 @@ components:
 
     MachineSettings:
       type: object
-      description: What no route changes — silo.json, the state directory — and the libraries, until they grow routes.
-      required: [serverID, host, port, stateDirectory, libraries]
+      description: What no route changes — silo.json and the state directory.
+      required: [serverID, host, port, libraryRoots, stateDirectory]
       properties:
         serverID:
           type: string
@@ -1691,13 +1767,26 @@ components:
           type: string
         port:
           type: integer
+        libraryRoots:
+          type: array
+          description: >
+            The folders within which a library added over the network must lie. Empty, nothing can be
+            added over the network.
+          items:
+            type: string
         stateDirectory:
           type: string
           description: Where the silo keeps its state, and where operator-credential.reset goes.
-        libraries:
-          type: array
-          items:
-            $ref: "#/components/schemas/LibrarySetting"
+
+    NewLibrary:
+      type: object
+      required: [id, path]
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+          description: An absolute path on the silo's machine, within one of its library roots.
 
     LibrarySetting:
       type: object

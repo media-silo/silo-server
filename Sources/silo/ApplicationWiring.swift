@@ -19,8 +19,8 @@ package enum ApplicationWiring {
     /// Every library walked before the first request is answered. One whose folder is missing is
     /// unavailable, and the boot goes on without it.
     @Provides
-    package static func libraries(config: SiloConfig, index: Index, checks: CheckSignal) throws -> Libraries {
-        let libraries = Libraries(config: config, index: index, checks: checks)
+    package static func libraries(config: SiloConfig, settings: SettingsStore, index: Index, checks: CheckSignal) throws -> Libraries {
+        let libraries = Libraries(config: config, settings: settings, index: index, checks: checks)
         try libraries.walkAtBoot()
         return libraries
     }
