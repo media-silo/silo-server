@@ -144,6 +144,7 @@ struct ConsoleModelTests {
     private final class SiloState: Sendable {
         let head: Mutex<Int>
         let checks = Mutex(0)
+        let roots = Mutex(["/srv/media"])
 
         init(head: Int) { self.head = Mutex(head) }
     }
@@ -188,8 +189,15 @@ struct ConsoleModelTests {
                 return (200, Data(#"{"name":"household","version":\#(version),"branch":"\#(version == 2 ? "trial" : "standard")","document":"\#(commentary)"}"#.utf8))
             case (_, "/v1/rulesets/household/branches/trial/impact"): return (200, Data("[]".utf8))
             case ("POST", "/v1/rulesets/household/branches/trial/promote"): return (409, Data(#"{"detail":"household's branch trial has not taken in household@\#(current) from the standard"}"#.utf8))
-            case ("PUT", "/v1/libraries/films/ruleset"): return (200, Data(#"{"id":"films","ruleset":"household","containers":1,"presentations":41}"#.utf8))
-            case (_, "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":1,"presentations":41}]"#.utf8))
+            case ("PUT", "/v1/libraries/films/ruleset"): return (200, Data(#"{"id":"films","ruleset":"household","containers":1,"presentations":41,"available":true}"#.utf8))
+            case ("GET", "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":1,"presentations":41,"available":false}]"#.utf8))
+            case ("GET", "/v1/libraries/films/scan"):
+                return (200, Data(#"{"walkedAt":"2026-10-19T09:30:00Z","available":false,"report":{"read":0,"unchanged":0,"removed":0,"findings":[{"severity":"error","text":"not applied: its folder does not exist"}]}}"#.utf8))
+            case (_, "/v1/settings"):
+                let roots = state.roots.withLock { $0 }.map { #""\#($0)""# }.joined(separator: ",")
+                return (200, Data(#"{"editable":{"name":"Home Silo","embeddedNode":false,"advertise":true,"libraries":[{"id":"films","path":"/srv/media/films"}]},"readOnly":{"serverID":"s1","host":"0.0.0.0","port":8742,"libraryRoots":[\#(roots)],"stateDirectory":"/var/lib/silo"}}"#.utf8))
+            case ("POST", "/v1/libraries"):
+                return (403, Data(#"{"detail":"this silo's silo.json names no library roots, so nothing can be added over the network"}"#.utf8))
             default: return nil
             }
         }
@@ -303,6 +311,37 @@ struct ConsoleModelTests {
         await model.takeIn(9, on: try #require(model.promotion))
         let draft = try #require(model.draft(of: silo))
         #expect(draft.base == 2 && draft.baseBranch == "trial" && draft.upToDateWith == 9, "on the branch, from its head, taking 9 in")
+    }
+
+    @Test func anUnavailableLibraryIsShownWithItsLastWalk() async throws {
+        let (model, silo) = try await changingModel(SiloState(head: 3))
+        await model.loadLibraries(for: silo)
+        #expect(model.libraries[silo.id]?.first?.available == false)
+        #expect(model.lastWalks[silo.id]?["films"]?.walkedAt == ISO8601DateFormatter().date(from: "2026-10-19T09:30:00Z"), "with when it was last walked")
+    }
+
+    /// The Libraries section, like the Rulesets one, is read again at each refresh while it is open:
+    /// the walks move on by themselves, and nobody asks for one.
+    @Test func theLibrariesSectionKeepsItselfCurrent() async throws {
+        let (model, silo) = try await changingModel(SiloState(head: 3))
+        #expect(model.lastWalks[silo.id] == nil, "nothing read while the section is closed")
+        model.section = .libraries
+        await model.refresh()
+        #expect(model.libraries[silo.id]?.first?.available == false)
+        #expect(model.lastWalks[silo.id]?["films"] != nil, "the walks are read at the refresh")
+        #expect(model.libraryRoots(of: silo) == ["/srv/media"], "and so are the settings the libraries are drawn from")
+    }
+
+    @Test func withTheRootsEmptiedTheConsoleSaysSoAndShowsTheRefusal() async throws {
+        let state = SiloState(head: 3)
+        let (model, silo) = try await changingModel(state)
+        await model.loadSettings(for: silo)
+        #expect(model.libraryRoots(of: silo) == ["/srv/media"])
+        state.roots.withLock { $0 = [] }
+        await model.loadSettings(for: silo)
+        #expect(model.libraryRoots(of: silo) == [], "no roots, so nothing to offer")
+        let refused = await model.addLibrary(id: "shows", folder: "Shows", within: "/srv/media", on: silo)
+        #expect(refused == "this silo's silo.json names no library roots, so nothing can be added over the network")
     }
 
     @Test func aLibrarysStandardShowsWhatTheSiloAnswered() async throws {
