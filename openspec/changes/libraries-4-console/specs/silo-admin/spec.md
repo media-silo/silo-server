@@ -35,8 +35,8 @@ the engine and the model the pane is drawn from; the pane itself is pinned by no
 ### Requirement: The console shows a silo's libraries, and adds and removes them within the roots
 For a silo classified with access, SiloAdmin SHALL show each library with its path, whether it is
 available, when it was last walked, and the findings of that walk. It SHALL add a library through
-`POST /v1/libraries`, offering the silo's library roots as the places to choose within, and with no
-roots configured SHALL say that the silo has none rather than offer a path the silo will refuse. It
+`POST /v1/libraries`, offering the silo's library roots as the places to choose within, and when the roots are empty
+SHALL say that the silo has none rather than offer a path the silo will refuse. It
 SHALL remove a library through `DELETE /v1/libraries/{library}`, and a refusal SHALL be shown in words.
 The console SHALL offer no way to start a walk.
 
@@ -44,8 +44,8 @@ The console SHALL offer no way to start a walk.
 - **WHEN** the operator opens the libraries of a silo whose `films` folder is missing
 - **THEN** `films` is shown unavailable, with when it was last walked
 
-#### Scenario: no roots, no picker
-- **WHEN** the operator goes to add a library to a silo with no library roots
+#### Scenario: empty roots, no picker
+- **WHEN** the operator goes to add a library to a silo whose library roots are an empty list
 - **THEN** the console says the silo has no library roots, rather than offering a path
 
 Pinned by: nothing yet.

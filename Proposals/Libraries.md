@@ -3,7 +3,7 @@
 
 # Proposals: 0005-libraries
 
-Modified: 2026-09-27
+Modified: 2026-10-19
 
 # Libraries
 
@@ -70,7 +70,8 @@ and the network operates. This proposal adds three of its own.
    operator has to do something to see what is on disk, the server is broken in a way a route
    cannot fix — 0003-refresh's first principle, turned to face the server.
 2. **The owner draws the boundary; the operator works within it.** Where the network may add a
-   library is the machine owner's answer, given once, in `silo.json`. Which libraries exist within
+   library is the machine owner's answer, in `silo.json`: a default they may narrow or empty, and
+   never something the network widens. Which libraries exist within
    that is the operator's, from the console.
 3. **A missing library is kept, not forgotten.** A drive that is not there is far more often late,
    unplugged or asleep than gone. The server never mistakes an absent folder for an empty one: it
@@ -89,11 +90,31 @@ and the network operates. This proposal adds three of its own.
 
 ## Library roots
 
-`silo.json` gains `libraryRoots`, absolute paths, default none, created and filled at startup like
-its other keys. A library added over the network must, once symbolic links are resolved, lie within
-one of them; with none, no library can be added over the network. That is the safe way round and
-deliberately inconvenient: the one thing a console-driven silo needs from someone at the machine is
-the answer to "where do your media live", given once.
+`silo.json` gains `libraryRoots`, absolute paths. A library added over the network must, once
+symbolic links are resolved, lie within one of them; with an empty list, no library can be added over
+the network.
+
+The key has a default, chosen as the state directory's is, by platform and by whom the silo runs as,
+and written into the file at startup like every other key:
+
+| Platform | Default roots |
+|---|---|
+| macOS | `/Volumes`, and `~/Movies` when not running as root |
+| Linux | `/srv`, `/media` and `/mnt` |
+
+These are where a household's media already are. On a Mac, every external drive and mounted share
+appears under `/Volumes`, and a library on the internal disk is most often in the user's `Movies`
+folder. On Linux, they are the places the filesystem conventions give served data, removable media
+and mounts. A fresh silo's operator can add the standard case — a drive full of films — from the
+console without anyone at the machine. The resolved-path rule keeps the defaults narrower than they
+look: on macOS `/Volumes` holds a link to the boot volume, which resolves to `/` and so lies outside
+every root, which is why the user's `Movies` is named on its own.
+
+A default is still the owner's. It is in the file from the first boot, where the owner reads it beside
+the port and narrows it or empties it; `"libraryRoots": []` says that nothing is to be added over the
+network. A silo that predates the key gains the defaults at its next boot, as a gap in `silo.json`
+always is filled, and so widens what its network may add without its owner asking. The boot logs that
+it wrote them, and the cost is paid once.
 
 The roots are in `silo.json` for the reason 0004-configuration's principle 2 gives: placement writes
 into libraries, so the roots bound where the network can make the silo write, and the network cannot
@@ -104,7 +125,7 @@ the roots bound what the network may add, and what the owner wrote is theirs alr
 
 `POST /v1/libraries` adds a library, an id and a path. The path must be absolute, must exist and be a
 directory, and once symbolic links are resolved must lie within a library root; the id must be new. A
-taken id is 409; a path outside every root, or any path when no roots are configured, is 403; a path
+taken id is 409; a path outside every root, or any path when the roots are empty, is 403; a path
 that does not exist is 422. The library is written to `settings.json`, walked, and returned.
 
 `DELETE /v1/libraries/{library}` removes one. It refuses with 409 while a job not yet in a final state
@@ -181,14 +202,14 @@ half the films went.
 
 SiloAdmin shows a with-access silo's libraries: each one's path, whether it is available, when it was
 last walked, and what the walk found. It adds a library by offering the silo's roots as the places to
-choose within — and, with no roots, says the silo has none rather than offer a path the silo will
-refuse — and removes one, naming the job that holds it when the silo refuses. There is no rescan
+choose within — and, with the roots emptied, says the silo has none rather than offer a path the
+silo will refuse — and removes one, naming the job that holds it when the silo refuses. There is no rescan
 button, and there is nothing for one to do.
 
 ## What this looks like to the operator
 
-A Mac mini's owner adds `"/Volumes/Media"` to `libraryRoots` and restarts the silo once. From
-SiloAdmin the operator adds `/Volumes/Media/Films` as `films`; the silo walks it and answers with the
+A Mac mini's silo is set up from the console, and its `silo.json` gains the default roots at that
+first boot; nobody edits it. From SiloAdmin the operator adds `/Volumes/Media/Films` as `films`; the silo walks it and answers with the
 library. That evening, someone at the machine runs `silo-ctl place` for a new film; within five
 minutes it is in the index, and nobody asked. A week later a power cut brings the silo back before the
 drive: it boots, serves the other libraries, lists `films` as unavailable, and answers 503 for its
@@ -230,7 +251,8 @@ while the silo runs; `POST` and `DELETE /v1/libraries`; the settings route marki
 writable. The roots, library routes and settings deltas apply here.
 
 Tests: an added library is walked and served without a restart; a path outside the roots, through a
-symbolic link that leads outside, and with no roots configured are each refused; removal is refused
+symbolic link that leads outside, and with the roots emptied are each refused; a fresh `silo.json`
+holds the platform's default roots; removal is refused
 while a live job names the library, and afterwards leaves every file on disk in place.
 
 ### 4. The console's libraries
@@ -246,6 +268,9 @@ applies here; shell-level behaviour stays `Pinned by: nothing yet.` until the sh
 - **Filesystem events,** for the reasons above. They may yet make walks come sooner; they will never
   be what makes the index correct.
 - **A configurable cadence.** Five minutes is a decision.
+- **Asking for the roots at install.** An installer that asks where the media are would be a third
+  answer beside none and a default. The silo has no installer, and the default is in the file to be
+  changed.
 - **Deleting media with a library.** Removing a library forgets it; the files are the household's.
 - **Watching the data repository.** `silo-ctl place` writes into a clone of the data repository and
   the library alike; the silo reads libraries, and the repository remains the ingestion tool's.
@@ -256,11 +281,7 @@ applies here; shell-level behaviour stays `Pinned by: nothing yet.` until the sh
    unnoticed, and costs one walk per library per tick. A shorter tick for local disks and a longer one
    for shares — told apart by how long the last walk took — would be the adaptive version; this
    proposal ships the fixed one and waits for the pain to argue otherwise.
-2. **Default library roots.** None is safe and unfriendly: a fresh install cannot add a library until
-   someone edits `silo.json`. A platform default — `/Volumes` on macOS, `/srv` and `/media` on Linux —
-   would remove the step and widen the network's reach by default. The installer asking is a third
-   answer, and may be the right one.
-3. **A library emptied on purpose.** The rule that a walk finding nothing is not applied protects an
+2. **A library emptied on purpose.** The rule that a walk finding nothing is not applied protects an
    unmounted drive, and also refuses to forget a library whose containers were all deliberately
    deleted: it stays unavailable, and removing it is how the operator says so. If that proves
    confusing, the console could offer the removal from the unavailable state directly.

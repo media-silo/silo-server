@@ -6,11 +6,13 @@
 ### Requirement: silo.json holds what no route changes, and the silo writes it only at startup
 The silo SHALL keep in `silo.json`, in its state directory, the settings no route changes: the
 `serverID`, a lower-cased UUID; the bind `host`, default `0.0.0.0`; the `port`, default `8742`; and
-the `libraryRoots`, absolute paths, default none.
-At startup, before it serves anything, the silo
+the `libraryRoots`, absolute paths, whose default is decided by the platform and the effective user
+id as the state directory's is: on macOS `/Volumes`, and the user's `~/Movies` when not running as
+root; on Linux `/srv`, `/media` and `/mnt`. An empty list SHALL mean no roots. At startup, before it
+serves anything, the silo
 SHALL read the file; when it does not exist the silo SHALL create it with every key at its default,
 minting the ServerID; when it lacks a key the silo SHALL add the key at its default and write the
-file back atomically. A complete file SHALL NOT be rewritten, and the silo SHALL write the file at no
+file back atomically, logging each key it added. A complete file SHALL NOT be rewritten, and the silo SHALL write the file at no
 other time; no route SHALL write it. A file that does not parse SHALL stop the boot with the parse
 error and SHALL be left unchanged. A key the silo does not know SHALL be logged by name and kept. A
 ServerID minted into a state directory that already holds an operator credential, nodes or jobs
@@ -18,13 +20,23 @@ SHALL be logged as a warning.
 
 #### Scenario: first boot writes the defaults
 - **WHEN** the silo boots over an empty state directory
-- **THEN** `silo.json` holds a fresh ServerID, host `0.0.0.0`, port `8742` and no library roots, and
-  the silo listens on `0.0.0.0:8742`
+- **THEN** `silo.json` holds a fresh ServerID, host `0.0.0.0`, port `8742` and the platform's default
+  library roots, and the silo listens on `0.0.0.0:8742`
+
+#### Scenario: the default roots
+- **WHEN** the silo boots over an empty state directory as a user other than root on macOS, and as
+  root on Linux
+- **THEN** the macOS file's library roots are `/Volumes` and the user's `~/Movies`, as an absolute
+  path, and the Linux file's are `/srv`, `/media` and `/mnt`
+
+#### Scenario: roots emptied by the owner stay empty
+- **WHEN** `silo.json` holds `"libraryRoots": []` and every other key
+- **THEN** the silo boots with no library roots, and the file is not rewritten
 
 #### Scenario: a gap is filled and nothing else moves
 - **WHEN** `silo.json` holds a ServerID and `"port": 9000` and nothing else
-- **THEN** the silo listens on 9000 with the same ServerID, and the file gains `host` and
-  `libraryRoots` at their defaults
+- **THEN** the silo listens on 9000 with the same ServerID, the file gains `host` and
+  `libraryRoots` at their defaults, and the log names both keys as added
 
 #### Scenario: a malformed file is not repaired
 - **WHEN** `silo.json` does not parse
@@ -61,7 +73,7 @@ Pinned by: nothing yet.
 The silo SHALL serve `POST /v1/libraries` behind the operator gate, taking an id and a path. The
 path SHALL be absolute, SHALL exist as a directory, and once symbolic links are resolved SHALL lie
 within one of `silo.json`'s library roots; the id SHALL be new. A taken id SHALL be 409; a path
-outside every root, or any path when no roots are configured, SHALL be 403; a path that does not
+outside every root, or any path when the roots are empty, SHALL be 403; a path that does not
 exist SHALL be 422. An added library SHALL be written to `settings.json`, walked before the route
 answers, and served without a restart. The silo SHALL serve `DELETE /v1/libraries/{library}` behind
 the same gate; it SHALL be 409 while a job not yet in a final state names the library, and otherwise
@@ -76,8 +88,8 @@ SHALL remove the library from `settings.json` and its rows from the index, touch
 - **WHEN** `/srv/media/escape` is a symbolic link to `/etc` and the operator adds it
 - **THEN** the answer is 403 and nothing is written
 
-#### Scenario: no roots, no additions
-- **WHEN** `silo.json` names no library roots and the operator adds any library
+#### Scenario: empty roots, no additions
+- **WHEN** `silo.json`'s library roots are an empty list and the operator adds any library
 - **THEN** the answer is 403
 
 #### Scenario: removal leaves the files
