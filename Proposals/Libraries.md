@@ -48,9 +48,10 @@ removes one, both behind the operator gate, both written through to `settings.js
 while the silo runs. A library added over the network must lie within one of `silo.json`'s
 `libraryRoots`, which only the machine's owner writes.
 
-**The server keeps up.** Each available library is walked at startup, after a placement the server
-applies, when it is added, when its folder comes back, and every five minutes regardless. A request
-for a file that has gone re-reads that one container on the spot. One walk runs per library at a
+**The server keeps up.** Each available library is walked at startup, when it is added, when its
+folder comes back, and every five minutes regardless. A placement the server applies re-reads the
+sidecars it wrote, and walks nothing. A request for a file that has gone re-reads that one container
+on the spot. One walk runs per library at a
 time; a walk asked for while one runs joins it.
 
 **The last walk is read, not run.** `POST /v1/libraries/{library}/scan` goes.
@@ -137,18 +138,38 @@ being marked read-only, since routes now change them.
 
 ## Keeping the index current
 
-A walk costs a stat per sidecar and a read per changed one, which is why it can run often. On a local
-disk a few thousand stats is nothing. On a network share, [0001-silo](Silo.md)'s estimate is seconds
-to tens of seconds for a large library — too slow for every request, and entirely affordable in the
-background.
+A walk was argued as costing a stat per sidecar and a read per changed one. Measured, it costs more:
+an unchanged sidecar is a stat and two index reads, and the walk also lists every file in the library
+to find the sidecars nothing references. On synthetic libraries built with the silo's own placer,
+timed on an M4 Max's internal SSD with a warm cache, from a release build of `main`:
+
+| Library | Files | Folders | Sidecars | First walk | Walk, nothing changed | of which, listing every file | Re-reading one sidecar |
+|---|---|---|---|---|---|---|---|
+| 300 films, 40 series of 5 seasons of 10 | 4,040 | 840 | 540 | 0.58 s | 79 ms | 19 ms | 1.5 ms |
+| 1,500 films, 150 series of 6 seasons of 12 | 20,850 | 4,050 | 2,550 | 3.4 s | 395 ms | 104 ms | 1.4 ms |
+
+Stat'ing the 2,550 sidecars alone takes 2 ms; the rest of an unchanged walk is the index reads. The
+walk scales with the library, about 0.15 ms a sidecar on a local disk, and the re-read of one sidecar
+does not. A network share was not measured. There every folder listed and every sidecar stat'd is a
+round trip, and the larger library's 4,050 folders and 2,550 sidecars are thousands of them, which
+puts a walk in seconds — too slow for every request, and entirely affordable in the background.
 
 **What starts a walk.** Startup walks every available library before the first request is answered,
-as today. A placement the server applies walks its library, as today. A library added through the
-route is walked before the route answers. An unavailable library whose folder reappears is walked at
+as today. A library added through the route is walked before the route answers. An unavailable library whose folder reappears is walked at
 once. And every five minutes, every available library is walked regardless: that cadence is what
 notices `silo-ctl place`, a hand edit, or another machine on the share. Five minutes is a decision,
 not a setting, for 0003-refresh's reason — a number the operator must tune is a cadence the design
 has not chosen.
+
+**A placement re-reads what it wrote.** Today a placement the server applies walks its whole library
+before it answers, so that the ancestors a first placement created are indexed along with the
+container it changed. The placement already knows exactly which sidecars it wrote, root first, and
+re-reading those, parents before children, indexes everything it changed: 1.4 ms, against 395 ms to
+walk the larger library above, and seconds on a share — paid once for each episode placed. A
+placement cannot leave a sidecar nothing references, since it writes a parent's reference with the
+child, so the listing of every file finds nothing it made. And whatever changed in the library
+without the server is the walk's to find, on its triggers, now that it has some. So a placement walks
+nothing.
 
 **A missing file is a prompt.** When the media route finds a presentation's file gone, the server
 re-reads that presentation's container with `Indexer.refresh` before answering, so a deletion is
@@ -156,9 +177,11 @@ noticed the first time anyone trips over it rather than at the next tick. The an
 404 the request earned.
 
 **One walk at a time.** Walks of one library never overlap: a walk asked for while one is running
-joins it and shares its report, so the tick, a placement and a reappearing folder landing together
-walk the library once. Different libraries walk independently, so a slow share never holds up a
-local disk.
+joins it and shares its report, so the tick, an addition and a reappearing folder landing together
+walk the library once. A placement's re-read and a walk of the same library do not run together: the
+re-read waits for a running walk to finish, so that a walk which read a sidecar before the placement
+wrote it cannot index the old one after the re-read has indexed the new. Different libraries walk
+independently, so a slow share never holds up a local disk.
 
 **Filesystem events are not the mechanism.** FSEvents and inotify would notice a change the moment
 it happened, but they cannot replace the walk. Changes made to a network share from another machine
@@ -240,8 +263,12 @@ The five-minute tick, the reappearance and missing-file triggers, walks coalesce
 walk kept, and the scan route turned from `POST` to `GET`. The walk, last-walk and gate deltas apply
 here.
 
+A placement the server applies re-reads the sidecars it wrote rather than walking the library. The
+index's placement requirement, the placement route's and the job placement's change here too.
+
 Tests: a sidecar changed behind the server's back is read at the next tick; concurrent walk requests
-walk once; a missing file refreshes its container; the last walk is read with its findings; `POST` to
+walk once; a first placement indexes every container it made, under its parent, before it answers;
+a placement leaves a change made behind the server's back for the next walk; a missing file refreshes its container; the last walk is read with its findings; `POST` to
 the scan route is gone.
 
 ### 3. Libraries within roots
