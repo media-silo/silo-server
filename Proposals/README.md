@@ -58,3 +58,8 @@ deltas in `openspec/changes/`, as that README describes.
   taken from where its container files it, rather than by listing the types an extra might have; and
   the types an extra is classified by are a vocabulary SmdKit names, Emby's `ExtraType`, which the
   console offers when a rule tests an item's kind.
+- [Containers](Containers.md) — the operator sees each library's containers in the console, as
+  the tree its folders hold and each container as its library's sidecar says it, and edits a
+  container's own fields there, onto the sidecar they read and leaving every library fact as it
+  stands; one container may be filed in several libraries, each with its own sidecar; and a
+  container's artwork is files beside its sidecar, found by name.
