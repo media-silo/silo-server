@@ -33,6 +33,7 @@ struct JobServiceTests {
         let bindingService: BindingService
         let service: JobService
         let index: Index
+        let libraries: Libraries
 
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-jobs-\(UUID().uuidString)")
@@ -50,10 +51,11 @@ struct JobServiceTests {
             stagedRules = try BindingRulesStore(folder: root.appendingPathComponent("State/binding-rules"))
             signal = CheckSignal()
             checks = CheckStore()
+            libraries = Libraries(config: config, index: index, checks: signal)
             let stack = RulesStack(config: config, index: index, staged: stagedRules)
             checkService = CheckService(jobs: store, recipes: recipes, bindings: bindings, sources: sources, rulesets: rulesets, stack: stack, checks: checks, index: index, config: config)
-            bindingService = BindingService(config: config, settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes, staged: stagedRules, stack: stack, checks: signal)
-            service = JobService(config: config, jobs: store, sources: sources, bindings: bindings, recipes: recipes, index: index, stagedRules: stagedRules, checks: signal)
+            bindingService = BindingService(config: config, settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes, staged: stagedRules, stack: stack, libraries: libraries, checks: signal)
+            service = JobService(config: config, jobs: store, sources: sources, bindings: bindings, recipes: recipes, libraries: libraries, stagedRules: stagedRules, checks: signal)
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }

@@ -13,13 +13,13 @@ import Wire
 import WireMVC
 import WireOpenAPI
 
-/// The operations that change the silo: a scan, a placement, a library's standard, and storing a
-/// ruleset. Grouped here so that one middleware on the controller is the whole of the operator gate.
+/// The operations that change the silo — a placement, a library's standard, and storing a ruleset —
+/// and the one read that names paths inside a library, its last walk. Grouped here so that one
+/// middleware on the controller is the whole of the operator gate.
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 @Middleware(RouteMiddleware.requireOperator)
 package struct OperatorController {
-    private let config: SiloConfig
     private let libraries: Libraries
     private let index: Index
     private let store: RulesetStore
@@ -27,8 +27,7 @@ package struct OperatorController {
     private let checks: CheckSignal
 
     @Inject
-    package init(config: SiloConfig, libraries: Libraries, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal) {
-        self.config = config
+    package init(libraries: Libraries, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal) {
         self.libraries = libraries
         self.index = index
         self.store = store
@@ -42,7 +41,7 @@ package struct OperatorController {
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     @ErrorResponse(NoSuchRuleset.self, .notFound)
     package func setLibraryRuleset(@Path library: String, @JSONBody body: Components.Schemas.LibraryRuleset) async throws -> Components.Schemas.Library {
-        guard config.library(library) != nil else { throw NoSuchLibrary() }
+        guard libraries.library(library) != nil else { throw NoSuchLibrary() }
         if let name = body.ruleset {
             guard try store.latestVersion(of: name) != nil else { throw NoSuchRuleset() }
         }
@@ -60,12 +59,13 @@ package struct OperatorController {
 
     @Operation
     @ErrorResponse(NoSuchLibrary.self, .notFound)
-    package func scanLibrary(@Path library: String) async throws -> Components.Schemas.ScanReport {
-        guard let library = config.library(library) else { throw NoSuchLibrary() }
-        let report = try libraries.walk(library) ?? ScanReport()
-        // A walk may find a container's rules moved to another version.
-        checks.request()
-        return Components.Schemas.ScanReport(read: report.read, unchanged: report.unchanged, removed: report.removed, findings: report.findings.map(Mapping.finding))
+    package func lastWalk(@Path library: String) async throws -> Components.Schemas.LastWalk {
+        guard libraries.library(library) != nil, let walk = libraries.lastWalk(of: library) else { throw NoSuchLibrary() }
+        let report = walk.report
+        return Components.Schemas.LastWalk(
+            walkedAt: walk.walkedAt, available: walk.available,
+            report: Components.Schemas.ScanReport(read: report.read, unchanged: report.unchanged, removed: report.removed, findings: report.findings.map(Mapping.finding))
+        )
     }
 
     @Operation
@@ -73,7 +73,7 @@ package struct OperatorController {
     @ErrorResponse(BadPlacement.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(PlacementRefused.self, .conflict, { $0.result })
     package func placeFile(@Path library: String, @JSONBody body: Components.Schemas.PlaceRequest) async throws -> Components.Schemas.PlacementResult {
-        guard let library = config.library(library) else { throw NoSuchLibrary() }
+        guard let library = libraries.library(library) else { throw NoSuchLibrary() }
         let lineage: [SmdKit.Container]
         do {
             lineage = try body.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
@@ -101,9 +101,9 @@ package struct OperatorController {
         guard placement.isApplicable else { throw PlacementRefused(result: result) }
         guard body.dryRun != true else { return result }
         try Placer.apply(placement, move: body.copy != true)
-        // The whole library, incrementally: an unchanged sidecar costs a stat, and this catches the
-        // ancestors a first placement created as well as the one container it changed.
-        _ = try Indexer.scan(library, into: index)
+        // What the placement wrote, root first, and nothing else: whatever changed in the library
+        // without the server is the walk's to find.
+        try await libraries.reread(placement.sidecars, in: library)
         result.applied = true
         result.presentation = IndexedPresentation.id(library: library.id, path: destination)
         return result

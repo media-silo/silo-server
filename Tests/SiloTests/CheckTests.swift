@@ -112,7 +112,7 @@ struct CheckTests {
         defer { bench.remove() }
         let source = try bench.sources.register(Bench.input, key: nil, copy: try bench.copy()).source
         let binding = try bench.bindingService.make(Binding(library: "main", containers: Bench.containers, item: "part3", tracks: [TrackMapping(feature: "commentary1", audio: 2)], segments: [Binding.Segment(source: source.id)]))
-        _ = try bench.bindingService.setRules(Data(#"<rules><audio><when fact="audio.index" is="2"/><copy/></audio></rules>"#.utf8), of: binding.id)
+        _ = try await bench.bindingService.setRules(Data(#"<rules><audio><when fact="audio.index" is="2"/><copy/></audio></rules>"#.utf8), of: binding.id)
         let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household", outputs: [Application.OutputChoice()]), to: binding.id).first)
         let job = try bench.service.make(from: resolved.id)
         _ = try await bench.service.claim(node: "box", capabilities: Set(job.requirements))

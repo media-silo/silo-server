@@ -197,8 +197,9 @@ Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAnd
 Unless `dryRun`, an applicable placement SHALL be applied and answered 200 with `applied` true
 and `presentation` set to the placed presentation's id — what the media route takes. The file
 is moved into place: it no longer exists where it was. After applying, the server SHALL
-re-read the library into its index itself, by an incremental scan, so the placed presentation
-is indexed and served without a scan being requested.
+re-read into its index each sidecar the placement wrote, as [index](../index/spec.md) sets
+out, so the placed presentation is indexed and served without a scan being requested; it
+SHALL NOT walk the library.
 
 #### Scenario: an applied placement moves the file into place
 - **WHEN** the same body is sent with `dryRun: false`

@@ -81,7 +81,7 @@ package struct BindingOperatorController {
     @ErrorResponse(NoSuchBinding.self, .notFound)
     @ErrorResponse(BadBindingRules.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     package func setBindingRules(@Path id: String, @JSONBody body: Components.Schemas.NewBindingRules) async throws -> Components.Schemas.BindingRules {
-        _ = try service.setRules(Data(body.document.utf8), of: id)
+        _ = try await service.setRules(Data(body.document.utf8), of: id)
         return Mapping.bindingRules(try service.rules(of: id))
     }
 

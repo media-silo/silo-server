@@ -29,11 +29,13 @@ public struct PlacementRequest: Sendable {
     }
 }
 
-/// A sidecar to write: the bytes, and whether the file is new.
+/// A sidecar to write: the bytes, whether the file is new, and the container that holds this one —
+/// nil for a root — so that the index can re-read it under its parent.
 public struct SidecarWrite: Hashable, Sendable {
     public var url: URL
     public var data: Data
     public var creates: Bool
+    public var parent: ContainerID?
 }
 
 /// The computed, auditable set of writes a placement makes. `Silo.md`, principle 5: shown before
@@ -133,7 +135,7 @@ public enum Placer {
             let path = LibraryLayout.childPath(for: child)
             if sidecars[index].sidecar.children[child.id] != path {
                 sidecars[index].sidecar.children[child.id] = path
-                writes.append(try write(sidecars[index]))
+                writes.append(try write(sidecars[index], parent: index > 0 ? sidecars[index - 1].container.id : nil))
             }
         }
 
@@ -162,17 +164,17 @@ public enum Placer {
         last.sidecar.presentations[request.item, default: []].append(presentation)
         findings += Validator.check(last.sidecar).filter { $0.severity == .error }
         sidecars[sidecars.count - 1] = last
-        writes.append(try write(last))
+        writes.append(try write(last, parent: sidecars.count > 1 ? sidecars[sidecars.count - 2].container.id : nil))
 
         return Placement(source: request.source, destination: destination, folders: folders, sidecars: writes, presentation: presentation, findings: findings)
     }
 
-    private static func write(_ entry: (container: Container, folder: URL, existing: Data?, sidecar: Sidecar)) throws -> SidecarWrite {
+    private static func write(_ entry: (container: Container, folder: URL, existing: Data?, sidecar: Sidecar), parent: ContainerID?) throws -> SidecarWrite {
         let url = entry.folder.appendingPathComponent(LibraryLayout.sidecarFileName)
         if let existing = entry.existing {
-            return SidecarWrite(url: url, data: try SidecarFile.data(for: entry.sidecar, updating: existing), creates: false)
+            return SidecarWrite(url: url, data: try SidecarFile.data(for: entry.sidecar, updating: existing), creates: false, parent: parent)
         }
-        return SidecarWrite(url: url, data: try SidecarFile.data(for: entry.sidecar), creates: true)
+        return SidecarWrite(url: url, data: try SidecarFile.data(for: entry.sidecar), creates: true, parent: parent)
     }
 
     /// Makes the writes, in the order the placement lists them: folders, then the file, then the

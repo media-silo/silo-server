@@ -4,7 +4,7 @@
 import Wire
 
 /// A change of rules, told to the background check: a ruleset stored or promoted, a binding's rules
-/// moved, a library scanned or a file placed. Requests coalesce — the check has one thing to do,
+/// moved, a library walked or a file placed. Requests coalesce — the check has one thing to do,
 /// whatever asked, which is to bring every placed presentation up to the rules in force.
 @Singleton
 package final class CheckSignal: Sendable {
