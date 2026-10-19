@@ -276,7 +276,7 @@ package final class Libraries: Sendable {
     /// Re-reads one container's sidecar, as the media route does when it finds one of the container's
     /// files gone, so a deletion is noticed the first time anyone trips over it.
     package func refresh(_ container: ContainerID, in library: LibraryConfig) async throws {
-        guard let row = try index.container(container) else { return }
+        guard let row = try index.container(container, in: library.id) else { return }
         try await lane(of: library.id).exclusively { [self] in
             _ = try Indexer.refresh(folder: row.folder, parent: row.parent.flatMap(ContainerID.init), in: library, index: index)
         }

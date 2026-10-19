@@ -11,7 +11,8 @@ info:
     an operation buffers its body whole: GET /v1/media/{presentation} is the file, with Range,
     ETag and Accept-Ranges, 206 for a part, 416 for a range the file cannot satisfy and 503 while
     the presentation's library is unavailable; and
-    GET /v1/containers/{id}/smd is the container as its sidecar, as application/xml.
+    GET /v1/containers/{id}/smd is the container as its sidecar, as application/xml, as is
+    GET /v1/libraries/{library}/containers/{id}/smd for one library's sidecar.
 
 servers:
   - url: /v1
@@ -425,6 +426,50 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlacementResult"
 
+  /libraries/{library}/containers:
+    get:
+      operationId: listLibraryContainers
+      summary: The containers at the top of one library, listed or not
+      description: >
+        A library's own view of its roots: every container at its top level, unlisted ones
+        included, since the operator needs to see what a player does not. Its sidecar bytes are
+        GET /v1/libraries/{library}/containers/{id}/smd, served beside this document.
+      tags: [Containers]
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      responses:
+        "200":
+          description: The library's roots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContainerSummary"
+        "404":
+          description: No such library.
+
+  /libraries/{library}/containers/{id}:
+    get:
+      operationId: getLibraryContainer
+      summary: One container as one library's sidecar says it
+      description: >
+        The container as this library holds it, with this library's presentations, whether or not
+        another library holds it too. 404 for a container this library does not hold.
+      tags: [Containers]
+      parameters:
+        - $ref: "#/components/parameters/Library"
+        - $ref: "#/components/parameters/ContainerID"
+      responses:
+        "200":
+          description: The container in the library.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryContainer"
+        "404":
+          description: No such library, or no such container in it.
+
   /containers:
     get:
       operationId: listContainers
@@ -453,6 +498,10 @@ paths:
     get:
       operationId: getContainer
       summary: One container, with its presentations
+      description: >
+        A container held by several libraries is answered as the first of them in the order
+        settings.json lists the libraries holds it — its sidecar and that library's presentations —
+        and the answer names that library.
       tags: [Containers]
       parameters:
         - $ref: "#/components/parameters/ContainerID"
@@ -2773,6 +2822,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExternalRef"
+
+    LibraryContainer:
+      type: object
+      required: [library, path, container]
+      properties:
+        library:
+          type: string
+        path:
+          type: string
+          description: >
+            The container's sidecar relative to the library root, as a walk's findings on it name
+            it.
+        container:
+          $ref: "#/components/schemas/Container"
 
     Alternative:
       type: object

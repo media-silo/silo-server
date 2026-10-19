@@ -198,8 +198,8 @@ package struct CheckService: Sendable {
         var ids: [String] = []
         var pending = try index.roots(in: library, listedOnly: false).map(\.containerID)
         while let next = pending.popLast() {
-            ids += try index.presentations(of: next).map(\.id)
-            pending += try index.children(of: next).map(\.containerID)
+            ids += try index.presentations(of: next, in: library).map(\.id)
+            pending += try index.children(of: next, in: library).map(\.containerID)
         }
         return ids
     }

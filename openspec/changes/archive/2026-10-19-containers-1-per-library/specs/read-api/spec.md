@@ -23,8 +23,8 @@ presentations — and the answer SHALL name that `library`.
 - **THEN** the 200 answer names `films` as its library and carries the
   presentations `films` holds and not those `films-4k` holds
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`theLibraryIsBrowsable`). The
-answer for a container in several libraries is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`theLibraryIsBrowsable`,
+`aLibrarysContainersAreReadWithinIt`).
 
 ## ADDED Requirements
 
@@ -32,8 +32,9 @@ answer for a container in several libraries is pinned by nothing yet.
 `GET /v1/libraries/{library}/containers` SHALL answer 200 with a
 `ContainerSummary` for each container at the top of the library, listed or not.
 `GET /v1/libraries/{library}/containers/{id}` SHALL answer 200 with a
-`LibraryContainer`: the `library`, and the `container` as the library's own
-sidecar says it, with that library's presentations, in the form
+`LibraryContainer`: the `library`; the `path` of its sidecar relative to the
+library root, as a walk's findings on the sidecar name it; and the `container` as
+the library's own sidecar says it, with that library's presentations, in the form
 `GET /v1/containers/{id}` answers. `GET /v1/libraries/{library}/containers/{id}/smd`
 SHALL answer the library's sidecar bytes as `GET /v1/containers/{id}/smd` answers
 a sidecar. Each SHALL be 404 for a library the silo does not serve and for a
@@ -55,4 +56,4 @@ These are read routes, and SHALL answer without a token.
 - **WHEN** a client asks `films` for a container only `films-4k` holds
 - **THEN** the answer is 404
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibrarysContainersAreReadWithinIt`).

@@ -16,4 +16,4 @@ which of the two is right. The same container in another library is not a second
 - **THEN** the walk reports an error on `Alien (1979)/container.smd` saying the container is
   already at `Alien`, and the index holds the container as `Alien` alone
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`aContainerFiledTwiceInALibraryIsReportedOnce`).

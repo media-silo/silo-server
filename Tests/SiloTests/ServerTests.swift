@@ -36,6 +36,8 @@ enum Fixture {
     /// The films of a second library, `away`, whose folder the tests take away and bring back.
     static let thirdMan = film("0000000000000010", "The Third Man", 1949)
     static let brief = film("0000000000000011", "Brief Encounter", 1945)
+    /// A film both libraries hold, each with a presentation of its own.
+    static let notorious = film("0000000000000013", "Notorious", 1946)
     /// A film in a folder within the suite's one library root, which the tests add and remove.
     static let casablanca = film("0000000000000012", "Casablanca", 1942)
 
@@ -66,6 +68,8 @@ enum Fixture {
         place([series, serial], item: "part1", profile: "mobile", tracks: [TrackMapping(feature: "commentary1", audio: 2)])
         place([thirdMan], item: "feature", into: away)
         place([brief], item: "feature", into: away)
+        place([notorious], item: "feature", into: away)
+        place([notorious], item: "feature", profile: "mobile")
         // The library root: a folder of films to add, and a link inside it that leads outside.
         let media = root.appendingPathComponent("Media")
         place([casablanca], item: "feature", into: media.appendingPathComponent("films"))
@@ -107,7 +111,7 @@ struct ServerTests {
             let libraries = try await client.get("/v1/libraries")
             #expect(libraries.status == 200)
             let main = try #require(try libraries.json([LibraryBody].self).first { $0.id == "main" })
-            #expect(main.presentations == 2)
+            #expect(main.presentations == 3)
             #expect(main.available)
 
             let roots = try await client.get("/v1/containers")
@@ -150,6 +154,52 @@ struct ServerTests {
             let onDisk = try Data(contentsOf: Fixture.root.appendingPathComponent("Library/Doctor Who (1963)/Pyramids of Mars/container.smd"))
             #expect(response.body == onDisk)
             #expect(try await client.get("/v1/containers/00000000000000ff/smd").status == 404)
+        }
+    }
+
+    /// One container in two libraries is each library's, read within it; the global route answers from
+    /// the first library `settings.json` lists that holds it, and says which.
+    @Test func aLibrarysContainersAreReadWithinIt() async throws {
+        struct LibraryContainerJSON: Decodable {
+            var library: String
+            var path: String
+            var container: ContainerJSON
+        }
+        struct SummaryJSON: Decodable { var id: String; var library: String; var listed: Bool }
+        func files(_ container: ContainerJSON) -> [String] {
+            container.sequences.flatMap(\.items).flatMap(\.presentations).map(\.file)
+        }
+        let film = Fixture.notorious.id
+        try await withClient { client in
+            let global = try await client.get("/v1/containers/\(film)").json(ContainerJSON.self)
+            #expect(global.library == "main", "main is listed before away")
+            #expect(files(global) == ["Notorious - mobile.mkv"])
+
+            let main = try await client.get("/v1/libraries/main/containers/\(film)")
+            #expect(main.status == 200)
+            let inMain = try main.json(LibraryContainerJSON.self)
+            #expect(inMain.library == "main")
+            #expect(files(inMain.container) == ["Notorious - mobile.mkv"])
+            let inAway = try await client.get("/v1/libraries/away/containers/\(film)").json(LibraryContainerJSON.self)
+            #expect(inAway.library == "away")
+            #expect(inAway.container.library == "away")
+            #expect(inAway.path == "Notorious (1946)/container.smd")
+            #expect(files(inAway.container) == ["Notorious.mkv"])
+
+            let roots = try await client.get("/v1/libraries/main/containers").json([SummaryJSON].self)
+            #expect(roots.map(\.id).contains(Fixture.unlisted.id.value), "an unlisted root is the library's")
+            #expect(roots.allSatisfy { $0.library == "main" })
+            #expect(try await client.get("/v1/containers?library=main").json([SummaryJSON].self).allSatisfy(\.listed))
+
+            #expect(try await client.get("/v1/libraries/main/containers/\(Fixture.thirdMan.id)").status == 404, "away holds it; main does not")
+            #expect(try await client.get("/v1/libraries/nowhere/containers").status == 404)
+            #expect(try await client.get("/v1/libraries/nowhere/containers/\(film)").status == 404)
+
+            let sidecar = try await client.get("/v1/libraries/away/containers/\(film)/smd")
+            #expect(sidecar.status == 200)
+            #expect(sidecar.body == (try Data(contentsOf: Fixture.root.appendingPathComponent("Away/Notorious (1946)/container.smd"))))
+            #expect(try await client.get("/v1/containers/\(film)/smd").body == (try Data(contentsOf: Fixture.root.appendingPathComponent("Library/Notorious (1946)/container.smd"))))
+            #expect(try await client.get("/v1/libraries/main/containers/\(Fixture.thirdMan.id)/smd").status == 404)
         }
     }
 
@@ -273,7 +323,7 @@ struct ServerTests {
             let walk = try SiloClient.decoder.decode(LastWalk.self, from: scan.body)
             #expect(walk.available)
             #expect(walk.walkedAt <= .now)
-            #expect(walk.report.read + walk.report.unchanged == 3, "the boot's walk, whatever has walked since")
+            #expect(walk.report.read + walk.report.unchanged == 4, "the boot's walk, whatever has walked since")
             #expect(try await client.get("/v1/libraries/other/scan", headers: ["Authorization": "Bearer secret"]).status == 404)
             #expect(try await client.send("POST", "/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"]).status != 200, "no route walks on request")
         }
@@ -419,6 +469,7 @@ struct ServerTests {
         struct Sequence: Decodable { var items: [Item] }
         struct Item: Decodable { var presentations: [Presentation] }
         struct Presentation: Decodable { var id: String; var file: String }
+        var library: String
         var sequences: [Sequence]
     }
 
