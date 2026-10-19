@@ -14,13 +14,13 @@ import Wire
 /// resolve through the same stack. `LayeredRulesets.md`, *The stack*.
 @Singleton
 package struct RulesStack: Sendable {
-    private let config: SiloConfig
+    private let libraries: Libraries
     private let index: Index
     private let staged: BindingRulesStore
 
     @Inject
-    package init(config: SiloConfig, index: Index, staged: BindingRulesStore) {
-        self.config = config
+    package init(libraries: Libraries, index: Index, staged: BindingRulesStore) {
+        self.libraries = libraries
         self.index = index
         self.staged = staged
     }
@@ -35,7 +35,7 @@ package struct RulesStack: Sendable {
     /// holds their sidecars now. A container with no sidecar, or no `<rules>`, has no layer; rules
     /// that cannot be read refuse the application.
     package func layers(of binding: Binding, lineage: [SmdKit.Container]) throws -> [RulesLayer] {
-        guard let library = config.library(binding.library) else { return [] }
+        guard let library = libraries.library(binding.library) else { return [] }
         var layers: [RulesLayer] = []
         do throws(RulesLayerError) {
             if let own = try bindingLayer(of: binding, lineage: lineage) { layers.append(own) }
@@ -66,7 +66,7 @@ package struct RulesStack: Sendable {
     }
 
     package func home(of binding: Binding, lineage: [SmdKit.Container]) throws -> Home? {
-        guard let library = config.library(binding.library), let container = lineage.last,
+        guard let library = libraries.library(binding.library), let container = lineage.last,
               let row = try index.container(container.id), let sidecar = try index.sidecar(container.id)
         else { return nil }
         let folder = row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)

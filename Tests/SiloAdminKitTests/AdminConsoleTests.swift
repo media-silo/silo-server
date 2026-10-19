@@ -601,7 +601,7 @@ struct AdminConsoleTests {
     // MARK: - Settings
 
     private static func settingsReport(name: String, embeddedNode: Bool = false) -> String {
-        #"{"editable":{"name":"\#(name)","embeddedNode":\#(embeddedNode),"advertise":true},"readOnly":{"serverID":"home","host":"0.0.0.0","port":8742,"stateDirectory":"/var/lib/silo","libraries":[{"id":"films","path":"/srv/media/films"}]}}"#
+        #"{"editable":{"name":"\#(name)","embeddedNode":\#(embeddedNode),"advertise":true,"libraries":[{"id":"films","path":"/srv/media/films"}]},"readOnly":{"serverID":"home","host":"0.0.0.0","port":8742,"libraryRoots":["/srv/media"],"stateDirectory":"/var/lib/silo"}}"#
     }
 
     @Test func settingsAreAskedWithTheHeldPasskey() async throws {
@@ -621,9 +621,9 @@ struct AdminConsoleTests {
         #expect(home.classification == .withAccess)
 
         let report = try await console.settings(of: home)
-        #expect(report.editable == SiloClient.SettingsReport.Editable(name: "Home Silo", embeddedNode: false, advertise: true))
+        #expect(report.editable == SiloClient.SettingsReport.Editable(name: "Home Silo", embeddedNode: false, advertise: true, libraries: [SiloClient.SettingsReport.Library(id: "films", path: "/srv/media/films")]))
         #expect(report.readOnly.stateDirectory == "/var/lib/silo")
-        #expect(report.readOnly.libraries == [SiloClient.SettingsReport.Library(id: "films", path: "/srv/media/films")])
+        #expect(report.readOnly.libraryRoots == ["/srv/media"])
 
         passkeys.store("rotated-away", for: "home")
         await #expect(throws: AdminConsole.NoAccess.self) { try await console.settings(of: home) }

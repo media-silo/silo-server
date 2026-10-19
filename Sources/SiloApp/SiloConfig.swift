@@ -4,38 +4,34 @@
 import Foundation
 import SiloStore
 
-/// What the silo is told at start: who it is and where it listens, from `silo.json`; where its
-/// own state lives; and the libraries as `settings.json` had them at startup. Read once, before the
-/// graph, and handed in as an input. The name, the embedded node and advertising are not here: they
-/// are the settings store's, since routes change them while the silo runs.
+/// What the silo is told at start, from `silo.json`: who it is, where it listens, and the library
+/// roots within which a library added over the network must lie; and where its own state lives. Read
+/// once, before the graph, and handed in as an input. The name, the libraries, the embedded node and
+/// advertising are not here: they are the settings store's, since routes change them while the silo
+/// runs.
 package struct SiloConfig: Sendable {
     package var serverID: String
     package var host: String
     package var port: Int
     package var stateDirectory: URL
-    package var libraries: [LibraryConfig]
+    package var libraryRoots: [URL]
 
-    package init(serverID: String = UUID().uuidString.lowercased(), host: String, port: Int, stateDirectory: URL, libraries: [LibraryConfig]) {
+    package init(serverID: String = UUID().uuidString.lowercased(), host: String, port: Int, stateDirectory: URL, libraryRoots: [URL] = []) {
         self.serverID = serverID
         self.host = host
         self.port = port
         self.stateDirectory = stateDirectory
-        self.libraries = libraries
+        self.libraryRoots = libraryRoots
     }
 
-    /// The two files, as startup opened them. A library whose folder does not exist is unavailable,
-    /// not fatal: `Libraries` says so, and the boot goes on.
-    package init(silo: SiloFile, settings: Settings, stateDirectory: URL) {
+    /// `silo.json`, as startup opened it.
+    package init(silo: SiloFile, stateDirectory: URL) {
         self.init(
             serverID: silo.serverID,
             host: silo.host,
             port: silo.port,
             stateDirectory: stateDirectory,
-            libraries: settings.libraries
+            libraryRoots: silo.libraryRoots.map { URL(fileURLWithPath: $0, isDirectory: true) }
         )
-    }
-
-    package func library(_ id: String) -> LibraryConfig? {
-        libraries.first { $0.id == id }
     }
 }

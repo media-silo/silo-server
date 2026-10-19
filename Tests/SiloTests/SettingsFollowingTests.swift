@@ -17,7 +17,7 @@ struct AdvertiserTests {
         let credential = OperatorCredential()
         let server = ServerService(identity: ServerIdentity(id: "s1"), settings: settings, credential: credential)
         let advertiser = Advertiser(
-            config: SiloConfig(serverID: "s1", host: "0.0.0.0", port: 8742, stateDirectory: URL(fileURLWithPath: "/dev/null"), libraries: []),
+            config: SiloConfig(serverID: "s1", host: "0.0.0.0", port: 8742, stateDirectory: URL(fileURLWithPath: "/dev/null")),
             server: server, settings: settings, interval: .milliseconds(10)
         )
         #expect(advertiser.announcement == nil, "the setting is off")

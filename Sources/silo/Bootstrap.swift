@@ -19,8 +19,8 @@ import WireMVCRouter
 // returned, asks this binding for the server and the route builder, registers every collated route
 // contributor, mounts introspection, registers the fallback, freezes the builder and serves.
 
-/// The graph's inputs, read before any binding is constructed: `silo.json` and the startup settings
-/// as `SiloConfig`, and the settings store over `settings.json`. They are the honest case for an
+/// The graph's inputs, read before any binding is constructed: `silo.json` as `SiloConfig`, and the
+/// settings store over `settings.json`. They are the honest case for an
 /// input — deployment facts, read from the state directory, that must exist before the first binding
 /// reads them and must stop the boot when they cannot be read.
 @GraphInputs
@@ -53,7 +53,7 @@ package struct AppBootstrap {
             }
             let (settings, settingsReport) = try SettingsStore.open(in: state.url, defaultName: "Silo on \(ProcessInfo.processInfo.hostName)")
             log(settingsReport, for: SettingsStore.fileName, to: logger)
-            return AppInputs(siloConfig: SiloConfig(silo: silo, settings: settings.current, stateDirectory: state.url), settings: settings)
+            return AppInputs(siloConfig: SiloConfig(silo: silo, stateDirectory: state.url), settings: settings)
         } catch {
             // A clean failure rather than a trap: a service manager reads a trap as a crash, and
             // this is a configuration the owner has to correct.

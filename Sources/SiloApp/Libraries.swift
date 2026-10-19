@@ -16,8 +16,26 @@ package struct LastWalk: Hashable, Sendable {
     package var report: ScanReport
 }
 
-/// The libraries the silo serves, and keeping the index current with them, which is the server's
-/// job and nobody else's. Each is walked at boot, when its folder comes back, and every five minutes
+/// A library id another library has already.
+package struct LibraryTaken: Error {
+    package var reason: String
+}
+
+/// A path that once its links are resolved lies within none of `silo.json`'s library roots — or any
+/// path, when the roots are empty.
+package struct OutsideTheRoots: Error {
+    package var reason: String
+}
+
+/// A library that cannot be added as it was asked for: a path that is not absolute, or not a folder
+/// that exists, or an empty id.
+package struct BadLibrary: Error {
+    package var reason: String
+}
+
+/// The libraries the silo serves, as `settings.json` holds them and the library routes change them
+/// while it runs, and keeping the index current with them, which is the server's job and nobody
+/// else's. Each is walked at boot, when its folder comes back, and every five minutes
 /// regardless; a placement re-reads only the sidecars it wrote, and a request that finds a file gone
 /// re-reads its container. A library whose folder is missing, or whose last walk found nothing where
 /// the index holds something, is unavailable — kept in the index, listed as such, and answering 503
@@ -25,6 +43,7 @@ package struct LastWalk: Hashable, Sendable {
 /// libraries*.
 package final class Libraries: Sendable {
     private let config: SiloConfig
+    private let settings: SettingsStore
     private let index: Index
     private let checks: CheckSignal
     private let logger = Logger(label: "silo.libraries")
@@ -37,18 +56,69 @@ package final class Libraries: Sendable {
         var lanes: [String: LibraryLane] = [:]
     }
 
-    package init(config: SiloConfig, index: Index, checks: CheckSignal) {
+    package init(config: SiloConfig, settings: SettingsStore, index: Index, checks: CheckSignal) {
         self.config = config
+        self.settings = settings
         self.index = index
         self.checks = checks
     }
 
     package var all: [LibraryConfig] {
-        config.libraries
+        settings.current.libraries
     }
 
     package func library(_ id: String) -> LibraryConfig? {
-        config.library(id)
+        all.first { $0.id == id }
+    }
+
+    /// Where the network may add a library: `silo.json`'s roots, which only the machine's owner writes.
+    package var roots: [URL] {
+        config.libraryRoots
+    }
+
+    // MARK: - Adding and removing
+
+    /// Adds a library over the network: the path absolute, a folder that exists, and once its links
+    /// are resolved within one of the roots; the id new. Written to `settings.json`, walked, and only
+    /// then answered, so it is served at once. Libraries written into the file by hand are not held to
+    /// the roots — the roots bound what the network may add, and what the owner wrote is theirs.
+    package func add(id: String, path: String) async throws -> LibraryConfig {
+        guard !id.isEmpty, !id.contains("/") else { throw BadLibrary(reason: "a library's id must be a name, without a slash") }
+        guard path.hasPrefix("/") else { throw BadLibrary(reason: "\(path) is not an absolute path") }
+        let library = LibraryConfig(id: id, root: URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL)
+        guard Indexer.folderExists(library) else { throw BadLibrary(reason: "\(path) is not a folder that exists") }
+        guard !roots.isEmpty else { throw OutsideTheRoots(reason: "this silo's silo.json names no library roots, so nothing can be added over the network") }
+        let resolved = library.root.resolvingSymlinksInPath().path
+        guard roots.contains(where: { Self.path(resolved, liesWithin: $0.resolvingSymlinksInPath().path) }) else {
+            throw OutsideTheRoots(reason: "\(path) lies within none of the library roots: \(roots.map(\.path).joined(separator: ", "))")
+        }
+        try settings.update { settings in
+            guard !settings.libraries.contains(where: { $0.id == id }) else { throw LibraryTaken(reason: "there is already a library \(id)") }
+            settings.libraries.append(library)
+        }
+        logger.info("added \(id) at \(library.root.path)")
+        try await walk(library)
+        return library
+    }
+
+    /// Removes a library: it leaves `settings.json` and its rows leave the index, after any walk of it
+    /// already running; nothing on disk is touched — no sidecar, no media file. The files are the
+    /// household's.
+    package func remove(_ id: String) async throws {
+        guard let library = library(id) else { throw NoSuchLibrary() }
+        try settings.update { $0.libraries.removeAll { $0.id == id } }
+        try await lane(of: id).exclusively { [self] in try index.forget(library: id) }
+        state.withLock { state in
+            state.unavailable[id] = nil
+            state.lastWalks[id] = nil
+            state.lanes[id] = nil
+        }
+        logger.info("removed \(id); \(library.root.path) is left as it was")
+    }
+
+    /// Whether `path` is `root` or inside it, by whole components: `/srv/media2` is not within `/srv/media`.
+    static func path(_ path: String, liesWithin root: String) -> Bool {
+        root == "/" || path == root || path.hasPrefix(root.hasSuffix("/") ? root : root + "/")
     }
 
     // MARK: - Walking

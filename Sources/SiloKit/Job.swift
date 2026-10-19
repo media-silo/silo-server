@@ -75,6 +75,15 @@ public struct Job: Identifiable, Hashable, Sendable, Codable {
 
 public enum JobState: String, Hashable, Sendable, Codable, CaseIterable {
     case pending, claimed, encoding, encoded, placing, placed, tried, failed, cancelling, cancelled
+
+    /// Whether a job in this state is done with for good: placed, tried or cancelled. A failed job
+    /// may yet be retried.
+    public var isFinal: Bool {
+        switch self {
+        case .placed, .tried, .cancelled: true
+        default: false
+        }
+    }
 }
 
 /// A file where it is, served by the node that holds it. `path` is for the holder's own use, so

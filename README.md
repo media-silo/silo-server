@@ -46,7 +46,7 @@ One package, in the order its parts arrived:
 - `SiloAPI`, `SiloApp` and `silo` — the server: an OpenAPI document under `/v1`
   for what a client reads (libraries, containers with their presentations,
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
-  and what an operator changes (a stored ruleset, the settings, a
+  and what an operator changes (a library added or removed, a stored ruleset, the settings, a
   registered source and its copies, a binding, its own rules and the recipes it resolves to, a
   discarded recipe, a job made from a resolved recipe, and a trial, kept
   under `trials/` and never placed), on the swift-wire stack; and beside the
@@ -100,13 +100,18 @@ folder it chose and why; that folder is where `operator-credential.reset` goes.
 `silo-node`, so a node and a silo on one machine never share a folder.
 
 The two files are divided by whether an operator route can change the setting.
-`silo.json` holds what none can — the `serverID`, and the `host` and `port` the
-silo listens on, `0.0.0.0` and `8742` by default — and is read at startup, so an
-edit takes effect at the next restart. `settings.json` holds what routes change
-— the `name`, the `libraries` (each an `id`, a `path` and optionally the `ruleset`
-that is its standard), `embeddedNode` and `advertise` — and is the silo's to manage
-while it runs: `PATCH /v1/settings` changes the name, the
-embedded node and advertising, and each change takes effect at once. Edit the
+`silo.json` holds what none can — the `serverID`, the `host` and `port` the
+silo listens on, `0.0.0.0` and `8742` by default, and the `libraryRoots`, the
+folders within which a library added over the network must lie: `/Volumes` and
+`~/Movies` on a Mac, `/srv`, `/media` and `/mnt` on Linux, and `[]` for none — and
+is read at startup, so an edit takes effect at the next restart. `settings.json`
+holds what routes change — the `name`, the `libraries` (each an `id`, a `path` and
+optionally the `ruleset` that is its standard), `embeddedNode` and `advertise` —
+and is the silo's to manage while it runs: `PATCH /v1/settings` changes the name,
+the embedded node and advertising, `POST` and `DELETE /v1/libraries` add and remove
+a library, and each change takes effect at once. A library written into the file
+by hand is not held to the roots, and one whose folder is missing is served as
+unavailable until it returns. Edit the
 file by hand only while the silo is stopped. The
 silo writes both files with their defaults on its first boot, fills in a key
 either lacks, refuses to start over one that does not parse, and logs a key it

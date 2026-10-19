@@ -190,6 +190,14 @@ public struct Index: Sendable {
         }
     }
 
+    /// Forgets everything the index holds for a library: a library removed is no longer served.
+    public func forget(library: String) throws {
+        try queue.write { db in
+            try IndexedContainer.filter(Column("library") == library).deleteAll(db)
+            try IndexedSidecar.filter(Column("library") == library).deleteAll(db)
+        }
+    }
+
     func setParent(_ parent: ContainerID?, of child: ContainerID) throws {
         try queue.write { db in
             try db.execute(sql: "UPDATE container SET parent = ? WHERE id = ?", arguments: [parent?.value, child.value])

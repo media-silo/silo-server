@@ -20,6 +20,7 @@ struct JobServiceTests {
     struct Bench {
         let root: URL
         let config: SiloConfig
+        let library: LibraryConfig
         let store: JobStore
         let sources: SourceStore
         let recipes: RecipeStore
@@ -39,7 +40,8 @@ struct JobServiceTests {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-jobs-\(UUID().uuidString)")
             let library = root.appendingPathComponent("Library")
             try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
-            config = SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root.appendingPathComponent("State"), libraries: [LibraryConfig(id: "main", root: library)])
+            config = SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root.appendingPathComponent("State"))
+            self.library = LibraryConfig(id: "main", root: library)
             store = JobStore()
             sources = SourceStore()
             recipes = RecipeStore()
@@ -47,14 +49,14 @@ struct JobServiceTests {
             rulesets = try RulesetStore(folder: root.appendingPathComponent("State/rulesets"))
             _ = try rulesets.store(Data(Self.household.utf8), as: "household")
             index = try Index(at: nil)
-            settings = SettingsStore(Settings(name: "Silo on test", libraries: config.libraries))
+            settings = SettingsStore(Settings(name: "Silo on test", libraries: [self.library]))
             stagedRules = try BindingRulesStore(folder: root.appendingPathComponent("State/binding-rules"))
             signal = CheckSignal()
             checks = CheckStore()
-            libraries = Libraries(config: config, index: index, checks: signal)
-            let stack = RulesStack(config: config, index: index, staged: stagedRules)
-            checkService = CheckService(jobs: store, recipes: recipes, bindings: bindings, sources: sources, rulesets: rulesets, stack: stack, checks: checks, index: index, config: config)
-            bindingService = BindingService(config: config, settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes, staged: stagedRules, stack: stack, libraries: libraries, checks: signal)
+            libraries = Libraries(config: config, settings: settings, index: index, checks: signal)
+            let stack = RulesStack(libraries: libraries, index: index, staged: stagedRules)
+            checkService = CheckService(jobs: store, recipes: recipes, bindings: bindings, sources: sources, rulesets: rulesets, stack: stack, checks: checks, index: index, libraries: libraries)
+            bindingService = BindingService(settings: settings, index: index, rulesets: rulesets, sources: sources, bindings: bindings, recipes: recipes, staged: stagedRules, stack: stack, libraries: libraries, checks: signal)
             service = JobService(config: config, jobs: store, sources: sources, bindings: bindings, recipes: recipes, libraries: libraries, stagedRules: stagedRules, checks: signal)
         }
 
@@ -154,7 +156,7 @@ struct JobServiceTests {
         #expect(placed.placement?.destination == "Doctor Who (1963)/Pyramids of Mars/Part Three.mkv")
         #expect(placed.placement?.presentation != nil)
         #expect(!FileManager.default.fileExists(atPath: output.path), "moved into the library")
-        let tree = LibraryWalker.walk(bench.config.libraries[0].root)
+        let tree = LibraryWalker.walk(bench.library.root)
         let serial = try #require(tree.node(for: Fixture.serial.id))
         #expect(serial.sidecar.presentations["part3"]?.first?.tracks == [TrackMapping(feature: "commentary1", audio: 2)], "renumbered by the recipe: nothing was dropped, so unchanged")
         #expect(serial.sidecar.presentations["part3"]?.first?.chapters == [Chapter(index: 1, title: "Opening")], "the binding's chapter names")
@@ -192,7 +194,7 @@ struct JobServiceTests {
         #expect(kept.path == bench.config.stateDirectory.appendingPathComponent("trials/\(tried.id).mkv").path)
         #expect(try Data(contentsOf: kept) == Fixture.mediaBytes, "its output in the trial area")
         #expect(!FileManager.default.fileExists(atPath: output.path))
-        #expect(LibraryWalker.walk(bench.config.libraries[0].root).node(for: Fixture.serial.id) == nil, "and nothing in the library")
+        #expect(LibraryWalker.walk(bench.library.root).node(for: Fixture.serial.id) == nil, "and nothing in the library")
 
         await #expect(throws: TrialNeverPlaced.self) { _ = try await service.place(tried.id) }
         #expect(throws: WrongState.self) { try service.cancel(tried.id) }
@@ -337,7 +339,7 @@ struct WorkerTests {
         let placed = try await bench.service.place(job.id)
         #expect(placed.state == .placed)
         #expect(placed.placement?.destination == "Doctor Who (1963)/Pyramids of Mars/Part Three - mobile.mkv")
-        let probedInPlace = try await ffprobe.probe(bench.config.libraries[0].root.appendingPathComponent(placed.placement!.destination))
+        let probedInPlace = try await ffprobe.probe(bench.library.root.appendingPathComponent(placed.placement!.destination))
         #expect(probedInPlace.streams.map(\.codec) == ["h264", "flac", "aac"])
     }
 

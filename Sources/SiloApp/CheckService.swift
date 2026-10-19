@@ -24,11 +24,11 @@ package struct CheckService: Sendable {
     private let stack: RulesStack
     private let checks: CheckStore
     private let index: Index
-    private let config: SiloConfig
+    private let libraries: Libraries
     private let logger = Logger(label: "silo.checks")
 
     @Inject
-    package init(jobs: JobStore, recipes: RecipeStore, bindings: BindingStore, sources: SourceStore, rulesets: RulesetStore, stack: RulesStack, checks: CheckStore, index: Index, config: SiloConfig) {
+    package init(jobs: JobStore, recipes: RecipeStore, bindings: BindingStore, sources: SourceStore, rulesets: RulesetStore, stack: RulesStack, checks: CheckStore, index: Index, libraries: Libraries) {
         self.jobs = jobs
         self.recipes = recipes
         self.bindings = bindings
@@ -37,7 +37,7 @@ package struct CheckService: Sendable {
         self.stack = stack
         self.checks = checks
         self.index = index
-        self.config = config
+        self.libraries = libraries
     }
 
     // MARK: - Checking
@@ -140,7 +140,7 @@ package struct CheckService: Sendable {
     /// A library's out-of-date presentations from the check records, how many placed ones are still
     /// to be checked, and how many were placed without a job.
     package func report(library: String) throws -> (outOfDate: [Reported], pending: Int, placedWithoutJob: Int) {
-        guard config.library(library) != nil else { throw NoSuchLibrary() }
+        guard libraries.library(library) != nil else { throw NoSuchLibrary() }
         let here = placed().filter { $0.binding.library == library }
         let reported = here.compactMap { placed -> Reported? in
             guard let check = checks.check(of: placed.job.id), check.outcome != .current else { return nil }

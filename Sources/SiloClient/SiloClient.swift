@@ -561,11 +561,14 @@ public struct SiloClient: Sendable, JobsAPI {
             public var name: String
             public var embeddedNode: Bool
             public var advertise: Bool
+            /// Changed through the library routes, not the settings patch.
+            public var libraries: [Library]
 
-            public init(name: String, embeddedNode: Bool, advertise: Bool) {
+            public init(name: String, embeddedNode: Bool, advertise: Bool, libraries: [Library] = []) {
                 self.name = name
                 self.embeddedNode = embeddedNode
                 self.advertise = advertise
+                self.libraries = libraries
             }
         }
 
@@ -583,15 +586,16 @@ public struct SiloClient: Sendable, JobsAPI {
             public var serverID: String
             public var host: String
             public var port: Int
+            /// Where a library added over the network must lie; empty, nothing can be.
+            public var libraryRoots: [String]
             public var stateDirectory: String
-            public var libraries: [Library]
 
-            public init(serverID: String, host: String, port: Int, stateDirectory: String, libraries: [Library]) {
+            public init(serverID: String, host: String, port: Int, libraryRoots: [String], stateDirectory: String) {
                 self.serverID = serverID
                 self.host = host
                 self.port = port
+                self.libraryRoots = libraryRoots
                 self.stateDirectory = stateDirectory
-                self.libraries = libraries
             }
         }
 

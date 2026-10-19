@@ -76,7 +76,7 @@ struct BindingRulesTests {
         #expect(try await bench.bindingService.setRules(Data(#"<rules><audio><copy/></audio></rules>"#.utf8), of: binding.id) == 1)
         #expect(try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 2)
         #expect(bench.stagedRules.versions(of: binding.id) == [1, 2], "kept in the silo while nothing is placed")
-        let library = bench.config.libraries[0].root
+        let library = bench.library.root
         let folder = library.appendingPathComponent("Doctor Who (1963)/Pyramids of Mars")
         #expect(!FileManager.default.fileExists(atPath: folder.path), "and nothing written to the library")
         #expect(try bench.bindingService.rules(of: binding.id).versions == [1, 2])
@@ -110,7 +110,7 @@ struct BindingRulesTests {
         let binding = try Self.binding(in: bench)
         _ = try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id)
         try await Self.place(binding, in: bench)
-        let library = bench.config.libraries[0].root
+        let library = bench.library.root
         let sidecarURL = library.appendingPathComponent("Doctor Who (1963)/Pyramids of Mars/\(SidecarFile.fileName)")
 
         let other = "9d3f0b6e-1c2a-4f7d-8e5b-a2b4c6d8e0f1"
