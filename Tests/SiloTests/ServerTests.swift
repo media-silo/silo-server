@@ -365,6 +365,45 @@ struct ServerTests {
         }
     }
 
+    @Test func aLibrarysPathIsCheckedAndItsMissingFoldersMade() async throws {
+        struct NewLibrary: Encodable { var id: String; var path: String; var create: Bool? }
+        struct Check: Decodable {
+            struct Component: Decodable { var path: String; var state: String }
+            struct Refusal: Decodable { var status: Int; var detail: String }
+            var path: String
+            var components: [Component]
+            var root: String?
+            var creates: [String]
+            var refusal: Refusal?
+        }
+        let media = Fixture.root.appendingPathComponent("Media")
+        let wanted = media.appendingPathComponent("Made/Films")
+        try await withClient { client in
+            let made = NewLibrary(id: "made", path: wanted.path)
+            #expect(try await client.post("/v1/libraries/check", json: made).status == 401)
+
+            let checked = try await client.post("/v1/libraries/check", json: made, headers: Self.operatorHeaders)
+            #expect(checked.status == 200)
+            let check = try checked.json(Check.self)
+            #expect(check.components.suffix(3).map(\.state) == ["folder", "missing", "missing"])
+            #expect(check.root == media.path)
+            #expect(check.creates == [media.appendingPathComponent("Made").path, wanted.path])
+            #expect(check.refusal?.status == 422, "without create, the addition would be refused")
+            #expect(!FileManager.default.fileExists(atPath: media.appendingPathComponent("Made").path), "and checking made nothing")
+            let escaping = try await client.post("/v1/libraries/check", json: NewLibrary(id: "out", path: media.appendingPathComponent("escape/New").path, create: true), headers: Self.operatorHeaders)
+            #expect(try escaping.json(Check.self).refusal?.status == 403, "a link that leads outside leads the folders made outside")
+
+            #expect(try await client.post("/v1/libraries", json: made, headers: Self.operatorHeaders).status == 422)
+            #expect(!FileManager.default.fileExists(atPath: media.appendingPathComponent("Made").path), "nothing is made unasked")
+            let added = try await client.post("/v1/libraries", json: NewLibrary(id: "made", path: wanted.path, create: true), headers: Self.operatorHeaders)
+            #expect(added.status == 201)
+            #expect(try added.json(LibraryBody.self).available, "made, added and walked")
+            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "out", path: media.appendingPathComponent("escape/New").path, create: true), headers: Self.operatorHeaders).status == 403)
+            #expect(!FileManager.default.fileExists(atPath: Fixture.root.appendingPathComponent("Outside/New").path), "nothing is made outside")
+            #expect(try await client.send("DELETE", "/v1/libraries/made", headers: Self.operatorHeaders).status == 204)
+        }
+    }
+
     @Test func rangesAreParsedAsTheSpecificationSays() {
         #expect(ByteRange.parse(nil, size: 100) == .whole)
         #expect(ByteRange.parse("bytes=0-49", size: 100) == .part(0, 49))
@@ -1167,6 +1206,11 @@ extension ServerTests {
             let settings = try SiloClient.decoder.decode(SiloClient.SettingsReport.self, from: try await client.get("/v1/settings", headers: Self.operatorHeaders).body)
             #expect(settings.readOnly.libraryRoots == [Fixture.root.appendingPathComponent("Media").path])
             #expect(settings.editable.libraries.map(\.id).contains("main"))
+            struct NewLibrary: Encodable { var id = "main"; var path: String }
+            let gone = Fixture.root.appendingPathComponent("Media/Read/Gone").path
+            let check = try SiloClient.decoder.decode(SiloClient.LibraryCheck.self, from: try await client.post("/v1/libraries/check", json: NewLibrary(path: gone), headers: Self.operatorHeaders).body)
+            #expect(check.components.suffix(2).map(\.state) == [.missing, .missing])
+            #expect(check.refusal?.status == 422)
         }
     }
 }

@@ -96,8 +96,14 @@ public enum Indexer {
     /// Whether the library's folder is there, as a folder. Asked of the filesystem each time, since a
     /// URL's resource values are cached and a drive comes and goes.
     public static func folderExists(_ library: LibraryConfig) -> Bool {
+        isFolder(atPath: library.root.path) == true
+    }
+
+    /// Whether something is at `path` and is a folder, following links: nil when nothing is there.
+    public static func isFolder(atPath path: String) -> Bool? {
         var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: library.root.path, isDirectory: &isDirectory) && isDirectory.boolValue
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return nil }
+        return isDirectory.boolValue
     }
 
     /// Re-reads one container's sidecar, after a placement wrote it or a request found one of its

@@ -288,6 +288,40 @@ SiloClient and SiloAdminKit learn the library routes and the last walk; SiloAdmi
 availability and last walk, and adds and removes libraries within the roots. The silo-admin delta
 applies here; shell-level behaviour stays `Pinned by: nothing yet.` until the shell grows a test seam.
 
+### 5. Checking a path, and making its folders
+
+A follow-up, once the console had a sheet to add from. The console cannot browse the silo's disk, so
+an operator typing a folder within a root learned only from a refusal that it was not there, and had
+to go to the machine to make it. `POST /v1/libraries/check` takes the same body as an addition and
+answers what the addition would find — each folder along the path and whether it is there, the root
+the path lies within, the folders that would be made — and the refusal it would meet, with its status,
+making and writing nothing. `POST /v1/libraries` takes `create`, and with it makes the missing folders
+before adding the library, so long as the folder they are made in lies within a root once its links
+are resolved. A root is never made: a root that is missing is far more often a drive not yet mounted
+than a folder wanted, and the same rule that keeps an unmounted drive's library from being forgotten
+keeps its folder from being stood in for by an empty one on the disk beneath. For the same reason no
+folder is made where a drive mounts, whether or not that place is a root: directly within a folder
+the platform mounts drives in — `/Volumes` on macOS; `/media`, the per-user folders within it and
+within `/run/media`, and `/mnt` on Linux — or within a mount point declared while nothing is
+mounted on it, which the silo tells by its device being its parent's. A mount point is declared by
+`/etc/fstab`, or by a systemd mount or automount unit: the machine's own, in `/etc/systemd/system`
+and `/run/systemd/system`, and those enabled from there by a `.wants` or `.requires` link. A unit a
+distribution ships and nobody enabled is not read, since `tmp.mount` declares `/tmp` on machines
+where nothing mounts there. Without this,
+`/Volumes/Media/Films` asked for while the `Media` drive is away would be made on the boot disk,
+and the drive would mount beside it as `/Volumes/Media 1`. Inside a drive that is mounted, folders
+are made as anywhere. A root's place or a drive's is refused whether or not `create` was asked,
+since asking would not make the folders, so that refusal is said over the folders being missing,
+and the sheet offers no toggle for it. The sheet asks the check as the folder is typed and says, in one sentence, whether a
+library will be created at the path, which it shows in two colours, green as far as it exists and red
+past that: a library cannot be created there because those folders do not exist. With the toggle to
+make them on, the missing part turns orange and the sentence says a library will be created there
+and the folders made. Any other refusal of the path is given in the sentence in the silo's words — where drives are
+mounted, "a library cannot be created at `/Volumes/Media/Films`: it would be created where drives
+are mounted"; a
+refusal of the name is shown below it, since the path it leaves is good, and the silo, judging the
+path first, says by its answer which of the two it refused.
+
 ## Non-goals
 
 - **A manual rescan.** No route, no button. If the cadence proves too slow, the answer is a better
@@ -312,3 +346,7 @@ applies here; shell-level behaviour stays `Pinned by: nothing yet.` until the sh
    unmounted drive, and also refuses to forget a library whose containers were all deliberately
    deleted: it stays unavailable, and removing it is how the operator says so. If that proves
    confusing, the console could offer the removal from the unavailable state directly.
+3. **Mount points the silo cannot see.** A drive mounted somewhere other than the platform's
+   folders, and declared neither in `/etc/fstab` nor by a systemd unit — by autofs's maps, or a
+   script — is not known to be a mount point, and a folder can be made in its place while it is
+   away. Reading the automounter's maps would close most of what remains.

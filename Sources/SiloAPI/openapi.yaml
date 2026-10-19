@@ -200,8 +200,13 @@ paths:
       description: >
         The path must be absolute, must be a folder that exists, and once symbolic links are resolved
         must lie within one of silo.json's library roots, which only the machine's owner writes; the
-        id must be new. The library is written to settings.json, walked, and answered, and is served
-        without a restart. Operator only.
+        id must be new. With create, the folders missing from the path are made first, so long as
+        the folder they are made in lies within a root: a root itself is never made, and nothing is
+        made where a drive mounts — directly within /Volumes, /media, a folder of /media or
+        /run/media, or /mnt, or within a mount point /etc/fstab or a systemd mount or automount unit
+        declares with nothing mounted on it. The library is
+        written to settings.json, walked, and answered, and is served without a restart. Operator
+        only. POST /v1/libraries/check asks the same questions and adds nothing.
       tags: [Libraries]
       security:
         - operator: []
@@ -221,7 +226,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorised"
         "403":
-          description: The path lies within no library root, or the silo has none.
+          description: The path lies within no library root, or the silo has none, or its missing folders would be made outside one or where a drive mounts, which is said whether or not create was given.
           content:
             application/json:
               schema:
@@ -233,11 +238,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "422":
-          description: The path is not absolute or not a folder that exists, or the id is not a name.
+          description: >
+            The path is not absolute, or something along it is not a folder, or without create it is
+            not a folder that exists, or the folders could not be made; or the id is not a name.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Problem"
+
+  /libraries/check:
+    post:
+      operationId: checkLibrary
+      summary: What adding a library would find, adding nothing
+      description: >
+        Each folder along the path, from the top of the silo's filesystem down, and whether it is
+        there; the library root the path lies within; the folders an addition with create would
+        make; and the refusal the same addition would meet, with the status it would answer, or none.
+        Nothing is made or written. The path's own faults are found before the id's, so a path can
+        be checked before the library is named. Operator only, since it says what exists on the
+        silo's machine.
+      tags: [Libraries]
+      security:
+        - operator: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewLibrary"
+      responses:
+        "200":
+          description: What the addition would find.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryCheck"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
 
   /libraries/{library}:
     delete:
@@ -1787,6 +1824,54 @@ components:
         path:
           type: string
           description: An absolute path on the silo's machine, within one of its library roots.
+        create:
+          type: boolean
+          description: Make the folders missing from the path, within a root that exists. False when left out.
+
+    LibraryCheck:
+      type: object
+      required: [path, components, creates]
+      properties:
+        path:
+          type: string
+          description: The path as it would be written, standardised.
+        components:
+          type: array
+          description: >
+            Each folder along the path, from the top of the filesystem down to the path itself; below
+            the first one missing, every one is missing, and the list stops at one that is not a folder.
+          items:
+            $ref: "#/components/schemas/PathComponent"
+        root:
+          type: string
+          description: The library root the path lies within once its links are resolved; absent when none.
+        creates:
+          type: array
+          description: The folders an addition with create would make, outermost first.
+          items:
+            type: string
+        refusal:
+          $ref: "#/components/schemas/LibraryRefusal"
+
+    PathComponent:
+      type: object
+      required: [path, state]
+      properties:
+        path:
+          type: string
+        state:
+          type: string
+          enum: [folder, notAFolder, missing]
+
+    LibraryRefusal:
+      type: object
+      description: The refusal the addition would meet, as the status and detail it would answer with.
+      required: [status, detail]
+      properties:
+        status:
+          type: integer
+        detail:
+          type: string
 
     LibrarySetting:
       type: object

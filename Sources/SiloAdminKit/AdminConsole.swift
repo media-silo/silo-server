@@ -701,15 +701,21 @@ public actor AdminConsole {
         }
     }
 
-    /// Adds a library at `path` on the silo's machine; the library as the silo answers, walked. The
-    /// silo's refusal — outside its roots, a taken id, a folder that is not there — comes back as
-    /// `SettingsRefused` in its own words.
-    public func addLibrary(id: String, path: String, on silo: Silo) async throws -> SiloClient.Library {
+    /// Adds a library at `path` on the silo's machine, making its missing folders with `create`; the
+    /// library as the silo answers, walked. The silo's refusal — outside its roots, a taken id, a
+    /// folder that is not there — comes back as `SettingsRefused` in its own words.
+    public func addLibrary(id: String, path: String, create: Bool = false, on silo: Silo) async throws -> SiloClient.Library {
         do {
-            return try await withOperator(silo) { try await $0.addLibrary(id: id, path: path) }
+            return try await withOperator(silo) { try await $0.addLibrary(id: id, path: path, create: create) }
         } catch SiloClientError.status(let status, let body) where [400, 403, 409, 422].contains(status) {
             throw SettingsRefused(reason: Self.detail(body))
         }
+    }
+
+    /// What adding a library at `path` would find on the silo's machine, and the refusal it would
+    /// meet; nothing is added or made.
+    public func checkLibrary(id: String, path: String, create: Bool, on silo: Silo) async throws -> SiloClient.LibraryCheck {
+        try await withOperator(silo) { try await $0.checkLibrary(id: id, path: path, create: create) }
     }
 
     /// Removes a library, leaving its files on the silo's machine. A refusal — a live job filing into
@@ -766,5 +772,27 @@ extension Optional {
     fileprivate func asyncMap<T>(_ transform: (Wrapped) async throws -> T) async rethrows -> T? {
         guard let self else { return nil }
         return try await transform(self)
+    }
+}
+
+extension SiloClient.LibraryCheck {
+    /// The path as far as it exists: up to the deepest folder along it that is there, or nothing
+    /// when not even the first is.
+    public var present: String {
+        components.last { $0.state == .folder }?.path ?? ""
+    }
+
+    /// The rest of the path, from the first folder that is missing or is not a folder: what the
+    /// console shows apart, to be made or refused.
+    public var absent: String {
+        String(path.dropFirst(present.count))
+    }
+
+    /// Whether the silo refuses the path itself, as against the name the library would have. The silo
+    /// judges the path before the name, so a refusal that is not a path's — outside the roots or where a
+    /// drive mounts (403), a file in the way, folders missing and not asked for — leaves the path good.
+    public func refusesPath(create: Bool) -> Bool {
+        guard let refusal else { return false }
+        return refusal.status == 403 || components.contains { $0.state == .notAFolder } || !creates.isEmpty && !create
     }
 }

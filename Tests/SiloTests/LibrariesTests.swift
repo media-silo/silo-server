@@ -2,8 +2,9 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloKit
 import SiloLibrary
-import SiloStore
+@testable import SiloStore
 import SmdKit
 import SmdSidecar
 import Synchronization
@@ -213,6 +214,118 @@ struct LibrariesTests {
         )
         await #expect(throws: OutsideTheRoots.self) { try await libraries.add(id: "films", path: root.appendingPathComponent("films").path) }
         #expect(settings.current.libraries.isEmpty)
+    }
+
+    /// A path checked before it is added: each folder along it and whether it is there, and the
+    /// refusal the addition would meet; then its missing folders made within a root, and never a root.
+    @Test func aPathIsCheckedAndItsMissingFoldersMadeWithinARoot() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-paths-\(UUID().uuidString)").resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let media = root.appendingPathComponent("Media")
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        try Data("not a folder".utf8).write(to: media.appendingPathComponent("notes.txt"))
+        let settings = SettingsStore(Settings(name: "Silo on test"))
+        let libraries = Libraries(
+            config: SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root, libraryRoots: [media, root.appendingPathComponent("Unmounted")]),
+            settings: settings, index: try Index(at: nil), checks: CheckSignal()
+        )
+        let wanted = media.appendingPathComponent("Films/New")
+
+        let check = libraries.check(id: "films", path: wanted.path, create: false)
+        #expect(check.components.suffix(3).map(\.state) == [.folder, .missing, .missing], "Media is there; Films and New are not")
+        #expect(check.components.last?.path == wanted.path)
+        #expect(check.root == media.path)
+        #expect(check.creates == [media.appendingPathComponent("Films").path, wanted.path])
+        #expect(check.refusal == .bad("\(wanted.path) is not a folder that exists"), "without create, the addition is refused")
+        #expect(libraries.check(id: "films", path: wanted.path, create: true).refusal == nil, "with it, it is not")
+        #expect(libraries.check(id: "", path: wanted.path, create: true).creates.count == 2, "the path is checked before the library is named")
+        #expect(Indexer.isFolder(atPath: media.appendingPathComponent("Films").path) == nil, "and checking made nothing")
+
+        let blocked = libraries.check(id: "notes", path: media.appendingPathComponent("notes.txt/films").path, create: true)
+        #expect(blocked.components.last?.state == .notAFolder, "the list stops at what is not a folder")
+        #expect(blocked.refusal == .bad("\(media.appendingPathComponent("notes.txt").path) is not a folder"))
+        let unmounted = libraries.check(id: "shows", path: root.appendingPathComponent("Unmounted/Shows").path, create: true)
+        #expect(unmounted.refusal == .outside("\(root.appendingPathComponent("Unmounted").path) would be made outside the library roots: a root is made by the machine's owner"), "a missing root is never made")
+        #expect(libraries.check(id: "shows", path: root.appendingPathComponent("Unmounted/Shows").path, create: false).refusal == unmounted.refusal,
+                "and that is said even when nothing asks for it, rather than that the folders do not exist")
+        await #expect(throws: OutsideTheRoots.self) { try await libraries.add(id: "shows", path: root.appendingPathComponent("Unmounted/Shows").path, create: true) }
+        #expect(Indexer.isFolder(atPath: root.appendingPathComponent("Unmounted").path) == nil)
+
+        let added = try await libraries.add(id: "films", path: wanted.path, create: true)
+        #expect(Indexer.isFolder(atPath: wanted.path) == true)
+        #expect(settings.current.libraries.map(\.id) == ["films"])
+        #expect(libraries.isAvailable(added.id), "an empty folder just made is an available library")
+    }
+
+    /// No folder is made where a drive mounts: not in a folder whose children are drives, and not
+    /// below a mount point fstab declares while nothing is mounted on it. Inside a drive that is there,
+    /// folders are made as anywhere.
+    @Test func noFolderIsMadeWhereADriveMounts() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-mounts-\(UUID().uuidString)").resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let volumes = root.appendingPathComponent("Volumes")
+        let disk = root.appendingPathComponent("Disks/Media")
+        try FileManager.default.createDirectory(at: volumes.appendingPathComponent("Present"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: disk, withIntermediateDirectories: true)
+        func libraries(mounted: Bool) -> Libraries {
+            Libraries(
+                config: SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root, libraryRoots: [volumes, root.appendingPathComponent("Disks")]),
+                settings: SettingsStore(Settings(name: "Silo on test")), index: try! Index(at: nil), checks: CheckSignal(),
+                mounts: MountPoints(holders: [volumes.path], declared: [.init(path: disk.path, by: "/etc/fstab")], isMounted: { _ in mounted })
+            )
+        }
+        let away = volumes.appendingPathComponent("Media")
+        #expect(libraries(mounted: false).check(id: "films", path: away.appendingPathComponent("Films").path, create: true).refusal
+            == .outside("it would be created where drives are mounted"))
+        #expect(libraries(mounted: false).check(id: "films", path: away.appendingPathComponent("Films").path, create: false).refusal
+            == .outside("it would be created where drives are mounted"), "said rather than that the folders do not exist, since asking would not make them")
+        #expect(libraries(mounted: false).check(id: "films", path: volumes.appendingPathComponent("Present/Films").path, create: true).refusal == nil, "inside a drive that is there, folders are made")
+        let underDisk = disk.appendingPathComponent("Films")
+        #expect(libraries(mounted: false).check(id: "films", path: underDisk.path, create: true).refusal
+            == .outside("it would be created in \(disk.path), which /etc/fstab declares as a mount point and has nothing mounted on it"))
+        #expect(libraries(mounted: true).check(id: "films", path: underDisk.path, create: true).refusal == nil, "and with its drive mounted, they are made")
+    }
+
+    @Test func mountPointsAreReadAsTheMachineHasThem() {
+        let fstab = """
+            # <file system> <mount point> <type> <options> <dump> <pass>
+            UUID=1234 / ext4 errors=remount-ro 0 1
+            UUID=5678\t/srv/media\text4\tdefaults,nofail 0 2
+            LABEL=Films /mnt/My\\040Films ext4 noauto 0 0
+            /swapfile none swap sw 0 0
+            """
+        #expect(MountPoints.declared(fstab: fstab).map(\.path) == ["/", "/srv/media", "/mnt/My Films"])
+        #expect(MountPoints.holders(platform: .macOS) == ["/Volumes"])
+        #expect(MountPoints.path("/media/simon", matches: "/media/*"))
+        #expect(!MountPoints.path("/media/simon/Disk", matches: "/media/*"))
+        #expect(MountPoints.isMounted("/"))
+        #expect(MountPoints.isMounted("/dev"), "devfs, or the container's tmpfs, is mounted on its own")
+        #expect(!MountPoints.isMounted(FileManager.default.temporaryDirectory.appendingPathComponent("silo-not-a-mount-\(UUID().uuidString)").path), "nothing there, nothing mounted")
+    }
+
+    /// The mount points systemd units declare: the machine's own units, and the ones enabled from
+    /// elsewhere through a `.wants` link; not a unit only shipped, nor one that is not a mount.
+    @Test func mountPointsAreReadFromSystemdUnits() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-units-\(UUID().uuidString)").resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let etc = root.appendingPathComponent("etc/systemd/system")
+        let shipped = root.appendingPathComponent("usr/lib/systemd/system")
+        try FileManager.default.createDirectory(at: etc.appendingPathComponent("multi-user.target.wants"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: shipped, withIntermediateDirectories: true)
+        func write(_ text: String, to url: URL) throws { try Data(text.utf8).write(to: url) }
+        try write("[Unit]\nDescription=Media\n\n[Mount]\nWhat=/dev/disk/by-label/Media\nWhere=/srv/media\nType=ext4\n", to: etc.appendingPathComponent("srv-media.mount"))
+        try write("[Unit]\nWhere=/nowhere\n[Automount]\n  Where = /mnt/backup\n", to: shipped.appendingPathComponent("mnt-backup.automount"))
+        try FileManager.default.createSymbolicLink(at: etc.appendingPathComponent("multi-user.target.wants/mnt-backup.automount"), withDestinationURL: shipped.appendingPathComponent("mnt-backup.automount"))
+        try write("[Mount]\nWhere=/tmp\n", to: shipped.appendingPathComponent("tmp.mount"))
+        try write("[Service]\nWhere=/srv/service\n", to: etc.appendingPathComponent("media.service"))
+
+        let declared = MountPoints.declared(units: [etc.path, root.appendingPathComponent("run/systemd/system").path])
+        #expect(declared.map(\.path) == ["/mnt/backup", "/srv/media"], "the unit enabled through the link and the machine's own; not the shipped one, nor a service")
+        #expect(declared.last?.by == etc.appendingPathComponent("srv-media.mount").path)
+
+        let mounts = MountPoints(holders: [], declared: declared, isMounted: { _ in false })
+        #expect(mounts.reasonNotToMake(in: "/srv/media", along: ["/srv", "/srv/media"])
+            == "it would be created in /srv/media, which \(etc.path)/srv-media.mount declares as a mount point and has nothing mounted on it")
     }
 
     @Test func aRootIsMatchedByWholeComponents() {

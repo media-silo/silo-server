@@ -109,7 +109,9 @@ holds what routes change — the `name`, the `libraries` (each an `id`, a `path`
 optionally the `ruleset` that is its standard), `embeddedNode` and `advertise` —
 and is the silo's to manage while it runs: `PATCH /v1/settings` changes the name,
 the embedded node and advertising, `POST` and `DELETE /v1/libraries` add and remove
-a library, and each change takes effect at once. A library written into the file
+a library — with `create`, making its missing folders within a root that exists
+but never where a drive mounts, and `POST /v1/libraries/check` says first what an addition would find — and each
+change takes effect at once. A library written into the file
 by hand is not held to the roots, and one whose folder is missing is served as
 unavailable until it returns. Edit the
 file by hand only while the silo is stopped. The
