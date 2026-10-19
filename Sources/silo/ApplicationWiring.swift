@@ -7,22 +7,22 @@ import SiloApp
 import SiloStore
 import Wire
 
-/// The bindings the controllers ask for and nothing else provides: the index, brought up to date
-/// with every library before the first request, and the ruleset store.
+/// The bindings the controllers ask for and nothing else provides: the index, the libraries, each
+/// walked before the first request, and the stores.
 package enum ApplicationWiring {
     @Provides
     package static func index(config: SiloConfig) throws -> Index {
         try FileManager.default.createDirectory(at: config.stateDirectory, withIntermediateDirectories: true)
-        let index = try Index(at: config.stateDirectory.appendingPathComponent("index.sqlite"))
-        let logger = Logger(label: "silo.index")
-        for library in config.libraries {
-            let report = try Indexer.scan(library, into: index)
-            logger.info("scanned \(library.id): \(report.read) read, \(report.unchanged) unchanged, \(report.removed) removed")
-            for finding in report.findings {
-                logger.warning("\(library.id): \(finding)")
-            }
-        }
-        return index
+        return try Index(at: config.stateDirectory.appendingPathComponent("index.sqlite"))
+    }
+
+    /// Every library walked before the first request is answered. One whose folder is missing is
+    /// unavailable, and the boot goes on without it.
+    @Provides
+    package static func libraries(config: SiloConfig, index: Index) throws -> Libraries {
+        let libraries = Libraries(config: config, index: index)
+        try libraries.walkAll()
+        return libraries
     }
 
     @Provides

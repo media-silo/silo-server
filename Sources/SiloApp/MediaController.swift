@@ -16,16 +16,17 @@ import WireMVC
 @Singleton
 @Controller("/v1")
 package struct MediaController {
-    private let config: SiloConfig
+    private let libraries: Libraries
     private let index: Index
 
     @Inject
-    package init(config: SiloConfig, index: Index) {
-        self.config = config
+    package init(libraries: Libraries, index: Index) {
+        self.libraries = libraries
         self.index = index
     }
 
-    /// Direct play, with `Range`, through the same response every node serves its files with.
+    /// Direct play, with `Range`, through the same response every node serves its files with. A
+    /// presentation of an unavailable library is 503 — not now, rather than the 404 of not ever.
     @Get("/media/{presentation}")
     @RawRoute
     package func media<Sender: HTTPResponseSender & ~Copyable & SendableMetatype>(
@@ -35,9 +36,13 @@ package struct MediaController {
     ) async throws where Sender.Writer: ~Copyable {
         guard let id = pathParameters["presentation"].map(String.init),
               let presentation = try index.presentation(id),
-              let library = config.library(presentation.library)
+              let library = libraries.library(presentation.library)
         else {
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
+            return
+        }
+        guard try libraries.reach(library) else {
+            try await responseSender.sendAndFinish(HTTPResponse(status: .serviceUnavailable))
             return
         }
         let url = library.root.appendingPathComponent(presentation.path)

@@ -14,14 +14,14 @@ import WireOpenAPI
 @Singleton
 @OpenAPIController(spec: "SiloAPI")
 package struct LibraryController {
-    private let config: SiloConfig
+    private let libraries: Libraries
     private let index: Index
     private let settings: SettingsStore
     private let checks: CheckService
 
     @Inject
-    package init(config: SiloConfig, index: Index, settings: SettingsStore, checks: CheckService) {
-        self.config = config
+    package init(libraries: Libraries, index: Index, settings: SettingsStore, checks: CheckService) {
+        self.libraries = libraries
         self.index = index
         self.settings = settings
         self.checks = checks
@@ -40,10 +40,11 @@ package struct LibraryController {
     package func listLibraries() async throws -> [Components.Schemas.Library] {
         let counts = LibraryCounts(index: index)
         let standards = Dictionary(settings.current.libraries.map { ($0.id, $0.ruleset) }, uniquingKeysWith: { first, _ in first })
-        return try config.libraries.map { library in
+        return try libraries.all.map { library in
             Components.Schemas.Library(
                 id: library.id, ruleset: standards[library.id] ?? nil,
-                containers: try counts.containers(in: library.id), presentations: try counts.presentations(in: library.id)
+                containers: try counts.containers(in: library.id), presentations: try counts.presentations(in: library.id),
+                available: libraries.availability(of: library)
             )
         }
     }

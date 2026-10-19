@@ -101,8 +101,9 @@ the file as it treats `silo.json` — created when missing, filled where a key i
 unchanged and the boot stopped when it does not parse, unknown keys logged and kept — so that the
 name is fixed at first boot. After startup the silo SHALL hold the settings in memory and SHALL
 write the file whole, atomically, whenever a route changes a setting. The silo SHALL serve the
-libraries the file names, as read at startup; a library whose folder does not exist SHALL stop the
-boot with an error naming the library.
+libraries the file names, as read at startup and as the library routes change them; a library whose
+folder does not exist SHALL be unavailable, per [read-api](../read-api/spec.md), and SHALL NOT stop
+the boot. Libraries in the file SHALL NOT be held to the library roots.
 
 #### Scenario: a change survives a restart
 - **WHEN** the operator turns the embedded node on and the silo restarts
@@ -110,12 +111,17 @@ boot with an error naming the library.
 
 #### Scenario: arriving configured
 - **WHEN** an owner writes `settings.json` naming a library before the silo's first boot
-- **THEN** the silo boots serving that library
+- **THEN** the silo boots serving that library, whether or not its path lies within a root
+
+#### Scenario: a drive late to mount
+- **WHEN** a library's folder is missing at boot
+- **THEN** the silo boots, serves every other library, and lists that one unavailable
 
 Pinned by: `Tests/SiloStoreTests/ConfigurationFileTests.swift` (`aFreshDirectoryGetsBothFilesAtTheirDefaults`,
 `anUnknownKeyIsReportedAndKeptThroughWrites`, `settingsAreWrittenWholeAndReadBack`),
 `Tests/SiloTests/ServerIdentityTests.swift` (`identityIsMintedOnceAndKeptAcrossRestartsAndARename`),
-`Tests/SiloTests/ServerTests.swift` (the suite's fixture arrives configured through `settings.json`).
+`Tests/SiloTests/ServerTests.swift` (the suite's fixture arrives configured through `settings.json`),
+`Tests/SiloTests/LibrariesTests.swift` (`aDriveLateToMountIsUnavailableAndTheRestAreServed`).
 
 ### Requirement: /v1/settings reports both files
 The silo SHALL serve `GET /v1/settings` behind the operator gate, reporting every key of

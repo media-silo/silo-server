@@ -33,6 +33,15 @@ enum Fixture {
         return serial
     }()
     static let unlisted = Container(id: ContainerID("0000000000000004")!, type: .series, title: Title("Behind the Sofa")!, listed: false)
+    /// The films of a second library, `away`, whose folder the tests take away and bring back.
+    static let thirdMan = film("0000000000000010", "The Third Man", 1949)
+    static let brief = film("0000000000000011", "Brief Encounter", 1945)
+
+    static func film(_ id: String, _ title: String, _ year: Int) -> Container {
+        var film = Container(id: ContainerID(id)!, type: .movie, title: Title(title)!, year: year, yearInTitle: true)
+        film.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: title))])]
+        return film
+    }
 
     static let mediaBytes = Data((0..<3000).map { UInt8($0 % 251) })
 
@@ -43,15 +52,18 @@ enum Fixture {
     static func build() -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-server-\(UUID().uuidString)")
         let library = root.appendingPathComponent("Library")
+        let away = root.appendingPathComponent("Away")
         try! FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
         try! FileManager.default.createDirectory(at: root.appendingPathComponent("State"), withIntermediateDirectories: true)
-        func place(_ lineage: [Container], item: String, profile: String? = nil, tracks: [TrackMapping] = []) {
+        func place(_ lineage: [Container], item: String, profile: String? = nil, tracks: [TrackMapping] = [], into library: URL = library) {
             let source = root.appendingPathComponent("\(UUID().uuidString).mkv")
             try! mediaBytes.write(to: source)
             try! Placer.apply(try! Placer.compute(PlacementRequest(library: library, lineage: lineage, item: item, presentation: Presentation(profile: profile, file: "", tracks: tracks), source: source)))
         }
         place([series, serial], item: "part1", tracks: [TrackMapping(feature: "commentary1", audio: 3)])
         place([series, serial], item: "part1", profile: "mobile", tracks: [TrackMapping(feature: "commentary1", audio: 2)])
+        place([thirdMan], item: "feature", into: away)
+        place([brief], item: "feature", into: away)
         try! SidecarFile.data(for: Sidecar(container: unlisted)).write(to: {
             let folder = library.appendingPathComponent("Behind the Sofa")
             try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -59,7 +71,7 @@ enum Fixture {
         }())
         let state = root.appendingPathComponent("State")
         try! Data("""
-            {"libraries": [{"id": "main", "path": "\(library.path)"}]}
+            {"libraries": [{"id": "main", "path": "\(library.path)"}, {"id": "away", "path": "\(away.path)"}]}
             """.utf8).write(to: state.appendingPathComponent("settings.json"))
         try! Data("secret\n".utf8).write(to: state.appendingPathComponent("operator-credential.reset"))
         return root
@@ -84,8 +96,9 @@ struct ServerTests {
         try await withClient { client in
             let libraries = try await client.get("/v1/libraries")
             #expect(libraries.status == 200)
-            #expect(libraries.bodyText.contains("\"id\":\"main\""))
-            #expect(libraries.bodyText.contains("\"presentations\":2"))
+            let main = try #require(try libraries.json([LibraryBody].self).first { $0.id == "main" })
+            #expect(main.presentations == 2)
+            #expect(main.available)
 
             let roots = try await client.get("/v1/containers")
             #expect(roots.status == 200)
@@ -244,6 +257,34 @@ struct ServerTests {
         }
     }
 
+    /// A library whose folder goes is unavailable, not forgotten: its containers stay browsable, its
+    /// media answer 503 rather than 404, and when the folder comes back the next request that
+    /// reaches for it walks it and is served.
+    @Test func aLibraryWhoseFolderGoesIsKeptAndSaysSo() async throws {
+        let away = Fixture.root.appendingPathComponent("Away")
+        let aside = Fixture.root.appendingPathComponent("Away (unplugged)")
+        try await withClient { client in
+            let film = try await client.get("/v1/containers/\(Fixture.thirdMan.id)")
+            let id = try #require(try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id)
+            #expect(try await client.get("/v1/media/\(id)").status == 200)
+
+            try FileManager.default.moveItem(at: away, to: aside)
+            var restored = false
+            defer { if !restored { try? FileManager.default.moveItem(at: aside, to: away) } }
+            #expect(try await client.get("/v1/media/\(id)").status == 503, "not now, rather than not ever")
+            let listed = try await client.get("/v1/libraries").json([LibraryBody].self)
+            #expect(listed.first { $0.id == "away" }?.available == false)
+            #expect(listed.first { $0.id == "away" }?.presentations == 2, "its index rows are kept")
+            #expect(listed.first { $0.id == "main" }?.available == true, "and the other library is untouched")
+            #expect(try await client.get("/v1/containers/\(Fixture.thirdMan.id)").status == 200, "still browsable")
+
+            try FileManager.default.moveItem(at: aside, to: away)
+            restored = true
+            #expect(try await client.get("/v1/media/\(id)").status == 200, "walked again when it returns")
+            #expect(try await client.get("/v1/libraries").json([LibraryBody].self).first { $0.id == "away" }?.available == true)
+        }
+    }
+
     @Test func rangesAreParsedAsTheSpecificationSays() {
         #expect(ByteRange.parse(nil, size: 100) == .whole)
         #expect(ByteRange.parse("bytes=0-49", size: 100) == .part(0, 49))
@@ -266,6 +307,13 @@ struct ServerTests {
         let container = try? JSONDecoder().decode(ContainerJSON.self, from: Data(json.utf8))
         return container?.sequences.flatMap(\.items).flatMap(\.presentations).first { $0.file == file }?.id
     }
+}
+
+struct LibraryBody: Decodable {
+    var id: String
+    var containers: Int
+    var presentations: Int
+    var available: Bool
 }
 
 struct PlaceBody: Encodable {
@@ -548,7 +596,10 @@ extension ServerTests {
             #expect(before.readOnly.port == 8742)
             struct Info: Decodable { var id: String; var name: String }
             #expect(before.readOnly.serverID == (try await client.get("/v1/server").json(Info.self)).id)
-            #expect(before.readOnly.libraries == [Report.Library(id: "main", path: Fixture.root.appendingPathComponent("Library").path)])
+            #expect(before.readOnly.libraries == [
+                Report.Library(id: "main", path: Fixture.root.appendingPathComponent("Library").path),
+                Report.Library(id: "away", path: Fixture.root.appendingPathComponent("Away").path),
+            ])
 
             let refused = try await client.send("PATCH", "/v1/settings", body: Data(#"{"name": "  ", "advertise": false}"#.utf8), headers: operatorHeaders)
             #expect(refused.status == 400)

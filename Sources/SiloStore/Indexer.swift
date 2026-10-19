@@ -31,20 +31,46 @@ public struct ScanReport: Hashable, Sendable {
     public init() {}
 }
 
+/// Why a walk was not applied: the library is unavailable, and the index keeps what it holds for it.
+public enum LibraryUnavailable: Error, Hashable, Sendable, CustomStringConvertible {
+    /// The library's folder does not exist.
+    case missing
+    /// The folder holds no container at its top level, where the index holds some: an unmounted
+    /// Linux mount point is an empty folder, and applying the walk would forget the whole library.
+    case empty
+
+    public var description: String {
+        switch self {
+        case .missing: "its folder does not exist"
+        case .empty: "its folder holds no container, where the index holds some"
+        }
+    }
+}
+
 /// Brings the index up to date with a library. The walk is `LibraryWalker`'s, from the top-level
 /// folders down each sidecar's `smd` paths, with one difference: a sidecar whose modification
 /// time and size are what the index recorded is not read again, and its children are taken from
 /// the index instead. A placement re-reads one container by calling this on its folder.
 public enum Indexer {
+    /// Walks the library and applies what it found, or throws `LibraryUnavailable` having changed
+    /// nothing: a folder that is missing, or that holds no container where the index holds some, is
+    /// far more often a drive not yet mounted than a library emptied.
     public static func scan(_ library: LibraryConfig, into index: Index) throws -> ScanReport {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: library.root.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw LibraryUnavailable.missing
+        }
         var report = ScanReport()
         let known = Dictionary(uniqueKeysWithValues: try index.sidecars(in: library.id).map { ($0.path, $0) })
         var reached: Set<String> = []
 
-        let folders = (try? FileManager.default.contentsOfDirectory(at: library.root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        let folders = try FileManager.default.contentsOfDirectory(at: library.root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
+            .filter { folder in
+                (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                    && FileManager.default.fileExists(atPath: folder.appendingPathComponent(SidecarFile.fileName).path)
+            }
+        guard !folders.isEmpty || known.isEmpty else { throw LibraryUnavailable.empty }
         for folder in folders.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
-            guard FileManager.default.fileExists(atPath: folder.appendingPathComponent(SidecarFile.fileName).path) else { continue }
             try visit(folder: folder.lastPathComponent, parent: nil, expecting: nil, library: library, index: index, known: known, reached: &reached, report: &report)
         }
 
