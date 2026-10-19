@@ -44,8 +44,27 @@ package struct OperatorController {
     @ErrorResponse(OutsideTheRoots.self, .forbidden, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(BadLibrary.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
     package func addLibrary(@JSONBody body: Components.Schemas.NewLibrary) async throws -> Components.Schemas.Library {
-        let library = try await libraries.add(id: body.id, path: body.path)
+        let library = try await libraries.add(id: body.id, path: body.path, create: body.create ?? false)
         return try listing(library.id, ruleset: library.ruleset)
+    }
+
+    /// What `addLibrary` would find and answer for the same body, making and writing nothing.
+    @Operation
+    package func checkLibrary(@JSONBody body: Components.Schemas.NewLibrary) async throws -> Components.Schemas.LibraryCheck {
+        let check = libraries.check(id: body.id, path: body.path, create: body.create ?? false)
+        return Components.Schemas.LibraryCheck(
+            path: check.path,
+            components: check.components.map { Components.Schemas.PathComponent(path: $0.path, state: .init(rawValue: $0.state.rawValue)!) },
+            root: check.root,
+            creates: check.creates,
+            refusal: check.refusal.map { refusal in
+                switch refusal {
+                case .bad(let detail): Components.Schemas.LibraryRefusal(status: 422, detail: detail)
+                case .outside(let detail): Components.Schemas.LibraryRefusal(status: 403, detail: detail)
+                case .taken(let detail): Components.Schemas.LibraryRefusal(status: 409, detail: detail)
+                }
+            }
+        )
     }
 
     /// Forgets a library — its entry in `settings.json` and its rows in the index — and leaves every

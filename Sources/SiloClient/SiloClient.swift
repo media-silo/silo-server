@@ -440,14 +440,45 @@ public struct SiloClient: Sendable, JobsAPI {
         try await send("GET", "/v1/libraries/\(library)/scan")
     }
 
-    private struct NewLibrary: Codable { var id: String; var path: String }
+    private struct NewLibrary: Codable { var id: String; var path: String; var create: Bool? }
 
     /// Adds a library at a path on the silo's machine, within one of its library roots; the library
-    /// as the silo answers, walked. A refusal is `status(403, _)` outside the roots, `status(409, _)`
+    /// as the silo answers, walked. With `create`, the folders missing from the path are made first,
+    /// within a root that exists. A refusal is `status(403, _)` outside the roots, `status(409, _)`
     /// for a taken id and `status(422, _)` for a path that is not a folder, carrying the silo's reason.
     /// Operator only.
-    public func addLibrary(id: String, path: String) async throws -> Library {
-        try await send("POST", "/v1/libraries", body: NewLibrary(id: id, path: path))
+    public func addLibrary(id: String, path: String, create: Bool = false) async throws -> Library {
+        try await send("POST", "/v1/libraries", body: NewLibrary(id: id, path: path, create: create ? true : nil))
+    }
+
+    /// What adding a library would find — each folder along the path and whether it is there, the
+    /// root it lies within, the folders `create` would make — and the refusal the addition would meet,
+    /// adding and making nothing.
+    public struct LibraryCheck: Hashable, Sendable, Codable {
+        public struct Component: Hashable, Sendable, Codable {
+            public enum State: String, Hashable, Sendable, Codable {
+                case folder, notAFolder, missing
+            }
+
+            public var path: String
+            public var state: State
+        }
+
+        public struct Refusal: Hashable, Sendable, Codable {
+            public var status: Int
+            public var detail: String
+        }
+
+        public var path: String
+        public var components: [Component]
+        public var root: String?
+        public var creates: [String]
+        public var refusal: Refusal?
+    }
+
+    /// Asks what adding a library would find, and adds nothing. Operator only.
+    public func checkLibrary(id: String, path: String, create: Bool = false) async throws -> LibraryCheck {
+        try await send("POST", "/v1/libraries/check", body: NewLibrary(id: id, path: path, create: create ? true : nil))
     }
 
     /// Removes a library, leaving its files where they are. Refused with `status(409, _)`, naming the

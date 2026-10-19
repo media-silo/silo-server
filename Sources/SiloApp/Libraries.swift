@@ -16,6 +16,41 @@ package struct LastWalk: Hashable, Sendable {
     package var report: ScanReport
 }
 
+/// What adding a library at a path would find, asked before adding it: each folder along the path and
+/// whether it is there, the root the path lies within, the folders an addition that may create them
+/// would make, and the refusal the addition would meet, if any. Nothing is written to ask it.
+package struct LibraryCheck: Hashable, Sendable {
+    package enum State: String, Hashable, Sendable {
+        case folder, notAFolder, missing
+    }
+
+    package struct Component: Hashable, Sendable {
+        package var path: String
+        package var state: State
+    }
+
+    package enum Refusal: Hashable, Sendable {
+        case bad(String), outside(String), taken(String)
+
+        var error: any Error {
+            switch self {
+            case .bad(let reason): BadLibrary(reason: reason)
+            case .outside(let reason): OutsideTheRoots(reason: reason)
+            case .taken(let reason): LibraryTaken(reason: reason)
+            }
+        }
+    }
+
+    /// The path as it will be written, standardised.
+    package var path: String
+    /// From the top of the filesystem down to the path itself; below the first one missing, every
+    /// one is missing.
+    package var components: [Component]
+    package var root: String?
+    package var creates: [String]
+    package var refusal: Refusal?
+}
+
 /// A library id another library has already.
 package struct LibraryTaken: Error {
     package var reason: String
@@ -46,6 +81,7 @@ package final class Libraries: Sendable {
     private let settings: SettingsStore
     private let index: Index
     private let checks: CheckSignal
+    private let mounts: MountPoints
     private let logger = Logger(label: "silo.libraries")
     private let state = Mutex(State())
 
@@ -56,11 +92,12 @@ package final class Libraries: Sendable {
         var lanes: [String: LibraryLane] = [:]
     }
 
-    package init(config: SiloConfig, settings: SettingsStore, index: Index, checks: CheckSignal) {
+    package init(config: SiloConfig, settings: SettingsStore, index: Index, checks: CheckSignal, mounts: MountPoints = .system) {
         self.config = config
         self.settings = settings
         self.index = index
         self.checks = checks
+        self.mounts = mounts
     }
 
     package var all: [LibraryConfig] {
@@ -78,19 +115,22 @@ package final class Libraries: Sendable {
 
     // MARK: - Adding and removing
 
-    /// Adds a library over the network: the path absolute, a folder that exists, and once its links
-    /// are resolved within one of the roots; the id new. Written to `settings.json`, walked, and only
+    /// Adds a library over the network: the path absolute, within one of the roots once its links are
+    /// resolved, and a folder that exists — or, with `create`, one whose missing folders are made, below
+    /// a folder that exists within a root; the id new. Written to `settings.json`, walked, and only
     /// then answered, so it is served at once. Libraries written into the file by hand are not held to
     /// the roots — the roots bound what the network may add, and what the owner wrote is theirs.
-    package func add(id: String, path: String) async throws -> LibraryConfig {
-        guard !id.isEmpty, !id.contains("/") else { throw BadLibrary(reason: "a library's id must be a name, without a slash") }
-        guard path.hasPrefix("/") else { throw BadLibrary(reason: "\(path) is not an absolute path") }
-        let library = LibraryConfig(id: id, root: URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL)
-        guard Indexer.folderExists(library) else { throw BadLibrary(reason: "\(path) is not a folder that exists") }
-        guard !roots.isEmpty else { throw OutsideTheRoots(reason: "this silo's silo.json names no library roots, so nothing can be added over the network") }
-        let resolved = library.root.resolvingSymlinksInPath().path
-        guard roots.contains(where: { Self.path(resolved, liesWithin: $0.resolvingSymlinksInPath().path) }) else {
-            throw OutsideTheRoots(reason: "\(path) lies within none of the library roots: \(roots.map(\.path).joined(separator: ", "))")
+    package func add(id: String, path: String, create: Bool = false) async throws -> LibraryConfig {
+        let check = check(id: id, path: path, create: create)
+        if let refusal = check.refusal { throw refusal.error }
+        let library = LibraryConfig(id: id, root: URL(fileURLWithPath: check.path, isDirectory: true))
+        if !check.creates.isEmpty {
+            do {
+                try FileManager.default.createDirectory(at: library.root, withIntermediateDirectories: true)
+            } catch {
+                throw BadLibrary(reason: "\(check.path) could not be made: \(error.localizedDescription)")
+            }
+            logger.info("made \(check.creates.joined(separator: ", ")) for \(id)")
         }
         try settings.update { settings in
             guard !settings.libraries.contains(where: { $0.id == id }) else { throw LibraryTaken(reason: "there is already a library \(id)") }
@@ -99,6 +139,71 @@ package final class Libraries: Sendable {
         logger.info("added \(id) at \(library.root.path)")
         try await walk(library)
         return library
+    }
+
+    /// What adding a library at `path` would find, and the refusal it would meet, without adding it.
+    /// The path's own faults are found first, so a path can be checked before the library is named.
+    /// A missing folder is made only within a root that exists: a root is the machine's owner's to
+    /// make, and one that is missing is far more often a drive not yet mounted than a folder wanted.
+    /// For the same reason none is made where a drive mounts — in a folder like `/Volumes` whose
+    /// children are drives, or below a mount point `/etc/fstab` declares with nothing mounted on it.
+    package func check(id: String, path: String, create: Bool) -> LibraryCheck {
+        guard path.hasPrefix("/") else {
+            return LibraryCheck(path: path, components: [], creates: [], refusal: .bad("\(path) is not an absolute path"))
+        }
+        let standardized = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+        var components: [LibraryCheck.Component] = []
+        var prefix = URL(fileURLWithPath: "/", isDirectory: true)
+        for name in standardized.pathComponents.dropFirst() {
+            prefix.appendPathComponent(name, isDirectory: true)
+            let state: LibraryCheck.State
+            if components.last?.state == .missing {
+                state = .missing
+            } else {
+                state = switch Indexer.isFolder(atPath: prefix.path) {
+                case true?: .folder
+                case false?: .notAFolder
+                case nil: .missing
+                }
+            }
+            components.append(LibraryCheck.Component(path: prefix.path, state: state))
+            if state == .notAFolder { break }
+        }
+        let missing = components.filter { $0.state == .missing }.map(\.path)
+        var check = LibraryCheck(path: standardized.path, components: components, creates: missing)
+        check.refusal = refusal(id: id, check: &check, create: create)
+        return check
+    }
+
+    private func refusal(id: String, check: inout LibraryCheck, create: Bool) -> LibraryCheck.Refusal? {
+        if let blocked = check.components.first(where: { $0.state == .notAFolder }) {
+            return .bad("\(blocked.path) is not a folder")
+        }
+        guard !roots.isEmpty else { return .outside("this silo's silo.json names no library roots, so nothing can be added over the network") }
+        // Only what exists has links to resolve; the folders below it are made as they are named.
+        let existing = check.components.last { $0.state == .folder }?.path ?? "/"
+        let existingURL = URL(fileURLWithPath: existing, isDirectory: true).resolvingSymlinksInPath()
+        let resolvedExisting = existingURL.path
+        let resolved = check.creates.reduce(existingURL) { $0.appendingPathComponent(($1 as NSString).lastPathComponent) }.path
+        let resolvedRoots = roots.map { ($0.path, $0.resolvingSymlinksInPath().path) }
+        guard let root = resolvedRoots.first(where: { Self.path(resolved, liesWithin: $0.1) }) else {
+            return .outside("\(check.path) lies within none of the library roots: \(roots.map(\.path).joined(separator: ", "))")
+        }
+        check.root = root.0
+        if !check.creates.isEmpty {
+            // What could not be made even if asked is said before that nothing asked for it.
+            guard Self.path(resolvedExisting, liesWithin: root.1) else {
+                return .outside("\(check.creates[0]) would be made outside the library roots: a root is made by the machine's owner")
+            }
+            let along = check.components.filter { $0.state == .folder }.map(\.path)
+            if let reason = mounts.reasonNotToMake(in: existing, along: along) {
+                return .outside(reason)
+            }
+            guard create else { return .bad("\(check.path) is not a folder that exists") }
+        }
+        guard !id.isEmpty, !id.contains("/") else { return .bad("a library's id must be a name, without a slash") }
+        guard library(id) == nil else { return .taken("there is already a library \(id)") }
+        return nil
     }
 
     /// Removes a library: it leaves `settings.json` and its rows leave the index, after any walk of it

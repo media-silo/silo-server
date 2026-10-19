@@ -610,9 +610,9 @@ final class ConsoleModel {
     /// Adds a library at `folder` within `root`. Nil when it was added, and the settings and
     /// libraries read again, so the pane shows the library as the silo walked it; otherwise why not,
     /// in the silo's own words, for the sheet that asked to say.
-    func addLibrary(id: String, folder: String, within root: String, on silo: AdminConsole.Silo) async -> String? {
+    func addLibrary(id: String, folder: String, within root: String, create: Bool = false, on silo: AdminConsole.Silo) async -> String? {
         do {
-            _ = try await console.addLibrary(id: id, path: AdminConsole.path(folder, within: root), on: silo)
+            _ = try await console.addLibrary(id: id, path: AdminConsole.path(folder, within: root), create: create, on: silo)
         } catch let refused as AdminConsole.SettingsRefused {
             return refused.reason
         } catch is AdminConsole.NoAccess {
@@ -623,6 +623,12 @@ final class ConsoleModel {
         await loadSettings(for: silo)
         await loadLibraries(for: silo)
         return nil
+    }
+
+    /// What adding a library at `folder` within `root` would find, for the sheet to say as the operator
+    /// types; nil when the silo could not be asked, and the sheet then says nothing of the path.
+    func checkLibrary(id: String, folder: String, within root: String, create: Bool, on silo: AdminConsole.Silo) async -> SiloClient.LibraryCheck? {
+        try? await console.checkLibrary(id: id, path: AdminConsole.path(folder, within: root), create: create, on: silo)
     }
 
     /// Removes a library; a refusal names the job that holds it.
@@ -1751,9 +1757,11 @@ private struct LibrariesPane: View {
             await model.loadLibraries(for: silo)
         }
         .sheet(isPresented: $addingLibrary) {
-            AddLibrarySheet(roots: model.libraryRoots(of: silo) ?? []) { id, folder, root in
-                await model.addLibrary(id: id, folder: folder, within: root, on: silo)
-            }
+            AddLibrarySheet(
+                roots: model.libraryRoots(of: silo) ?? [],
+                onCheck: { id, folder, root, create in await model.checkLibrary(id: id, folder: folder, within: root, create: create, on: silo) },
+                onAdd: { id, folder, root, create in await model.addLibrary(id: id, folder: folder, within: root, create: create, on: silo) }
+            )
         }
         .alert("Remove \(removingLibrary ?? "the library")?", isPresented: Binding(
             get: { removingLibrary != nil },
@@ -1809,18 +1817,62 @@ private struct LibraryRow: View {
 }
 
 /// Adding a library: a folder chosen within one of the roots the silo's owner named in its
-/// `silo.json`, since the console cannot browse the silo's disk. With the roots emptied, it says so
-/// rather than offer a path the silo will refuse. A refusal is shown here, in the silo's words.
+/// `silo.json`, since the console cannot browse the silo's disk. As the folder is typed the silo is
+/// asked what the addition would find, and the sheet shows each folder along the path and whether it
+/// is there; folders that are missing can be made, within a root that exists, by asking for them.
+/// With the roots emptied, it says so rather than offer a path the silo will refuse. A refusal is
+/// shown here, in the silo's words.
 private struct AddLibrarySheet: View {
     let roots: [String]
-    let onAdd: (_ id: String, _ folder: String, _ root: String) async -> String?
+    let onCheck: (_ id: String, _ folder: String, _ root: String, _ create: Bool) async -> SiloClient.LibraryCheck?
+    let onAdd: (_ id: String, _ folder: String, _ root: String, _ create: Bool) async -> String?
 
     @State private var id = ""
     @State private var root = ""
     @State private var folder = ""
+    @State private var create = false
+    @State private var check: SiloClient.LibraryCheck?
     @State private var refused: String?
     @State private var adding = false
     @Environment(\.dismiss) private var dismiss
+
+    private struct Asked: Equatable {
+        var id: String, folder: String, root: String, create: Bool
+    }
+
+    private var name: String { id.trimmingCharacters(in: .whitespaces) }
+
+    private var typedPath: String { AdminConsole.path(folder, within: root) }
+
+    /// The silo's answer, while it is about the path as typed and not one typed before it.
+    private var current: SiloClient.LibraryCheck? {
+        guard let check, check.path == URL(fileURLWithPath: typedPath).standardizedFileURL.path else { return nil }
+        return check
+    }
+
+    /// Orange for folders that will be made, red for anything else that is not there.
+    private func absentColor(_ check: SiloClient.LibraryCheck) -> Color {
+        create && !check.creates.isEmpty && !check.refusesPath(create: create) ? .orange : .red
+    }
+
+    /// The sentence the coloured path sits in: what comes before it and what after. A refusal over the
+    /// name leaves the path good, and is said below the form.
+    private func saying(_ check: SiloClient.LibraryCheck) -> (before: String, after: String) {
+        let count = check.creates.count
+        let folders = count == 1 ? "folder" : "\(count) folders"
+        if let refusal = check.refusal, check.refusesPath(create: create) {
+            // A place no folder may be made in is said over the folders being missing: making them is
+            // no answer there.
+            guard refusal.status == 403 || create || count == 0 else {
+                return ("A library cannot be created at ", ". The \(folders) in red \(count == 1 ? "does" : "do") not exist.")
+            }
+            return ("A library cannot be created at ", ": \(refusal.detail).")
+        }
+        guard count == 0 else {
+            return ("A library will be created at ", ". The \(folders) in orange will be created.")
+        }
+        return ("A library will be created at ", ". This path already exists on the silo.")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1837,14 +1889,39 @@ private struct AddLibrarySheet: View {
                         ForEach(roots, id: \.self) { Text($0).tag($0) }
                     }
                     TextField("Folder", text: $folder, prompt: Text("Media/Films"))
-                    LabeledContent("Path", value: AdminConsole.path(folder, within: root))
-                        .textSelection(.enabled)
                 }
                 .formStyle(.grouped)
+                .scrollDisabled(true)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Form {
+                    if let check = current {
+                        let saying = saying(check)
+                        Text("\(saying.before)\(Text(check.present).foregroundStyle(.green))\(Text(check.absent).foregroundStyle(absentColor(check)))\(saying.after)")
+                            .font(.callout)
+                            .textSelection(.enabled)
+                        if !check.creates.isEmpty, check.refusal?.status != 403 {
+                            Toggle(check.creates.count == 1 ? "Create the missing folder" : "Create the \(check.creates.count) missing folders", isOn: $create)
+                        }
+                    } else {
+                        // Until the silo answers for the path as typed, nothing is said of what is there.
+                        Text("A library will be created at \(typedPath).")
+                            .font(.callout)
+                            .textSelection(.enabled)
+                    }
+                }
+                .formStyle(.grouped)
+                .scrollDisabled(true)
+                .fixedSize(horizontal: false, vertical: true)
             }
             if let refused {
                 Text("The silo refused it: \(refused)")
                     .foregroundStyle(.red)
+                    .font(.callout)
+                    .textSelection(.enabled)
+            } else if let check = current, let refusal = check.refusal, !name.isEmpty, !check.refusesPath(create: create) {
+                Text("The silo would refuse it: \(refusal.detail)")
+                    .foregroundStyle(.orange)
                     .font(.callout)
                     .textSelection(.enabled)
             }
@@ -1854,18 +1931,28 @@ private struct AddLibrarySheet: View {
                 Button("Add") {
                     adding = true
                     Task {
-                        refused = await onAdd(id.trimmingCharacters(in: .whitespaces), folder, root)
+                        refused = await onAdd(name, folder, root, create)
                         adding = false
                         if refused == nil { dismiss() }
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(roots.isEmpty || id.trimmingCharacters(in: .whitespaces).isEmpty || adding)
+                .disabled(roots.isEmpty || name.isEmpty || adding || check?.refusal != nil)
             }
         }
         .padding(20)
-        .frame(width: 440)
+        .frame(width: 480)
         .onAppear { root = roots.first ?? "" }
+        // Asked again a moment after the typing stops, and not at every keystroke.
+        .task(id: Asked(id: name, folder: folder, root: root, create: create)) {
+            guard !roots.isEmpty, !root.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            let answer = await onCheck(name, folder, root, create)
+            guard !Task.isCancelled else { return }
+            check = answer
+            refused = nil
+        }
     }
 }
 

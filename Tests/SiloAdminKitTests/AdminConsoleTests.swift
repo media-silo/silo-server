@@ -784,6 +784,8 @@ struct AdminConsoleTests {
             case ("GET", "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":2,"presentations":5,"available":false}]"#.utf8))
             case ("GET", "/v1/libraries/films/scan"):
                 return (200, Data(#"{"walkedAt":"2026-10-19T09:30:00Z","available":false,"report":{"read":0,"unchanged":0,"removed":0,"findings":[{"severity":"error","text":"not applied: its folder does not exist"}]}}"#.utf8))
+            case ("POST", "/v1/libraries/check"):
+                return (200, Data(#"{"path":"/srv/media/Shows/New","components":[{"path":"/srv","state":"folder"},{"path":"/srv/media","state":"folder"},{"path":"/srv/media/Shows","state":"missing"},{"path":"/srv/media/Shows/New","state":"missing"}],"root":"/srv/media","creates":["/srv/media/Shows","/srv/media/Shows/New"]\#(body.contains("create") ? "" : #","refusal":{"status":422,"detail":"/srv/media/Shows/New is not a folder that exists"}"#)}"#.utf8))
             case ("POST", "/v1/libraries"):
                 if body.contains("etc") { return (403, Data(#"{"detail":"/etc lies within none of the library roots: /srv/media"}"#.utf8)) }
                 return (201, Data(#"{"id":"shows","containers":4,"presentations":40,"available":true}"#.utf8))
@@ -913,6 +915,38 @@ struct AdminConsoleTests {
             #expect(refused.reason == "job j1 is encoding and files into films", "naming the job")
         }
         #expect(!asked.withLock { $0 }.contains { $0.method == "POST" && $0.path.hasSuffix("/scan") }, "nothing asks for a walk")
+    }
+
+    /// The console asks what an addition would find before it is made — each folder along the path
+    /// and the refusal it would meet — and asks for the missing folders to be made only when told to.
+    @Test func aLibrarysPathIsCheckedAndItsFoldersMadeFromTheConsole() async throws {
+        let asked = Mutex<[Asked]>([])
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        Self.answer(with: Self.changingSilo(head: 3) { request in asked.withLock { $0.append(request) } })
+        let check = try await console.checkLibrary(id: "shows", path: "/srv/media/Shows/New", create: false, on: home)
+        #expect(check.components.map(\.state) == [.folder, .folder, .missing, .missing])
+        #expect(check.root == "/srv/media")
+        #expect(check.creates == ["/srv/media/Shows", "/srv/media/Shows/New"])
+        #expect(check.present == "/srv/media" && check.absent == "/Shows/New", "the path split where it stops being there, for the sheet to colour")
+        let blocked = try SiloClient.decoder.decode(SiloClient.LibraryCheck.self, from: Data(#"{"path":"/srv/media/notes.txt/Films","components":[{"path":"/srv","state":"folder"},{"path":"/srv/media","state":"folder"},{"path":"/srv/media/notes.txt","state":"notAFolder"}],"creates":[],"refusal":{"status":422,"detail":"/srv/media/notes.txt is not a folder"}}"#.utf8))
+        #expect(blocked.present == "/srv/media" && blocked.absent == "/notes.txt/Films", "a file in the way is apart with what lies past it")
+        #expect(blocked.refusesPath(create: true), "a file in the way refuses the path whatever is asked")
+        #expect(check.refusal?.status == 422)
+        #expect(check.refusal?.detail == "/srv/media/Shows/New is not a folder that exists")
+        #expect(check.refusesPath(create: false), "missing folders not asked for refuse the path")
+        let named = try SiloClient.decoder.decode(SiloClient.LibraryCheck.self, from: Data(#"{"path":"/srv/media/Shows","components":[{"path":"/srv","state":"folder"},{"path":"/srv/media","state":"folder"},{"path":"/srv/media/Shows","state":"missing"}],"root":"/srv/media","creates":["/srv/media/Shows"],"refusal":{"status":409,"detail":"there is already a library shows"}}"#.utf8))
+        #expect(!named.refusesPath(create: true), "a name already taken leaves the path good")
+        let mounted = try SiloClient.decoder.decode(SiloClient.LibraryCheck.self, from: Data(#"{"path":"/Volumes/Media","components":[{"path":"/Volumes","state":"folder"},{"path":"/Volumes/Media","state":"missing"}],"creates":["/Volumes/Media"],"refusal":{"status":403,"detail":"it would be created where drives are mounted"}}"#.utf8))
+        #expect(mounted.refusesPath(create: true), "a drive's mount point refuses the path even when asked to make it")
+        #expect(mounted.refusesPath(create: false), "and when not")
+        let checked = try JSONDecoder().decode([String: String].self, from: Data(try #require(asked.withLock { $0 }.last).body.utf8))
+        #expect(checked == ["id": "shows", "path": "/srv/media/Shows/New"], "create is sent only when asked for")
+        #expect(try await console.checkLibrary(id: "shows", path: "/srv/media/Shows/New", create: true, on: home).refusal == nil)
+
+        _ = try await console.addLibrary(id: "shows", path: "/srv/media/Shows/New", create: true, on: home)
+        let sent = try JSONSerialization.jsonObject(with: Data(try #require(asked.withLock { $0 }.last).body.utf8)) as? [String: Any]
+        #expect(sent?["create"] as? Bool == true)
+        #expect(asked.withLock { $0 }.filter { $0.method == "POST" && $0.path == "/v1/libraries" }.count == 1, "a check adds nothing")
     }
 
     @Test func aLibrarysStandardIsNamedFromTheConsole() async throws {
