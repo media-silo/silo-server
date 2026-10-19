@@ -1161,6 +1161,12 @@ extension ServerTests {
             #expect(impact.isEmpty)
             let libraries = try SiloClient.decoder.decode([SiloClient.Library].self, from: try await client.get("/v1/libraries").body)
             #expect(libraries.map(\.id).contains("main"))
+            #expect(libraries.first { $0.id == "main" }?.available == true)
+            let walk = try SiloClient.decoder.decode(SiloClient.LastWalk.self, from: try await client.get("/v1/libraries/main/scan", headers: Self.operatorHeaders).body)
+            #expect(walk.available)
+            let settings = try SiloClient.decoder.decode(SiloClient.SettingsReport.self, from: try await client.get("/v1/settings", headers: Self.operatorHeaders).body)
+            #expect(settings.readOnly.libraryRoots == [Fixture.root.appendingPathComponent("Media").path])
+            #expect(settings.editable.libraries.map(\.id).contains("main"))
         }
     }
 }

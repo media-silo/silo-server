@@ -780,8 +780,15 @@ struct AdminConsoleTests {
                 return (409, Data(#"{"detail":"household's branch trial has not taken in household@3, household@\#(head) from the standard"}"#.utf8))
             case (_, "/v1/rulesets/household/branches/trial/impact"): return (200, Data("[]".utf8))
             case ("PUT", "/v1/libraries/films/ruleset"):
-                return body.contains("nothing") ? (404, Data()) : (200, Data(#"{"id":"films","ruleset":"household","containers":2,"presentations":5}"#.utf8))
-            case (_, "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":2,"presentations":5}]"#.utf8))
+                return body.contains("nothing") ? (404, Data()) : (200, Data(#"{"id":"films","ruleset":"household","containers":2,"presentations":5,"available":true}"#.utf8))
+            case ("GET", "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":2,"presentations":5,"available":false}]"#.utf8))
+            case ("GET", "/v1/libraries/films/scan"):
+                return (200, Data(#"{"walkedAt":"2026-10-19T09:30:00Z","available":false,"report":{"read":0,"unchanged":0,"removed":0,"findings":[{"severity":"error","text":"not applied: its folder does not exist"}]}}"#.utf8))
+            case ("POST", "/v1/libraries"):
+                if body.contains("etc") { return (403, Data(#"{"detail":"/etc lies within none of the library roots: /srv/media"}"#.utf8)) }
+                return (201, Data(#"{"id":"shows","containers":4,"presentations":40,"available":true}"#.utf8))
+            case ("DELETE", "/v1/libraries/films"): return (409, Data(#"{"detail":"job j1 is encoding and files into films"}"#.utf8))
+            case ("DELETE", "/v1/libraries/shows"): return (204, Data())
             default: return nil
             }
         }
@@ -871,6 +878,41 @@ struct AdminConsoleTests {
         _ = try await console.store(takingIn, to: .baseBranch, of: home)
         let put = try #require(asked.withLock { $0 }.last)
         #expect(put.body.contains(#""branch":"trial""#) && put.body.contains(#""upToDateWith":9"#) && put.body.contains(#""basedOn":2"#))
+    }
+
+    /// The console reads each library's availability and last walk, adds a library at a path within a
+    /// root, and shows a removal's refusal naming the job; it has no way to start a walk.
+    @Test func librariesAreAddedAndRemovedFromTheConsole() async throws {
+        let asked = Mutex<[Asked]>([])
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        Self.answer(with: Self.changingSilo(head: 3) { request in asked.withLock { $0.append(request) } })
+        #expect(try await console.libraries(of: home).map(\.available) == [false])
+        let walks = try await console.lastWalks(of: home)
+        #expect(walks["films"]?.available == false)
+        #expect(walks["films"]?.walkedAt == ISO8601DateFormatter().date(from: "2026-10-19T09:30:00Z"))
+        #expect(walks["films"]?.report.findings.map(\.text) == ["not applied: its folder does not exist"])
+
+        #expect(AdminConsole.path("Shows/", within: "/srv/media") == "/srv/media/Shows")
+        #expect(AdminConsole.path("", within: "/srv/media") == "/srv/media")
+        let added = try await console.addLibrary(id: "shows", path: AdminConsole.path("Shows", within: "/srv/media"), on: home)
+        #expect(added.id == "shows" && added.available)
+        let sent = try JSONDecoder().decode([String: String].self, from: Data(try #require(asked.withLock { $0 }.last).body.utf8))
+        #expect(sent == ["id": "shows", "path": "/srv/media/Shows"])
+        do {
+            _ = try await console.addLibrary(id: "escape", path: "/etc", on: home)
+            Issue.record("a path outside the roots is refused")
+        } catch let refused as AdminConsole.SettingsRefused {
+            #expect(refused.reason == "/etc lies within none of the library roots: /srv/media")
+        }
+
+        try await console.removeLibrary("shows", on: home)
+        do {
+            try await console.removeLibrary("films", on: home)
+            Issue.record("a library a live job files into is kept")
+        } catch let refused as AdminConsole.SettingsRefused {
+            #expect(refused.reason == "job j1 is encoding and files into films", "naming the job")
+        }
+        #expect(!asked.withLock { $0 }.contains { $0.method == "POST" && $0.path.hasSuffix("/scan") }, "nothing asks for a walk")
     }
 
     @Test func aLibrarysStandardIsNamedFromTheConsole() async throws {

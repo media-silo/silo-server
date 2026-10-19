@@ -403,6 +403,58 @@ public struct SiloClient: Sendable, JobsAPI {
         public var ruleset: String?
         public var containers: Int
         public var presentations: Int
+        /// False while the library's folder is missing, or its last walk found nothing where the
+        /// index holds something: its containers stay browsable, and its media answer 503.
+        public var available: Bool
+    }
+
+    /// What a library's last walk found: when it ran, whether the library was available, and what
+    /// the walk did and found — or, when it was not applied, why. The silo walks each library by
+    /// itself; nothing asks it to.
+    public struct LastWalk: Hashable, Sendable, Codable {
+        public struct Report: Hashable, Sendable, Codable {
+            public var read: Int
+            public var unchanged: Int
+            public var removed: Int
+            public var findings: [Finding]
+        }
+
+        public struct Finding: Hashable, Sendable, Codable {
+            public enum Severity: String, Hashable, Sendable, Codable {
+                case error, warning
+            }
+
+            public var severity: Severity
+            /// Inside the library, when the finding is about one file.
+            public var path: String?
+            public var text: String
+        }
+
+        public var walkedAt: Date
+        public var available: Bool
+        public var report: Report
+    }
+
+    /// A library's last walk. Operator only, since its findings name paths inside the library.
+    public func lastWalk(of library: String) async throws -> LastWalk {
+        try await send("GET", "/v1/libraries/\(library)/scan")
+    }
+
+    private struct NewLibrary: Codable { var id: String; var path: String }
+
+    /// Adds a library at a path on the silo's machine, within one of its library roots; the library
+    /// as the silo answers, walked. A refusal is `status(403, _)` outside the roots, `status(409, _)`
+    /// for a taken id and `status(422, _)` for a path that is not a folder, carrying the silo's reason.
+    /// Operator only.
+    public func addLibrary(id: String, path: String) async throws -> Library {
+        try await send("POST", "/v1/libraries", body: NewLibrary(id: id, path: path))
+    }
+
+    /// Removes a library, leaving its files where they are. Refused with `status(409, _)`, naming the
+    /// job, while a job not yet in a final state files into it. Operator only.
+    public func removeLibrary(_ library: String) async throws {
+        let (data, status) = try await request("DELETE", "/v1/libraries/\(library)", body: Nothing?.none)
+        guard (200..<300).contains(status) else { throw SiloClientError.status(status, String(decoding: data, as: UTF8.self)) }
     }
 
     public func libraries() async throws -> [Library] {

@@ -95,6 +95,8 @@ final class ConsoleModel {
     var promotion: Promotion?
     /// The libraries last read for a silo, each with its standard.
     private(set) var libraries: [AdminConsole.Silo.ID: [SiloClient.Library]] = [:]
+    /// Each library's last walk as last read for a silo, by the library's id.
+    private(set) var lastWalks: [AdminConsole.Silo.ID: [String: SiloClient.LastWalk]] = [:]
     /// A branch's version being tried, while its bindings are chosen.
     var trying: Trying?
     /// The trial jobs this console started for a silo, by its id, as the silo last had them.
@@ -146,6 +148,7 @@ final class ConsoleModel {
 
     enum DetailSection: String, CaseIterable, Identifiable {
         case settings = "Settings"
+        case libraries = "Libraries"
         case rulesets = "Rulesets"
         case outOfDate = "Out of Date"
 
@@ -224,6 +227,11 @@ final class ConsoleModel {
         guard let target = selected.single, let silo = silos.first(where: { $0.id == target }), silo.classification == .withAccess else { return }
         switch section {
         case .settings: break
+        // The walks move on by themselves, and a library added or removed elsewhere changes the
+        // settings, so both are read again.
+        case .libraries:
+            await loadSettings(for: silo)
+            await loadLibraries(for: silo)
         case .rulesets:
             await loadRulesets(for: silo)
             if let current = opened[silo.id] { await open(ruleset: current.summary.name, version: current.document.version, of: silo) }
@@ -581,11 +589,58 @@ final class ConsoleModel {
 
     // MARK: Libraries
 
+    /// Reads a with-access silo's libraries and each one's last walk. A failure leaves the last
+    /// reading in place, as the settings do. There is no rescan: the silo walks its libraries itself.
     func loadLibraries(for silo: AdminConsole.Silo) async {
         if let read = try? await console.libraries(of: silo) {
             libraries[silo.id] = read
         }
+        if let walks = try? await console.lastWalks(of: silo) {
+            lastWalks[silo.id] = walks
+        }
         if rulesets[silo.id] == nil { await loadRulesets(for: silo) }
+    }
+
+    /// Where the network may add a library to a silo, as its settings last said: nil until they are
+    /// read, and empty when its owner named none.
+    func libraryRoots(of silo: AdminConsole.Silo) -> [String]? {
+        settings[silo.id]?.readOnly.libraryRoots
+    }
+
+    /// Adds a library at `folder` within `root`. Nil when it was added, and the settings and
+    /// libraries read again, so the pane shows the library as the silo walked it; otherwise why not,
+    /// in the silo's own words, for the sheet that asked to say.
+    func addLibrary(id: String, folder: String, within root: String, on silo: AdminConsole.Silo) async -> String? {
+        do {
+            _ = try await console.addLibrary(id: id, path: AdminConsole.path(folder, within: root), on: silo)
+        } catch let refused as AdminConsole.SettingsRefused {
+            return refused.reason
+        } catch is AdminConsole.NoAccess {
+            return Refusal.noAccess.message
+        } catch {
+            return Refusal.unreachable.message
+        }
+        await loadSettings(for: silo)
+        await loadLibraries(for: silo)
+        return nil
+    }
+
+    /// Removes a library; a refusal names the job that holds it.
+    func removeLibrary(_ library: String, on silo: AdminConsole.Silo) async {
+        do {
+            try await console.removeLibrary(library, on: silo)
+        } catch let refused as AdminConsole.SettingsRefused {
+            refusal = .settingsRefused(refused.reason)
+            return
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+            return
+        } catch {
+            refusal = .unreachable
+            return
+        }
+        await loadSettings(for: silo)
+        await loadLibraries(for: silo)
     }
 
     /// Names a library's standard, or clears it; the library shows what the silo answered with.
@@ -804,6 +859,7 @@ private struct WithAccessPane: View {
             .frame(maxWidth: 360)
             switch model.section {
             case .settings: SettingsPane(silo: silo, model: model)
+            case .libraries: LibrariesPane(silo: silo, model: model)
             case .rulesets: RulesetsPane(silo: silo, model: model)
             case .outOfDate: OutOfDatePane(silo: silo, model: model)
             }
@@ -1593,7 +1649,7 @@ extension SiloClient.Branch {
 /// A with-access silo's settings, as the silo reports them: what a route changes, editable, and
 /// the facts of its machine — where it listens, its id, where its state lives — read-only, since no
 /// route changes them. Each change goes to the silo as it is made, and what the silo answers is what
-/// the pane then shows. The libraries are listed, read-only, until they grow routes of their own.
+/// the pane then shows. The libraries have a section of their own.
 private struct SettingsPane: View {
     let silo: AdminConsole.Silo
     let model: ConsoleModel
@@ -1620,29 +1676,12 @@ private struct SettingsPane: View {
                         LabeledContent("Server ID", value: report.readOnly.serverID)
                         LabeledContent("State directory", value: report.readOnly.stateDirectory)
                             .textSelection(.enabled)
+                        LabeledContent("Library roots", value: report.readOnly.libraryRoots.isEmpty ? "None" : report.readOnly.libraryRoots.joined(separator: "\n"))
+                            .textSelection(.enabled)
                     } header: {
                         Text("This Silo's Machine")
                     } footer: {
-                        Text("Set in silo.json on the silo's machine. The state directory is where operator-credential.reset goes.")
-                    }
-                    Section {
-                        if report.editable.libraries.isEmpty {
-                            Text("None").foregroundStyle(.secondary)
-                        }
-                        ForEach(report.editable.libraries, id: \.id) { library in
-                            LabeledContent(library.id, value: library.path)
-                            Picker("Standard", selection: Binding(
-                                get: { model.libraries[silo.id]?.first { $0.id == library.id }?.ruleset ?? "" },
-                                set: { chosen in Task { await model.setStandard(chosen.isEmpty ? nil : chosen, of: library.id, on: silo) } }
-                            )) {
-                                Text("None").tag("")
-                                ForEach(model.rulesets[silo.id] ?? [], id: \.name) { Text($0.name).tag($0.name) }
-                            }
-                        }
-                    } header: {
-                        Text("Libraries")
-                    } footer: {
-                        Text("A library's standard is the ruleset an application takes when it names none.")
+                        Text("Set in silo.json on the silo's machine. The state directory is where operator-credential.reset goes; a library added from the console must lie within one of the library roots.")
                     }
                 }
                 .formStyle(.grouped)
@@ -1653,14 +1692,180 @@ private struct SettingsPane: View {
                 ProgressView()
             }
         }
-        .task(id: silo.id) {
-            await model.loadSettings(for: silo)
-            await model.loadLibraries(for: silo)
-        }
+        .task(id: silo.id) { await model.loadSettings(for: silo) }
     }
 
     private func save(_ patch: SiloClient.SettingsPatch) {
         Task { await model.updateSettings(for: silo, patch) }
+    }
+}
+
+/// A with-access silo's libraries: each one's path, its standard, whether it is available and what
+/// its last walk found. They are added within the roots the silo's owner named, and removed. There is
+/// no rescan: the silo walks its libraries itself, and the section reads the walks again at the
+/// console's cadence while it is open.
+private struct LibrariesPane: View {
+    let silo: AdminConsole.Silo
+    let model: ConsoleModel
+    @State private var addingLibrary = false
+    @State private var removingLibrary: String?
+
+    var body: some View {
+        Group {
+            if let report = model.settings[silo.id] {
+                Form {
+                    Section {
+                        if report.editable.libraries.isEmpty {
+                            Text("None").foregroundStyle(.secondary)
+                        }
+                        ForEach(report.editable.libraries, id: \.id) { library in
+                            LibraryRow(
+                                library: library,
+                                listed: model.libraries[silo.id]?.first { $0.id == library.id },
+                                walk: model.lastWalks[silo.id]?[library.id],
+                                onRemove: { removingLibrary = library.id }
+                            )
+                            Picker("Standard", selection: Binding(
+                                get: { model.libraries[silo.id]?.first { $0.id == library.id }?.ruleset ?? "" },
+                                set: { chosen in Task { await model.setStandard(chosen.isEmpty ? nil : chosen, of: library.id, on: silo) } }
+                            )) {
+                                Text("None").tag("")
+                                ForEach(model.rulesets[silo.id] ?? [], id: \.name) { Text($0.name).tag($0.name) }
+                            }
+                        }
+                        Button("Add Library…", systemImage: "plus") { addingLibrary = true }
+                    } header: {
+                        Text("Libraries")
+                    } footer: {
+                        Text("A library's standard is the ruleset an application takes when it names none. The silo walks each library itself — at startup, when a missing folder returns, and every five minutes — so there is nothing to rescan.")
+                    }
+                }
+                .formStyle(.grouped)
+                .sectionPanel()
+            } else {
+                ProgressView()
+            }
+        }
+        .task(id: silo.id) {
+            await model.loadSettings(for: silo)
+            await model.loadLibraries(for: silo)
+        }
+        .sheet(isPresented: $addingLibrary) {
+            AddLibrarySheet(roots: model.libraryRoots(of: silo) ?? []) { id, folder, root in
+                await model.addLibrary(id: id, folder: folder, within: root, on: silo)
+            }
+        }
+        .alert("Remove \(removingLibrary ?? "the library")?", isPresented: Binding(
+            get: { removingLibrary != nil },
+            set: { if !$0 { removingLibrary = nil } }
+        )) {
+            Button("Remove", role: .destructive) {
+                if let library = removingLibrary {
+                    Task { await model.removeLibrary(library, on: silo) }
+                }
+            }
+            Button("Cancel", role: .cancel) { removingLibrary = nil }
+        } message: {
+            Text("The silo forgets the library and its index. Nothing on the silo's disk is touched: every sidecar and media file stays where it is.")
+        }
+    }
+}
+
+/// One library of a silo: where it is on the silo's machine, whether it is there, and what the silo's
+/// last walk of it found. Nothing here asks for a walk.
+private struct LibraryRow: View {
+    let library: SiloClient.SettingsReport.Library
+    let listed: SiloClient.Library?
+    let walk: SiloClient.LastWalk?
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                LabeledContent(library.id, value: library.path)
+                    .textSelection(.enabled)
+                Button("Remove \(library.id)…", systemImage: "minus.circle", role: .destructive, action: onRemove)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+            }
+            if listed?.available == false || walk?.available == false {
+                Label("Unavailable: its folder is missing, or holds nothing where the silo's index holds something. Its containers are kept, and it is walked again when the folder returns.", systemImage: "externaldrive.badge.exclamationmark")
+                    .foregroundStyle(.orange)
+                    .font(.caption)
+            }
+            if let walk {
+                Text("Last walked \(walk.walkedAt.formatted(.relative(presentation: .named)))" + (walk.available ? ": \(walk.report.read) read, \(walk.report.unchanged) unchanged, \(walk.report.removed) removed" : ""))
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                ForEach(walk.report.findings, id: \.self) { finding in
+                    Label(finding.path.map { "\($0): \(finding.text)" } ?? finding.text, systemImage: finding.severity == .error ? "exclamationmark.octagon" : "exclamationmark.triangle")
+                        .foregroundStyle(finding.severity == .error ? .red : .orange)
+                        .font(.caption)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+}
+
+/// Adding a library: a folder chosen within one of the roots the silo's owner named in its
+/// `silo.json`, since the console cannot browse the silo's disk. With the roots emptied, it says so
+/// rather than offer a path the silo will refuse. A refusal is shown here, in the silo's words.
+private struct AddLibrarySheet: View {
+    let roots: [String]
+    let onAdd: (_ id: String, _ folder: String, _ root: String) async -> String?
+
+    @State private var id = ""
+    @State private var root = ""
+    @State private var folder = ""
+    @State private var refused: String?
+    @State private var adding = false
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add a Library")
+                .font(.headline)
+            if roots.isEmpty {
+                Text("This silo has no library roots. Its owner names the folders a library may be added within in silo.json, on the silo's machine; until then nothing can be added from here.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Form {
+                    TextField("Name", text: $id, prompt: Text("films"))
+                    Picker("Within", selection: $root) {
+                        ForEach(roots, id: \.self) { Text($0).tag($0) }
+                    }
+                    TextField("Folder", text: $folder, prompt: Text("Media/Films"))
+                    LabeledContent("Path", value: AdminConsole.path(folder, within: root))
+                        .textSelection(.enabled)
+                }
+                .formStyle(.grouped)
+            }
+            if let refused {
+                Text("The silo refused it: \(refused)")
+                    .foregroundStyle(.red)
+                    .font(.callout)
+                    .textSelection(.enabled)
+            }
+            HStack {
+                Button("Cancel", role: .cancel) { dismiss() }
+                Spacer()
+                Button("Add") {
+                    adding = true
+                    Task {
+                        refused = await onAdd(id.trimmingCharacters(in: .whitespaces), folder, root)
+                        adding = false
+                        if refused == nil { dismiss() }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(roots.isEmpty || id.trimmingCharacters(in: .whitespaces).isEmpty || adding)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .onAppear { root = roots.first ?? "" }
     }
 }
 

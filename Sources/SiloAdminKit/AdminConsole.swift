@@ -689,6 +689,46 @@ public actor AdminConsole {
         }
     }
 
+    /// Each library's last walk, by its id, for the libraries a with-access silo lists. A library
+    /// whose walk cannot be read is left out.
+    public func lastWalks(of silo: Silo) async throws -> [String: SiloClient.LastWalk] {
+        try await withOperator(silo) { client in
+            var walks: [String: SiloClient.LastWalk] = [:]
+            for library in try await client.libraries() {
+                walks[library.id] = try? await client.lastWalk(of: library.id)
+            }
+            return walks
+        }
+    }
+
+    /// Adds a library at `path` on the silo's machine; the library as the silo answers, walked. The
+    /// silo's refusal — outside its roots, a taken id, a folder that is not there — comes back as
+    /// `SettingsRefused` in its own words.
+    public func addLibrary(id: String, path: String, on silo: Silo) async throws -> SiloClient.Library {
+        do {
+            return try await withOperator(silo) { try await $0.addLibrary(id: id, path: path) }
+        } catch SiloClientError.status(let status, let body) where [400, 403, 409, 422].contains(status) {
+            throw SettingsRefused(reason: Self.detail(body))
+        }
+    }
+
+    /// Removes a library, leaving its files on the silo's machine. A refusal — a live job filing into
+    /// it — comes back as `SettingsRefused`, naming the job.
+    public func removeLibrary(_ library: String, on silo: Silo) async throws {
+        do {
+            try await withOperator(silo) { try await $0.removeLibrary(library) }
+        } catch SiloClientError.status(let status, let body) where status == 404 || status == 409 {
+            throw SettingsRefused(reason: Self.detail(body).isEmpty ? "the silo has no library \(library)" : Self.detail(body))
+        }
+    }
+
+    /// The path a library added within `root` is at: the folder named inside it, or the root itself.
+    public static func path(_ folder: String, within root: String) -> String {
+        let inside = folder.trimmingCharacters(in: CharacterSet(charactersIn: "/").union(.whitespaces))
+        guard !inside.isEmpty else { return root }
+        return (root.hasSuffix("/") ? root : root + "/") + inside
+    }
+
     /// A problem's detail, or the body as it came.
     private static func detail(_ body: String) -> String {
         struct Problem: Decodable { var detail: String }
