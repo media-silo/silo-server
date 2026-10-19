@@ -78,6 +78,7 @@ public enum LibraryWalker {
     public static func walk(_ root: URL) -> LibraryTree {
         var findings: [Finding] = []
         var reached: Set<String> = []
+        var found: [ContainerID: String] = [:]
         var roots: [LibraryNode] = []
 
         let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
@@ -85,7 +86,7 @@ public enum LibraryWalker {
             guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
             let sidecar = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
             guard FileManager.default.fileExists(atPath: sidecar.path) else { continue }
-            if let node = read(folder: folder, relativeFolder: folder.lastPathComponent, expecting: nil, reached: &reached, findings: &findings) {
+            if let node = read(folder: folder, relativeFolder: folder.lastPathComponent, expecting: nil, reached: &reached, found: &found, findings: &findings) {
                 roots.append(node)
             }
         }
@@ -105,7 +106,9 @@ public enum LibraryWalker {
         return LibraryTree(root: root, roots: roots, findings: findings)
     }
 
-    private static func read(folder: URL, relativeFolder: String, expecting: ContainerID?, reached: inout Set<String>, findings: inout [Finding]) -> LibraryNode? {
+    private static func read(
+        folder: URL, relativeFolder: String, expecting: ContainerID?, reached: inout Set<String>, found: inout [ContainerID: String], findings: inout [Finding]
+    ) -> LibraryNode? {
         let url = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
         let relative = "\(relativeFolder)/\(LibraryLayout.sidecarFileName)"
         reached.insert(relative)
@@ -120,6 +123,13 @@ public enum LibraryWalker {
             findings.append(Finding(.error, path: relative, "describes \(sidecar.container.id) where its parent expects \(expecting)"))
             return nil
         }
+        // A library holds a container once: the first sidecar reached for it is the one walked, and
+        // which of the two is right is not the walk's to decide.
+        if let first = found[sidecar.container.id] {
+            findings.append(Finding(.error, path: relative, "container \(sidecar.container.id) is already at \"\(first)\""))
+            return nil
+        }
+        found[sidecar.container.id] = relativeFolder
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         var node = LibraryNode(
             folder: folder,
@@ -150,7 +160,7 @@ public enum LibraryWalker {
                 findings.append(Finding(.error, path: relative, "child \(child) is at \"\(path)\", which does not exist"))
                 continue
             }
-            if let childNode = read(folder: childFolder, relativeFolder: childRelative, expecting: child, reached: &reached, findings: &findings) {
+            if let childNode = read(folder: childFolder, relativeFolder: childRelative, expecting: child, reached: &reached, found: &found, findings: &findings) {
                 node.children.append(childNode)
             }
         }

@@ -43,7 +43,7 @@ package struct RulesStack: Sendable {
             throw Unresolvable(reason: error.description)
         }
         for container in lineage.reversed() {
-            guard let row = try index.container(container.id), let reference = try index.sidecar(container.id)?.rules else { continue }
+            guard let row = try index.container(container.id, in: library.id), let reference = try index.sidecar(container.id, in: library.id)?.rules else { continue }
             let folder = row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
             do throws(RulesLayerError) {
                 layers.append(try RulesLayerFile.read(.container(container.id.value), reference, in: folder))
@@ -67,7 +67,7 @@ package struct RulesStack: Sendable {
 
     package func home(of binding: Binding, lineage: [SmdKit.Container]) throws -> Home? {
         guard let library = libraries.library(binding.library), let container = lineage.last,
-              let row = try index.container(container.id), let sidecar = try index.sidecar(container.id)
+              let row = try index.container(container.id, in: library.id), let sidecar = try index.sidecar(container.id, in: library.id)
         else { return nil }
         let folder = row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
         return Home(

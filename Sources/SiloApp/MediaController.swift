@@ -61,20 +61,45 @@ package struct MediaController {
         )
     }
 
-    /// The container as its sidecar: the bytes the index was built from.
+    /// The container as its sidecar: the bytes the index was built from. A container in several
+    /// libraries is the first's that holds it, as `GET /v1/containers/{id}` answers it.
     @Get("/containers/{id}/smd")
     @RawRoute
     package func sidecar<Sender: HTTPResponseSender & ~Copyable & SendableMetatype>(
         pathParameters: [String: Substring],
         responseSender: consuming sending Sender
     ) async throws where Sender.Writer: ~Copyable {
-        guard let id = pathParameters["id"].flatMap({ ContainerID(String($0)) }), let row = try index.container(id) else {
+        let row = try pathParameters["id"].flatMap { ContainerID(String($0)) }.flatMap { id in
+            let held = Dictionary(try index.containers(id).map { ($0.library, $0) }, uniquingKeysWith: { first, _ in first })
+            return libraries.all.lazy.compactMap { held[$0.id] }.first
+        }
+        try await Self.send(row?.document, to: responseSender)
+    }
+
+    /// One library's sidecar for a container, whether or not another library holds it too.
+    @Get("/libraries/{library}/containers/{id}/smd")
+    @RawRoute
+    package func librarySidecar<Sender: HTTPResponseSender & ~Copyable & SendableMetatype>(
+        pathParameters: [String: Substring],
+        responseSender: consuming sending Sender
+    ) async throws where Sender.Writer: ~Copyable {
+        let library = pathParameters["library"].map(String.init).flatMap(libraries.library)
+        let row = try library.flatMap { library in
+            try pathParameters["id"].flatMap { ContainerID(String($0)) }.flatMap { try index.container($0, in: library.id) }
+        }
+        try await Self.send(row?.document, to: responseSender)
+    }
+
+    private static func send<Sender: HTTPResponseSender & ~Copyable & SendableMetatype>(
+        _ document: Data?, to responseSender: consuming sending Sender
+    ) async throws where Sender.Writer: ~Copyable {
+        guard let document else {
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
             return
         }
-        var body = UniqueArray<UInt8>(copying: Array(row.document))
+        var body = UniqueArray<UInt8>(copying: Array(document))
         try await responseSender.sendAndFinish(
-            HTTPResponse(status: .ok, headerFields: [.contentType: "application/xml; charset=utf-8", .contentLength: String(row.document.count)]),
+            HTTPResponse(status: .ok, headerFields: [.contentType: "application/xml; charset=utf-8", .contentLength: String(document.count)]),
             buffer: &body
         )
     }

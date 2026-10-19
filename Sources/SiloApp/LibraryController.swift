@@ -6,6 +6,7 @@ import OpenAPIRuntime  // swiftlint:disable:this unused_import
 import SiloAPI
 import SiloStore
 import SmdKit
+import SmdSidecar
 import Wire
 import WireMVC
 import WireOpenAPI
@@ -54,16 +55,43 @@ package struct LibraryController {
         try index.roots(in: library).map(Mapping.summary)
     }
 
+    /// A container in several libraries is answered from the first that holds it, in the order
+    /// `settings.json` lists them; the answer names it.
     @Operation
     @ErrorResponse(NoSuchContainer.self, .notFound)
     package func getContainer(@Path id: String, @Query profile: String?) async throws -> Components.Schemas.Container {
-        guard let containerID = ContainerID(id), let row = try index.container(containerID), let sidecar = try index.sidecar(containerID) else {
-            throw NoSuchContainer()
-        }
+        guard let containerID = ContainerID(id) else { throw NoSuchContainer() }
+        let held = Dictionary(try index.containers(containerID).map { ($0.library, $0) }, uniquingKeysWith: { first, _ in first })
+        guard let row = libraries.all.lazy.compactMap({ held[$0.id] }).first else { throw NoSuchContainer() }
+        return try container(row, profile: profile)
+    }
+
+    @Operation
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    package func listLibraryContainers(@Path library: String) async throws -> [Components.Schemas.ContainerSummary] {
+        guard libraries.library(library) != nil else { throw NoSuchLibrary() }
+        return try index.roots(in: library, listedOnly: false).map(Mapping.summary)
+    }
+
+    @Operation
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    @ErrorResponse(NoSuchContainer.self, .notFound)
+    package func getLibraryContainer(@Path library: String, @Path id: String) async throws -> Components.Schemas.LibraryContainer {
+        guard libraries.library(library) != nil else { throw NoSuchLibrary() }
+        guard let containerID = ContainerID(id), let row = try index.container(containerID, in: library) else { throw NoSuchContainer() }
+        return Components.Schemas.LibraryContainer(
+            library: library, path: "\(row.folder)/\(SidecarFile.fileName)", container: try container(row, profile: nil)
+        )
+    }
+
+    /// One library's row for a container as the document's container, with that library's
+    /// presentations and children.
+    private func container(_ row: IndexedContainer, profile: String?) throws -> Components.Schemas.Container {
+        let sidecar = try SidecarFile.sidecar(from: row.document)
         return Mapping.container(
             row, sidecar: sidecar,
-            children: try index.children(of: containerID),
-            presentations: try index.presentations(of: containerID),
+            children: try index.children(of: row.containerID, in: row.library),
+            presentations: try index.presentations(of: row.containerID, in: row.library),
             profile: profile
         )
     }
@@ -89,7 +117,7 @@ struct LibraryCounts {
         var pending = try index.roots(in: library, listedOnly: false).map(\.containerID)
         while let next = pending.popLast() {
             total += 1
-            pending += try index.children(of: next).map(\.containerID)
+            pending += try index.children(of: next, in: library).map(\.containerID)
         }
         return total
     }
@@ -98,8 +126,8 @@ struct LibraryCounts {
         var total = 0
         var pending = try index.roots(in: library, listedOnly: false).map(\.containerID)
         while let next = pending.popLast() {
-            total += try index.presentations(of: next).count
-            pending += try index.children(of: next).map(\.containerID)
+            total += try index.presentations(of: next, in: library).count
+            pending += try index.children(of: next, in: library).map(\.containerID)
         }
         return total
     }

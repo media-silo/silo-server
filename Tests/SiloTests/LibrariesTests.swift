@@ -144,9 +144,9 @@ struct LibrariesTests {
         try await bench.libraries.reread(placement.sidecars, in: bench.late)
 
         #expect(try bench.index.roots(in: "films").map(\.id) == [Self.series.id.value])
-        #expect(try bench.index.children(of: Self.series.id).map(\.id) == [Self.season.id.value], "the season under the series")
-        #expect(try bench.index.children(of: Self.season.id).map(\.id) == [Self.serial.id.value], "and the serial under the season")
-        #expect(try bench.index.presentations(of: Self.serial.id).map(\.item) == ["part1"])
+        #expect(try bench.index.children(of: Self.series.id, in: "films").map(\.id) == [Self.season.id.value], "the season under the series")
+        #expect(try bench.index.children(of: Self.season.id, in: "films").map(\.id) == [Self.serial.id.value], "and the serial under the season")
+        #expect(try bench.index.presentations(of: Self.serial.id, in: "films").map(\.item) == ["part1"])
     }
 
     @Test func aPlacementWalksNothing() async throws {
@@ -158,10 +158,10 @@ struct LibrariesTests {
         try Placer.apply(placement)
         try await bench.libraries.reread(placement.sidecars, in: bench.present)
 
-        #expect(try bench.index.presentations(of: Self.serial.id).count == 1, "the placed presentation is indexed at once")
-        #expect(try bench.index.container(Fixture.brief.id) == nil, "and the change behind the server's back is not")
+        #expect(try bench.index.presentations(of: Self.serial.id, in: "main").count == 1, "the placed presentation is indexed at once")
+        #expect(try bench.index.container(Fixture.brief.id, in: "main") == nil, "and the change behind the server's back is not")
         try await bench.libraries.walk(bench.present)
-        #expect(try bench.index.container(Fixture.brief.id) != nil, "until the library's next walk")
+        #expect(try bench.index.container(Fixture.brief.id, in: "main") != nil, "until the library's next walk")
     }
 
     @Test func theLastWalkIsKeptWithItsFindings() async throws {

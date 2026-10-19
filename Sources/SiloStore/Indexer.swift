@@ -62,6 +62,7 @@ public enum Indexer {
         var report = ScanReport()
         let known = Dictionary(uniqueKeysWithValues: try index.sidecars(in: library.id).map { ($0.path, $0) })
         var reached: Set<String> = []
+        var found: [ContainerID: String] = [:]
 
         let folders = try FileManager.default.contentsOfDirectory(at: library.root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
             .filter { folder in
@@ -70,7 +71,7 @@ public enum Indexer {
             }
         guard !folders.isEmpty || known.isEmpty else { throw LibraryUnavailable.empty }
         for folder in folders.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            try visit(folder: folder.lastPathComponent, parent: nil, expecting: nil, library: library, index: index, known: known, reached: &reached, report: &report)
+            try visit(folder: folder.lastPathComponent, parent: nil, expecting: nil, library: library, index: index, known: known, reached: &reached, found: &found, report: &report)
         }
 
         let gone = Set(known.keys).subtracting(reached)
@@ -120,13 +121,15 @@ public enum Indexer {
             return report
         }
         var reached: Set<String> = []
-        try visit(folder: folder, parent: parent, expecting: nil, library: library, index: index, known: [:], reached: &reached, report: &report, descend: false)
+        var found: [ContainerID: String] = [:]
+        try visit(folder: folder, parent: parent, expecting: nil, library: library, index: index, known: [:], reached: &reached, found: &found, report: &report, descend: false)
         return report
     }
 
     private static func visit(
         folder: String, parent: ContainerID?, expecting: ContainerID?, library: LibraryConfig, index: Index,
-        known: [String: IndexedSidecar], reached: inout Set<String>, report: inout ScanReport, descend: Bool = true
+        known: [String: IndexedSidecar], reached: inout Set<String>, found: inout [ContainerID: String], report: inout ScanReport,
+        descend: Bool = true
     ) throws {
         let path = "\(folder)/\(SidecarFile.fileName)"
         guard reached.insert(path).inserted else { return }
@@ -138,11 +141,13 @@ public enum Indexer {
         let children: [ContainerID: String]
         let id: ContainerID
         if let recorded = known[path], recorded.modified == modified?.timeIntervalSince1970, recorded.size == size,
-           let container = try index.container(ContainerID(recorded.container)!) {
+           let container = try index.container(ContainerID(recorded.container)!, in: library.id), container.folder == folder,
+           found[container.containerID] == nil {
             report.unchanged += 1
             id = container.containerID
-            children = Dictionary(uniqueKeysWithValues: try index.children(of: id).map { ($0.containerID, "\($0.folder.dropFirst(folder.count + 1))/\(SidecarFile.fileName)") })
-            if container.parent != parent?.value { try index.setParent(parent, of: id) }
+            found[id] = folder
+            children = Dictionary(uniqueKeysWithValues: try index.children(of: id, in: library.id).map { ($0.containerID, "\($0.folder.dropFirst(folder.count + 1))/\(SidecarFile.fileName)") })
+            if container.parent != parent?.value { try index.setParent(parent, of: id, in: library.id) }
         } else {
             let document: Data
             let sidecar: Sidecar
@@ -157,9 +162,18 @@ public enum Indexer {
                 report.findings.append(Finding(.error, path: path, "describes \(sidecar.container.id) where its parent expects \(expecting)"))
                 return
             }
+            // A library holds a container once. The walk keeps the first sidecar it reaches for it and
+            // reports any other; a refresh, which walks nothing, keeps the one the index holds while
+            // that one is still there.
+            id = sidecar.container.id
+            if let first = try found[id] ?? (descend ? nil : heldElsewhere(id, than: folder, in: library, index: index)) {
+                report.findings.append(Finding(.error, path: path, "container \(id) is already at \"\(first)\""))
+                try index.remove(sidecarsAt: [path], in: library.id)
+                return
+            }
+            found[id] = folder
             try index.store(IndexEntry(sidecar: sidecar, document: document, library: library.id, folder: folder, parent: parent, modified: modified, size: size))
             report.read += 1
-            id = sidecar.container.id
             children = sidecar.children
         }
 
@@ -174,8 +188,17 @@ public enum Indexer {
                 report.findings.append(Finding(.error, path: path, "child \(child) is at \"\(childPath)\", which does not exist"))
                 continue
             }
-            try visit(folder: childFolder, parent: id, expecting: child, library: library, index: index, known: known, reached: &reached, report: &report)
+            try visit(folder: childFolder, parent: id, expecting: child, library: library, index: index, known: known, reached: &reached, found: &found, report: &report)
         }
+    }
+
+    /// The folder of the library's sidecar for the container, when the index holds it at a folder other
+    /// than this one and that sidecar is still there.
+    private static func heldElsewhere(_ id: ContainerID, than folder: String, in library: LibraryConfig, index: Index) throws -> String? {
+        guard let row = try index.container(id, in: library.id), row.folder != folder,
+              FileManager.default.fileExists(atPath: library.root.appendingPathComponent("\(row.folder)/\(SidecarFile.fileName)").path)
+        else { return nil }
+        return row.folder
     }
 
     private static func relativePath(of url: URL, in root: URL) -> String {

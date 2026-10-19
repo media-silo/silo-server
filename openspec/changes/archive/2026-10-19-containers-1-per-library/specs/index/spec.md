@@ -35,5 +35,5 @@ the same path starts empty and a scan fills it again.
   its own library's presentation, and after it holds the container for the second library
   alone, with that library's presentation
 
-Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`theIndexIsAFileThatCanBeThrownAway`).
-Keying a container by its library is pinned by nothing yet.
+Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`theIndexIsAFileThatCanBeThrownAway`,
+`aContainerInTwoLibrariesIsHeldForEach`).

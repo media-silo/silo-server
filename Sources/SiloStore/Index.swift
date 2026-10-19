@@ -32,12 +32,14 @@ public struct Index: Sendable {
 
     private static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
+        // A container is keyed by its library and its id, since one container may be filed in several
+        // libraries, each with a sidecar of its own.
         migrator.registerMigration("v1") { db in
             try db.create(table: "container") { t in
-                t.primaryKey("id", .text)
-                t.column("library", .text).notNull().indexed()
+                t.column("library", .text).notNull()
+                t.column("id", .text).notNull()
                 t.column("folder", .text).notNull()
-                t.column("parent", .text).indexed()
+                t.column("parent", .text)
                 t.column("type", .text).notNull()
                 t.column("title", .text).notNull()
                 t.column("displayTitle", .text).notNull().indexed()
@@ -46,9 +48,13 @@ public struct Index: Sendable {
                 t.column("outline", .text)
                 t.column("listed", .boolean).notNull()
                 t.column("document", .blob).notNull()
+                t.primaryKey(["library", "id"])
             }
+            try db.create(index: "container_parent", on: "container", columns: ["library", "parent"])
+            try db.create(index: "container_id", on: "container", columns: ["id"])
             try db.create(table: "item") { t in
-                t.column("container", .text).notNull().references("container", onDelete: .cascade)
+                t.column("library", .text).notNull()
+                t.column("container", .text).notNull()
                 t.column("id", .text).notNull()
                 t.column("position", .integer).notNull()
                 t.column("sequence", .text)
@@ -56,24 +62,29 @@ public struct Index: Sendable {
                 t.column("type", .text)
                 t.column("title", .text).indexed()
                 t.column("childContainer", .text)
-                t.primaryKey(["container", "id"])
+                t.primaryKey(["library", "container", "id"])
+                t.foreignKey(["library", "container"], references: "container", columns: ["library", "id"], onDelete: .cascade)
             }
             try db.create(table: "presentation") { t in
                 t.primaryKey("id", .text)
                 t.column("library", .text).notNull()
-                t.column("container", .text).notNull().references("container", onDelete: .cascade).indexed()
+                t.column("container", .text).notNull()
                 t.column("item", .text).notNull()
                 t.column("alternative", .text)
                 t.column("profile", .text)
                 t.column("file", .text).notNull()
                 t.column("path", .text).notNull()
+                t.foreignKey(["library", "container"], references: "container", columns: ["library", "id"], onDelete: .cascade)
             }
+            try db.create(index: "presentation_container", on: "presentation", columns: ["library", "container"])
             try db.create(table: "externalRef") { t in
-                t.column("container", .text).notNull().references("container", onDelete: .cascade)
+                t.column("library", .text).notNull()
+                t.column("container", .text).notNull()
                 t.column("item", .text)
                 t.column("provider", .text).notNull()
                 t.column("value", .text).notNull()
-                t.uniqueKey(["container", "item", "provider", "value"])
+                t.uniqueKey(["library", "container", "item", "provider", "value"])
+                t.foreignKey(["library", "container"], references: "container", columns: ["library", "id"], onDelete: .cascade)
             }
             try db.create(index: "externalRef_lookup", on: "externalRef", columns: ["provider", "value"])
             try db.create(table: "sidecar") { t in
@@ -99,31 +110,38 @@ public struct Index: Sendable {
         }
     }
 
-    public func container(_ id: ContainerID) throws -> IndexedContainer? {
-        try queue.read { db in try IndexedContainer.fetchOne(db, key: id.value) }
+    /// The container as one library holds it.
+    public func container(_ id: ContainerID, in library: String) throws -> IndexedContainer? {
+        try queue.read { db in try IndexedContainer.fetchOne(db, key: ["library": library, "id": id.value]) }
     }
 
-    /// The container's sidecar, parsed from the bytes the row keeps.
-    public func sidecar(_ id: ContainerID) throws -> Sidecar? {
-        guard let row = try container(id) else { return nil }
+    /// The container as each library that holds it holds it, in no particular order: the caller knows
+    /// the order the libraries are listed in, and the index does not.
+    public func containers(_ id: ContainerID) throws -> [IndexedContainer] {
+        try queue.read { db in try IndexedContainer.filter(Column("id") == id.value).fetchAll(db) }
+    }
+
+    /// The container's sidecar in one library, parsed from the bytes the row keeps.
+    public func sidecar(_ id: ContainerID, in library: String) throws -> Sidecar? {
+        guard let row = try container(id, in: library) else { return nil }
         return try SidecarFile.sidecar(from: row.document)
     }
 
-    public func children(of id: ContainerID) throws -> [IndexedContainer] {
+    public func children(of id: ContainerID, in library: String) throws -> [IndexedContainer] {
         try queue.read { db in
-            try IndexedContainer.filter(Column("parent") == id.value).order(Column("displayTitle")).fetchAll(db)
+            try IndexedContainer.filter(Column("library") == library && Column("parent") == id.value).order(Column("displayTitle")).fetchAll(db)
         }
     }
 
-    public func items(of id: ContainerID) throws -> [IndexedItem] {
+    public func items(of id: ContainerID, in library: String) throws -> [IndexedItem] {
         try queue.read { db in
-            try IndexedItem.filter(Column("container") == id.value).order(Column("position")).fetchAll(db)
+            try IndexedItem.filter(Column("library") == library && Column("container") == id.value).order(Column("position")).fetchAll(db)
         }
     }
 
-    public func presentations(of id: ContainerID) throws -> [IndexedPresentation] {
+    public func presentations(of id: ContainerID, in library: String) throws -> [IndexedPresentation] {
         try queue.read { db in
-            try IndexedPresentation.filter(Column("container") == id.value).order(Column("item"), Column("id")).fetchAll(db)
+            try IndexedPresentation.filter(Column("library") == library && Column("container") == id.value).order(Column("item"), Column("id")).fetchAll(db)
         }
     }
 
@@ -131,15 +149,19 @@ public struct Index: Sendable {
         try queue.read { db in try IndexedPresentation.fetchOne(db, key: id) }
     }
 
-    /// Containers a provider's id names, directly or through one of their items.
+    /// Containers a provider's id names, directly or through one of their items: once for each library
+    /// that holds one.
     public func lookup(provider: Provider, value: String) throws -> [IndexedContainer] {
         try queue.read { db in
-            let ids = try String.fetchAll(db, sql: "SELECT DISTINCT container FROM externalRef WHERE provider = ? AND value = ?", arguments: [provider.rawValue, value])
-            return try IndexedContainer.filter(keys: ids).order(Column("displayTitle")).fetchAll(db)
+            try IndexedContainer.fetchAll(db, sql: """
+                SELECT * FROM container WHERE (library, id) IN (SELECT library, container FROM externalRef WHERE provider = ? AND value = ?)
+                ORDER BY displayTitle, library
+                """, arguments: [provider.rawValue, value])
         }
     }
 
-    /// Containers and items whose title contains the text, case-insensitively.
+    /// Containers and items whose title contains the text, case-insensitively. A container in several
+    /// libraries is one hit, since a hit names the container and not where it is held.
     public func search(_ text: String, limit: Int = 50) throws -> [SearchHit] {
         let pattern = "%\(text.replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_"))%"
         return try queue.read { db in
@@ -149,8 +171,10 @@ public struct Index: Sendable {
             let items = try IndexedItem
                 .filter(sql: "title LIKE ? ESCAPE '\\'", arguments: [pattern])
                 .order(Column("title")).limit(limit).fetchAll(db)
-            return containers.map { SearchHit(container: $0.id, item: nil, title: $0.displayTitle) }
-                + items.map { SearchHit(container: $0.container, item: $0.id, title: $0.title ?? $0.id) }
+            var seen: Set<SearchHit> = []
+            return (containers.map { SearchHit(container: $0.id, item: nil, title: $0.displayTitle) }
+                + items.map { SearchHit(container: $0.container, item: $0.id, title: $0.title ?? $0.id) })
+                .filter { seen.insert($0).inserted }
         }
     }
 
@@ -169,7 +193,7 @@ public struct Index: Sendable {
     /// Replaces everything the index holds about one container with what its sidecar says.
     func store(_ entry: IndexEntry) throws {
         try queue.write { db in
-            try IndexedContainer.deleteOne(db, key: entry.container.id)
+            try IndexedContainer.deleteOne(db, key: ["library": entry.container.library, "id": entry.container.id])
             try entry.container.insert(db)
             for item in entry.items { try item.insert(db) }
             for presentation in entry.presentations { try presentation.insert(db) }
@@ -179,11 +203,15 @@ public struct Index: Sendable {
         }
     }
 
+    /// Forgets the sidecars at these paths, and each one's container with it unless the library's row
+    /// for that container is now another folder's: a second sidecar for a container is not indexed,
+    /// and forgetting it leaves the first.
     func remove(sidecarsAt paths: [String], in library: String) throws {
         try queue.write { db in
             for path in paths {
                 if let row = try IndexedSidecar.filter(Column("library") == library && Column("path") == path).fetchOne(db) {
-                    try IndexedContainer.deleteOne(db, key: row.container)
+                    let folder = path == SidecarFile.fileName ? "" : String(path.dropLast(SidecarFile.fileName.count + 1))
+                    try IndexedContainer.filter(Column("library") == library && Column("id") == row.container && Column("folder") == folder).deleteAll(db)
                     try row.delete(db)
                 }
             }
@@ -198,9 +226,9 @@ public struct Index: Sendable {
         }
     }
 
-    func setParent(_ parent: ContainerID?, of child: ContainerID) throws {
+    func setParent(_ parent: ContainerID?, of child: ContainerID, in library: String) throws {
         try queue.write { db in
-            try db.execute(sql: "UPDATE container SET parent = ? WHERE id = ?", arguments: [parent?.value, child.value])
+            try db.execute(sql: "UPDATE container SET parent = ? WHERE library = ? AND id = ?", arguments: [parent?.value, library, child.value])
         }
     }
 }
@@ -231,6 +259,7 @@ public struct IndexedContainer: Codable, Hashable, Sendable, FetchableRecord, Pe
 public struct IndexedItem: Codable, Hashable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "item"
 
+    public var library: String
     public var container: String
     public var id: String
     public var position: Int
@@ -270,6 +299,7 @@ public struct IndexedPresentation: Codable, Hashable, Sendable, FetchableRecord,
 public struct IndexedExternalRef: Codable, Hashable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "externalRef"
 
+    public var library: String
     public var container: String
     public var item: String?
     public var provider: String
@@ -314,13 +344,13 @@ struct IndexEntry {
         for sequence in container.sequences {
             for entry in sequence.items {
                 guard let id = entry.id?.value else { continue }
-                items.append(IndexedItem(container: container.id.value, id: id, position: position, sequence: sequence.id, isExtra: false, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
+                items.append(IndexedItem(library: library, container: container.id.value, id: id, position: position, sequence: sequence.id, isExtra: false, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
                 position += 1
             }
         }
         for entry in container.extras {
             guard let id = entry.id?.value else { continue }
-            items.append(IndexedItem(container: container.id.value, id: id, position: position, sequence: nil, isExtra: true, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
+            items.append(IndexedItem(library: library, container: container.id.value, id: id, position: position, sequence: nil, isExtra: true, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
             position += 1
         }
         self.items = items
@@ -334,10 +364,10 @@ struct IndexEntry {
                 )
             }
         }
-        var refs = container.externalRefs.map { IndexedExternalRef(container: container.id.value, item: nil, provider: $0.provider.rawValue, value: $0.value) }
+        var refs = container.externalRefs.map { IndexedExternalRef(library: library, container: container.id.value, item: nil, provider: $0.provider.rawValue, value: $0.value) }
         for entry in container.sequences.flatMap(\.items) + container.extras {
             for ref in entry.externalRefs {
-                refs.append(IndexedExternalRef(container: container.id.value, item: entry.id?.value, provider: ref.provider.rawValue, value: ref.value))
+                refs.append(IndexedExternalRef(library: library, container: container.id.value, item: entry.id?.value, provider: ref.provider.rawValue, value: ref.value))
             }
         }
         self.externalRefs = Array(Set(refs))
