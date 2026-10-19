@@ -133,6 +133,7 @@ public enum LibraryWalker {
         if let finding = LibraryLayout.folderFinding(folder: relativeFolder, displayTitle: sidecar.container.displayTitle, id: sidecar.container.id) {
             findings.append(finding)
         }
+        findings += Artwork.findings(in: folder, sidecar: relative)
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         var node = LibraryNode(
             folder: folder,

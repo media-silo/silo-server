@@ -15,4 +15,4 @@ the sidecar (`<kind> is both <kind>.jpg and <kind>.png`), and the `.jpg` is the 
 - **THEN** the walk warns on its sidecar that `poster` is both, and the container's poster is
   `poster.jpg`
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`artworkInTwoFormatsIsAWarning`).

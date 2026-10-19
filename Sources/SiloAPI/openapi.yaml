@@ -12,7 +12,13 @@ info:
     ETag and Accept-Ranges, 206 for a part, 416 for a range the file cannot satisfy and 503 while
     the presentation's library is unavailable; and
     GET /v1/containers/{id}/smd is the container as its sidecar, as application/xml, as is
-    GET /v1/libraries/{library}/containers/{id}/smd for one library's sidecar.
+    GET /v1/libraries/{library}/containers/{id}/smd for one library's sidecar. A container's
+    artwork is bytes too, served beside the document at
+    /v1/libraries/{library}/containers/{id}/artwork/{kind}, for the kinds poster, fanart, banner,
+    logo and thumb: GET answers the image with its content type, or 404, openly; PUT takes a JPEG or
+    a PNG, told by its signature, answers 200 with {"kind", "format"}, 415 for anything else and 413
+    for an image over 25 MB, and removes the kind's file in the other format; DELETE answers 204, or
+    404 for a kind the folder does not hold. PUT and DELETE are the operator's.
 
 servers:
   - url: /v1
@@ -2879,7 +2885,7 @@ components:
 
     LibraryContainer:
       type: object
-      required: [library, path, digest, container]
+      required: [library, path, digest, artwork, container]
       properties:
         library:
           type: string
@@ -2893,6 +2899,14 @@ components:
           description: >
             The SHA-256 of the sidecar's bytes as the index read them, in lowercase hexadecimal:
             what an edit names as the sidecar it was made from.
+        artwork:
+          type: array
+          description: >
+            The artwork kinds the container's folder holds, read from the folder when asked rather
+            than from the index.
+          items:
+            type: string
+            enum: [poster, fanart, banner, logo, thumb]
         container:
           $ref: "#/components/schemas/Container"
 

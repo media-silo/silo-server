@@ -4,6 +4,7 @@
 import Foundation
 import OpenAPIRuntime  // swiftlint:disable:this unused_import
 import SiloAPI
+import SiloLibrary
 import SiloStore
 import SmdKit
 import SmdSidecar
@@ -79,8 +80,10 @@ package struct LibraryController {
     package func getLibraryContainer(@Path library: String, @Path id: String) async throws -> Components.Schemas.LibraryContainer {
         guard libraries.library(library) != nil else { throw NoSuchLibrary() }
         guard let containerID = ContainerID(id), let row = try index.container(containerID, in: library) else { throw NoSuchContainer() }
+        let folder = libraries.library(library)!.root.appendingPathComponent(row.folder, isDirectory: true)
         return Components.Schemas.LibraryContainer(
-            library: library, path: "\(row.folder)/\(SidecarFile.fileName)", digest: row.digest, container: try container(row, profile: nil)
+            library: library, path: "\(row.folder)/\(SidecarFile.fileName)", digest: row.digest,
+            artwork: Artwork.held(in: folder).compactMap { .init(rawValue: $0) }, container: try container(row, profile: nil)
         )
     }
 
