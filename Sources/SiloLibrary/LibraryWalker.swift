@@ -130,6 +130,9 @@ public enum LibraryWalker {
             return nil
         }
         found[sidecar.container.id] = relativeFolder
+        if let finding = LibraryLayout.folderFinding(folder: relativeFolder, displayTitle: sidecar.container.displayTitle, id: sidecar.container.id) {
+            findings.append(finding)
+        }
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         var node = LibraryNode(
             folder: folder,

@@ -60,4 +60,4 @@ wrong bearer SHALL be 401.
 - **WHEN** an edit is put with no `Authorization` header
 - **THEN** the answer is 401
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersOwnFieldsAreEditedOntoTheSidecarRead`).

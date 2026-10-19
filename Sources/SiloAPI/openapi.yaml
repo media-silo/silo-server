@@ -469,6 +469,60 @@ paths:
                 $ref: "#/components/schemas/LibraryContainer"
         "404":
           description: No such library, or no such container in it.
+    put:
+      operationId: editContainer
+      summary: Set a container's own fields in this library's sidecar
+      description: >
+        Writes the document's own fields — what the container says of itself and its structure —
+        into this library's sidecar, and changes none of the library's facts: its presentations,
+        its children's paths and its rules stay as they stand. Made only onto the sidecar the
+        editor read, named by basedOn, the digest the library's container route answers; decided
+        under the lock the write is made under. Refused with its findings, and nothing written,
+        when the result has an error — among them an item the document no longer declares that
+        the library holds presentations of, or a sidecar for. A dry run answers what would be
+        written and writes nothing. Otherwise the sidecar is written and read back into the index
+        before the answer. Operator only.
+      tags: [Containers]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+        - $ref: "#/components/parameters/ContainerID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContainerEdit"
+      responses:
+        "200":
+          description: The edit, applied unless it was a dry run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContainerEditResult"
+        "400":
+          description: A document that cannot be read, or that describes another container.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library, or no such container in it.
+        "409":
+          description: The sidecar is no longer the one the edit was based on; the detail names the digest it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: Refused, with the findings that refuse it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContainerEditResult"
 
   /containers:
     get:
@@ -2825,7 +2879,7 @@ components:
 
     LibraryContainer:
       type: object
-      required: [library, path, container]
+      required: [library, path, digest, container]
       properties:
         library:
           type: string
@@ -2834,8 +2888,43 @@ components:
           description: >
             The container's sidecar relative to the library root, as a walk's findings on it name
             it.
+        digest:
+          type: string
+          description: >
+            The SHA-256 of the sidecar's bytes as the index read them, in lowercase hexadecimal:
+            what an edit names as the sidecar it was made from.
         container:
           $ref: "#/components/schemas/Container"
+
+    ContainerEdit:
+      type: object
+      required: [document, basedOn]
+      properties:
+        document:
+          type: string
+          description: The container as its repository XML.
+        basedOn:
+          type: string
+          description: The digest of the sidecar the edit was made from.
+        dryRun:
+          type: boolean
+
+    ContainerEditResult:
+      type: object
+      required: [applied, sidecar, digest, findings]
+      properties:
+        applied:
+          type: boolean
+        sidecar:
+          type: string
+          description: The sidecar's bytes as written, or as they would be written.
+        digest:
+          type: string
+          description: The digest of those bytes.
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
 
     Alternative:
       type: object

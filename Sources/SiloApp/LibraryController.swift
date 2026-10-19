@@ -80,7 +80,7 @@ package struct LibraryController {
         guard libraries.library(library) != nil else { throw NoSuchLibrary() }
         guard let containerID = ContainerID(id), let row = try index.container(containerID, in: library) else { throw NoSuchContainer() }
         return Components.Schemas.LibraryContainer(
-            library: library, path: "\(row.folder)/\(SidecarFile.fileName)", container: try container(row, profile: nil)
+            library: library, path: "\(row.folder)/\(SidecarFile.fileName)", digest: row.digest, container: try container(row, profile: nil)
         )
     }
 

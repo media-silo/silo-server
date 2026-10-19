@@ -38,6 +38,14 @@ enum Fixture {
     static let brief = film("0000000000000011", "Brief Encounter", 1945)
     /// A film both libraries hold, each with a presentation of its own.
     static let notorious = film("0000000000000013", "Notorious", 1946)
+    /// A film filed under the wrong year, with its feature and its trailer each presented in the
+    /// theatrical cut, which the tests edit.
+    static let alien: Container = {
+        var alien = film("0000000000000014", "Alien", 1997)
+        alien.alternatives = [Alternative(id: "theatrical", sequence: "main", title: "Theatrical"), Alternative(id: "directors", sequence: "main", title: "Director's Cut")]
+        alien.extras = [.leaf(Entry.Leaf(id: ItemID("trailer")!, type: .trailer, title: "Trailer"))]
+        return alien
+    }()
     /// A film in a folder within the suite's one library root, which the tests add and remove.
     static let casablanca = film("0000000000000012", "Casablanca", 1942)
 
@@ -59,10 +67,11 @@ enum Fixture {
         let away = root.appendingPathComponent("Away")
         try! FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
         try! FileManager.default.createDirectory(at: root.appendingPathComponent("State"), withIntermediateDirectories: true)
-        func place(_ lineage: [Container], item: String, profile: String? = nil, tracks: [TrackMapping] = [], into library: URL = library) {
+        func place(_ lineage: [Container], item: String, alternative: String? = nil, profile: String? = nil, tracks: [TrackMapping] = [], into library: URL = library) {
             let source = root.appendingPathComponent("\(UUID().uuidString).mkv")
             try! mediaBytes.write(to: source)
-            try! Placer.apply(try! Placer.compute(PlacementRequest(library: library, lineage: lineage, item: item, presentation: Presentation(profile: profile, file: "", tracks: tracks), source: source)))
+            let presentation = Presentation(alternative: alternative, profile: profile, file: "", tracks: tracks)
+            try! Placer.apply(try! Placer.compute(PlacementRequest(library: library, lineage: lineage, item: item, presentation: presentation, source: source)))
         }
         place([series, serial], item: "part1", tracks: [TrackMapping(feature: "commentary1", audio: 3)])
         place([series, serial], item: "part1", profile: "mobile", tracks: [TrackMapping(feature: "commentary1", audio: 2)])
@@ -70,6 +79,8 @@ enum Fixture {
         place([brief], item: "feature", into: away)
         place([notorious], item: "feature", into: away)
         place([notorious], item: "feature", profile: "mobile")
+        place([alien], item: "feature", alternative: "theatrical")
+        place([alien], item: "trailer", alternative: "theatrical")
         // The library root: a folder of films to add, and a link inside it that leads outside.
         let media = root.appendingPathComponent("Media")
         place([casablanca], item: "feature", into: media.appendingPathComponent("films"))
@@ -111,7 +122,7 @@ struct ServerTests {
             let libraries = try await client.get("/v1/libraries")
             #expect(libraries.status == 200)
             let main = try #require(try libraries.json([LibraryBody].self).first { $0.id == "main" })
-            #expect(main.presentations == 3)
+            #expect(main.presentations == 5)
             #expect(main.available)
 
             let roots = try await client.get("/v1/containers")
@@ -200,6 +211,102 @@ struct ServerTests {
             #expect(sidecar.body == (try Data(contentsOf: Fixture.root.appendingPathComponent("Away/Notorious (1946)/container.smd"))))
             #expect(try await client.get("/v1/containers/\(film)/smd").body == (try Data(contentsOf: Fixture.root.appendingPathComponent("Library/Notorious (1946)/container.smd"))))
             #expect(try await client.get("/v1/libraries/main/containers/\(Fixture.thirdMan.id)/smd").status == 404)
+        }
+    }
+
+    /// A container's own fields are edited in one library, onto the sidecar the editor read, and no
+    /// library fact changes; an edit from a sidecar changed since, or one that would take away what a
+    /// presentation names, writes nothing.
+    @Test func aContainersOwnFieldsAreEditedOntoTheSidecarRead() async throws {
+        struct Edit: Encodable { var document: String; var basedOn: String; var dryRun: Bool? }
+        struct Result: Decodable {
+            struct Finding: Decodable { var severity: String; var path: String?; var text: String }
+            var applied: Bool; var sidecar: String; var digest: String; var findings: [Finding]
+        }
+        struct Problem: Decodable { var detail: String }
+        struct Read: Decodable {
+            struct Container: Decodable {
+                struct Sequence: Decodable { var items: [ContainerJSON.Item] }
+                var year: Int?; var outline: String?; var sequences: [Sequence]; var children: [ContainerJSON.Summary]
+            }
+            var digest: String; var container: Container
+        }
+        let operatorHeaders = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
+        let path = "/v1/libraries/main/containers/\(Fixture.alien.id)"
+        let folder = Fixture.root.appendingPathComponent("Library/Alien (1997)")
+        let sidecar = folder.appendingPathComponent("container.smd")
+        func document(_ change: (inout Container) -> Void) -> String {
+            var container = Fixture.alien
+            change(&container)
+            return String(decoding: ContainerFile.data(for: container), as: UTF8.self)
+        }
+        func files(_ read: Read) -> [String] { read.container.sequences.flatMap(\.items).flatMap(\.presentations).map(\.file) }
+        let corrected = document { $0.year = 1979 }
+
+        try await withClient { client in
+            let before = try await client.get(path).json(Read.self)
+            #expect(before.container.year == 1997)
+            #expect(before.digest == IndexedContainer.digest(of: try Data(contentsOf: sidecar)), "the digest is of the sidecar's bytes")
+            let onDisk = try Data(contentsOf: sidecar)
+
+            let unauthorised = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest)), headers: ["Content-Type": "application/json"])
+            #expect(unauthorised.status == 401)
+
+            let dry = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest, dryRun: true)), headers: operatorHeaders)
+            #expect(dry.status == 200)
+            let dryResult = try dry.json(Result.self)
+            #expect(!dryResult.applied)
+            #expect(dryResult.sidecar.contains("1979"))
+            #expect(dryResult.findings.map(\.text) == ["folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""])
+            #expect(try Data(contentsOf: sidecar) == onDisk, "a dry run writes nothing")
+
+            let stored = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest)), headers: operatorHeaders)
+            #expect(stored.status == 200)
+            let result = try stored.json(Result.self)
+            #expect(result.applied)
+            let after = try await client.get(path).json(Read.self)
+            #expect(after.container.year == 1979, "read back at once")
+            #expect(after.digest == result.digest)
+            #expect(files(after) == files(before), "its presentations are as they were")
+            #expect(FileManager.default.fileExists(atPath: sidecar.path), "and its folder is where it was")
+
+            let stale = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: document { $0.year = 1980 }, basedOn: before.digest)), headers: operatorHeaders)
+            #expect(stale.status == 409)
+            #expect(try stale.json(Problem.self).detail.contains(result.digest), "naming the digest it holds")
+            let held = try Data(contentsOf: sidecar)
+
+            let noTheatrical = document { $0.year = 1979; $0.alternatives.removeAll { $0.id == "theatrical" } }
+            let refused = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: noTheatrical, basedOn: result.digest)), headers: operatorHeaders)
+            #expect(refused.status == 422)
+            let refusal = try refused.json(Result.self)
+            #expect(!refusal.applied)
+            #expect(refusal.findings.filter { $0.severity == "error" }.map(\.text) == [
+                "item feature: presentation names alternative theatrical, which is not there",
+                "item trailer: presentation names alternative theatrical, which is not there",
+            ])
+
+            let noFeature = document { $0.year = 1979; $0.sequences = [Sequence(id: "main", items: [])] }
+            let taken = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: noFeature, basedOn: result.digest)), headers: operatorHeaders)
+            #expect(taken.status == 422)
+            #expect(try taken.json(Result.self).findings.map(\.text).contains("item feature has presentations in this library"))
+            #expect(try Data(contentsOf: sidecar) == held, "a refusal writes nothing")
+
+            let other = String(decoding: ContainerFile.data(for: Fixture.brief), as: UTF8.self)
+            #expect(try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: other, basedOn: result.digest)), headers: operatorHeaders).status == 400)
+            #expect(try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: "<container", basedOn: result.digest)), headers: operatorHeaders).status == 400)
+            #expect(try await client.send("PUT", "/v1/libraries/away/containers/\(Fixture.alien.id)", body: try JSONEncoder().encode(Edit(document: corrected, basedOn: result.digest)), headers: operatorHeaders).status == 404)
+
+            // A container with children keeps their paths through an edit of its own fields.
+            let seriesPath = "/v1/libraries/main/containers/\(Fixture.series.id)"
+            let series = try await client.get(seriesPath).json(Read.self)
+            var outlined = Fixture.series
+            outlined.outline = "A time traveller and companions."
+            let edited = try await client.send("PUT", seriesPath, body: try JSONEncoder().encode(Edit(document: String(decoding: ContainerFile.data(for: outlined), as: UTF8.self), basedOn: series.digest)), headers: operatorHeaders)
+            #expect(edited.status == 200)
+            #expect(try edited.json(Result.self).sidecar.contains("smd=\"Pyramids of Mars/container.smd\""))
+            let reread = try await client.get(seriesPath).json(Read.self)
+            #expect(reread.container.outline == "A time traveller and companions.")
+            #expect(reread.container.children.map(\.id) == series.container.children.map(\.id), "its children are as they were")
         }
     }
 
@@ -323,7 +430,7 @@ struct ServerTests {
             let walk = try SiloClient.decoder.decode(LastWalk.self, from: scan.body)
             #expect(walk.available)
             #expect(walk.walkedAt <= .now)
-            #expect(walk.report.read + walk.report.unchanged == 4, "the boot's walk, whatever has walked since")
+            #expect(walk.report.read + walk.report.unchanged == 5, "the boot's walk, whatever has walked since")
             #expect(try await client.get("/v1/libraries/other/scan", headers: ["Authorization": "Bearer secret"]).status == 404)
             #expect(try await client.send("POST", "/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"]).status != 200, "no route walks on request")
         }
@@ -469,6 +576,7 @@ struct ServerTests {
         struct Sequence: Decodable { var items: [Item] }
         struct Item: Decodable { var presentations: [Presentation] }
         struct Presentation: Decodable { var id: String; var file: String }
+        struct Summary: Decodable { var id: String }
         var library: String
         var sequences: [Sequence]
     }

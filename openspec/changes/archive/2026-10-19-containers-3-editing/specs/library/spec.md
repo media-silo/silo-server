@@ -15,4 +15,4 @@ it.
 - **THEN** the walk warns on `Alien (1997)/container.smd` that the folder is not the name the
   layout would give it, `Alien (1979)`, and the folder is where it was
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`aFolderNotNamedAsTheLayoutWouldNameItIsAWarning`).

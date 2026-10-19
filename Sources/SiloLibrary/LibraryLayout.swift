@@ -28,8 +28,21 @@ public enum LibraryLayout {
     }
 
     public static func folderName(for container: Container) -> String {
-        let name = sanitise(container.displayTitle)
-        return name.isEmpty ? container.id.value : name
+        folderName(displayTitle: container.displayTitle, id: container.id)
+    }
+
+    public static func folderName(displayTitle: String, id: ContainerID) -> String {
+        let name = sanitise(displayTitle)
+        return name.isEmpty ? id.value : name
+    }
+
+    /// The warning for a container's folder that is not named as the layout would name it now. A
+    /// folder is named when it is made, and nothing renames it: a title edited since shows up here.
+    public static func folderFinding(folder relativeFolder: String, displayTitle: String, id: ContainerID) -> Finding? {
+        let name = (relativeFolder as NSString).lastPathComponent
+        let expected = folderName(displayTitle: displayTitle, id: id)
+        guard !name.isEmpty, name != expected else { return nil }
+        return Finding(.warning, path: "\(relativeFolder)/\(sidecarFileName)", "folder \"\(name)\" is not the name the layout would give it, \"\(expected)\"")
     }
 
     /// The `smd` path a parent's sidecar records for a child: the child's folder, inside the

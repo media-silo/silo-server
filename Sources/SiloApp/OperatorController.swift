@@ -118,6 +118,26 @@ package struct OperatorController {
         )
     }
 
+    /// Sets a container's own fields in one library's sidecar, onto the sidecar the editor read.
+    @Operation
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    @ErrorResponse(NoSuchContainer.self, .notFound)
+    @ErrorResponse(BadEdit.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(EditConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(EditRefusedResult.self, .unprocessableContent, { $0.result })
+    package func editContainer(@Path library: String, @Path id: String, @JSONBody body: Components.Schemas.ContainerEdit) async throws -> Components.Schemas.ContainerEditResult {
+        guard let library = libraries.library(library) else { throw NoSuchLibrary() }
+        guard let id = ContainerID(id) else { throw NoSuchContainer() }
+        do {
+            let outcome = try await ContainerEditor.edit(
+                id, in: library, document: body.document, basedOn: body.basedOn, dryRun: body.dryRun ?? false, libraries: libraries, index: index
+            )
+            return Mapping.editResult(outcome)
+        } catch let refused as EditRefused {
+            throw EditRefusedResult(result: Mapping.editResult(refused.outcome))
+        }
+    }
+
     @Operation
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     @ErrorResponse(BadPlacement.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })

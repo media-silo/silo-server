@@ -148,6 +148,9 @@ public enum Indexer {
             found[id] = folder
             children = Dictionary(uniqueKeysWithValues: try index.children(of: id, in: library.id).map { ($0.containerID, "\($0.folder.dropFirst(folder.count + 1))/\(SidecarFile.fileName)") })
             if container.parent != parent?.value { try index.setParent(parent, of: id, in: library.id) }
+            if let finding = LibraryLayout.folderFinding(folder: folder, displayTitle: container.displayTitle, id: id) {
+                report.findings.append(finding)
+            }
         } else {
             let document: Data
             let sidecar: Sidecar
@@ -172,6 +175,9 @@ public enum Indexer {
                 return
             }
             found[id] = folder
+            if let finding = LibraryLayout.folderFinding(folder: folder, displayTitle: sidecar.container.displayTitle, id: id) {
+                report.findings.append(finding)
+            }
             try index.store(IndexEntry(sidecar: sidecar, document: document, library: library.id, folder: folder, parent: parent, modified: modified, size: size))
             report.read += 1
             children = sidecar.children
