@@ -36,15 +36,17 @@ One package, in the order its parts arrived:
   finished file in and records it — computed and shown before it is applied,
   refused whole when a finding is an error, and written sidecar-last.
 - `SiloStore` — the silo's own state: the index, a SQLite file derived from the
-  sidecars that a scan brings up to date by re-reading only what changed, and
-  the rulesets, kept as the documents they were given under
+  sidecars that a walk brings up to date by re-reading only what changed — the
+  server walks each library at startup and every five minutes, and a placement
+  re-reads the sidecars it wrote — and the rulesets, kept as the documents they
+  were given under
   `rulesets/<name>/<version>.xml`, a version never rewritten; and the sources,
   bindings and recipes, one file each under `sources/`, `bindings/` and
   `recipes/`.
 - `SiloAPI`, `SiloApp` and `silo` — the server: an OpenAPI document under `/v1`
   for what a client reads (libraries, containers with their presentations,
   lookup by a provider's id, search, rulesets and a dry run of the resolver)
-  and what an operator changes (a scan, a stored ruleset, the settings, a
+  and what an operator changes (a stored ruleset, the settings, a
   registered source and its copies, a binding, its own rules and the recipes it resolves to, a
   discarded recipe, a job made from a resolved recipe, and a trial, kept
   under `trials/` and never placed), on the swift-wire stack; and beside the

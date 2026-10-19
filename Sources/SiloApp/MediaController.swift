@@ -26,7 +26,8 @@ package struct MediaController {
     }
 
     /// Direct play, with `Range`, through the same response every node serves its files with. A
-    /// presentation of an unavailable library is 503 — not now, rather than the 404 of not ever.
+    /// presentation of an unavailable library is 503 — not now, rather than the 404 of not ever. A
+    /// file found gone re-reads its container before the 404, so the deletion is noticed at once.
     @Get("/media/{presentation}")
     @RawRoute
     package func media<Sender: HTTPResponseSender & ~Copyable & SendableMetatype>(
@@ -41,11 +42,16 @@ package struct MediaController {
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
             return
         }
-        guard try libraries.reach(library) else {
+        guard try await libraries.reach(library) else {
             try await responseSender.sendAndFinish(HTTPResponse(status: .serviceUnavailable))
             return
         }
         let url = library.root.appendingPathComponent(presentation.path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            if let container = ContainerID(presentation.container) { try await libraries.refresh(container, in: library) }
+            try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
+            return
+        }
         try await FileResponse.send(
             file: url,
             method: request.method,

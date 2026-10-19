@@ -27,7 +27,7 @@ package struct JobService: Sendable, JobsAPI {
     private let sources: SourceStore
     private let bindings: BindingStore
     private let recipes: RecipeStore
-    private let index: Index
+    private let libraries: Libraries
     private let stagedRules: BindingRulesStore
     private let checks: CheckSignal
     /// The trial jobs whose output is being fetched, so that one is never fetched twice at once.
@@ -35,7 +35,7 @@ package struct JobService: Sendable, JobsAPI {
     private let logger = Logger(label: "silo.jobs")
 
     @Inject
-    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, index: Index, stagedRules: BindingRulesStore, checks: CheckSignal) {
+    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, libraries: Libraries, stagedRules: BindingRulesStore, checks: CheckSignal) {
         self.stagedRules = stagedRules
         self.checks = checks
         self.config = config
@@ -43,7 +43,7 @@ package struct JobService: Sendable, JobsAPI {
         self.sources = sources
         self.bindings = bindings
         self.recipes = recipes
-        self.index = index
+        self.libraries = libraries
     }
 
     // MARK: - Reading
@@ -306,8 +306,8 @@ package struct JobService: Sendable, JobsAPI {
     // MARK: - Placement
 
     /// Fetches the output from the node that holds it into the library's own filesystem, places
-    /// it as the recipe's binding says, in the profile of the recipe's output, and re-scans so the
-    /// index learns of it.
+    /// it as the recipe's binding says, in the profile of the recipe's output, and re-reads the
+    /// sidecars it wrote so the index learns of it without the library being walked.
     package func place(_ id: String) async throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
         guard !current.trial else { throw TrialNeverPlaced() }
@@ -367,7 +367,7 @@ package struct JobService: Sendable, JobsAPI {
                     .write(to: sidecar, options: .atomic)
                 try stagedRules.remove(binding.id)
             }
-            _ = try Indexer.scan(library, into: index)
+            try await libraries.reread(placement.sidecars, in: library)
             let destination = LibraryWalker.relativePath(of: placement.destination, in: library.root)
             let placed = try jobs.update(id) { job in
                 job.state = .placed

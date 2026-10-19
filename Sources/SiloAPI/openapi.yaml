@@ -247,12 +247,15 @@ paths:
           description: No such library.
 
   /libraries/{library}/scan:
-    post:
-      operationId: scanLibrary
-      summary: Re-read what changed in a library
+    get:
+      operationId: lastWalk
+      summary: What the library's last walk found
       description: >
-        Walks the library from its top-level folders and re-reads only the sidecars whose
-        modification time or size differs from what the index recorded. Operator only.
+        The server walks each library at startup, when its folder comes back and every five minutes,
+        re-reading only the sidecars whose modification time or size differs from what the index
+        recorded; nothing walks one on request. This is the most recent walk: when it ran, whether
+        the library was available, and what it did and found. The findings name paths inside the
+        library, so this is the operator's alone.
       tags: [Libraries]
       security:
         - operator: []
@@ -260,11 +263,11 @@ paths:
         - $ref: "#/components/parameters/Library"
       responses:
         "200":
-          description: What the scan did.
+          description: The last walk.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ScanReport"
+                $ref: "#/components/schemas/LastWalk"
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
@@ -1741,6 +1744,19 @@ components:
           description: >
             False while the library's folder is missing, or its last walk found no container where
             the index holds some. Its containers stay browsable, and its media answer 503.
+
+    LastWalk:
+      type: object
+      required: [walkedAt, available, report]
+      properties:
+        walkedAt:
+          type: string
+          format: date-time
+        available:
+          type: boolean
+          description: False when the walk was not applied; the report's finding says why.
+        report:
+          $ref: "#/components/schemas/ScanReport"
 
     ScanReport:
       type: object

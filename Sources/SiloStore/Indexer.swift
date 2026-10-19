@@ -56,8 +56,7 @@ public enum Indexer {
     /// nothing: a folder that is missing, or that holds no container where the index holds some, is
     /// far more often a drive not yet mounted than a library emptied.
     public static func scan(_ library: LibraryConfig, into index: Index) throws -> ScanReport {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: library.root.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard folderExists(library) else {
             throw LibraryUnavailable.missing
         }
         var report = ScanReport()
@@ -94,10 +93,26 @@ public enum Indexer {
         return report
     }
 
-    /// Re-reads one container's sidecar, after a placement wrote it. The container must already
-    /// be reachable, or the next full scan will find it.
+    /// Whether the library's folder is there, as a folder. Asked of the filesystem each time, since a
+    /// URL's resource values are cached and a drive comes and goes.
+    public static func folderExists(_ library: LibraryConfig) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: library.root.path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    /// Re-reads one container's sidecar, after a placement wrote it or a request found one of its
+    /// files gone. The container must already be reachable, or the next full scan will find it; a
+    /// sidecar that is no longer there is forgotten, as the walk would forget it.
     public static func refresh(folder: String, parent: ContainerID?, in library: LibraryConfig, index: Index) throws -> ScanReport {
         var report = ScanReport()
+        let path = "\(folder)/\(SidecarFile.fileName)"
+        guard FileManager.default.fileExists(atPath: library.root.appendingPathComponent(path).path) else {
+            if try index.sidecars(in: library.id).contains(where: { $0.path == path }) {
+                try index.remove(sidecarsAt: [path], in: library.id)
+                report.removed = 1
+            }
+            return report
+        }
         var reached: Set<String> = []
         try visit(folder: folder, parent: parent, expecting: nil, library: library, index: index, known: [:], reached: &reached, report: &report, descend: false)
         return report

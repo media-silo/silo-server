@@ -246,14 +246,40 @@ struct ServerTests {
         }
     }
 
+    /// The last walk is read behind the gate, since its findings name paths inside the library, and
+    /// nothing starts a walk on request.
     @Test func aScanIsAnOperatorsToo() async throws {
+        struct LastWalk: Decodable {
+            struct Report: Decodable { var read: Int; var unchanged: Int; var removed: Int }
+            var walkedAt: Date
+            var available: Bool
+            var report: Report
+        }
         try await withClient { client in
-            #expect(try await client.send("POST", "/v1/libraries/main/scan").status == 401)
-            let scan = try await client.send("POST", "/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"])
+            #expect(try await client.get("/v1/libraries/main/scan").status == 401)
+            #expect(try await client.get("/v1/libraries/main/scan", headers: ["Authorization": "Bearer wrong"]).status == 401)
+            let scan = try await client.get("/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"])
             #expect(scan.status == 200)
-            #expect(scan.bodyText.contains("\"read\":0"))
-            #expect(scan.bodyText.contains("\"unchanged\":3"))
-            #expect(try await client.send("POST", "/v1/libraries/other/scan", headers: ["Authorization": "Bearer secret"]).status == 404)
+            let walk = try SiloClient.decoder.decode(LastWalk.self, from: scan.body)
+            #expect(walk.available)
+            #expect(walk.walkedAt <= .now)
+            #expect(walk.report.read + walk.report.unchanged == 3, "the boot's walk, whatever has walked since")
+            #expect(try await client.get("/v1/libraries/other/scan", headers: ["Authorization": "Bearer secret"]).status == 404)
+            #expect(try await client.send("POST", "/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"]).status != 200, "no route walks on request")
+        }
+    }
+
+    /// A file found gone re-reads its container before the 404, so a deletion is noticed the first
+    /// time anyone trips over it rather than at the next tick.
+    @Test func aMissingFileRefreshesItsContainer() async throws {
+        try await withClient { client in
+            let film = try await client.get("/v1/containers/\(Fixture.brief.id)")
+            #expect(film.status == 200)
+            let id = try #require(try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id)
+            let folder = Fixture.root.appendingPathComponent("Away/Brief Encounter (1945)")
+            try FileManager.default.removeItem(at: folder)
+            #expect(try await client.get("/v1/media/\(id)").status == 404)
+            #expect(try await client.get("/v1/containers/\(Fixture.brief.id)").status == 404, "the container is forgotten at once")
         }
     }
 
@@ -267,6 +293,7 @@ struct ServerTests {
             let film = try await client.get("/v1/containers/\(Fixture.thirdMan.id)")
             let id = try #require(try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id)
             #expect(try await client.get("/v1/media/\(id)").status == 200)
+            let held = try await client.get("/v1/libraries").json([LibraryBody].self).first { $0.id == "away" }?.presentations
 
             try FileManager.default.moveItem(at: away, to: aside)
             var restored = false
@@ -274,7 +301,7 @@ struct ServerTests {
             #expect(try await client.get("/v1/media/\(id)").status == 503, "not now, rather than not ever")
             let listed = try await client.get("/v1/libraries").json([LibraryBody].self)
             #expect(listed.first { $0.id == "away" }?.available == false)
-            #expect(listed.first { $0.id == "away" }?.presentations == 2, "its index rows are kept")
+            #expect(listed.first { $0.id == "away" }?.presentations == held, "its index rows are kept")
             #expect(listed.first { $0.id == "main" }?.available == true, "and the other library is untouched")
             #expect(try await client.get("/v1/containers/\(Fixture.thirdMan.id)").status == 200, "still browsable")
 

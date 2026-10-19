@@ -53,13 +53,13 @@ struct BindingRulesTests {
         #expect(main.recipe.video?.rule == "#4", "the same film in a sequence is not")
     }
 
-    @Test func aBindingsRuleSpeaksAheadOfEveryContainers() throws {
+    @Test func aBindingsRuleSpeaksAheadOfEveryContainers() async throws {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
         let folder = try StackTests.placeSerial(in: bench)
         try StackTests.serialRules(#"<rules><audio><copy/></audio></rules>"#, version: 1, in: folder, bench: bench)
         let binding = try Self.binding(in: bench)
-        #expect(try bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 1)
+        #expect(try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 1)
 
         let resolved = try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
         #expect(resolved.recipe.audio.map(\.action) == [.drop, .copy])
@@ -72,9 +72,9 @@ struct BindingRulesTests {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
         let binding = try Self.binding(in: bench)
-        #expect(throws: BadBindingRules.self) { try bench.bindingService.setRules(Data(#"<rules><output container="mp4"/></rules>"#.utf8), of: binding.id) }
-        #expect(try bench.bindingService.setRules(Data(#"<rules><audio><copy/></audio></rules>"#.utf8), of: binding.id) == 1)
-        #expect(try bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 2)
+        await #expect(throws: BadBindingRules.self) { try await bench.bindingService.setRules(Data(#"<rules><output container="mp4"/></rules>"#.utf8), of: binding.id) }
+        #expect(try await bench.bindingService.setRules(Data(#"<rules><audio><copy/></audio></rules>"#.utf8), of: binding.id) == 1)
+        #expect(try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 2)
         #expect(bench.stagedRules.versions(of: binding.id) == [1, 2], "kept in the silo while nothing is placed")
         let library = bench.config.libraries[0].root
         let folder = library.appendingPathComponent("Doctor Who (1963)/Pyramids of Mars")
@@ -94,7 +94,7 @@ struct BindingRulesTests {
         #expect(LibraryWalker.walk(library).findings.isEmpty)
 
         // A later decision goes straight to the library, and the reference moves.
-        #expect(try bench.bindingService.setRules(Data(#"<rules><audio><drop/></audio></rules>"#.utf8), of: binding.id) == 3)
+        #expect(try await bench.bindingService.setRules(Data(#"<rules><audio><drop/></audio></rules>"#.utf8), of: binding.id) == 3)
         #expect(FileManager.default.fileExists(atPath: rules.appendingPathComponent("3.xml").path))
         #expect(try SidecarFile.sidecar(from: Data(contentsOf: folder.appendingPathComponent(SidecarFile.fileName))).bindingRules["part3"]?.first?.rules.activeVersion == 3)
         #expect(bench.stagedRules.versions(of: binding.id).isEmpty)
@@ -108,7 +108,7 @@ struct BindingRulesTests {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
         let binding = try Self.binding(in: bench)
-        _ = try bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id)
+        _ = try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id)
         try await Self.place(binding, in: bench)
         let library = bench.config.libraries[0].root
         let sidecarURL = library.appendingPathComponent("Doctor Who (1963)/Pyramids of Mars/\(SidecarFile.fileName)")

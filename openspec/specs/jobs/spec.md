@@ -187,8 +187,9 @@ the recipe's layout — in the profile of the recipe's output, with its provenan
 the binding and holding one `<segment>` per segment in order, each its source's natural key when it
 has one and its chapter span when it has one, and a `<transform>` holding the recipe's stack, its
 ruleset and version and a `<layer>` for each layer above it with its version and digest; the placement
-computed and, when it would not apply, refused whole with its reasons as 409; otherwise applied and
-the library re-scanned, so the index learns of the new presentation. The job SHALL then be `placed`
+computed and, when it would not apply, refused whole with its reasons as 409; otherwise applied, and
+each sidecar it wrote re-read into the index, as [index](../index/spec.md) sets out, so the index
+learns of the new presentation without the library being walked. The job SHALL then be `placed`
 with a summary of the destination relative to the library root, the presentation's id, and the
 writes made. Any failure along the way SHALL return the job to `encoded` with the failure recorded.
 

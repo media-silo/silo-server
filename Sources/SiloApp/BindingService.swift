@@ -42,13 +42,15 @@ package struct BindingService: Sendable {
     private let recipes: RecipeStore
     private let staged: BindingRulesStore
     private let stack: RulesStack
+    private let libraries: Libraries
     private let checks: CheckSignal
     private let logger = Logger(label: "silo.bindings")
 
     @Inject
-    package init(config: SiloConfig, settings: SettingsStore, index: Index, rulesets: RulesetStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, staged: BindingRulesStore, stack: RulesStack, checks: CheckSignal) {
+    package init(config: SiloConfig, settings: SettingsStore, index: Index, rulesets: RulesetStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, staged: BindingRulesStore, stack: RulesStack, libraries: Libraries, checks: CheckSignal) {
         self.staged = staged
         self.stack = stack
+        self.libraries = libraries
         self.checks = checks
         self.config = config
         self.settings = settings
@@ -141,7 +143,7 @@ package struct BindingService: Sendable {
     /// Stores a binding's next version of its rules, making it the version in force: in the library,
     /// the file and then the item's reference, once the binding's first presentation is placed; in
     /// the silo's staging before that. Changes no recipe.
-    package func setRules(_ document: Data, of id: String) throws -> Int {
+    package func setRules(_ document: Data, of id: String) async throws -> Int {
         guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
         do {
             _ = try RulesetFile.layerRules(from: document)
@@ -165,7 +167,7 @@ package struct BindingService: Sendable {
         try document.write(to: home.folder.appendingPathComponent(reference.file(version: version)), options: .atomic)
         let moved = SidecarRules(path: reference.path, activeVersion: version)
         try SidecarFile.data(settingRules: moved, binding: id, item: binding.item, in: Data(contentsOf: home.sidecar)).write(to: home.sidecar, options: .atomic)
-        _ = try Indexer.scan(home.library, into: index)
+        if let container = lineage.last { try await libraries.refresh(container.id, in: home.library) }
         logger.info("wrote version \(version) of \(id)'s rules beside \(home.sidecar.path)")
         checks.request()
         return version

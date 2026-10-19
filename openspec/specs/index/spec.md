@@ -52,9 +52,15 @@ references SHALL be reported as a warning; an unreadable sidecar, a child whose 
 what its parent expects, and a child path that escapes its container's folder or does not
 exist SHALL be reported as errors and not indexed. The scan SHALL report what it did as
 counts of `read`, `unchanged` and `removed` together with the findings. The server SHALL
-scan every configured library at boot, before the first request is answered; the same
-incremental walk SHALL run on demand as `Indexer.scan`, and `Indexer.refresh` SHALL
-re-read one container's sidecar alone, for a container already reachable.
+walk every available library at boot, before the first request is answered; when a library is
+added; when an unavailable library's folder returns; and every
+five minutes regardless. Walks of one library SHALL NOT overlap: a walk asked for while one runs
+SHALL join it and share its report, and different libraries SHALL walk independently. A walk that
+finds no container at a library's top level while the index holds containers for it SHALL NOT be
+applied, and the library SHALL be unavailable instead, per [read-api](../read-api/spec.md). The
+same incremental walk SHALL run on demand as `Indexer.scan`, and `Indexer.refresh` SHALL re-read
+one container's sidecar alone, for a container already reachable; the media route SHALL call it
+for a presentation whose file it finds missing, before answering.
 
 #### Scenario: a first scan reads everything
 - **WHEN** a library of four placed containers is scanned
@@ -83,19 +89,53 @@ re-read one container's sidecar alone, for a container already reachable.
   series and the warning `a sidecar nothing references` on the now-orphaned serial, and the
   index forgets both containers
 
+#### Scenario: a change behind the server's back
+- **WHEN** a sidecar is changed on disk by something other than the server
+- **THEN** the next five-minute walk reads it, with nobody asking
+
+#### Scenario: an empty mount point forgets nothing
+- **WHEN** a library's folder exists but is empty, and the index holds containers for it
+- **THEN** the walk is not applied, the containers remain in the index, and the library is
+  unavailable
+
+#### Scenario: walks join
+- **WHEN** a library's folder returns and its walk is asked for while the tick's walk of the same
+  library is running
+- **THEN** the library is walked once, and both share its report
+
 Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`aScanIndexesWhatThePlacerWrote`,
-`aSecondScanReadsOnlyWhatChanged`).
+`aSecondScanReadsOnlyWhatChanged`, `anEmptyMountPointForgetsNothing`),
+`Tests/SiloTests/LibrariesTests.swift` (`aChangeBehindTheServersBackIsReadAtTheNextTick`,
+`walksAskedForTogetherWalkOnce`, `aDriveLateToMountIsUnavailableAndTheRestAreServed`),
+`Tests/SiloTests/ServerTests.swift` (`aMissingFileRefreshesItsContainer`). The tick's five minutes,
+and different libraries walking independently, are pinned by nothing yet.
 
 ### Requirement: A placement the server applies brings the index up to date itself
-After the server applies a placement it SHALL bring the index up to date itself, by an
-incremental scan of the library, so the placed presentation is indexed and served without
-a scan being requested. An unchanged sidecar costs a stat, so the whole library is
-re-walked rather than only the container the placement rewrote; `Indexer.refresh` remains
-the one-container entry point.
+After the server applies a placement it SHALL bring the index up to date itself, before it
+answers, by re-reading each sidecar the placement wrote in the order it wrote them — root first,
+so that a container the placement created is indexed under the parent that now names it — so the
+placed presentation is indexed and served without a scan being requested. It SHALL NOT walk the
+library: what changed without the server is the walk's to find, on the walk's own triggers. A
+re-read SHALL NOT run alongside a walk of the same library: it SHALL wait for a running walk to
+finish, and a walk asked for while a re-read runs SHALL wait for it.
 
 #### Scenario: a placed presentation is served without a requested scan
 - **WHEN** `POST /v1/libraries/main/place` applies a placement for item `part2`
 - **THEN** `GET /v1/media/{presentation}` for the answer's presentation id answers 206, and
   `GET /v1/containers/0000000000000003` shows the placed `Part Two.mkv` at once
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAndRefusedTheSecondTime`).
+#### Scenario: a first placement indexes the containers it made
+- **WHEN** the first placement into an empty library creates the folders and sidecars of a
+  series, one of its seasons and a serial in the season
+- **THEN** before the placement answers, the index holds all three, the season under the series
+  and the serial under the season
+
+#### Scenario: a placement walks nothing
+- **WHEN** another container's sidecar is changed on disk by something other than the server,
+  and a placement is then applied
+- **THEN** the placed presentation is served at once, and the other sidecar's change is not in
+  the index until the library's next walk
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAndRefusedTheSecondTime`),
+`Tests/SiloTests/LibrariesTests.swift` (`aFirstPlacementIndexesEveryContainerItMadeUnderItsParent`,
+`aPlacementWalksNothing`, `walksAskedForTogetherWalkOnce`).
