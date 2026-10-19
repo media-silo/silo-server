@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
+import Crypto
 import Foundation
 import GRDB
 import SmdKit
@@ -254,6 +255,14 @@ public struct IndexedContainer: Codable, Hashable, Sendable, FetchableRecord, Pe
     public var document: Data
 
     public var containerID: ContainerID { ContainerID(id)! }
+
+    /// What an edit names to say which sidecar it was made from: the SHA-256 of the sidecar's bytes
+    /// as the index read them, in lowercase hexadecimal.
+    public var digest: String { Self.digest(of: document) }
+
+    public static func digest(of document: Data) -> String {
+        SHA256.hash(data: document).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 public struct IndexedItem: Codable, Hashable, Sendable, FetchableRecord, PersistableRecord {

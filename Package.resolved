@@ -1,5 +1,5 @@
 {
-  "originHash" : "d60ebfb285b05434440089f4f77cd4254ed9f5058d21469b27f0389bb543d4b4",
+  "originHash" : "ac89956d9a66afe271faf0e5448f7226bdfa82e61d47829a3aab7438a45e8213",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -34,7 +34,7 @@
       "location" : "https://github.com/project-smd/SmdKit.git",
       "state" : {
         "branch" : "main",
-        "revision" : "8d8ef52761f7664fc7af2e0598f160ad1079d1d3"
+        "revision" : "355e6c847c238ee2f1afc5eb88b891cf8899304d"
       }
     },
     {

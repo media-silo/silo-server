@@ -174,17 +174,41 @@ struct IndexTests {
 
         try file("Alien")
         let report = try Indexer.scan(sandbox.library, into: index)
-        #expect(report.findings.map(\.description) == ["error: Alien (1979)/container.smd: container 0000000000000005 is already at \"Alien\""])
+        #expect(report.findings.map(\.description) == [
+            "warning: Alien/container.smd: folder \"Alien\" is not the name the layout would give it, \"Alien (1979)\"",
+            "error: Alien (1979)/container.smd: container 0000000000000005 is already at \"Alien\"",
+        ])
         #expect(try index.containers(film.id).map(\.folder) == ["Alien"])
         #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == report.findings.map(\.description), "the walker says the same")
         #expect(try Indexer.scan(sandbox.library, into: index).findings == report.findings, "and so does every walk after")
-        #expect(try Indexer.refresh(folder: "Alien (1979)", parent: nil, in: sandbox.library, index: index).findings == report.findings, "and a refresh")
+        #expect(try Indexer.refresh(folder: "Alien (1979)", parent: nil, in: sandbox.library, index: index).findings == report.findings.filter { $0.severity == .error }, "and a refresh")
         #expect(try index.containers(film.id).map(\.folder) == ["Alien"])
 
         try FileManager.default.removeItem(at: sandbox.library.root.appendingPathComponent("Alien"))
         let after = try Indexer.scan(sandbox.library, into: index)
         #expect(after.findings.isEmpty)
         #expect(try index.containers(film.id).map(\.folder) == ["Alien (1979)"], "the one left is read again")
+    }
+
+    /// A folder is named when it is made: a sidecar whose display title has changed since leaves it
+    /// where it is, and every walk warns that it is not the name the layout would give it now.
+    @Test func aFolderNotNamedAsTheLayoutWouldNameItIsAWarning() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        var film = Container(id: ContainerID("0000000000000005")!, type: .movie, title: Title("Alien")!, year: 1997, yearInTitle: true)
+        film.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: "Alien"))])]
+        try sandbox.place([film], item: "feature")
+        let index = try Index(at: nil)
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.isEmpty)
+
+        let sidecar = sandbox.library.root.appendingPathComponent("Alien (1997)/container.smd")
+        film.year = 1979
+        try SidecarFile.data(settingContainer: film, in: try Data(contentsOf: sidecar)).write(to: sidecar)
+        let warning = "warning: Alien (1997)/container.smd: folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning])
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning], "an unchanged sidecar too")
+        #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == [warning])
+        #expect(try index.containers(film.id).map(\.folder) == ["Alien (1997)"], "the folder is where it was")
     }
 
     /// An unmounted mount point is an empty folder, not a missing one: a walk of it would forget

@@ -282,6 +282,12 @@ package final class Libraries: Sendable {
         }
     }
 
+    /// Runs `body` with the library to itself — no walk, re-read or other edit of it running — so that
+    /// what it reads of a sidecar is still what is there when it writes.
+    package func exclusively<T: Sendable>(_ library: LibraryConfig, _ body: @Sendable () throws -> T) async throws -> T {
+        try await lane(of: library.id).exclusively(body)
+    }
+
     /// The walk itself, run by the lane or by the boot: applied, or refused with the library reported
     /// unavailable and the index left as it was, and kept as the library's last walk either way.
     private func walkNow(_ library: LibraryConfig, logging always: Bool) throws -> LastWalk {

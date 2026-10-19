@@ -31,6 +31,9 @@ package struct BadPlacement: Error {
 package struct PlacementRefused: Error {
     package var result: Components.Schemas.PlacementResult
 }
+package struct EditRefusedResult: Error {
+    package var result: Components.Schemas.ContainerEditResult
+}
 
 /// The index's rows and the sidecar's values as the document's types. One direction only: the API
 /// is a projection of the model, never a place the model is edited.
@@ -157,6 +160,13 @@ enum Mapping {
             )
         }
         return Components.Schemas.RulesetReading(name: ruleset.name, rules: rules, outputs: try transcode(ruleset.outputs))
+    }
+
+    static func editResult(_ outcome: ContainerEditOutcome) -> Components.Schemas.ContainerEditResult {
+        Components.Schemas.ContainerEditResult(
+            applied: outcome.applied, sidecar: String(decoding: outcome.sidecar, as: UTF8.self), digest: outcome.digest,
+            findings: outcome.findings.map(finding)
+        )
     }
 
     static func finding(_ finding: SiloLibrary.Finding) -> Components.Schemas.Finding {
