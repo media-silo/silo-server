@@ -190,6 +190,8 @@ struct ConsoleModelTests {
             case (_, "/v1/rulesets/household/branches/trial/impact"): return (200, Data("[]".utf8))
             case ("POST", "/v1/rulesets/household/branches/trial/promote"): return (409, Data(#"{"detail":"household's branch trial has not taken in household@\#(current) from the standard"}"#.utf8))
             case ("PUT", "/v1/libraries/films/ruleset"): return (200, Data(#"{"id":"films","ruleset":"household","containers":1,"presentations":41,"available":true}"#.utf8))
+            case ("GET", "/v1/libraries/films/containers"):
+                return (200, Data(#"[{"id":"alien","library":"films","type":"movie","title":"Alien","displayTitle":"Alien (1997)","year":1997,"listed":true}]"#.utf8))
             case ("GET", "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":1,"presentations":41,"available":false}]"#.utf8))
             case ("GET", "/v1/libraries/films/scan"):
                 return (200, Data(#"{"walkedAt":"2026-10-19T09:30:00Z","available":false,"report":{"read":0,"unchanged":0,"removed":0,"findings":[{"severity":"error","text":"not applied: its folder does not exist"}]}}"#.utf8))
@@ -321,7 +323,8 @@ struct ConsoleModelTests {
     }
 
     /// The Libraries section, like the Rulesets one, is read again at each refresh while it is open:
-    /// the walks move on by themselves, and nobody asks for one.
+    /// the walks move on by themselves, and nobody asks for one. Each library's containers are read
+    /// with it, since the section shows each library with its tree beneath it.
     @Test func theLibrariesSectionKeepsItselfCurrent() async throws {
         let (model, silo) = try await changingModel(SiloState(head: 3))
         #expect(model.lastWalks[silo.id] == nil, "nothing read while the section is closed")
@@ -330,6 +333,7 @@ struct ConsoleModelTests {
         #expect(model.libraries[silo.id]?.first?.available == false)
         #expect(model.lastWalks[silo.id]?["films"] != nil, "the walks are read at the refresh")
         #expect(model.libraryRoots(of: silo) == ["/srv/media"], "and so are the settings the libraries are drawn from")
+        #expect(model.containerRoots[silo.id]?["films"]?.map(\.displayTitle) == ["Alien (1997)"], "and the containers at the top of each library")
     }
 
     @Test func withTheRootsEmptiedTheConsoleSaysSoAndShowsTheRefusal() async throws {

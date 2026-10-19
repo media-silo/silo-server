@@ -1418,6 +1418,19 @@ extension ServerTests {
             let check = try SiloClient.decoder.decode(SiloClient.LibraryCheck.self, from: try await client.post("/v1/libraries/check", json: NewLibrary(path: gone), headers: Self.operatorHeaders).body)
             #expect(check.components.suffix(2).map(\.state) == [.missing, .missing])
             #expect(check.refusal?.status == 422)
+
+            let roots = try SiloClient.decoder.decode([SiloClient.ContainerSummary].self, from: try await client.get("/v1/libraries/main/containers").body)
+            #expect(roots.contains { $0.id == Fixture.unlisted.id.value && !$0.listed })
+            let opened = try SiloClient.decoder.decode(SiloClient.LibraryContainer.self, from: try await client.get("/v1/libraries/main/containers/\(Fixture.alien.id)").body)
+            #expect(opened.path == "Alien (1997)/container.smd")
+            #expect(opened.container.extras.first?.presentations.first?.displayName == "Theatrical")
+            let sidecar = try await client.get("/v1/libraries/main/containers/\(Fixture.alien.id)/smd").body
+            struct Edit: Encodable { var document: String; var basedOn: String; var dryRun = true }
+            let filmDocument = String(decoding: ContainerFile.data(for: try SidecarFile.sidecar(from: sidecar).container), as: UTF8.self)
+            let dry = try SiloClient.decoder.decode(SiloClient.ContainerEditResult.self, from: try await client.send("PUT", "/v1/libraries/main/containers/\(Fixture.alien.id)", body: try JSONEncoder().encode(Edit(document: filmDocument, basedOn: opened.digest)), headers: Self.operatorHeaders).body)
+            #expect(!dry.applied && dry.digest == opened.digest, "an edit that changes nothing writes the same sidecar")
+            let refused = try SiloClient.decoder.decode(SiloClient.ContainerEditResult.self, from: try await client.send("PUT", "/v1/libraries/main/containers/\(Fixture.alien.id)", body: try JSONEncoder().encode(Edit(document: filmDocument.replacingOccurrences(of: "theatrical", with: "cinema"), basedOn: opened.digest)), headers: Self.operatorHeaders).body)
+            #expect(refused.findings.contains { $0.severity == .error }, "a refusal decodes as the result it carries")
         }
     }
 }

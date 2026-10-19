@@ -170,14 +170,18 @@ let package = Package(
         // and Linux keeps the logic honest.
         .target(
             name: "SiloAdminKit",
-            dependencies: ["SiloClient", "SiloKit", "SiloDiscovery", .product(name: "SmdKit", package: "SmdKit")]
+            dependencies: [
+                "SiloClient", "SiloKit", "SiloDiscovery",
+                .product(name: "SmdKit", package: "SmdKit"),
+                .product(name: "SmdSidecar", package: "SmdKit"),
+            ]
         ),
         // The console itself: a SwiftUI window over SiloAdminKit, and nothing else. Where no
         // window server exists the target is a stub entry point, so the Linux build still
         // chews the whole package.
         .executableTarget(
             name: "SiloAdmin",
-            dependencies: ["SiloAdminKit", "SiloClient", "SiloKit"]
+            dependencies: ["SiloAdminKit", "SiloClient", "SiloKit", .product(name: "SmdKit", package: "SmdKit")]
         ),
         // The node's loop, the same for a node on another machine and the one inside the silo.
         .target(
@@ -268,7 +272,10 @@ let package = Package(
         // The client's first standalone suite: the onboarding calls, against a stubbed URLProtocol
         // so the wire shapes are pinned without a server.
         .testTarget(name: "SiloClientTests", dependencies: ["SiloClient"]),
-        .testTarget(name: "SiloAdminKitTests", dependencies: ["SiloAdminKit", "SiloClient", "SiloKit"]),
+        .testTarget(
+            name: "SiloAdminKitTests",
+            dependencies: ["SiloAdminKit", "SiloClient", "SiloKit", .product(name: "SmdKit", package: "SmdKit"), .product(name: "SmdSidecar", package: "SmdKit")]
+        ),
         // The window's model, which the kit's suite cannot see: the order the sheets and the
         // model hand things to each other in, against the same kind of stubbed silo.
         .testTarget(name: "SiloAdminTests", dependencies: ["SiloAdmin", "SiloAdminKit", "SiloDiscovery"]),

@@ -6,6 +6,8 @@ import SiloAdminKit
 import SiloClient
 import SiloKit
 import SiloDiscovery
+import SmdKit
+import SmdSidecar
 import Synchronization
 import Testing
 #if canImport(FoundationNetworking)
@@ -915,6 +917,131 @@ struct AdminConsoleTests {
             #expect(refused.reason == "job j1 is encoding and files into films", "naming the job")
         }
         #expect(!asked.withLock { $0 }.contains { $0.method == "POST" && $0.path.hasSuffix("/scan") }, "nothing asks for a walk")
+    }
+
+    /// A silo whose `films` library holds one film, Alien, whose sidecar is `sidecar` until a store
+    /// writes another; the last walk reports a warning on its sidecar and an error on another's. A
+    /// store or dry run whose document removes the theatrical alternative is refused with its findings.
+    /// The sidecar the stub silo holds, shared between the stub and the test.
+    private final class HeldSidecar: Sendable {
+        let bytes: Mutex<Data>
+        init(_ bytes: Data) { self.bytes = Mutex(bytes) }
+    }
+
+    private static func containerSilo(sidecar: HeldSidecar, asked: @escaping @Sendable (Asked) -> Void) -> @Sendable (URLRequest) throws -> (Int, Data)? {
+        { request in
+            guard let url = request.url else { return nil }
+            let method = request.httpMethod ?? "GET"
+            let body = Self.body(of: request) ?? Data()
+            asked(Asked(method: method, path: url.path, body: String(decoding: body, as: UTF8.self)))
+            let held = sidecar.bytes.withLock { $0 }
+            let digest = String(held.count)
+            let film = "0000000000000014"
+            func result(applied: Bool, _ findings: String) -> Data {
+                Data(#"{"applied":\#(applied),"sidecar":"<container/>","digest":"\#(digest)-next","findings":[\#(findings)]}"#.utf8)
+            }
+            switch (method, url.path) {
+            case (_, "/v1/server"): return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
+            case ("GET", "/v1/libraries/films/containers"):
+                return (200, Data(#"[{"id":"\#(film)","library":"films","type":"movie","title":"Alien","displayTitle":"Alien (1997)","listed":true}]"#.utf8))
+            case ("GET", "/v1/libraries/films/containers/\(film)"):
+                let container = #"{"id":"\#(film)","library":"films","type":"movie","title":"Alien","displayTitle":"Alien (1997)","year":1997,"listed":true,"alternatives":[],"features":[],"sequences":[{"id":"main","exploded":"never","items":[{"id":"feature","type":"movie","title":"Alien","optional":false,"externalRefs":[],"presentations":[{"id":"p1","alternative":"theatrical","displayName":"Theatrical","file":"Alien - Theatrical.mkv"}]}]}],"extras":[],"children":[],"externalRefs":[]}"#
+                return (200, Data(#"{"library":"films","path":"Alien (1997)/container.smd","digest":"\#(digest)","artwork":["poster"],"container":\#(container)}"#.utf8))
+            case ("GET", "/v1/libraries/films/containers/\(film)/smd"): return (200, held)
+            case ("GET", "/v1/libraries/films/scan"):
+                return (200, Data(#"{"walkedAt":"2026-10-19T09:30:00Z","available":true,"report":{"read":1,"unchanged":0,"removed":0,"findings":[{"severity":"warning","path":"Alien (1997)/container.smd","text":"folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""},{"severity":"error","path":"Brief/container.smd","text":"unreadable"}]}}"#.utf8))
+            case ("PUT", "/v1/libraries/films/containers/\(film)"):
+                struct Edit: Decodable { var document: String; var basedOn: String; var dryRun: Bool? }
+                let edit = try JSONDecoder().decode(Edit.self, from: body)
+                guard edit.basedOn == digest else { return (409, Data(#"{"detail":"the sidecar is now \#(digest), not \#(edit.basedOn)"}"#.utf8)) }
+                if !edit.document.contains("theatrical") {
+                    return (422, result(applied: false, #"{"severity":"error","path":"Alien (1997)/container.smd","text":"item feature: presentation names alternative theatrical, which is not there"}"#))
+                }
+                guard edit.dryRun != true else { return (200, result(applied: false, "")) }
+                sidecar.bytes.withLock { $0 = Data(edit.document.utf8) + Data(" ".utf8) }
+                return (200, result(applied: true, ""))
+            case ("PUT", "/v1/libraries/films/containers/\(film)/artwork/poster"):
+                return body.starts(with: [0xFF, 0xD8, 0xFF]) ? (200, Data(#"{"kind":"poster","format":"jpg"}"#.utf8)) : (415, Data())
+            case ("DELETE", "/v1/libraries/films/containers/\(film)/artwork/poster"): return (204, Data())
+            case ("DELETE", "/v1/libraries/films/containers/\(film)/artwork/logo"): return (404, Data())
+            default: return (404, Data())
+            }
+        }
+    }
+
+    /// The console reads a library's containers and one container as its sidecar says it, with the
+    /// last walk's findings on that sidecar alone; a draft of an edit is kept on this Mac, checked by a
+    /// dry run, refused with the silo's findings, stored onto its base, and kept when another edit
+    /// landed first; artwork is put and removed, and a refusal said in words.
+    @Test func aLibrarysContainersAreBrowsedAndEditedFromTheConsole() async throws {
+        var alien = Container(id: ContainerID("0000000000000014")!, type: .movie, title: Title("Alien")!, year: 1997, yearInTitle: true)
+        alien.alternatives = [Alternative(id: "theatrical", sequence: "main", title: "Theatrical")]
+        alien.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: "Alien"))])]
+        let sidecar = HeldSidecar(try SidecarFile.data(for: Sidecar(container: alien, presentations: ["feature": [Presentation(alternative: "theatrical", file: "Alien - Theatrical.mkv")]])))
+        let asked = Mutex<[Asked]>([])
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "home")
+        let console = Self.console(passkeys: passkeys, discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8742)], answering: Self.containerSilo(sidecar: sidecar) { request in asked.withLock { $0.append(request) } })
+        let home = try #require(await console.refresh().first { $0.id == "home" })
+
+        #expect(try await console.containers(in: "films", of: home).map(\.displayTitle) == ["Alien (1997)"])
+        let opened = try await console.open(container: alien.id.value, in: "films", of: home)
+        #expect(opened.container.artwork == ["poster"])
+        #expect(opened.container.container.sequences.first?.items.first?.presentations.map(\.file) == ["Alien - Theatrical.mkv"])
+        #expect(opened.findings.map(\.text) == ["folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""], "the findings on its sidecar, and no other's")
+
+        var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
+        #expect(draft.value == alien, "the draft is the sidecar's container, without the library's facts")
+        #expect(!draft.isChanged)
+        var corrected = alien
+        corrected.year = 1979
+        draft.set(corrected)
+        #expect(draft.difference.contains { $0.kind == .added && $0.text.contains("1979") })
+        try console.containerDrafts.save(draft, for: home.id)
+        #expect(console.containerDrafts.draft(of: alien.id.value, in: "films", of: home.id)?.value?.year == 1979, "kept on this Mac")
+
+        guard case .wouldWrite(let dry) = try await console.check(draft, of: home) else { Issue.record("a draft that applies is checked"); return }
+        #expect(!dry.applied)
+        #expect(sidecar.bytes.withLock { $0 } == opened.sidecar, "a check writes nothing")
+
+        var refused = draft
+        var noTheatrical = corrected
+        noTheatrical.alternatives = []
+        refused.set(noTheatrical)
+        guard case .refused(let refusal) = try await console.check(refused, of: home) else { Issue.record("the silo's findings refuse it"); return }
+        #expect(refusal.findings.map(\.text) == ["item feature: presentation names alternative theatrical, which is not there"])
+        guard case .refused = try await console.store(refused, of: home) else { Issue.record("a store is refused alike"); return }
+
+        guard case .stored(let stored) = try await console.store(draft, of: home) else { Issue.record("a store onto its base is written"); return }
+        #expect(stored.applied)
+        let put = try #require(asked.withLock { $0 }.last { $0.method == "PUT" })
+        #expect(put.body.contains(#""basedOn":"\#(draft.base)""#), "naming its base")
+
+        // The sidecar has moved on from the draft's base: the dry run says so, and a store hands back
+        // what landed, for the draft to be re-based on it.
+        #expect(try await console.check(draft, of: home) == .behind("the sidecar is now \(sidecar.bytes.withLock { $0 }.count), not \(draft.base)"))
+        guard case .landedFirst(let landed) = try await console.store(draft, of: home) else { Issue.record("an edit that landed first is handed back"); return }
+        #expect(landed.container.digest != draft.base)
+        let rebased = try draft.rebased(on: landed.container, sidecar: landed.sidecar)
+        #expect(rebased.base == landed.container.digest && rebased.text == draft.text)
+        #expect(!rebased.isBehind(landed.container.digest))
+
+        try await console.putArtwork(Data([0xFF, 0xD8, 0xFF, 0xE0]), as: "poster", of: alien.id.value, in: "films", on: home)
+        do {
+            try await console.putArtwork(Data("text".utf8), as: "poster", of: alien.id.value, in: "films", on: home)
+            Issue.record("a file that is not an image is refused")
+        } catch let refused as AdminConsole.SettingsRefused {
+            #expect(refused.reason == "the silo takes artwork as a JPEG or a PNG, and this is neither")
+        }
+        try await console.removeArtwork("poster", of: alien.id.value, in: "films", on: home)
+        await #expect(throws: AdminConsole.SettingsRefused(reason: "the container has no logo")) {
+            try await console.removeArtwork("logo", of: alien.id.value, in: "films", on: home)
+        }
+        #expect(console.artworkURL("poster", of: alien.id.value, in: "films", of: home).path == "/v1/libraries/films/containers/0000000000000014/artwork/poster")
+
+        await console.forget(home)
+        #expect(console.containerDrafts.drafts(of: home.id).isEmpty, "forgetting a silo ends its container drafts")
     }
 
     /// The console asks what an addition would find before it is made — each folder along the path

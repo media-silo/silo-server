@@ -4,14 +4,16 @@
 ## ADDED Requirements
 
 ### Requirement: The console shows each library's containers, and a container as its library's sidecar says it
-For a silo classified with access, SiloAdmin SHALL show each library's containers as a tree,
-from the containers at the top of the library down through the children each sidecar names,
-listed and unlisted alike, read from the library's own container routes. A container SHALL be
+For a silo classified with access, SiloAdmin SHALL show each library's containers as a tree
+beneath the library, in the section that shows the libraries, from the containers at the top of
+the library down through the children each sidecar names, listed and unlisted alike, read from
+the library's own container routes. A container SHALL be
 shown as the library's sidecar says it: its own fields, its alternatives and features, its
 sequences and extras with each item's presentations in that library — by display name, profile,
 alternative and file — and the items that have none, its children, its artwork, and the
 findings the library's last walk reported on its sidecar. The console SHALL add no reading of
-its own. The browser SHALL keep itself current as the rest of the console does.
+its own. The section SHALL read each library's containers again at the console's cadence while
+it is open, as it reads the libraries and their walks.
 
 #### Scenario: a season with gaps
 - **WHEN** the operator opens a season of which the library holds presentations of four
@@ -22,7 +24,11 @@ its own. The browser SHALL keep itself current as the rest of the console does.
 - **WHEN** the library's last walk reported an error on a container's sidecar
 - **THEN** the container shows the error in the walk's words
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
+(`aLibrarysContainersAreBrowsedAndEditedFromTheConsole`), `Tests/SiloAdminTests/ConsoleModelTests.swift`
+(`theLibrariesSectionKeepsItselfCurrent`), `Tests/SiloTests/ServerTests.swift`
+(`theConsolesTypesReadTheSilosAnswers`). The browser itself and its tree are pinned by nothing yet,
+as the rest of the shell is.
 
 ### Requirement: A container's own fields are edited in a form, as a draft kept on this Mac
 SiloAdmin SHALL edit a container's own fields in a form: its title, year, type, type label,
@@ -54,7 +60,10 @@ it. A draft SHALL end only when it is stored or discarded, or its silo forgotten
 - **WHEN** the operator removes an alternative two of the library's presentations are of
 - **THEN** the dry run's findings name both presentations before anything is stored
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
+(`aLibrarysContainersAreBrowsedAndEditedFromTheConsole`). The form, the saving a moment after the
+operator stops, the dry run as they type and the review are pinned by nothing yet, as the rest of
+the shell is.
 
 ### Requirement: A container's artwork is shown, put and removed from the console
 SiloAdmin SHALL show, for a container, each artwork kind its folder holds, and SHALL let the
@@ -65,4 +74,6 @@ library's artwork routes. A refusal SHALL be shown in words.
 - **WHEN** the operator drops a JPEG onto a container's poster
 - **THEN** the image is put, and the container shows the poster the silo serves
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
+(`aLibrarysContainersAreBrowsedAndEditedFromTheConsole`). Dropping and choosing an image are
+pinned by nothing yet, as the rest of the shell is.
