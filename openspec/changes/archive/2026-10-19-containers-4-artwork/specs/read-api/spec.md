@@ -36,4 +36,4 @@ the artwork kinds, a library the silo does not serve, and a container it does no
 - **WHEN** the operator deletes a container's `poster`
 - **THEN** the answer is 204, the folder holds no poster, and getting the poster is 404
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersArtworkIsPutServedAndRemoved`).

@@ -183,6 +183,8 @@ public enum Indexer {
             children = sidecar.children
         }
 
+        report.findings += Artwork.findings(in: library.root.appendingPathComponent(folder, isDirectory: true), sidecar: path)
+
         guard descend else { return }
         for (child, childPath) in children.sorted(by: { $0.value < $1.value }) {
             guard LibraryLayout.isInside(childPath), childPath.hasSuffix("/\(SidecarFile.fileName)") else {

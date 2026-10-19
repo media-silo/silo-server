@@ -310,6 +310,54 @@ struct ServerTests {
         }
     }
 
+    /// A container's artwork is a file beside its sidecar named for its kind: put as a JPEG or a PNG,
+    /// told by its bytes, served with its content type, and removed.
+    @Test func aContainersArtworkIsPutServedAndRemoved() async throws {
+        struct Read: Decodable { var artwork: [String] }
+        struct Put: Decodable { var kind: String; var format: String }
+        let operatorHeaders = ["Authorization": "Bearer secret"]
+        let container = "/v1/libraries/main/containers/\(Fixture.notorious.id)"
+        let poster = "\(container)/artwork/poster"
+        let folder = Fixture.root.appendingPathComponent("Library/Notorious (1946)")
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0x11, count: 64))
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] + Array(repeating: 0x22, count: 64))
+        func held() throws -> [String] {
+            try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasPrefix("poster") }.sorted()
+        }
+        try await withClient { client in
+            #expect(try await client.get(container).json(Read.self).artwork.isEmpty)
+            #expect(try await client.get(poster).status == 404)
+            #expect(try await client.send("PUT", poster, body: jpeg).status == 401)
+
+            let put = try await client.send("PUT", poster, body: jpeg, headers: operatorHeaders)
+            #expect(put.status == 200)
+            let answer = try put.json(Put.self)
+            #expect(answer.kind == "poster" && answer.format == "jpg")
+            #expect(try await client.get(container).json(Read.self).artwork == ["poster"])
+            let served = try await client.get(poster)
+            #expect(served.status == 200)
+            #expect(served.head?.headerFields[.contentType] == "image/jpeg")
+            #expect(served.body == jpeg)
+
+            #expect(try await client.send("PUT", poster, body: png, headers: operatorHeaders).status == 200)
+            #expect(try held() == ["poster.png"], "a PNG replaces the JPEG")
+            #expect(try await client.get(poster).head?.headerFields[.contentType] == "image/png")
+
+            #expect(try await client.send("PUT", poster, body: Data("not an image".utf8), headers: operatorHeaders).status == 415)
+            let huge = Data([0xFF, 0xD8, 0xFF] + Array(repeating: 0, count: Artwork.maximumSize))
+            #expect(try await client.send("PUT", poster, body: huge, headers: operatorHeaders).status == 413)
+            #expect(try held() == ["poster.png"], "and a refusal changes nothing")
+            #expect(try await client.send("PUT", "\(container)/artwork/wallpaper", body: jpeg, headers: operatorHeaders).status == 404)
+            #expect(try await client.send("PUT", "/v1/libraries/away/containers/\(Fixture.alien.id)/artwork/poster", body: jpeg, headers: operatorHeaders).status == 404)
+
+            #expect(try await client.send("DELETE", poster).status == 401)
+            #expect(try await client.send("DELETE", poster, headers: operatorHeaders).status == 204)
+            #expect(try held().isEmpty)
+            #expect(try await client.get(poster).status == 404)
+            #expect(try await client.send("DELETE", poster, headers: operatorHeaders).status == 404)
+        }
+    }
+
     @Test func mediaIsServedWholeAndByRange() async throws {
         try await withClient { client in
             let serial = try await client.get("/v1/containers/0000000000000003")

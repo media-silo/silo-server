@@ -211,6 +211,26 @@ struct IndexTests {
         #expect(try index.containers(film.id).map(\.folder) == ["Alien (1997)"], "the folder is where it was")
     }
 
+    /// A kind of artwork held in both formats is a warning on the sidecar, and the `.jpg` is the one
+    /// that counts.
+    @Test func artworkInTwoFormatsIsAWarning() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        try sandbox.place([Self.unlisted], item: "ep1")
+        let folder = sandbox.library.root.appendingPathComponent("Behind the Sofa")
+        try Data([0xFF, 0xD8, 0xFF]).write(to: folder.appendingPathComponent("poster.jpg"))
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: folder.appendingPathComponent("fanart.png"))
+        let index = try Index(at: nil)
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.isEmpty)
+        #expect(Artwork.held(in: folder) == ["poster", "fanart"])
+
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: folder.appendingPathComponent("poster.png"))
+        let warning = "warning: Behind the Sofa/container.smd: poster is both poster.jpg and poster.png"
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning])
+        #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == [warning])
+        #expect(Artwork.file(of: "poster", in: folder)?.format == .jpg, "the .jpg counts")
+    }
+
     /// An unmounted mount point is an empty folder, not a missing one: a walk of it would forget
     /// the whole library, so it is not applied, and neither is a walk of a folder that has gone.
     @Test func anEmptyMountPointForgetsNothing() throws {
