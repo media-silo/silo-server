@@ -82,7 +82,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-openapi-runtime", from: "1.7.0"),
         .package(url: "https://github.com/apple/swift-http-api-proposal.git", .upToNextMinor(from: "0.2.0")),
         .package(url: "https://github.com/swift-server/swift-http-server.git", branch: "main"),
-        .package(url: "https://github.com/apple/swift-collections.git", from: "1.6.0"),
+        // Held below 1.7: swift-http-api-proposal 0.2.x pins swift-async-algorithms at exactly 1.1.5, whose
+        // AsyncStreaming does not build against swift-collections 1.7 (fixed in 1.1.6). Lift this once the
+        // proposal dependency moves to 0.3, which pins 1.1.7 — after swift-http-server and wire-mvc do.
+        .package(url: "https://github.com/apple/swift-collections.git", "1.6.0"..<"1.7.0"),
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.6.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.13.2"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.0.0"),
