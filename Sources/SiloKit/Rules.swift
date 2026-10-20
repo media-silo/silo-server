@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
-
 /// A named, ordered list of encoding rules and the outputs they make. What a source keeps is its
 /// producer's to decide; one that can choose reads the rules for what every output drops.
 /// `Silo.md`, *Encoding rules*.

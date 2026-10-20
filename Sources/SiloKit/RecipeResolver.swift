@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
-
 /// Resolves a ruleset against a file's facts. Pure: no `ffmpeg`, no file, and every input is a
 /// value, which is what makes the three rules in the proposal testable on a literal.
 public enum RecipeResolver {

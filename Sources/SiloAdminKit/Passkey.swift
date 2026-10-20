@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
-
 /// The operator passkey as the console mints it: twenty-five lowercase letters and digits from
 /// a 36-symbol alphabet — a shade over 128 bits — grouped in fives so a human can read it aloud
 /// and type it. Lowercase only, because a transcription that teaches case sensitivity is a

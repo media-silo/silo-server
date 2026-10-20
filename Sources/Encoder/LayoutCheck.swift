@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import SiloKit
 
 /// A place where the encoded file disagrees with the recipe's layout. Any mismatch fails the job:

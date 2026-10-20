@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import SiloKit
 
 /// A file as `ffprobe` describes it, reduced to what the encoder uses: what the silo's own producer

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import SiloKit
 
 /// The silo's own producer: an input spec for a plain file, from what `ffprobe` reports of it and

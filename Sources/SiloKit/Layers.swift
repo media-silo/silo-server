@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
-
 /// Whose rules a layer is: a container's, by its id, or a binding's, by its id. The ruleset applied
 /// is the stack's last layer and is named by the recipe itself. `LayeredRulesets.md`, *Layers*.
 public enum LayerSubject: Hashable, Sendable {

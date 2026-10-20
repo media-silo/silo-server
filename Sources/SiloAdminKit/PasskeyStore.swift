@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import Synchronization
 
 /// Where passkeys live once minted or claimed: one seam, two keepers — the Keychain where one
@@ -36,6 +35,8 @@ public final class InMemoryPasskeyStore: PasskeyStore, Sendable {
 }
 
 #if canImport(Security)
+// Only the Keychain's keeper uses Foundation, for the `Data` its calls trade in.
+import Foundation
 import Security
 
 /// The Keychain's keeper: generic passwords under the console's service, keyed by ServerID —

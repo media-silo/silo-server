@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import SmdSidecar
 
 /// The fully resolved instructions for turning one source file into one presentation: one decision
