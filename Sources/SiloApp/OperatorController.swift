@@ -13,8 +13,8 @@ import Wire
 import WireMVC
 import WireOpenAPI
 
-/// The operations that change the silo — adding and removing a library, a placement, a library's
-/// standard, and storing a ruleset — and the one read that names paths inside a library, its last
+/// The operations that change the silo — adding and removing a library, a placement, making and
+/// editing containers, a library's standard, and storing a ruleset — and the one read that names paths inside a library, its last
 /// walk. Grouped here so that one
 /// middleware on the controller is the whole of the operator gate.
 @Singleton
@@ -140,6 +140,33 @@ package struct OperatorController {
                 findings: report.findings.map(Mapping.finding)
             )
         )
+    }
+
+    /// Makes a tree of containers in one library with no file, beneath a container it holds or at
+    /// its top.
+    @Operation
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    @ErrorResponse(NoSuchContainer.self, .notFound)
+    @ErrorResponse(BadCreate.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
+    @ErrorResponse(CreateRefusedResult.self, .unprocessableContent, { $0.result })
+    package func createContainers(
+        @Path library: String,
+        @JSONBody body: Components.Schemas.ContainerCreate
+    ) async throws -> Components.Schemas.ContainerCreateResult {
+        guard let library = libraries.library(library) else { throw NoSuchLibrary() }
+        do {
+            let outcome = try await ContainerMaker.create(
+                body.documents,
+                parent: body.parent,
+                in: library,
+                dryRun: body.dryRun ?? false,
+                libraries: libraries,
+                index: index
+            )
+            return Mapping.createResult(outcome, in: library)
+        } catch let refused as CreateRefused {
+            throw CreateRefusedResult(result: Mapping.createResult(refused.outcome, in: library))
+        }
     }
 
     /// Sets a container's own fields in one library's sidecar, onto the sidecar the editor read.

@@ -35,6 +35,9 @@ package struct PlacementRefused: Error {
 package struct EditRefusedResult: Error {
     package var result: Components.Schemas.ContainerEditResult
 }
+package struct CreateRefusedResult: Error {
+    package var result: Components.Schemas.ContainerCreateResult
+}
 
 /// The index's rows and the sidecar's values as the document's types. One direction only: the API
 /// is a projection of the model, never a place the model is edited.
@@ -256,6 +259,22 @@ enum Mapping {
             applied: outcome.applied,
             sidecar: String(decoding: outcome.sidecar, as: UTF8.self),
             digest: outcome.digest,
+            findings: outcome.findings.map(finding)
+        )
+    }
+
+    static func createResult(
+        _ outcome: ContainerCreateOutcome,
+        in library: LibraryConfig
+    ) -> Components.Schemas.ContainerCreateResult {
+        Components.Schemas.ContainerCreateResult(
+            applied: outcome.applied,
+            writes: outcome.writes.map {
+                Components.Schemas.SidecarWriteSummary(
+                    path: LibraryWalker.relativePath(of: $0.url, in: library.root),
+                    creates: $0.creates
+                )
+            },
             findings: outcome.findings.map(finding)
         )
     }

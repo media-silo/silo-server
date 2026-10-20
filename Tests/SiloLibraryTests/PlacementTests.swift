@@ -302,6 +302,117 @@ struct PlacementTests {
         }
     }
 
+    @Test func aTreeOfContainersIsMadeWithNoFile() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+
+        // The tree in an empty library, the documents in any order: made from the top down.
+        let making = try Maker.compute(
+            MakingRequest(library: sandbox.library, holder: nil, containers: [Self.serial, Self.series, Self.season])
+        )
+        #expect(
+            making.describe(relativeTo: sandbox.library) == [
+                "create   Doctor Who (1963)/",
+                "create   Doctor Who (1963)/Season 13/",
+                "create   Doctor Who (1963)/Season 13/Pyramids of Mars/",
+                "write    Doctor Who (1963)/container.smd",
+                "write    Doctor Who (1963)/Season 13/container.smd",
+                "write    Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd",
+            ]
+        )
+        #expect(making.sidecars.map(\.parent) == [nil, Self.series.id, Self.season.id])
+        try Maker.apply(making)
+        let seriesURL = sandbox.library.appendingPathComponent("Doctor Who (1963)/container.smd")
+        let made = try SidecarFile.sidecar(from: Data(contentsOf: seriesURL))
+        #expect(made.container == Self.series)
+        #expect(made.children == [Self.season.id: "Season 13/container.smd"])
+        let serial = try SidecarFile.sidecar(
+            from: Data(
+                contentsOf: sandbox.library.appendingPathComponent(
+                    "Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd"
+                )
+            )
+        )
+        #expect(serial.presentations.isEmpty, "no file is placed")
+        #expect(LibraryWalker.walk(sandbox.library).findings.filter { $0.severity == .error }.isEmpty)
+
+        // A season beneath the series, which holds a presentation: its sidecar is updated last, with the
+        // season's path alone.
+        let source = try sandbox.source("a.mkv")
+        try Placer.apply(
+            try Placer.compute(
+                PlacementRequest(
+                    library: sandbox.library,
+                    lineage: Self.lineage,
+                    item: "part1",
+                    presentation: Presentation(profile: nil, file: ""),
+                    source: source
+                )
+            )
+        )
+        var series = Self.series
+        let season14 = Container(id: ContainerID("0000000000000004")!, type: .season, title: Title("Season 14")!)
+        series.sequences[0].items.append(.child(Entry.Child(id: ItemID("s14")!, container: season14.id)))
+        try SidecarFile.data(settingContainer: series, in: Data(contentsOf: seriesURL)).write(to: seriesURL)
+        let seriesFolder = sandbox.library.appendingPathComponent("Doctor Who (1963)", isDirectory: true)
+        let beneath = try Maker.compute(
+            MakingRequest(
+                library: sandbox.library,
+                holder: MakingRequest.Holder(folder: seriesFolder, parent: nil),
+                containers: [season14]
+            )
+        )
+        #expect(
+            beneath.describe(relativeTo: sandbox.library) == [
+                "create   Doctor Who (1963)/Season 14/",
+                "write    Doctor Who (1963)/Season 14/container.smd",
+                "update   Doctor Who (1963)/container.smd",
+            ]
+        )
+        #expect(beneath.sidecars.map(\.parent) == [Self.series.id, nil])
+        try Maker.apply(beneath)
+        let updated = try SidecarFile.sidecar(from: Data(contentsOf: seriesURL))
+        #expect(updated.container == series)
+        #expect(updated.children[season14.id] == "Season 14/container.smd")
+        #expect(updated.children[Self.season.id] == "Season 13/container.smd")
+
+        // A folder holding another container, and the same container already there, are refused and
+        // make nothing; so is a holder that does not name the top.
+        let impostor = Container(
+            id: ContainerID("00000000000000aa")!,
+            type: .series,
+            title: Self.series.title,
+            year: 1963,
+            yearInTitle: true
+        )
+        let taken = try Maker.compute(MakingRequest(library: sandbox.library, holder: nil, containers: [impostor]))
+        #expect(taken.errors.map(\.text) == ["the folder for Doctor Who (1963) already holds \(Self.series.id)"])
+        #expect(throws: MakingError.refused(taken.errors)) { try Maker.apply(taken) }
+        let again = try Maker.compute(MakingRequest(library: sandbox.library, holder: nil, containers: [Self.series]))
+        #expect(again.errors.map(\.text) == ["container \(Self.series.id) is already at \"Doctor Who (1963)\""])
+        let season15 = Container(id: ContainerID("0000000000000005")!, type: .season, title: Title("Season 15")!)
+        let unnamed = try Maker.compute(
+            MakingRequest(
+                library: sandbox.library,
+                holder: MakingRequest.Holder(folder: seriesFolder, parent: nil),
+                containers: [season15]
+            )
+        )
+        #expect(unnamed.errors.map(\.text) == ["\(Self.series.id) does not name \(season15.id) as a child"])
+        #expect(!FileManager.default.fileExists(atPath: seriesFolder.appendingPathComponent("Season 15").path))
+
+        // Containers that are not one tree are thrown, not found.
+        #expect(throws: MakingError.empty) {
+            try Maker.compute(MakingRequest(library: sandbox.library, holder: nil, containers: []))
+        }
+        #expect(throws: MakingError.self) {
+            try Maker.compute(MakingRequest(library: sandbox.library, holder: nil, containers: [season14, season15]))
+        }
+        #expect(throws: MakingError.self) {
+            try Maker.compute(MakingRequest(library: sandbox.library, holder: nil, containers: [season14, season14]))
+        }
+    }
+
     @Test func theWalkReportsWhatIsBrokenOrAbandoned() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }

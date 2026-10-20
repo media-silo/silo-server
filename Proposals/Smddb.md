@@ -176,7 +176,10 @@ The making is SiloLibrary's, beside the placer. It computes every write before m
 describes them in the placement's words, `create` and `write`. It shares the placer's folder
 naming, its refusal of a folder that holds another container, and its update of an existing parent
 sidecar that changes only the child's path. A placement into a container made this way finds its
-sidecar there, and changes only the library's facts in it, as it does for any sidecar it finds.
+sidecar there, and changes only the library's facts in it, as it does for any sidecar it finds. It
+finds it only while the lineage it carries gives the container the title the library's folder was
+named from, since a placement names its folders from the lineage. 0014, which takes the container
+from the library, removes that condition.
 
 **A container with nothing to play is still served.** Until now every container in a library had a
 presentation somewhere beneath it. A container made by this route has none until something is placed

@@ -454,6 +454,55 @@ paths:
                   $ref: "#/components/schemas/ContainerSummary"
         "404":
           description: No such library.
+    post:
+      operationId: createContainers
+      summary: Make a tree of containers in this library, with no file
+      description: >
+        Makes each container in documents as a placement would make it — its folder, named by the
+        layout, and a sidecar holding its own fields and no presentations — beneath the folder of
+        parent, a container the library holds whose own fields name the top of the tree as a child,
+        or at the top of the library without one. The documents form one tree: one of them, the
+        top, named as a child by none of the others, and every other named as a child by one of
+        them. The parent's sidecar gains the top's path and changes in nothing else. Refused with
+        its findings, and nothing written, when the library already holds a container in the tree,
+        the parent does not name the top, or a folder the tree would use holds another container.
+        A dry run answers what would be written and writes nothing. Otherwise the new sidecars are
+        written from the top down, then the parent's, and each is read into the index before the
+        answer; the library is not walked. Operator only.
+      tags: [Containers]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContainerCreate"
+      responses:
+        "200":
+          description: The containers, made unless it was a dry run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContainerCreateResult"
+        "400":
+          description: A document that cannot be read, or documents that are not one tree.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library, or no such parent in it.
+        "422":
+          description: Refused, with the findings that refuse it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContainerCreateResult"
 
   /libraries/{library}/containers/{id}:
     get:
@@ -2939,6 +2988,49 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Finding"
+
+    ContainerCreate:
+      type: object
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: The containers as their repository XML, forming one tree, in any order.
+        parent:
+          type: string
+          description: The container the library holds that the top is filed beneath; absent for the top of the library.
+        dryRun:
+          type: boolean
+
+    ContainerCreateResult:
+      type: object
+      required: [applied, writes, findings]
+      properties:
+        applied:
+          type: boolean
+        writes:
+          type: array
+          description: The sidecars written, or that would be, new ones from the top down and then the parent's.
+          items:
+            $ref: "#/components/schemas/SidecarWriteSummary"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+
+    SidecarWriteSummary:
+      type: object
+      required: [path, creates]
+      properties:
+        path:
+          type: string
+          description: The sidecar, relative to the library root.
+        creates:
+          type: boolean
+          description: Whether the sidecar is new, rather than an update of one there.
 
     Alternative:
       type: object
