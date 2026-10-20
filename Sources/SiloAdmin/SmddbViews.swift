@@ -58,119 +58,208 @@ struct StandingLabel: View {
     }
 }
 
-/// Bringing a container from smddb into a library: searching the clone, choosing the container and the
-/// descendants to bring, the silo's dry run, and the import. A container the library holds opens as an
-/// edit from smddb's record instead; a parent older than smddb's record is offered as one first.
+/// Bringing a container from smddb into a library, as three steps: finding it in the clone, choosing
+/// what of the tree beneath it comes with it, and checking with the silo what the import would make
+/// before it is made. A container the library holds opens as an edit from smddb's record instead; a
+/// parent older than smddb's record is offered as one first.
 struct ImportSheet: View {
     let importing: ConsoleModel.Importing
     let model: ConsoleModel
     @Environment(\.dismiss) private var dismiss
+
+    private enum Step: Int, CaseIterable {
+        case find, choose, check
+
+        var title: String {
+            switch self {
+            case .find: "Find"
+            case .choose: "Choose"
+            case .check: "Check"
+            }
+        }
+    }
+
+    @State private var step: Step = .find
     @State private var query = ""
     @State private var found: [Container] = []
     @State private var picked: ContainerID?
     @State private var plan: AdminConsole.ImportPlan?
     @State private var chosen: Set<ContainerID> = []
     @State private var outcome: AdminConsole.ImportOutcome?
+    @State private var working = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Import from smddb into \(importing.library)").font(.title3.bold())
-            if let plan {
-                planView(plan)
-            } else {
-                TextField("Title, or a provider's id such as tvdb:76107", text: $query)
-                    .textFieldStyle(.roundedBorder)
-                    .task(id: query) {
-                        try? await Task.sleep(for: .milliseconds(200))
-                        found = await model.searchSmddb(query)
-                    }
-                List(found, id: \.id, selection: $picked) { container in
-                    VStack(alignment: .leading) {
-                        Text(container.displayTitle)
-                        Text("\(container.type.title), \(container.id)").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .tag(container.id)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Import from smddb into \(importing.library)").font(.title3.bold())
+                Spacer()
+                ForEach(Step.allCases, id: \.self) { each in
+                    Text("\(each.rawValue + 1). \(each.title)")
+                        .font(.caption)
+                        .foregroundStyle(each == step ? .primary : .secondary)
+                        .fontWeight(each == step ? .semibold : .regular)
                 }
-                HStack {
-                    Spacer()
+            }
+            switch step {
+            case .find: findStep
+            case .choose: chooseStep
+            case .check: checkStep
+            }
+            HStack {
+                if step != .find, !isMade {
+                    Button("Back") { back() }
+                }
+                Spacer()
+                if isMade {
+                    Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+                } else {
                     Button("Cancel", role: .cancel) { dismiss() }
-                    Button("Continue") {
-                        guard let picked else { return }
-                        Task {
-                            plan = await model.planImport(picked, into: importing.library, on: importing.silo)
-                            chosen = Set(plan?.descendants.map(\.id) ?? [])
-                        }
+                    switch step {
+                    case .find:
+                        Button("Continue") { Task { await planPicked() } }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(picked == nil || working)
+                    case .choose:
+                        Button("Continue") { step = .check }.buttonStyle(.borderedProminent)
+                    case .check:
+                        Button("Import") { Task { await run(dryRun: false) } }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!isWouldMake || working)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(picked == nil)
                 }
             }
         }
         .padding()
-        .frame(minWidth: 560, minHeight: 420)
+        .frame(minWidth: 560, minHeight: 440)
+    }
+
+    // MARK: Steps
+
+    private var findStep: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Title, or a provider's id such as tvdb:76107", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .task(id: query) {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    found = await model.searchSmddb(query)
+                }
+            List(found, id: \.id, selection: $picked) { container in
+                VStack(alignment: .leading) {
+                    Text(container.displayTitle)
+                    Text("\(container.type.title), \(container.id)").font(.caption).foregroundStyle(.secondary)
+                }
+                .tag(container.id)
+            }
+        }
     }
 
     @ViewBuilder
-    private func planView(_ plan: AdminConsole.ImportPlan) -> some View {
-        Text(
-            plan.parent.map { "Beneath \($0), which the library holds." } ?? "At the top of the library."
-        )
-        .foregroundStyle(.secondary)
-        List {
-            ForEach(plan.ancestors, id: \.id) { ancestor in
-                Label("\(ancestor.displayTitle), made above it", systemImage: "arrow.up")
+    private var chooseStep: some View {
+        if let plan {
+            Text(plan.parent.map { "Beneath \($0), which the library holds." } ?? "At the top of the library.")
+                .foregroundStyle(.secondary)
+            List {
+                ForEach(plan.ancestors, id: \.id) { ancestor in
+                    Label("\(ancestor.displayTitle), made above it", systemImage: "arrow.up")
+                }
+                ImportTreeNode(plan: plan, container: plan.picked, chosen: $chosen, depth: 0, included: true)
             }
-            ImportTreeNode(plan: plan, container: plan.picked, chosen: $chosen, depth: 0, included: true)
         }
-        .onChange(of: chosen) { outcome = nil }
-        switch outcome {
-        case .wouldMake(let result)?:
-            Label(
-                "The silo would make \(result.writes.filter(\.creates).count) sidecars",
-                systemImage: "checkmark.circle"
+    }
+
+    @ViewBuilder
+    private var checkStep: some View {
+        if let plan {
+            let documents = plan.documents(choosing: chosen).count
+            Text(
+                "\(documents) container\(documents == 1 ? "" : "s") from smddb, with no presentations, "
+                    + (plan.parent.map { "beneath \($0)." } ?? "at the top of the library.")
             )
-            .foregroundStyle(.green).font(.caption)
-            FindingsList(findings: result.findings)
-        case .made(let result)?:
-            Label("Made \(result.writes.filter(\.creates).count) sidecars", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green).font(.caption)
-        case .refused(let result, let parentDraft)?:
-            Label("The silo refuses it", systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
-            FindingsList(findings: result.findings)
-            if let parentDraft {
-                Button("Bring \(parentDraft.title)'s Fields from smddb First…") {
-                    model.open(parentDraft, for: importing.silo)
-                    dismiss()
-                }
-            }
-        case nil:
-            EmptyView()
+            .foregroundStyle(.secondary)
         }
-        HStack {
-            Button("Back") {
-                self.plan = nil
-                outcome = nil
-            }
-            Spacer()
-            Button("Cancel", role: .cancel) { dismiss() }
-            if case .made? = outcome {
-                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
-            } else {
-                Button("Check") {
-                    Task { outcome = await model.runImport(plan, choosing: chosen, dryRun: true, on: importing.silo) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                switch outcome {
+                case .wouldMake(let result)?:
+                    Label("The silo would write", systemImage: "checkmark.circle").foregroundStyle(.green)
+                    writes(result)
+                    FindingsList(findings: result.findings)
+                case .made(let result)?:
+                    Label("Imported", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    writes(result)
+                case .refused(let result, let parentDraft)?:
+                    Label("The silo refuses it", systemImage: "exclamationmark.octagon").foregroundStyle(.red)
+                    FindingsList(findings: result.findings)
+                    if let parentDraft {
+                        Text(
+                            "\(parentDraft.title) in this library does not yet name what is being imported beneath it. Bring its fields from smddb, store that edit, and import again."
+                        )
+                        .font(.caption)
+                        Button("Bring \(parentDraft.title)'s Fields from smddb…") {
+                            model.open(parentDraft, for: importing.silo)
+                            dismiss()
+                        }
+                    }
+                case nil:
+                    Label("Checking with the silo…", systemImage: "clock").foregroundStyle(.secondary)
                 }
-                Button("Import") {
-                    Task { outcome = await model.runImport(plan, choosing: chosen, dryRun: false, on: importing.silo) }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!isWouldMake)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task(id: chosen) {
+            outcome = nil
+            await run(dryRun: true)
         }
     }
 
-    /// An import is made once the silo's dry run of the same choice would make it.
+    private func writes(_ result: SiloClient.ContainerCreateResult) -> some View {
+        ForEach(result.writes, id: \.path) { write in
+            Text("\(write.creates ? "write " : "update") \(write.path)")
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+        }
+    }
+
+    // MARK: Actions
+
+    private func back() {
+        switch step {
+        case .find: break
+        case .choose:
+            step = .find
+            plan = nil
+        case .check:
+            step = .choose
+            outcome = nil
+        }
+    }
+
+    /// Works out the import of the container picked; one the library holds closes the sheet and opens
+    /// as an edit from smddb's record.
+    private func planPicked() async {
+        guard let picked else { return }
+        working = true
+        defer { working = false }
+        guard let planned = await model.planImport(picked, into: importing.library, on: importing.silo) else { return }
+        plan = planned
+        chosen = Set(planned.descendants.map(\.id))
+        step = .choose
+    }
+
+    private func run(dryRun: Bool) async {
+        guard let plan else { return }
+        working = true
+        defer { working = false }
+        outcome = await model.runImport(plan, choosing: chosen, dryRun: dryRun, on: importing.silo)
+    }
+
     private var isWouldMake: Bool {
         if case .wouldMake? = outcome { return true }
+        return false
+    }
+
+    private var isMade: Bool {
+        if case .made? = outcome { return true }
         return false
     }
 }
