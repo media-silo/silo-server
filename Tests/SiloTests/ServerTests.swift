@@ -506,6 +506,188 @@ struct ServerTests {
 
     /// A container's artwork is a file beside its sidecar named for its kind: put as a JPEG or a PNG,
     /// told by its bytes, served with its content type, and removed.
+    /// Containers made with no file, in a library of their own so the counts the other tests make of
+    /// `main` stay as they are: a series, a season and a serial at the top, then a second season
+    /// beneath the series, each refusal writing nothing, and a placement that finds the serial there.
+    @Test func containersAreMadeInALibraryWithoutAFile() async throws {
+        struct Create: Encodable {
+            var documents: [String]
+            var parent: String?
+            var dryRun: Bool?
+        }
+        struct Result: Decodable {
+            struct Write: Decodable, Equatable {
+                var path: String
+                var creates: Bool
+            }
+            struct Finding: Decodable {
+                var severity: String
+                var text: String
+            }
+            var applied: Bool
+            var writes: [Write]
+            var findings: [Finding]
+        }
+        struct NewLibrary: Encodable {
+            var id: String
+            var path: String
+        }
+        struct Read: Decodable {
+            struct Container: Decodable {
+                struct Sequence: Decodable { var items: [ContainerJSON.Item] }
+                var title: String
+                var outline: String?
+                var sequences: [Sequence]
+                var children: [ContainerJSON.Summary]
+            }
+            var container: Container
+        }
+        func xml(_ container: Container) -> String {
+            String(decoding: ContainerFile.data(for: container), as: UTF8.self)
+        }
+        let serial: Container = {
+            var serial = Container(
+                id: ContainerID("0000000000000053")!,
+                type: .serial,
+                title: Title("The Ark in Space")!
+            )
+            serial.sequences = [
+                Sequence(
+                    id: "parts",
+                    items: [
+                        .leaf(Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One")),
+                        .leaf(Entry.Leaf(id: ItemID("part2")!, type: .episode, title: "Part Two")),
+                    ]
+                )
+            ]
+            return serial
+        }()
+        let season12 = Container(id: ContainerID("0000000000000052")!, type: .season, title: Title("Season 12")!)
+        let season14 = Container(id: ContainerID("0000000000000054")!, type: .season, title: Title("Season 14")!)
+        var season = season12
+        season.sequences = [
+            Sequence(id: "stories", items: [.child(Entry.Child(id: ItemID("ark")!, container: serial.id))])
+        ]
+        let series: Container = {
+            var series = Container(id: ContainerID("0000000000000051")!, type: .series, title: Title("Doctor Who")!)
+            series.sequences = [
+                Sequence(
+                    id: "seasons",
+                    items: [
+                        .child(Entry.Child(id: ItemID("s12")!, container: season12.id)),
+                        .child(Entry.Child(id: ItemID("s14")!, container: season14.id)),
+                    ]
+                )
+            ]
+            return series
+        }()
+        let folder = Fixture.root.appendingPathComponent("Media/structure")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let route = "/v1/libraries/structure/containers"
+        func create(_ body: Create, headers: [String: String] = Self.operatorHeaders) async throws -> TestResponse {
+            try await withClient { client in
+                try await client.send("POST", route, body: try JSONEncoder().encode(body), headers: headers)
+            }
+        }
+
+        try await withClient { client in
+            let library = NewLibrary(id: "structure", path: folder.path)
+            let added = try await client.post("/v1/libraries", json: library, headers: Self.operatorHeaders)
+            #expect(added.status == 201)
+        }
+        let tree = Create(documents: [xml(serial), xml(series), xml(season)])
+        #expect(try await create(tree, headers: ["Content-Type": "application/json"]).status == 401)
+
+        let dry = try await create(Create(documents: tree.documents, dryRun: true))
+        #expect(dry.status == 200)
+        let dryResult = try dry.json(Result.self)
+        #expect(!dryResult.applied)
+        #expect(
+            dryResult.writes == [
+                Result.Write(path: "Doctor Who/container.smd", creates: true),
+                Result.Write(path: "Doctor Who/Season 12/container.smd", creates: true),
+                Result.Write(path: "Doctor Who/Season 12/The Ark in Space/container.smd", creates: true),
+            ],
+            "the documents in any order, written from the top down"
+        )
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty, "a dry run writes nothing")
+
+        let made = try await create(tree)
+        #expect(made.status == 200)
+        #expect(try made.json(Result.self).applied)
+        try await withClient { client in
+            let roots = try await client.get(route).json([ContainerJSON.Summary].self)
+            #expect(roots.map(\.id) == [series.id.value])
+            let read = try await client.get("\(route)/\(serial.id)").json(Read.self)
+            #expect(read.container.sequences.flatMap(\.items).map(\.presentations.count) == [0, 0])
+            let seasonRead = try await client.get("\(route)/\(season12.id)").json(Read.self)
+            #expect(seasonRead.container.children.map(\.id) == [serial.id.value], "read without a walk")
+        }
+
+        // Made again, the library holds every one of them.
+        let again = try await create(tree)
+        #expect(again.status == 422)
+        #expect(
+            try again.json(Result.self).findings.map(\.text).contains(
+                "container \(series.id) is already at \"Doctor Who\""
+            )
+        )
+
+        // A season beneath the series, which names it: the series' sidecar gains its path and nothing else.
+        let seriesSidecar = folder.appendingPathComponent("Doctor Who/container.smd")
+        let seriesBefore = try SidecarFile.sidecar(from: Data(contentsOf: seriesSidecar))
+        let beneath = try await create(Create(documents: [xml(season14)], parent: series.id.value))
+        #expect(beneath.status == 200)
+        #expect(
+            try beneath.json(Result.self).writes == [
+                Result.Write(path: "Doctor Who/Season 14/container.smd", creates: true),
+                Result.Write(path: "Doctor Who/container.smd", creates: false),
+            ]
+        )
+        let seriesAfter = try SidecarFile.sidecar(from: Data(contentsOf: seriesSidecar))
+        #expect(seriesAfter.container == seriesBefore.container)
+        #expect(seriesAfter.children[season14.id] == "Season 14/container.smd")
+
+        // One the series does not name is refused, and writes nothing.
+        let season15 = Container(id: ContainerID("0000000000000055")!, type: .season, title: Title("Season 15")!)
+        let unnamed = try await create(Create(documents: [xml(season15)], parent: series.id.value))
+        #expect(unnamed.status == 422)
+        #expect(
+            try unnamed.json(Result.self).findings.map(\.text) == [
+                "\(series.id) does not name \(season15.id) as a child"
+            ]
+        )
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("Doctor Who/Season 15").path))
+
+        #expect(try await create(Create(documents: [xml(season15)], parent: "00000000000000ff")).status == 404)
+        #expect(try await create(Create(documents: ["<nope/>"])).status == 400)
+        #expect(try await create(Create(documents: [xml(season15), xml(season14)])).status == 400, "two tops")
+
+        // A placement into the serial finds it there, and keeps the own fields it was made with.
+        var retitled = serial
+        retitled.outline = "Nerva Beacon, ten thousand years on"
+        let source = Fixture.root.appendingPathComponent("\(UUID().uuidString).mkv")
+        try Fixture.mediaBytes.write(to: source)
+        try await withClient { client in
+            let placed = try await client.send(
+                "POST",
+                "/v1/libraries/structure/place",
+                body: try JSONEncoder().encode(
+                    PlaceBody(containers: [series, season, retitled].map(xml), item: "part1", file: source.path)
+                ),
+                headers: Self.operatorHeaders
+            )
+            #expect(placed.status == 200)
+            let read = try await client.get("\(route)/\(serial.id)").json(Read.self)
+            #expect(read.container.outline == nil)
+            #expect(read.container.sequences.flatMap(\.items).map(\.presentations.count) == [1, 0])
+            #expect(
+                try await client.send("DELETE", "/v1/libraries/structure", headers: Self.operatorHeaders).status == 204
+            )
+        }
+        try FileManager.default.removeItem(at: folder)
+    }
+
     @Test func aContainersArtworkIsPutServedAndRemoved() async throws {
         struct Read: Decodable { var artwork: [String] }
         struct Put: Decodable {

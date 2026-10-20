@@ -61,8 +61,8 @@ bearer SHALL be 401.
 
 #### Scenario: a placement into a container made this way
 - **WHEN** a serial has been created with no presentations, and a presentation of one of its parts
-  is then placed with a lineage carrying a different title for the serial
-- **THEN** the serial's sidecar keeps the title it was created with, and holds the presentation
+  is then placed with a lineage carrying a different outline for the serial
+- **THEN** the serial's sidecar keeps the outline it was created with, and holds the presentation
 
 #### Scenario: a create without the operator's bearer
 - **WHEN** a create is posted with no `Authorization` header
