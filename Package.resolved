@@ -142,7 +142,7 @@
       "location" : "https://github.com/swift-server/swift-http-server.git",
       "state" : {
         "branch" : "main",
-        "revision" : "b31b98d1a2dd6e2d25dcfe974b6d9788946f61cd"
+        "revision" : "de395ccfca794e6c326f24476b072d42a8e59f6b"
       }
     },
     {
