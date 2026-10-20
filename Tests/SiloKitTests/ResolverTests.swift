@@ -3,6 +3,7 @@
 
 import Foundation
 import Testing
+
 @testable import SiloKit
 
 struct ResolverTests {
@@ -24,7 +25,18 @@ struct ResolverTests {
     @Test func aSmallExtraIsReencoded() throws {
         let recipe = try RecipeResolver.resolve(.featurette, with: .household)
         #expect(recipe.video?.rule == "small-extras")
-        #expect(recipe.video?.action == .encode(EncodeSettings(codec: "libx264", preset: "slow", crf: 22, pixelFormat: "yuv420p", filters: [.deinterlace(.auto)])))
+        #expect(
+            recipe.video?.action
+                == .encode(
+                    EncodeSettings(
+                        codec: "libx264",
+                        preset: "slow",
+                        crf: 22,
+                        pixelFormat: "yuv420p",
+                        filters: [.deinterlace(.auto)]
+                    )
+                )
+        )
         #expect(recipe.audio.map(\.rule) == ["#5"])
     }
 
@@ -33,11 +45,20 @@ struct ResolverTests {
         ruleset.outputs = [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")]
         var mobile = SourceFacts.featurette
         mobile.profile = "mobile"
-        #expect(try RecipeResolver.resolve(mobile, with: ruleset).output == OutputPolicy(profile: "mobile", container: "mp4"))
-        #expect(try RecipeResolver.resolve(.featurette, with: ruleset).output == OutputPolicy(container: "mkv"), "no profile, the unqualified output")
+        #expect(
+            try RecipeResolver.resolve(mobile, with: ruleset).output
+                == OutputPolicy(profile: "mobile", container: "mp4")
+        )
+        #expect(
+            try RecipeResolver.resolve(.featurette, with: ruleset).output == OutputPolicy(container: "mkv"),
+            "no profile, the unqualified output"
+        )
         var other = SourceFacts.featurette
         other.profile = "hdr"
-        #expect(try RecipeResolver.resolve(other, with: ruleset).output == OutputPolicy(container: "mkv"), "a profile no output names falls back to the unqualified one")
+        #expect(
+            try RecipeResolver.resolve(other, with: ruleset).output == OutputPolicy(container: "mkv"),
+            "a profile no output names falls back to the unqualified one"
+        )
     }
 
     @Test func theFirstMatchingRuleWins() throws {
@@ -70,24 +91,49 @@ struct ResolverTests {
 
     @Test func aDroppedStreamRenumbersWhatFollowsAndWarnsAboutAMappedOne() throws {
         var ruleset = Ruleset.household
-        ruleset.rules.insert(Rule(id: "no-lossless", scope: .audio, conditions: [Condition(.audioLossless, .equal("true"))], action: .drop), at: 0)
-        ruleset.rules.insert(Rule(id: "no-forced", scope: .subtitle, conditions: [Condition(.subtitleForced, .equal("true"))], action: .drop), at: 0)
-        let mappings = [TrackMapping(feature: "commentary1", audio: 2), TrackMapping(feature: "music1", audio: 1), TrackMapping(feature: "signs", subtitle: 2)]
+        ruleset.rules.insert(
+            Rule(
+                id: "no-lossless",
+                scope: .audio,
+                conditions: [Condition(.audioLossless, .equal("true"))],
+                action: .drop
+            ),
+            at: 0
+        )
+        ruleset.rules.insert(
+            Rule(
+                id: "no-forced",
+                scope: .subtitle,
+                conditions: [Condition(.subtitleForced, .equal("true"))],
+                action: .drop
+            ),
+            at: 0
+        )
+        let mappings = [
+            TrackMapping(feature: "commentary1", audio: 2), TrackMapping(feature: "music1", audio: 1),
+            TrackMapping(feature: "signs", subtitle: 2),
+        ]
         let recipe = try RecipeResolver.resolve(.episode, with: ruleset, mappings: mappings)
         #expect(recipe.layout.kinds == [.video, .audio, .audio, .subtitle])
         #expect(recipe.layout.outputIndex(of: .audio, sourceIndex: 2) == 1)
         #expect(recipe.layout.outputIndex(of: .audio, sourceIndex: 3) == 2)
         #expect(recipe.layout.outputIndex(of: .audio, sourceIndex: 1) == nil)
         #expect(recipe.tracks(for: mappings) == [TrackMapping(feature: "commentary1", audio: 1)])
-        #expect(recipe.warnings == [
-            "feature music1 is mapped to audio 1, which this recipe drops",
-            "feature signs is mapped to subtitle 2, which this recipe drops",
-        ])
+        #expect(
+            recipe.warnings == [
+                "feature music1 is mapped to audio 1, which this recipe drops",
+                "feature signs is mapped to subtitle 2, which this recipe drops",
+            ]
+        )
         #expect(recipe.kept.map(\.rule) == ["#6", "commentary", "#7", "#8"])
     }
 
     @Test func aRecipeSurvivesJSON() throws {
-        let recipe = try RecipeResolver.resolve(.featurette, with: .household, mappings: [TrackMapping(feature: "c", audio: 1)])
+        let recipe = try RecipeResolver.resolve(
+            .featurette,
+            with: .household,
+            mappings: [TrackMapping(feature: "c", audio: 1)]
+        )
         let data = try JSONEncoder().encode(recipe)
         #expect(try JSONDecoder().decode(Recipe.self, from: data) == recipe)
     }

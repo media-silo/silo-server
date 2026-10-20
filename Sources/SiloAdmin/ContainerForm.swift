@@ -18,20 +18,40 @@ struct ContainerForm: View {
     var body: some View {
         Form {
             Section("Container") {
-                TextField("Title", text: bind({ $0.title.rawValue }, { container, text in
-                    if let title = Title(text) { container.title = title }
-                }))
+                TextField(
+                    "Title",
+                    text: bind(
+                        { $0.title.rawValue },
+                        { container, text in
+                            if let title = Title(text) { container.title = title }
+                        }
+                    )
+                )
                 Picker("Type", selection: bind({ $0.type }, { $0.type = $1 })) {
                     ForEach(ContainerType.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
                 TextField("Type label", text: bind({ $0.typeLabel ?? "" }, { $0.typeLabel = $1.isEmpty ? nil : $1 }))
-                TextField("Year", text: bind({ $0.year.map(String.init) ?? "" }, { container, text in
-                    let trimmed = text.trimmingCharacters(in: .whitespaces)
-                    if trimmed.isEmpty { container.year = nil } else if let year = Int(trimmed) { container.year = year }
-                }))
+                TextField(
+                    "Year",
+                    text: bind(
+                        { $0.year.map(String.init) ?? "" },
+                        { container, text in
+                            let trimmed = text.trimmingCharacters(in: .whitespaces)
+                            if trimmed.isEmpty {
+                                container.year = nil
+                            } else if let year = Int(trimmed) {
+                                container.year = year
+                            }
+                        }
+                    )
+                )
                 Toggle("Year in title", isOn: bind({ $0.yearInTitle }, { $0.yearInTitle = $1 }))
-                TextField("Outline", text: bind({ $0.outline ?? "" }, { $0.outline = $1.isEmpty ? nil : $1 }), axis: .vertical)
-                    .lineLimit(2...6)
+                TextField(
+                    "Outline",
+                    text: bind({ $0.outline ?? "" }, { $0.outline = $1.isEmpty ? nil : $1 }),
+                    axis: .vertical
+                )
+                .lineLimit(2...6)
                 Toggle("Listed", isOn: bind({ $0.listed }, { $0.listed = $1 }))
             }
 
@@ -46,11 +66,23 @@ struct ContainerForm: View {
                     HStack {
                         TextField("Id", text: bind({ $0.alternatives[index].id }, { $0.alternatives[index].id = $1 }))
                             .frame(maxWidth: 140)
-                        Picker("Plays", selection: bind({ $0.alternatives[index].sequence }, { $0.alternatives[index].sequence = $1 })) {
+                        Picker(
+                            "Plays",
+                            selection: bind(
+                                { $0.alternatives[index].sequence },
+                                { $0.alternatives[index].sequence = $1 }
+                            )
+                        ) {
                             ForEach(sequenceIDs(including: alternative.sequence), id: \.self) { Text($0).tag($0) }
                         }
                         .frame(maxWidth: 180)
-                        TextField("Title", text: bind({ $0.alternatives[index].title ?? "" }, { $0.alternatives[index].title = $1.isEmpty ? nil : $1 }))
+                        TextField(
+                            "Title",
+                            text: bind(
+                                { $0.alternatives[index].title ?? "" },
+                                { $0.alternatives[index].title = $1.isEmpty ? nil : $1 }
+                            )
+                        )
                         RowControls(index: index, count: container.alternatives.count) { from, to in
                             change { $0.alternatives.swapAt(from, to) }
                         } remove: {
@@ -58,13 +90,21 @@ struct ContainerForm: View {
                         }
                     }
                 }
-                Picker("Default", selection: bind({ $0.defaultAlternative ?? "" }, { $0.defaultAlternative = $1.isEmpty ? nil : $1 })) {
+                Picker(
+                    "Default",
+                    selection: bind({ $0.defaultAlternative ?? "" }, { $0.defaultAlternative = $1.isEmpty ? nil : $1 })
+                ) {
                     Text("None").tag("")
                     ForEach(container.alternatives, id: \.id) { Text($0.title ?? $0.id).tag($0.id) }
                 }
                 Button("Add Alternative", systemImage: "plus") {
                     change { container in
-                        container.alternatives.append(Alternative(id: Self.fresh("alternative", taken: container.alternatives.map(\.id)), sequence: container.sequences.first?.id ?? ""))
+                        container.alternatives.append(
+                            Alternative(
+                                id: Self.fresh("alternative", taken: container.alternatives.map(\.id)),
+                                sequence: container.sequences.first?.id ?? ""
+                            )
+                        )
                     }
                 }
             }
@@ -74,9 +114,21 @@ struct ContainerForm: View {
                     HStack {
                         TextField("Id", text: bind({ $0.features[index].id }, { $0.features[index].id = $1 }))
                             .frame(maxWidth: 140)
-                        TextField("Type", text: bind({ $0.features[index].type.rawValue }, { $0.features[index].type = FeatureType(rawValue: $1) }))
-                            .frame(maxWidth: 140)
-                        TextField("Title", text: bind({ $0.features[index].title ?? "" }, { $0.features[index].title = $1.isEmpty ? nil : $1 }))
+                        TextField(
+                            "Type",
+                            text: bind(
+                                { $0.features[index].type.rawValue },
+                                { $0.features[index].type = FeatureType(rawValue: $1) }
+                            )
+                        )
+                        .frame(maxWidth: 140)
+                        TextField(
+                            "Title",
+                            text: bind(
+                                { $0.features[index].title ?? "" },
+                                { $0.features[index].title = $1.isEmpty ? nil : $1 }
+                            )
+                        )
                         RowControls(index: index, count: container.features.count) { from, to in
                             change { $0.features.swapAt(from, to) }
                         } remove: {
@@ -86,7 +138,9 @@ struct ContainerForm: View {
                 }
                 Button("Add Feature", systemImage: "plus") {
                     change { container in
-                        container.features.append(Feature(id: Self.fresh("feature", taken: container.features.map(\.id)), type: .commentary))
+                        container.features.append(
+                            Feature(id: Self.fresh("feature", taken: container.features.map(\.id)), type: .commentary)
+                        )
                     }
                 }
             }
@@ -94,8 +148,17 @@ struct ContainerForm: View {
             ForEach(Array(container.sequences.enumerated()), id: \.offset) { index, sequence in
                 Section {
                     HStack {
-                        TextField("Sequence id", text: bind({ $0.sequences[index].id ?? "" }, { $0.sequences[index].id = $1.isEmpty ? nil : $1 }))
-                        Picker("Exploded", selection: bind({ $0.sequences[index].exploded }, { $0.sequences[index].exploded = $1 })) {
+                        TextField(
+                            "Sequence id",
+                            text: bind(
+                                { $0.sequences[index].id ?? "" },
+                                { $0.sequences[index].id = $1.isEmpty ? nil : $1 }
+                            )
+                        )
+                        Picker(
+                            "Exploded",
+                            selection: bind({ $0.sequences[index].exploded }, { $0.sequences[index].exploded = $1 })
+                        ) {
                             ForEach(Exploded.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }
                         .frame(maxWidth: 200)
@@ -115,7 +178,9 @@ struct ContainerForm: View {
             Section {
                 Button("Add Sequence", systemImage: "plus") {
                     change { container in
-                        container.sequences.append(Sequence(id: Self.fresh("sequence", taken: container.sequences.compactMap(\.id))))
+                        container.sequences.append(
+                            Sequence(id: Self.fresh("sequence", taken: container.sequences.compactMap(\.id)))
+                        )
                     }
                 }
             }
@@ -144,7 +209,10 @@ struct ContainerForm: View {
         onChange(changed)
     }
 
-    private func bind<Value>(_ get: @escaping (Container) -> Value, _ set: @escaping (inout Container, Value) -> Void) -> Binding<Value> {
+    private func bind<Value>(
+        _ get: @escaping (Container) -> Value,
+        _ set: @escaping (inout Container, Value) -> Void
+    ) -> Binding<Value> {
         Binding(get: { get(container) }, set: { value in change { set(&$0, value) } })
     }
 
@@ -170,29 +238,84 @@ private struct EntriesEditor: View {
             HStack {
                 switch entry {
                 case .leaf(let leaf):
-                    TextField("Id", text: Binding(get: { leaf.id.value }, set: { text in
-                        guard let id = ItemID(text) else { return }
-                        update(index) { if case .leaf(var leaf) = $0 { leaf.id = id; $0 = .leaf(leaf) } }
-                    }))
+                    TextField(
+                        "Id",
+                        text: Binding(
+                            get: { leaf.id.value },
+                            set: { text in
+                                guard let id = ItemID(text) else { return }
+                                update(index) {
+                                    if case .leaf(var leaf) = $0 {
+                                        leaf.id = id
+                                        $0 = .leaf(leaf)
+                                    }
+                                }
+                            }
+                        )
+                    )
                     .frame(maxWidth: 120)
-                    TextField("Type", text: Binding(get: { leaf.type.rawValue }, set: { text in
-                        guard let type = EntryType(rawValue: text) else { return }
-                        update(index) { if case .leaf(var leaf) = $0 { leaf.type = type; $0 = .leaf(leaf) } }
-                    }))
+                    TextField(
+                        "Type",
+                        text: Binding(
+                            get: { leaf.type.rawValue },
+                            set: { text in
+                                guard let type = EntryType(rawValue: text) else { return }
+                                update(index) {
+                                    if case .leaf(var leaf) = $0 {
+                                        leaf.type = type
+                                        $0 = .leaf(leaf)
+                                    }
+                                }
+                            }
+                        )
+                    )
                     .frame(maxWidth: 120)
-                    TextField("Title", text: Binding(get: { leaf.title ?? "" }, set: { text in
-                        update(index) { if case .leaf(var leaf) = $0 { leaf.title = text.isEmpty ? nil : text; $0 = .leaf(leaf) } }
-                    }))
+                    TextField(
+                        "Title",
+                        text: Binding(
+                            get: { leaf.title ?? "" },
+                            set: { text in
+                                update(index) {
+                                    if case .leaf(var leaf) = $0 {
+                                        leaf.title = text.isEmpty ? nil : text
+                                        $0 = .leaf(leaf)
+                                    }
+                                }
+                            }
+                        )
+                    )
                 case .child(let child):
-                    TextField("Id", text: Binding(get: { child.id.value }, set: { text in
-                        guard let id = ItemID(text) else { return }
-                        update(index) { if case .child(var child) = $0 { child.id = id; $0 = .child(child) } }
-                    }))
+                    TextField(
+                        "Id",
+                        text: Binding(
+                            get: { child.id.value },
+                            set: { text in
+                                guard let id = ItemID(text) else { return }
+                                update(index) {
+                                    if case .child(var child) = $0 {
+                                        child.id = id
+                                        $0 = .child(child)
+                                    }
+                                }
+                            }
+                        )
+                    )
                     .frame(maxWidth: 120)
                     Text("container \(child.container.value)").font(.caption.monospaced()).foregroundStyle(.secondary)
-                    TextField("Title", text: Binding(get: { child.title ?? "" }, set: { text in
-                        update(index) { if case .child(var child) = $0 { child.title = text.isEmpty ? nil : text; $0 = .child(child) } }
-                    }))
+                    TextField(
+                        "Title",
+                        text: Binding(
+                            get: { child.title ?? "" },
+                            set: { text in
+                                update(index) {
+                                    if case .child(var child) = $0 {
+                                        child.title = text.isEmpty ? nil : text
+                                        $0 = .child(child)
+                                    }
+                                }
+                            }
+                        )
+                    )
                 case .ref:
                     Text("An item declared elsewhere").foregroundStyle(.secondary)
                     Spacer()
@@ -229,17 +352,29 @@ private struct ReferencesEditor: View {
     var body: some View {
         ForEach(Array(references.enumerated()), id: \.offset) { index, reference in
             HStack {
-                TextField("Provider", text: Binding(get: { reference.provider.rawValue }, set: { text in
-                    var changed = references
-                    changed[index].provider = Provider(rawValue: text)
-                    onChange(changed)
-                }))
+                TextField(
+                    "Provider",
+                    text: Binding(
+                        get: { reference.provider.rawValue },
+                        set: { text in
+                            var changed = references
+                            changed[index].provider = Provider(rawValue: text)
+                            onChange(changed)
+                        }
+                    )
+                )
                 .frame(maxWidth: 140)
-                TextField("Value", text: Binding(get: { reference.value }, set: { text in
-                    var changed = references
-                    changed[index].value = text
-                    onChange(changed)
-                }))
+                TextField(
+                    "Value",
+                    text: Binding(
+                        get: { reference.value },
+                        set: { text in
+                            var changed = references
+                            changed[index].value = text
+                            onChange(changed)
+                        }
+                    )
+                )
                 RowControls(index: index, count: references.count) { from, to in
                     var moved = references
                     moved.swapAt(from, to)

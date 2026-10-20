@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import SiloKit
 import SmdKit
 
@@ -88,14 +87,16 @@ extension Action {
     /// the first and AND each other — its codec named as a condition on the codec would name it.
     public func clauses(lead: String, in scope: Scope) -> [Rule.Clause] {
         guard case .encode(let settings) = self else { return [Rule.Clause(lead, summary)] }
-        let settingsRead = [
-            "codec is \(scope.codec(ofEncoder: settings.codec))",
-            settings.bitrate.map { "bitrate is \($0)" },
-            settings.crf.map { "crf is \($0)" },
-            settings.preset.map { "preset is \($0)" },
-            settings.channels.map { "channels is \($0)" },
-            settings.pixelFormat.map { "pixel format is \($0)" },
-        ].compactMap { $0 } + settings.filters.map(\.phrase) + settings.options.sorted { $0.key < $1.key }.map { "\($0.key) is \($0.value)" }
+        let settingsRead =
+            [
+                "codec is \(scope.codec(ofEncoder: settings.codec))",
+                settings.bitrate.map { "bitrate is \($0)" },
+                settings.crf.map { "crf is \($0)" },
+                settings.preset.map { "preset is \($0)" },
+                settings.channels.map { "channels is \($0)" },
+                settings.pixelFormat.map { "pixel format is \($0)" },
+            ].compactMap { $0 } + settings.filters.map(\.phrase)
+            + settings.options.sorted { $0.key < $1.key }.map { "\($0.key) is \($0.value)" }
         return [Rule.Clause(lead, "encode")]
             + settingsRead.enumerated().map { Rule.Clause($0.offset == 0 ? "WHERE" : "AND", $0.element) }
     }
@@ -152,7 +153,8 @@ extension Scope {
     public func settings(forCodec codec: String) -> [EncodeSetting] {
         switch self {
         case .video: [.preset, .crf, .bitrate, .pixelFormat]
-        case .audio: Self.isLossless(self.codec(ofEncoder: encoder(forCodec: codec))) ? [.channels] : [.bitrate, .channels]
+        case .audio:
+            Self.isLossless(self.codec(ofEncoder: encoder(forCodec: codec))) ? [.channels] : [.bitrate, .channels]
         case .subtitle: []
         }
     }

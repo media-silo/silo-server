@@ -22,7 +22,12 @@ final class RecordFolder<Record: Codable & Sendable>: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var loaded: [String: Record] = [:]
-        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let files =
+            (try? FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
         for file in files where file.pathExtension == "json" {
             if let record = try? decoder.decode(Record.self, from: try Data(contentsOf: file)) {
                 loaded[id(record)] = record

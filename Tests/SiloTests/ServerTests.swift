@@ -12,6 +12,7 @@ import SmdKit
 import SmdSidecar
 import Testing
 import WireMVCTesting
+
 @testable import SiloApp
 
 /// A library on disk and a state directory that names it: real files, the real index, no doubles. The
@@ -20,19 +21,47 @@ import WireMVCTesting
 /// `SILO_STATE_DIR` alone.
 enum Fixture {
     static let series: Container = {
-        var series = Container(id: ContainerID("0000000000000001")!, type: .series, title: Title("Doctor Who")!, year: 1963, yearInTitle: true, externalRefs: [ExternalRef(provider: .tvdb, value: "76107")])
-        series.sequences = [Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s13")!, container: serial.id))])]
+        var series = Container(
+            id: ContainerID("0000000000000001")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            year: 1963,
+            yearInTitle: true,
+            externalRefs: [ExternalRef(provider: .tvdb, value: "76107")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s13")!, container: serial.id))])
+        ]
         return series
     }()
     static let serial: Container = {
-        var serial = Container(id: ContainerID("0000000000000003")!, type: .serial, typeLabel: "Story", title: Title("Pyramids of Mars")!)
+        var serial = Container(
+            id: ContainerID("0000000000000003")!,
+            type: .serial,
+            typeLabel: "Story",
+            title: Title("Pyramids of Mars")!
+        )
         serial.alternatives = [Alternative(id: "broadcast", sequence: "parts", title: "Broadcast version")]
         serial.defaultAlternative = "broadcast"
         serial.features = [Feature(id: "commentary1", type: .commentary, title: "Commentary")]
-        serial.sequences = [Sequence(id: "parts", items: [.leaf(Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One")), .leaf(Entry.Leaf(id: ItemID("part2")!, type: .episode, title: "Part Two")), .leaf(Entry.Leaf(id: ItemID("part3")!, type: .episode, title: "Part Three"))])]
+        serial.sequences = [
+            Sequence(
+                id: "parts",
+                items: [
+                    .leaf(Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One")),
+                    .leaf(Entry.Leaf(id: ItemID("part2")!, type: .episode, title: "Part Two")),
+                    .leaf(Entry.Leaf(id: ItemID("part3")!, type: .episode, title: "Part Three")),
+                ]
+            )
+        ]
         return serial
     }()
-    static let unlisted = Container(id: ContainerID("0000000000000004")!, type: .series, title: Title("Behind the Sofa")!, listed: false)
+    static let unlisted = Container(
+        id: ContainerID("0000000000000004")!,
+        type: .series,
+        title: Title("Behind the Sofa")!,
+        listed: false
+    )
     /// The films of a second library, `away`, whose folder the tests take away and bring back.
     static let thirdMan = film("0000000000000010", "The Third Man", 1949)
     static let brief = film("0000000000000011", "Brief Encounter", 1945)
@@ -42,7 +71,10 @@ enum Fixture {
     /// theatrical cut, which the tests edit.
     static let alien: Container = {
         var alien = film("0000000000000014", "Alien", 1997)
-        alien.alternatives = [Alternative(id: "theatrical", sequence: "main", title: "Theatrical"), Alternative(id: "directors", sequence: "main", title: "Director's Cut")]
+        alien.alternatives = [
+            Alternative(id: "theatrical", sequence: "main", title: "Theatrical"),
+            Alternative(id: "directors", sequence: "main", title: "Director's Cut"),
+        ]
         alien.extras = [.leaf(Entry.Leaf(id: ItemID("trailer")!, type: .trailer, title: "Trailer"))]
         return alien
     }()
@@ -51,7 +83,9 @@ enum Fixture {
 
     static func film(_ id: String, _ title: String, _ year: Int) -> Container {
         var film = Container(id: ContainerID(id)!, type: .movie, title: Title(title)!, year: year, yearInTitle: true)
-        film.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: title))])]
+        film.sequences = [
+            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: title))])
+        ]
         return film
     }
 
@@ -66,15 +100,40 @@ enum Fixture {
         let library = root.appendingPathComponent("Library")
         let away = root.appendingPathComponent("Away")
         try! FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
-        try! FileManager.default.createDirectory(at: root.appendingPathComponent("State"), withIntermediateDirectories: true)
-        func place(_ lineage: [Container], item: String, alternative: String? = nil, profile: String? = nil, tracks: [TrackMapping] = [], into library: URL = library) {
+        try! FileManager.default.createDirectory(
+            at: root.appendingPathComponent("State"),
+            withIntermediateDirectories: true
+        )
+        func place(
+            _ lineage: [Container],
+            item: String,
+            alternative: String? = nil,
+            profile: String? = nil,
+            tracks: [TrackMapping] = [],
+            into library: URL = library
+        ) {
             let source = root.appendingPathComponent("\(UUID().uuidString).mkv")
             try! mediaBytes.write(to: source)
             let presentation = Presentation(alternative: alternative, profile: profile, file: "", tracks: tracks)
-            try! Placer.apply(try! Placer.compute(PlacementRequest(library: library, lineage: lineage, item: item, presentation: presentation, source: source)))
+            try! Placer.apply(
+                try! Placer.compute(
+                    PlacementRequest(
+                        library: library,
+                        lineage: lineage,
+                        item: item,
+                        presentation: presentation,
+                        source: source
+                    )
+                )
+            )
         }
         place([series, serial], item: "part1", tracks: [TrackMapping(feature: "commentary1", audio: 3)])
-        place([series, serial], item: "part1", profile: "mobile", tracks: [TrackMapping(feature: "commentary1", audio: 2)])
+        place(
+            [series, serial],
+            item: "part1",
+            profile: "mobile",
+            tracks: [TrackMapping(feature: "commentary1", audio: 2)]
+        )
         place([thirdMan], item: "feature", into: away)
         place([brief], item: "feature", into: away)
         place([notorious], item: "feature", into: away)
@@ -84,20 +143,32 @@ enum Fixture {
         // The library root: a folder of films to add, and a link inside it that leads outside.
         let media = root.appendingPathComponent("Media")
         place([casablanca], item: "feature", into: media.appendingPathComponent("films"))
-        try! FileManager.default.createDirectory(at: root.appendingPathComponent("Outside"), withIntermediateDirectories: true)
-        try! FileManager.default.createSymbolicLink(at: media.appendingPathComponent("escape"), withDestinationURL: root.appendingPathComponent("Outside"))
-        try! SidecarFile.data(for: Sidecar(container: unlisted)).write(to: {
-            let folder = library.appendingPathComponent("Behind the Sofa")
-            try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            return folder.appendingPathComponent("container.smd")
-        }())
+        try! FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Outside"),
+            withIntermediateDirectories: true
+        )
+        try! FileManager.default.createSymbolicLink(
+            at: media.appendingPathComponent("escape"),
+            withDestinationURL: root.appendingPathComponent("Outside")
+        )
+        try! SidecarFile.data(for: Sidecar(container: unlisted)).write(
+            to: {
+                let folder = library.appendingPathComponent("Behind the Sofa")
+                try! FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                return folder.appendingPathComponent("container.smd")
+            }()
+        )
         let state = root.appendingPathComponent("State")
-        try! Data("""
+        try! Data(
+            """
             {"libraryRoots": ["\(media.path)"]}
-            """.utf8).write(to: state.appendingPathComponent("silo.json"))
-        try! Data("""
+            """.utf8
+        ).write(to: state.appendingPathComponent("silo.json"))
+        try! Data(
+            """
             {"libraries": [{"id": "main", "path": "\(library.path)"}, {"id": "away", "path": "\(away.path)"}]}
-            """.utf8).write(to: state.appendingPathComponent("settings.json"))
+            """.utf8
+        ).write(to: state.appendingPathComponent("settings.json"))
         try! Data("secret\n".utf8).write(to: state.appendingPathComponent("operator-credential.reset"))
         return root
     }
@@ -106,7 +177,11 @@ enum Fixture {
         ["SILO_STATE_DIR": root.appendingPathComponent("State").path]
     }
 
-    static let household = try! String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Examples/household.xml"), encoding: .utf8)
+    static let household = try! String(
+        contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Examples/household.xml"),
+        encoding: .utf8
+    )
 }
 
 struct RulesetDocumentBody: Codable {
@@ -162,7 +237,11 @@ struct ServerTests {
             let response = try await client.get("/v1/containers/0000000000000003/smd")
             #expect(response.status == 200)
             #expect(response.head?.headerFields[.contentType]?.hasPrefix("application/xml") == true)
-            let onDisk = try Data(contentsOf: Fixture.root.appendingPathComponent("Library/Doctor Who (1963)/Pyramids of Mars/container.smd"))
+            let onDisk = try Data(
+                contentsOf: Fixture.root.appendingPathComponent(
+                    "Library/Doctor Who (1963)/Pyramids of Mars/container.smd"
+                )
+            )
             #expect(response.body == onDisk)
             #expect(try await client.get("/v1/containers/00000000000000ff/smd").status == 404)
         }
@@ -176,7 +255,11 @@ struct ServerTests {
             var path: String
             var container: ContainerJSON
         }
-        struct SummaryJSON: Decodable { var id: String; var library: String; var listed: Bool }
+        struct SummaryJSON: Decodable {
+            var id: String
+            var library: String
+            var listed: Bool
+        }
         func files(_ container: ContainerJSON) -> [String] {
             container.sequences.flatMap(\.items).flatMap(\.presentations).map(\.file)
         }
@@ -202,14 +285,25 @@ struct ServerTests {
             #expect(roots.allSatisfy { $0.library == "main" })
             #expect(try await client.get("/v1/containers?library=main").json([SummaryJSON].self).allSatisfy(\.listed))
 
-            #expect(try await client.get("/v1/libraries/main/containers/\(Fixture.thirdMan.id)").status == 404, "away holds it; main does not")
+            #expect(
+                try await client.get("/v1/libraries/main/containers/\(Fixture.thirdMan.id)").status == 404,
+                "away holds it; main does not"
+            )
             #expect(try await client.get("/v1/libraries/nowhere/containers").status == 404)
             #expect(try await client.get("/v1/libraries/nowhere/containers/\(film)").status == 404)
 
             let sidecar = try await client.get("/v1/libraries/away/containers/\(film)/smd")
             #expect(sidecar.status == 200)
-            #expect(sidecar.body == (try Data(contentsOf: Fixture.root.appendingPathComponent("Away/Notorious (1946)/container.smd"))))
-            #expect(try await client.get("/v1/containers/\(film)/smd").body == (try Data(contentsOf: Fixture.root.appendingPathComponent("Library/Notorious (1946)/container.smd"))))
+            #expect(
+                sidecar.body
+                    == (try Data(contentsOf: Fixture.root.appendingPathComponent("Away/Notorious (1946)/container.smd")))
+            )
+            #expect(
+                try await client.get("/v1/containers/\(film)/smd").body
+                    == (try Data(
+                        contentsOf: Fixture.root.appendingPathComponent("Library/Notorious (1946)/container.smd")
+                    ))
+            )
             #expect(try await client.get("/v1/libraries/main/containers/\(Fixture.thirdMan.id)/smd").status == 404)
         }
     }
@@ -218,18 +312,33 @@ struct ServerTests {
     /// library fact changes; an edit from a sidecar changed since, or one that would take away what a
     /// presentation names, writes nothing.
     @Test func aContainersOwnFieldsAreEditedOntoTheSidecarRead() async throws {
-        struct Edit: Encodable { var document: String; var basedOn: String; var dryRun: Bool? }
+        struct Edit: Encodable {
+            var document: String
+            var basedOn: String
+            var dryRun: Bool?
+        }
         struct Result: Decodable {
-            struct Finding: Decodable { var severity: String; var path: String?; var text: String }
-            var applied: Bool; var sidecar: String; var digest: String; var findings: [Finding]
+            struct Finding: Decodable {
+                var severity: String
+                var path: String?
+                var text: String
+            }
+            var applied: Bool
+            var sidecar: String
+            var digest: String
+            var findings: [Finding]
         }
         struct Problem: Decodable { var detail: String }
         struct Read: Decodable {
             struct Container: Decodable {
                 struct Sequence: Decodable { var items: [ContainerJSON.Item] }
-                var year: Int?; var outline: String?; var sequences: [Sequence]; var children: [ContainerJSON.Summary]
+                var year: Int?
+                var outline: String?
+                var sequences: [Sequence]
+                var children: [ContainerJSON.Summary]
             }
-            var digest: String; var container: Container
+            var digest: String
+            var container: Container
         }
         let operatorHeaders = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
         let path = "/v1/libraries/main/containers/\(Fixture.alien.id)"
@@ -240,27 +349,51 @@ struct ServerTests {
             change(&container)
             return String(decoding: ContainerFile.data(for: container), as: UTF8.self)
         }
-        func files(_ read: Read) -> [String] { read.container.sequences.flatMap(\.items).flatMap(\.presentations).map(\.file) }
+        func files(_ read: Read) -> [String] {
+            read.container.sequences.flatMap(\.items).flatMap(\.presentations).map(\.file)
+        }
         let corrected = document { $0.year = 1979 }
 
         try await withClient { client in
             let before = try await client.get(path).json(Read.self)
             #expect(before.container.year == 1997)
-            #expect(before.digest == IndexedContainer.digest(of: try Data(contentsOf: sidecar)), "the digest is of the sidecar's bytes")
+            #expect(
+                before.digest == IndexedContainer.digest(of: try Data(contentsOf: sidecar)),
+                "the digest is of the sidecar's bytes"
+            )
             let onDisk = try Data(contentsOf: sidecar)
 
-            let unauthorised = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest)), headers: ["Content-Type": "application/json"])
+            let unauthorised = try await client.send(
+                "PUT",
+                path,
+                body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest)),
+                headers: ["Content-Type": "application/json"]
+            )
             #expect(unauthorised.status == 401)
 
-            let dry = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest, dryRun: true)), headers: operatorHeaders)
+            let dry = try await client.send(
+                "PUT",
+                path,
+                body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest, dryRun: true)),
+                headers: operatorHeaders
+            )
             #expect(dry.status == 200)
             let dryResult = try dry.json(Result.self)
             #expect(!dryResult.applied)
             #expect(dryResult.sidecar.contains("1979"))
-            #expect(dryResult.findings.map(\.text) == ["folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""])
+            #expect(
+                dryResult.findings.map(\.text) == [
+                    "folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""
+                ]
+            )
             #expect(try Data(contentsOf: sidecar) == onDisk, "a dry run writes nothing")
 
-            let stored = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest)), headers: operatorHeaders)
+            let stored = try await client.send(
+                "PUT",
+                path,
+                body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest)),
+                headers: operatorHeaders
+            )
             #expect(stored.status == 200)
             let result = try stored.json(Result.self)
             #expect(result.applied)
@@ -270,43 +403,104 @@ struct ServerTests {
             #expect(files(after) == files(before), "its presentations are as they were")
             #expect(FileManager.default.fileExists(atPath: sidecar.path), "and its folder is where it was")
 
-            let stale = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: document { $0.year = 1980 }, basedOn: before.digest)), headers: operatorHeaders)
+            let stale = try await client.send(
+                "PUT",
+                path,
+                body: try JSONEncoder().encode(Edit(document: document { $0.year = 1980 }, basedOn: before.digest)),
+                headers: operatorHeaders
+            )
             #expect(stale.status == 409)
             #expect(try stale.json(Problem.self).detail.contains(result.digest), "naming the digest it holds")
             let held = try Data(contentsOf: sidecar)
 
-            let noTheatrical = document { $0.year = 1979; $0.alternatives.removeAll { $0.id == "theatrical" } }
-            let refused = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: noTheatrical, basedOn: result.digest)), headers: operatorHeaders)
+            let noTheatrical = document {
+                $0.year = 1979
+                $0.alternatives.removeAll { $0.id == "theatrical" }
+            }
+            let refused = try await client.send(
+                "PUT",
+                path,
+                body: try JSONEncoder().encode(Edit(document: noTheatrical, basedOn: result.digest)),
+                headers: operatorHeaders
+            )
             #expect(refused.status == 422)
             let refusal = try refused.json(Result.self)
             #expect(!refusal.applied)
-            #expect(refusal.findings.filter { $0.severity == "error" }.map(\.text) == [
-                "item feature: presentation names alternative theatrical, which is not there",
-                "item trailer: presentation names alternative theatrical, which is not there",
-            ])
+            #expect(
+                refusal.findings.filter { $0.severity == "error" }.map(\.text) == [
+                    "item feature: presentation names alternative theatrical, which is not there",
+                    "item trailer: presentation names alternative theatrical, which is not there",
+                ]
+            )
 
-            let noFeature = document { $0.year = 1979; $0.sequences = [Sequence(id: "main", items: [])] }
-            let taken = try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: noFeature, basedOn: result.digest)), headers: operatorHeaders)
+            let noFeature = document {
+                $0.year = 1979
+                $0.sequences = [Sequence(id: "main", items: [])]
+            }
+            let taken = try await client.send(
+                "PUT",
+                path,
+                body: try JSONEncoder().encode(Edit(document: noFeature, basedOn: result.digest)),
+                headers: operatorHeaders
+            )
             #expect(taken.status == 422)
-            #expect(try taken.json(Result.self).findings.map(\.text).contains("item feature has presentations in this library"))
+            #expect(
+                try taken.json(Result.self).findings.map(\.text).contains(
+                    "item feature has presentations in this library"
+                )
+            )
             #expect(try Data(contentsOf: sidecar) == held, "a refusal writes nothing")
 
             let other = String(decoding: ContainerFile.data(for: Fixture.brief), as: UTF8.self)
-            #expect(try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: other, basedOn: result.digest)), headers: operatorHeaders).status == 400)
-            #expect(try await client.send("PUT", path, body: try JSONEncoder().encode(Edit(document: "<container", basedOn: result.digest)), headers: operatorHeaders).status == 400)
-            #expect(try await client.send("PUT", "/v1/libraries/away/containers/\(Fixture.alien.id)", body: try JSONEncoder().encode(Edit(document: corrected, basedOn: result.digest)), headers: operatorHeaders).status == 404)
+            #expect(
+                try await client.send(
+                    "PUT",
+                    path,
+                    body: try JSONEncoder().encode(Edit(document: other, basedOn: result.digest)),
+                    headers: operatorHeaders
+                ).status == 400
+            )
+            #expect(
+                try await client.send(
+                    "PUT",
+                    path,
+                    body: try JSONEncoder().encode(Edit(document: "<container", basedOn: result.digest)),
+                    headers: operatorHeaders
+                ).status == 400
+            )
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/libraries/away/containers/\(Fixture.alien.id)",
+                    body: try JSONEncoder().encode(Edit(document: corrected, basedOn: result.digest)),
+                    headers: operatorHeaders
+                ).status == 404
+            )
 
             // A container with children keeps their paths through an edit of its own fields.
             let seriesPath = "/v1/libraries/main/containers/\(Fixture.series.id)"
             let series = try await client.get(seriesPath).json(Read.self)
             var outlined = Fixture.series
             outlined.outline = "A time traveller and companions."
-            let edited = try await client.send("PUT", seriesPath, body: try JSONEncoder().encode(Edit(document: String(decoding: ContainerFile.data(for: outlined), as: UTF8.self), basedOn: series.digest)), headers: operatorHeaders)
+            let edited = try await client.send(
+                "PUT",
+                seriesPath,
+                body: try JSONEncoder().encode(
+                    Edit(
+                        document: String(decoding: ContainerFile.data(for: outlined), as: UTF8.self),
+                        basedOn: series.digest
+                    )
+                ),
+                headers: operatorHeaders
+            )
             #expect(edited.status == 200)
             #expect(try edited.json(Result.self).sidecar.contains("smd=\"Pyramids of Mars/container.smd\""))
             let reread = try await client.get(seriesPath).json(Read.self)
             #expect(reread.container.outline == "A time traveller and companions.")
-            #expect(reread.container.children.map(\.id) == series.container.children.map(\.id), "its children are as they were")
+            #expect(
+                reread.container.children.map(\.id) == series.container.children.map(\.id),
+                "its children are as they were"
+            )
         }
     }
 
@@ -314,7 +508,10 @@ struct ServerTests {
     /// told by its bytes, served with its content type, and removed.
     @Test func aContainersArtworkIsPutServedAndRemoved() async throws {
         struct Read: Decodable { var artwork: [String] }
-        struct Put: Decodable { var kind: String; var format: String }
+        struct Put: Decodable {
+            var kind: String
+            var format: String
+        }
         let operatorHeaders = ["Authorization": "Bearer secret"]
         let container = "/v1/libraries/main/containers/\(Fixture.notorious.id)"
         let poster = "\(container)/artwork/poster"
@@ -343,12 +540,25 @@ struct ServerTests {
             #expect(try held() == ["poster.png"], "a PNG replaces the JPEG")
             #expect(try await client.get(poster).head?.headerFields[.contentType] == "image/png")
 
-            #expect(try await client.send("PUT", poster, body: Data("not an image".utf8), headers: operatorHeaders).status == 415)
+            #expect(
+                try await client.send("PUT", poster, body: Data("not an image".utf8), headers: operatorHeaders).status
+                    == 415
+            )
             let huge = Data([0xFF, 0xD8, 0xFF] + Array(repeating: 0, count: Artwork.maximumSize))
             #expect(try await client.send("PUT", poster, body: huge, headers: operatorHeaders).status == 413)
             #expect(try held() == ["poster.png"], "and a refusal changes nothing")
-            #expect(try await client.send("PUT", "\(container)/artwork/wallpaper", body: jpeg, headers: operatorHeaders).status == 404)
-            #expect(try await client.send("PUT", "/v1/libraries/away/containers/\(Fixture.alien.id)/artwork/poster", body: jpeg, headers: operatorHeaders).status == 404)
+            #expect(
+                try await client.send("PUT", "\(container)/artwork/wallpaper", body: jpeg, headers: operatorHeaders)
+                    .status == 404
+            )
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/libraries/away/containers/\(Fixture.alien.id)/artwork/poster",
+                    body: jpeg,
+                    headers: operatorHeaders
+                ).status == 404
+            )
 
             #expect(try await client.send("DELETE", poster).status == 401)
             #expect(try await client.send("DELETE", poster, headers: operatorHeaders).status == 204)
@@ -393,24 +603,57 @@ struct ServerTests {
     @Test func rulesetsAreVersionedAndTheOperatorGateHolds() async throws {
         try await withClient { client in
             let body = RulesetDocumentBody(name: "household", document: Fixture.household)
-            let refused = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(body), headers: ["Content-Type": "application/json"])
+            let refused = try await client.send(
+                "PUT",
+                "/v1/rulesets/household",
+                body: try JSONEncoder().encode(body),
+                headers: ["Content-Type": "application/json"]
+            )
             #expect(refused.status == 401)
-            let wrongToken = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(body), headers: ["Content-Type": "application/json", "Authorization": "Bearer wrong"])
+            let wrongToken = try await client.send(
+                "PUT",
+                "/v1/rulesets/household",
+                body: try JSONEncoder().encode(body),
+                headers: ["Content-Type": "application/json", "Authorization": "Bearer wrong"]
+            )
             #expect(wrongToken.status == 401)
 
             let operatorHeaders = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
-            let first = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(body), headers: operatorHeaders)
+            let first = try await client.send(
+                "PUT",
+                "/v1/rulesets/household",
+                body: try JSONEncoder().encode(body),
+                headers: operatorHeaders
+            )
             #expect(first.status == 201)
             #expect(try first.json(RulesetDocumentBody.self).version == 1)
-            let second = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(body), headers: operatorHeaders)
+            let second = try await client.send(
+                "PUT",
+                "/v1/rulesets/household",
+                body: try JSONEncoder().encode(body),
+                headers: operatorHeaders
+            )
             #expect(try second.json(RulesetDocumentBody.self).version == 2)
 
-            let bad = try await client.send("PUT", "/v1/rulesets/broken", body: try JSONEncoder().encode(RulesetDocumentBody(name: "broken", document: "<ruleset format=\"1\" name=\"b\"><audio><when fact=\"nope\" is=\"1\"/><copy/></audio></ruleset>")), headers: operatorHeaders)
+            let bad = try await client.send(
+                "PUT",
+                "/v1/rulesets/broken",
+                body: try JSONEncoder().encode(
+                    RulesetDocumentBody(
+                        name: "broken",
+                        document:
+                            "<ruleset format=\"1\" name=\"b\"><audio><when fact=\"nope\" is=\"1\"/><copy/></audio></ruleset>"
+                    )
+                ),
+                headers: operatorHeaders
+            )
             #expect(bad.status == 400)
             #expect(bad.bodyText.contains("not a fact a rule can test"))
 
             let list = try await client.get("/v1/rulesets")
-            #expect(try list.json([RulesetDocumentBody].self).map { "\($0.name)@\($0.version ?? 0)" } == ["household@2"])
+            #expect(
+                try list.json([RulesetDocumentBody].self).map { "\($0.name)@\($0.version ?? 0)" } == ["household@2"]
+            )
             let latest = try await client.get("/v1/rulesets/household")
             #expect(try latest.json(RulesetDocumentBody.self).version == 2)
             let v1 = try await client.get("/v1/rulesets/household?version=1")
@@ -423,20 +666,49 @@ struct ServerTests {
                 InputSpec.Stream(index: 1, kind: .audio, codec: "flac", channels: 2),
                 InputSpec.Stream(index: 2, kind: .audio, codec: "ac3", channels: 2, marks: [.commentary]),
             ])
-            struct Resolve: Encodable { var inputs: [InputSpec]; var kind: String?; var extra: Bool?; var mappings: [TrackMapping] }
-            let resolved = try await client.post("/v1/rulesets/household/resolve", json: Resolve(inputs: [featurette], kind: "featurette", extra: true, mappings: [TrackMapping(feature: "c", audio: 2)]))
+            struct Resolve: Encodable {
+                var inputs: [InputSpec]
+                var kind: String?
+                var extra: Bool?
+                var mappings: [TrackMapping]
+            }
+            let resolved = try await client.post(
+                "/v1/rulesets/household/resolve",
+                json: Resolve(
+                    inputs: [featurette],
+                    kind: "featurette",
+                    extra: true,
+                    mappings: [TrackMapping(feature: "c", audio: 2)]
+                )
+            )
             #expect(resolved.status == 200)
             let recipes = try resolved.json([Recipe].self)
             #expect(recipes.count == 1, "a recipe for each of the ruleset's outputs")
             #expect(recipes[0].decisions.map(\.rule) == ["small-extras", "lossless-main", "commentary"])
             #expect(recipes[0].ruleset.description == "household@2")
-            let newer = try await client.send("POST", "/v1/rulesets/household/resolve", body: Data(#"{ "inputs": [ { "format": 2, "streams": [] } ] }"#.utf8), headers: ["Content-Type": "application/json"])
+            let newer = try await client.send(
+                "POST",
+                "/v1/rulesets/household/resolve",
+                body: Data(#"{ "inputs": [ { "format": 2, "streams": [] } ] }"#.utf8),
+                headers: ["Content-Type": "application/json"]
+            )
             #expect(newer.status == 400)
             #expect(newer.bodyText.contains("input 1: input spec format 2 is newer than this silo reads (1)"))
 
-            let strict = RulesetDocumentBody(name: "strict", document: "<ruleset format=\"1\" name=\"strict\"><video><copy/></video></ruleset>")
-            _ = try await client.send("PUT", "/v1/rulesets/strict", body: try JSONEncoder().encode(strict), headers: operatorHeaders)
-            let undecided = try await client.post("/v1/rulesets/strict/resolve", json: Resolve(inputs: [featurette], kind: "featurette", mappings: []))
+            let strict = RulesetDocumentBody(
+                name: "strict",
+                document: "<ruleset format=\"1\" name=\"strict\"><video><copy/></video></ruleset>"
+            )
+            _ = try await client.send(
+                "PUT",
+                "/v1/rulesets/strict",
+                body: try JSONEncoder().encode(strict),
+                headers: operatorHeaders
+            )
+            let undecided = try await client.post(
+                "/v1/rulesets/strict/resolve",
+                json: Resolve(inputs: [featurette], kind: "featurette", mappings: [])
+            )
             #expect(undecided.status == 422)
             #expect(undecided.bodyText.contains("no rule decides audio 1"))
         }
@@ -450,10 +722,17 @@ struct ServerTests {
                 InputSpec.Stream(index: 0, kind: .video, codec: "mpeg2video", width: 352, height: 288),
                 InputSpec.Stream(index: 1, kind: .audio, codec: "ac3", channels: 2),
             ])
-            struct Resolve: Encodable { var inputs: [InputSpec]; var kind: String?; var extra: Bool? }
+            struct Resolve: Encodable {
+                var inputs: [InputSpec]
+                var kind: String?
+                var extra: Bool?
+            }
             var rules: [String?] = []
             for extra in [true, false, nil] as [Bool?] {
-                let resolved = try await client.post("/v1/rulesets/household/resolve", json: Resolve(inputs: [narrow], kind: "movie", extra: extra))
+                let resolved = try await client.post(
+                    "/v1/rulesets/household/resolve",
+                    json: Resolve(inputs: [narrow], kind: "movie", extra: extra)
+                )
                 #expect(resolved.status == 200)
                 rules.append(try resolved.json([Recipe].self).first?.video?.rule)
             }
@@ -465,22 +744,36 @@ struct ServerTests {
     /// nothing starts a walk on request.
     @Test func aScanIsAnOperatorsToo() async throws {
         struct LastWalk: Decodable {
-            struct Report: Decodable { var read: Int; var unchanged: Int; var removed: Int }
+            struct Report: Decodable {
+                var read: Int
+                var unchanged: Int
+                var removed: Int
+            }
             var walkedAt: Date
             var available: Bool
             var report: Report
         }
         try await withClient { client in
             #expect(try await client.get("/v1/libraries/main/scan").status == 401)
-            #expect(try await client.get("/v1/libraries/main/scan", headers: ["Authorization": "Bearer wrong"]).status == 401)
+            #expect(
+                try await client.get("/v1/libraries/main/scan", headers: ["Authorization": "Bearer wrong"]).status
+                    == 401
+            )
             let scan = try await client.get("/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"])
             #expect(scan.status == 200)
             let walk = try SiloClient.decoder.decode(LastWalk.self, from: scan.body)
             #expect(walk.available)
             #expect(walk.walkedAt <= .now)
             #expect(walk.report.read + walk.report.unchanged == 5, "the boot's walk, whatever has walked since")
-            #expect(try await client.get("/v1/libraries/other/scan", headers: ["Authorization": "Bearer secret"]).status == 404)
-            #expect(try await client.send("POST", "/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"]).status != 200, "no route walks on request")
+            #expect(
+                try await client.get("/v1/libraries/other/scan", headers: ["Authorization": "Bearer secret"]).status
+                    == 404
+            )
+            #expect(
+                try await client.send("POST", "/v1/libraries/main/scan", headers: ["Authorization": "Bearer secret"])
+                    .status != 200,
+                "no route walks on request"
+            )
         }
     }
 
@@ -490,11 +783,16 @@ struct ServerTests {
         try await withClient { client in
             let film = try await client.get("/v1/containers/\(Fixture.brief.id)")
             #expect(film.status == 200)
-            let id = try #require(try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id)
+            let id = try #require(
+                try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id
+            )
             let folder = Fixture.root.appendingPathComponent("Away/Brief Encounter (1945)")
             try FileManager.default.removeItem(at: folder)
             #expect(try await client.get("/v1/media/\(id)").status == 404)
-            #expect(try await client.get("/v1/containers/\(Fixture.brief.id)").status == 404, "the container is forgotten at once")
+            #expect(
+                try await client.get("/v1/containers/\(Fixture.brief.id)").status == 404,
+                "the container is forgotten at once"
+            )
         }
     }
 
@@ -506,9 +804,12 @@ struct ServerTests {
         let aside = Fixture.root.appendingPathComponent("Away (unplugged)")
         try await withClient { client in
             let film = try await client.get("/v1/containers/\(Fixture.thirdMan.id)")
-            let id = try #require(try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id)
+            let id = try #require(
+                try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id
+            )
             #expect(try await client.get("/v1/media/\(id)").status == 200)
-            let held = try await client.get("/v1/libraries").json([LibraryBody].self).first { $0.id == "away" }?.presentations
+            let held = try await client.get("/v1/libraries").json([LibraryBody].self).first { $0.id == "away" }?
+                .presentations
 
             try FileManager.default.moveItem(at: away, to: aside)
             var restored = false
@@ -523,14 +824,20 @@ struct ServerTests {
             try FileManager.default.moveItem(at: aside, to: away)
             restored = true
             #expect(try await client.get("/v1/media/\(id)").status == 200, "walked again when it returns")
-            #expect(try await client.get("/v1/libraries").json([LibraryBody].self).first { $0.id == "away" }?.available == true)
+            #expect(
+                try await client.get("/v1/libraries").json([LibraryBody].self).first { $0.id == "away" }?.available
+                    == true
+            )
         }
     }
 
     /// A library added over the network lies within the roots `silo.json` names, is walked before the
     /// answer and served without a restart; removed, it is forgotten, and its files stay.
     @Test func aLibraryIsAddedWithinTheRootsAndRemovedLeavingItsFiles() async throws {
-        struct NewLibrary: Encodable { var id: String; var path: String }
+        struct NewLibrary: Encodable {
+            var id: String
+            var path: String
+        }
         let media = Fixture.root.appendingPathComponent("Media")
         let settingsFile = Fixture.root.appendingPathComponent("State/settings.json")
         try await withClient { client in
@@ -543,38 +850,86 @@ struct ServerTests {
             #expect(library.id == "films")
             #expect(library.available)
             #expect(library.presentations == 1, "walked before the answer")
-            #expect(try await client.get("/v1/libraries").json([LibraryBody].self).map(\.id).contains("films"), "listed without a restart")
+            #expect(
+                try await client.get("/v1/libraries").json([LibraryBody].self).map(\.id).contains("films"),
+                "listed without a restart"
+            )
             let film = try await client.get("/v1/containers/\(Fixture.casablanca.id)")
-            let id = try #require(try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id)
+            let id = try #require(
+                try film.json(ContainerJSON.self).sequences.first?.items.first?.presentations.first?.id
+            )
             #expect(try await client.get("/v1/media/\(id)").status == 200, "and served")
-            #expect(try String(contentsOf: settingsFile, encoding: .utf8).contains(films.path), "written to settings.json")
+            #expect(
+                try String(contentsOf: settingsFile, encoding: .utf8).contains(films.path),
+                "written to settings.json"
+            )
 
             let taken = try await client.post("/v1/libraries", json: films, headers: Self.operatorHeaders)
             #expect(taken.status == 409)
             let before = try Data(contentsOf: settingsFile)
-            let escape = try await client.post("/v1/libraries", json: NewLibrary(id: "escape", path: media.appendingPathComponent("escape").path), headers: Self.operatorHeaders)
+            let escape = try await client.post(
+                "/v1/libraries",
+                json: NewLibrary(id: "escape", path: media.appendingPathComponent("escape").path),
+                headers: Self.operatorHeaders
+            )
             #expect(escape.status == 403, "a link inside a root that leads outside it")
             #expect(escape.bodyText.contains("lies within none of the library roots"))
-            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "outside", path: Fixture.root.appendingPathComponent("Outside").path), headers: Self.operatorHeaders).status == 403)
-            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "gone", path: media.appendingPathComponent("gone").path), headers: Self.operatorHeaders).status == 422)
-            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "relative", path: "Media/films"), headers: Self.operatorHeaders).status == 422)
+            #expect(
+                try await client.post(
+                    "/v1/libraries",
+                    json: NewLibrary(id: "outside", path: Fixture.root.appendingPathComponent("Outside").path),
+                    headers: Self.operatorHeaders
+                ).status == 403
+            )
+            #expect(
+                try await client.post(
+                    "/v1/libraries",
+                    json: NewLibrary(id: "gone", path: media.appendingPathComponent("gone").path),
+                    headers: Self.operatorHeaders
+                ).status == 422
+            )
+            #expect(
+                try await client.post(
+                    "/v1/libraries",
+                    json: NewLibrary(id: "relative", path: "Media/films"),
+                    headers: Self.operatorHeaders
+                ).status == 422
+            )
             #expect(try Data(contentsOf: settingsFile) == before, "nothing refused is written")
 
             #expect(try await client.send("DELETE", "/v1/libraries/films").status == 401)
             #expect(try await client.send("DELETE", "/v1/libraries/films", headers: Self.operatorHeaders).status == 204)
             #expect(!(try await client.get("/v1/libraries").json([LibraryBody].self).map(\.id).contains("films")))
-            #expect(try await client.get("/v1/containers/\(Fixture.casablanca.id)").status == 404, "its rows leave the index")
+            #expect(
+                try await client.get("/v1/containers/\(Fixture.casablanca.id)").status == 404,
+                "its rows leave the index"
+            )
             #expect(!(try String(contentsOf: settingsFile, encoding: .utf8).contains(films.path)))
-            #expect(FileManager.default.fileExists(atPath: media.appendingPathComponent("films/Casablanca (1942)/container.smd").path), "and its files stay")
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: media.appendingPathComponent("films/Casablanca (1942)/container.smd").path
+                ),
+                "and its files stay"
+            )
             #expect(try await client.send("DELETE", "/v1/libraries/films", headers: Self.operatorHeaders).status == 404)
         }
     }
 
     @Test func aLibrarysPathIsCheckedAndItsMissingFoldersMade() async throws {
-        struct NewLibrary: Encodable { var id: String; var path: String; var create: Bool? }
+        struct NewLibrary: Encodable {
+            var id: String
+            var path: String
+            var create: Bool?
+        }
         struct Check: Decodable {
-            struct Component: Decodable { var path: String; var state: String }
-            struct Refusal: Decodable { var status: Int; var detail: String }
+            struct Component: Decodable {
+                var path: String
+                var state: String
+            }
+            struct Refusal: Decodable {
+                var status: Int
+                var detail: String
+            }
             var path: String
             var components: [Component]
             var root: String?
@@ -594,17 +949,43 @@ struct ServerTests {
             #expect(check.root == media.path)
             #expect(check.creates == [media.appendingPathComponent("Made").path, wanted.path])
             #expect(check.refusal?.status == 422, "without create, the addition would be refused")
-            #expect(!FileManager.default.fileExists(atPath: media.appendingPathComponent("Made").path), "and checking made nothing")
-            let escaping = try await client.post("/v1/libraries/check", json: NewLibrary(id: "out", path: media.appendingPathComponent("escape/New").path, create: true), headers: Self.operatorHeaders)
-            #expect(try escaping.json(Check.self).refusal?.status == 403, "a link that leads outside leads the folders made outside")
+            #expect(
+                !FileManager.default.fileExists(atPath: media.appendingPathComponent("Made").path),
+                "and checking made nothing"
+            )
+            let escaping = try await client.post(
+                "/v1/libraries/check",
+                json: NewLibrary(id: "out", path: media.appendingPathComponent("escape/New").path, create: true),
+                headers: Self.operatorHeaders
+            )
+            #expect(
+                try escaping.json(Check.self).refusal?.status == 403,
+                "a link that leads outside leads the folders made outside"
+            )
 
             #expect(try await client.post("/v1/libraries", json: made, headers: Self.operatorHeaders).status == 422)
-            #expect(!FileManager.default.fileExists(atPath: media.appendingPathComponent("Made").path), "nothing is made unasked")
-            let added = try await client.post("/v1/libraries", json: NewLibrary(id: "made", path: wanted.path, create: true), headers: Self.operatorHeaders)
+            #expect(
+                !FileManager.default.fileExists(atPath: media.appendingPathComponent("Made").path),
+                "nothing is made unasked"
+            )
+            let added = try await client.post(
+                "/v1/libraries",
+                json: NewLibrary(id: "made", path: wanted.path, create: true),
+                headers: Self.operatorHeaders
+            )
             #expect(added.status == 201)
             #expect(try added.json(LibraryBody.self).available, "made, added and walked")
-            #expect(try await client.post("/v1/libraries", json: NewLibrary(id: "out", path: media.appendingPathComponent("escape/New").path, create: true), headers: Self.operatorHeaders).status == 403)
-            #expect(!FileManager.default.fileExists(atPath: Fixture.root.appendingPathComponent("Outside/New").path), "nothing is made outside")
+            #expect(
+                try await client.post(
+                    "/v1/libraries",
+                    json: NewLibrary(id: "out", path: media.appendingPathComponent("escape/New").path, create: true),
+                    headers: Self.operatorHeaders
+                ).status == 403
+            )
+            #expect(
+                !FileManager.default.fileExists(atPath: Fixture.root.appendingPathComponent("Outside/New").path),
+                "nothing is made outside"
+            )
             #expect(try await client.send("DELETE", "/v1/libraries/made", headers: Self.operatorHeaders).status == 204)
         }
     }
@@ -623,7 +1004,10 @@ struct ServerTests {
     struct ContainerJSON: Decodable {
         struct Sequence: Decodable { var items: [Item] }
         struct Item: Decodable { var presentations: [Presentation] }
-        struct Presentation: Decodable { var id: String; var file: String }
+        struct Presentation: Decodable {
+            var id: String
+            var file: String
+        }
         struct Summary: Decodable { var id: String }
         var library: String
         var sequences: [Sequence]
@@ -655,7 +1039,10 @@ struct PlaceBody: Encodable {
 }
 
 struct PlacementResultBody: Decodable {
-    struct Finding: Decodable { var severity: String; var text: String }
+    struct Finding: Decodable {
+        var severity: String
+        var text: String
+    }
     var applied: Bool
     var destination: String
     var presentation: String?
@@ -664,7 +1051,9 @@ struct PlacementResultBody: Decodable {
 }
 
 extension ServerTests {
-    static let documents = [Fixture.series, Fixture.serial].map { String(decoding: ContainerFile.data(for: $0), as: UTF8.self) }
+    static let documents = [Fixture.series, Fixture.serial].map {
+        String(decoding: ContainerFile.data(for: $0), as: UTF8.self)
+    }
     static let operatorHeaders = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
 
     /// Last in the suite on purpose: it changes the library the tests above count.
@@ -672,10 +1061,25 @@ extension ServerTests {
         let file = Fixture.root.appendingPathComponent("part2.mkv")
         try Fixture.mediaBytes.write(to: file)
         try await withClient { client in
-            var body = PlaceBody(containers: Self.documents, item: "part2", tracks: [TrackMapping(feature: "commentary1", audio: 2)], chapters: [Chapter(index: 1, title: "Opening")], file: file.path, dryRun: true)
-            #expect(try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body)).status == 401)
+            var body = PlaceBody(
+                containers: Self.documents,
+                item: "part2",
+                tracks: [TrackMapping(feature: "commentary1", audio: 2)],
+                chapters: [Chapter(index: 1, title: "Opening")],
+                file: file.path,
+                dryRun: true
+            )
+            #expect(
+                try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body)).status
+                    == 401
+            )
 
-            let shown = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders)
+            let shown = try await client.send(
+                "POST",
+                "/v1/libraries/main/place",
+                body: try JSONEncoder().encode(body),
+                headers: Self.operatorHeaders
+            )
             #expect(shown.status == 200)
             let dry = try shown.json(PlacementResultBody.self)
             #expect(dry.applied == false)
@@ -685,7 +1089,12 @@ extension ServerTests {
             #expect(FileManager.default.fileExists(atPath: file.path), "a dry run moves nothing")
 
             body.dryRun = false
-            let placed = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders)
+            let placed = try await client.send(
+                "POST",
+                "/v1/libraries/main/place",
+                body: try JSONEncoder().encode(body),
+                headers: Self.operatorHeaders
+            )
             #expect(placed.status == 200)
             let result = try placed.json(PlacementResultBody.self)
             #expect(result.applied == true)
@@ -698,7 +1107,12 @@ extension ServerTests {
             #expect(serial.bodyText.contains("\"title\":\"Opening\""))
 
             try Fixture.mediaBytes.write(to: file)
-            let again = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders)
+            let again = try await client.send(
+                "POST",
+                "/v1/libraries/main/place",
+                body: try JSONEncoder().encode(body),
+                headers: Self.operatorHeaders
+            )
             #expect(again.status == 409)
             let refused = try again.json(PlacementResultBody.self)
             #expect(refused.applied == false)
@@ -706,12 +1120,31 @@ extension ServerTests {
             #expect(FileManager.default.fileExists(atPath: file.path), "a refusal moves nothing")
 
             let unknownItem = PlaceBody(containers: Self.documents, item: "part9", file: file.path)
-            let bad = try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(unknownItem), headers: Self.operatorHeaders)
+            let bad = try await client.send(
+                "POST",
+                "/v1/libraries/main/place",
+                body: try JSONEncoder().encode(unknownItem),
+                headers: Self.operatorHeaders
+            )
             #expect(bad.status == 400)
             #expect(bad.bodyText.contains("has no item part9"))
             let unreadable = PlaceBody(containers: ["<nope/>"], item: "part2", file: file.path)
-            #expect(try await client.send("POST", "/v1/libraries/main/place", body: try JSONEncoder().encode(unreadable), headers: Self.operatorHeaders).status == 400)
-            #expect(try await client.send("POST", "/v1/libraries/other/place", body: try JSONEncoder().encode(body), headers: Self.operatorHeaders).status == 404)
+            #expect(
+                try await client.send(
+                    "POST",
+                    "/v1/libraries/main/place",
+                    body: try JSONEncoder().encode(unreadable),
+                    headers: Self.operatorHeaders
+                ).status == 400
+            )
+            #expect(
+                try await client.send(
+                    "POST",
+                    "/v1/libraries/other/place",
+                    body: try JSONEncoder().encode(body),
+                    headers: Self.operatorHeaders
+                ).status == 404
+            )
         }
     }
 }
@@ -725,31 +1158,67 @@ extension ServerTests {
             try Fixture.mediaBytes.write(to: rip)
             let copy = FileRef(holder: "laptop", url: rip, path: rip.path, sizeBytes: 3000, secret: "s3cret")
             let ruleset = RulesetDocumentBody(name: "household", document: JobServiceTests.Bench.household)
-            _ = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders)
+            _ = try await client.send(
+                "PUT",
+                "/v1/rulesets/household",
+                body: try JSONEncoder().encode(ruleset),
+                headers: Self.operatorHeaders
+            )
 
             /// A resolved recipe for part three of the serial, made from a source with the copy given.
             func resolved(copy: FileRef?) async throws -> StoredRecipeBody {
-                let source = try await client.post("/v1/sources", json: SiloClient.NewSource(input: JobServiceTests.Bench.input, copy: copy), headers: Self.operatorHeaders).json(SourceBody.self)
-                let binding = try await client.post("/v1/bindings", json: SiloClient.NewBinding(
-                    library: "main", containers: Self.documents, item: "part3", tracks: [TrackMapping(feature: "commentary1", audio: 2)],
-                    segments: [Binding.Segment(source: source.id)]
-                ), headers: Self.operatorHeaders).json(BindingBody.self)
-                let application = Application(ruleset: "household", outputs: [Application.OutputChoice(profile: "mobile")])
-                return try #require(try await client.post("/v1/bindings/\(binding.id)/recipes", json: application, headers: Self.operatorHeaders).json([StoredRecipeBody].self).first)
+                let source = try await client.post(
+                    "/v1/sources",
+                    json: SiloClient.NewSource(input: JobServiceTests.Bench.input, copy: copy),
+                    headers: Self.operatorHeaders
+                ).json(SourceBody.self)
+                let binding = try await client.post(
+                    "/v1/bindings",
+                    json: SiloClient.NewBinding(
+                        library: "main",
+                        containers: Self.documents,
+                        item: "part3",
+                        tracks: [TrackMapping(feature: "commentary1", audio: 2)],
+                        segments: [Binding.Segment(source: source.id)]
+                    ),
+                    headers: Self.operatorHeaders
+                ).json(BindingBody.self)
+                let application = Application(
+                    ruleset: "household",
+                    outputs: [Application.OutputChoice(profile: "mobile")]
+                )
+                return try #require(
+                    try await client.post(
+                        "/v1/bindings/\(binding.id)/recipes",
+                        json: application,
+                        headers: Self.operatorHeaders
+                    ).json([StoredRecipeBody].self).first
+                )
             }
             let recipe = try await resolved(copy: copy)
             struct NewJob: Encodable { var recipe: String }
 
             #expect(try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id)).status == 401)
-            #expect(try await client.post("/v1/jobs", json: NewJob(recipe: "nothing"), headers: Self.operatorHeaders).status == 404)
-            let created = try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id), headers: Self.operatorHeaders)
+            #expect(
+                try await client.post("/v1/jobs", json: NewJob(recipe: "nothing"), headers: Self.operatorHeaders).status
+                    == 404
+            )
+            let created = try await client.post(
+                "/v1/jobs",
+                json: NewJob(recipe: recipe.id),
+                headers: Self.operatorHeaders
+            )
             #expect(created.status == 201)
             let job = try SiloClient.decoder.decode(Job.self, from: created.body)
             #expect(job.state == .pending)
             #expect(job.recipe == recipe.id)
             #expect(job.requirements == ["aac", "flac"])
             #expect(try await client.get("/v1/recipes/\(recipe.id)").json(StoredRecipeBody.self).state == "committed")
-            #expect(try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id), headers: Self.operatorHeaders).status == 409, "one recipe, one job")
+            #expect(
+                try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id), headers: Self.operatorHeaders).status
+                    == 409,
+                "one recipe, one job"
+            )
             #expect(try await client.get("/v1/jobs?state=pending").bodyText.contains(job.id))
             let held = try await client.send("DELETE", "/v1/libraries/main", headers: Self.operatorHeaders)
             #expect(held.status == 409, "a live job files into the library")
@@ -758,44 +1227,91 @@ extension ServerTests {
             #expect(try await client.get("/v1/jobs/nothing").status == 404)
 
             let unheld = try await resolved(copy: nil)
-            let refused = try await client.post("/v1/jobs", json: NewJob(recipe: unheld.id), headers: Self.operatorHeaders)
+            let refused = try await client.post(
+                "/v1/jobs",
+                json: NewJob(recipe: unheld.id),
+                headers: Self.operatorHeaders
+            )
             #expect(refused.status == 409)
             #expect(refused.bodyText.contains("has no copy; no node could fetch it"))
             #expect(try await client.get("/v1/recipes/\(unheld.id)").json(StoredRecipeBody.self).state == "resolved")
 
-            struct Claim: Encodable { var node: String; var capabilities: [String] }
-            let nothing = try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac"]), headers: ["Authorization": "Bearer secret"])
+            struct Claim: Encodable {
+                var node: String
+                var capabilities: [String]
+            }
+            let nothing = try await client.post(
+                "/v1/jobs/claim",
+                json: Claim(node: "box", capabilities: ["flac"]),
+                headers: ["Authorization": "Bearer secret"]
+            )
             #expect(nothing.status == 200)
             #expect(nothing.bodyText == "{}")
-            let claim = try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac", "aac"]), headers: ["Authorization": "Bearer secret"])
+            let claim = try await client.post(
+                "/v1/jobs/claim",
+                json: Claim(node: "box", capabilities: ["flac", "aac"]),
+                headers: ["Authorization": "Bearer secret"]
+            )
             #expect(claim.status == 200)
             #expect(claim.bodyText.contains("s3cret"), "the claiming node is handed the source's secret")
-            struct ClaimBody: Decodable { var job: Job; var recipe: StoredRecipeBody; var segments: [ClaimedSegment] }
+            struct ClaimBody: Decodable {
+                var job: Job
+                var recipe: StoredRecipeBody
+                var segments: [ClaimedSegment]
+            }
             let claimed = try SiloClient.decoder.decode(ClaimBody.self, from: claim.body)
             #expect(claimed.job.id == job.id)
             #expect(claimed.recipe.id == recipe.id)
             #expect(claimed.segments.map(\.copy) == [copy], "the segment's copy, whole")
 
-            let progress = try await client.send("POST", "/v1/jobs/\(job.id)/progress", body: try SiloClient.encoder.encode(JobProgress(fraction: 0.25)), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
+            let progress = try await client.send(
+                "POST",
+                "/v1/jobs/\(job.id)/progress",
+                body: try SiloClient.encoder.encode(JobProgress(fraction: 0.25)),
+                headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"]
+            )
             #expect(progress.bodyText == "{\"state\":\"encoding\"}")
-            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/retry", headers: ["Authorization": "Bearer secret"]).status == 409)
+            #expect(
+                try await client.send("POST", "/v1/jobs/\(job.id)/retry", headers: ["Authorization": "Bearer secret"])
+                    .status == 409
+            )
 
             let output = Fixture.root.appendingPathComponent("encoded-\(job.id).mkv")
             try Fixture.mediaBytes.write(to: output)
-            struct Complete: Encodable { var output: FileRef; var result: EncodeResult }
-            let completed = try await client.post("/v1/jobs/\(job.id)/complete", json: Complete(output: FileRef(holder: "box", url: output, path: output.path, secret: ""), result: EncodeResult(streams: ["video h264", "audio flac", "audio aac"], layoutMatched: true)), headers: ["Authorization": "Bearer secret"])
+            struct Complete: Encodable {
+                var output: FileRef
+                var result: EncodeResult
+            }
+            let completed = try await client.post(
+                "/v1/jobs/\(job.id)/complete",
+                json: Complete(
+                    output: FileRef(holder: "box", url: output, path: output.path, secret: ""),
+                    result: EncodeResult(streams: ["video h264", "audio flac", "audio aac"], layoutMatched: true)
+                ),
+                headers: ["Authorization": "Bearer secret"]
+            )
             #expect(completed.status == 200)
             #expect(try SiloClient.decoder.decode(Job.self, from: completed.body).state == .encoded)
 
-            let placed = try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: ["Authorization": "Bearer secret"])
+            let placed = try await client.send(
+                "POST",
+                "/v1/jobs/\(job.id)/place",
+                headers: ["Authorization": "Bearer secret"]
+            )
             #expect(placed.status == 200)
             let done = try SiloClient.decoder.decode(Job.self, from: placed.body)
             #expect(done.state == .placed)
             #expect(done.placement?.destination == "Doctor Who (1963)/Pyramids of Mars/Part Three - mobile.mkv")
             let id = try #require(done.placement?.presentation)
             #expect(try await client.get("/v1/media/\(id)", headers: ["Range": "bytes=0-9"]).status == 206)
-            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: ["Authorization": "Bearer secret"]).status == 409)
-            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/cancel", headers: ["Authorization": "Bearer secret"]).status == 409)
+            #expect(
+                try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: ["Authorization": "Bearer secret"])
+                    .status == 409
+            )
+            #expect(
+                try await client.send("POST", "/v1/jobs/\(job.id)/cancel", headers: ["Authorization": "Bearer secret"])
+                    .status == 409
+            )
         }
     }
 
@@ -804,26 +1320,77 @@ extension ServerTests {
             let rip = Fixture.root.appendingPathComponent("trial-rip.mkv")
             try Fixture.mediaBytes.write(to: rip)
             let ruleset = RulesetDocumentBody(name: "household", document: JobServiceTests.Bench.household)
-            _ = try await client.send("PUT", "/v1/rulesets/household", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders)
-            let source = try await client.post("/v1/sources", json: SiloClient.NewSource(input: JobServiceTests.Bench.input, copy: FileRef(holder: "laptop", url: rip, path: rip.path, secret: "s")), headers: Self.operatorHeaders).json(SourceBody.self)
-            let binding = try await client.post("/v1/bindings", json: SiloClient.NewBinding(
-                library: "main", containers: Self.documents, item: "part3", tracks: [TrackMapping(feature: "commentary1", audio: 2)],
-                segments: [Binding.Segment(source: source.id)]
-            ), headers: Self.operatorHeaders).json(BindingBody.self)
-            let recipe = try #require(try await client.post("/v1/bindings/\(binding.id)/recipes", json: Application(ruleset: "household"), headers: Self.operatorHeaders).json([StoredRecipeBody].self).first)
+            _ = try await client.send(
+                "PUT",
+                "/v1/rulesets/household",
+                body: try JSONEncoder().encode(ruleset),
+                headers: Self.operatorHeaders
+            )
+            let source = try await client.post(
+                "/v1/sources",
+                json: SiloClient.NewSource(
+                    input: JobServiceTests.Bench.input,
+                    copy: FileRef(holder: "laptop", url: rip, path: rip.path, secret: "s")
+                ),
+                headers: Self.operatorHeaders
+            ).json(SourceBody.self)
+            let binding = try await client.post(
+                "/v1/bindings",
+                json: SiloClient.NewBinding(
+                    library: "main",
+                    containers: Self.documents,
+                    item: "part3",
+                    tracks: [TrackMapping(feature: "commentary1", audio: 2)],
+                    segments: [Binding.Segment(source: source.id)]
+                ),
+                headers: Self.operatorHeaders
+            ).json(BindingBody.self)
+            let recipe = try #require(
+                try await client.post(
+                    "/v1/bindings/\(binding.id)/recipes",
+                    json: Application(ruleset: "household"),
+                    headers: Self.operatorHeaders
+                ).json([StoredRecipeBody].self).first
+            )
 
-            struct NewJob: Encodable { var recipe: String; var trial: Bool }
-            let created = try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id, trial: true), headers: Self.operatorHeaders)
+            struct NewJob: Encodable {
+                var recipe: String
+                var trial: Bool
+            }
+            let created = try await client.post(
+                "/v1/jobs",
+                json: NewJob(recipe: recipe.id, trial: true),
+                headers: Self.operatorHeaders
+            )
             #expect(created.status == 201)
             let job = try SiloClient.decoder.decode(Job.self, from: created.body)
             #expect(job.trial)
 
-            struct Claim: Encodable { var node: String; var capabilities: [String] }
-            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "box", capabilities: ["flac", "aac"]), headers: ["Authorization": "Bearer secret"]).bodyText.contains(job.id))
+            struct Claim: Encodable {
+                var node: String
+                var capabilities: [String]
+            }
+            #expect(
+                try await client.post(
+                    "/v1/jobs/claim",
+                    json: Claim(node: "box", capabilities: ["flac", "aac"]),
+                    headers: ["Authorization": "Bearer secret"]
+                ).bodyText.contains(job.id)
+            )
             let output = Fixture.root.appendingPathComponent("trial-\(job.id).mkv")
             try Fixture.mediaBytes.write(to: output)
-            struct Complete: Encodable { var output: FileRef; var result: EncodeResult }
-            _ = try await client.post("/v1/jobs/\(job.id)/complete", json: Complete(output: FileRef(holder: "box", url: output, path: output.path, secret: ""), result: EncodeResult(streams: ["video h264"], layoutMatched: true)), headers: ["Authorization": "Bearer secret"])
+            struct Complete: Encodable {
+                var output: FileRef
+                var result: EncodeResult
+            }
+            _ = try await client.post(
+                "/v1/jobs/\(job.id)/complete",
+                json: Complete(
+                    output: FileRef(holder: "box", url: output, path: output.path, secret: ""),
+                    result: EncodeResult(streams: ["video h264"], layoutMatched: true)
+                ),
+                headers: ["Authorization": "Bearer secret"]
+            )
             // The fetch follows the completion; asking again waits for it, or makes it.
             let fetched = try await client.send("POST", "/v1/trials/\(job.id)/fetch", headers: Self.operatorHeaders)
             #expect(fetched.status == 200)
@@ -832,16 +1399,30 @@ extension ServerTests {
                 try await Task.sleep(for: .milliseconds(10))
                 trials = try await client.get("/v1/trials").bodyText
             }
-            struct Trial: Decodable { var job: String; var ruleset: String; var version: Int?; var branch: String?; var binding: String }
+            struct Trial: Decodable {
+                var job: String
+                var ruleset: String
+                var version: Int?
+                var branch: String?
+                var binding: String
+            }
             let listed = try SiloClient.decoder.decode([Trial].self, from: Data(trials.utf8))
             #expect(listed.map(\.job) == [job.id])
-            #expect(listed.first?.ruleset == "household" && listed.first?.branch == "standard" && listed.first?.binding == binding.id)
+            #expect(
+                listed.first?.ruleset == "household" && listed.first?.branch == "standard"
+                    && listed.first?.binding == binding.id
+            )
             #expect(try await client.get("/v1/trials?branch=trial").bodyText == "[]", "filtered by branch")
 
             #expect(try await client.get("/v1/trials/\(job.id)/file", headers: ["Range": "bytes=0-9"]).status == 206)
-            #expect(try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: Self.operatorHeaders).bodyText.contains("a trial is never placed"))
+            #expect(
+                try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: Self.operatorHeaders).bodyText
+                    .contains("a trial is never placed")
+            )
             #expect(try await client.send("DELETE", "/v1/trials/\(job.id)").status == 401)
-            #expect(try await client.send("DELETE", "/v1/trials/\(job.id)", headers: Self.operatorHeaders).status == 204)
+            #expect(
+                try await client.send("DELETE", "/v1/trials/\(job.id)", headers: Self.operatorHeaders).status == 204
+            )
             #expect(try await client.get("/v1/trials").bodyText == "[]")
             #expect(try await client.get("/v1/trials/\(job.id)/file").status == 404)
         }
@@ -852,11 +1433,30 @@ extension ServerTests {
 extension ServerTests {
     @Test func xNodesRegisterAreApprovedAndTakeWorkWithTheirToken() async throws {
         try await withClient { client in
-            let registration = NodeRegistration(id: "node-1", secret: "s3cret", name: "box", platform: "Linux", capabilities: ["flac", "aac"], ffmpegVersion: "ffmpeg 7", cores: 4)
+            let registration = NodeRegistration(
+                id: "node-1",
+                secret: "s3cret",
+                name: "box",
+                platform: "Linux",
+                capabilities: ["flac", "aac"],
+                ffmpegVersion: "ffmpeg 7",
+                cores: 4
+            )
             let registered = try await client.post("/v1/nodes", json: registration)
             #expect(registered.status == 201)
             #expect(try SiloClient.decoder.decode(Node.self, from: registered.body).state == .pending)
-            #expect(try await client.post("/v1/nodes", json: NodeRegistration(id: "node-1", secret: "wrong", name: "box", platform: "Linux", capabilities: [])).status == 403)
+            #expect(
+                try await client.post(
+                    "/v1/nodes",
+                    json: NodeRegistration(
+                        id: "node-1",
+                        secret: "wrong",
+                        name: "box",
+                        platform: "Linux",
+                        capabilities: []
+                    )
+                ).status == 403
+            )
 
             #expect(try await client.get("/v1/nodes").status == 401)
             let listed = try await client.get("/v1/nodes", headers: ["Authorization": "Bearer secret"])
@@ -868,22 +1468,62 @@ extension ServerTests {
             #expect(try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "wrong"]).status == 403)
             #expect(try await client.get("/v1/nodes/node-9", headers: ["x-silo-node-secret": "s3cret"]).status == 404)
 
-            struct Claim: Encodable { var node: String; var capabilities: [String] }
-            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"])).status == 401, "no token yet")
+            struct Claim: Encodable {
+                var node: String
+                var capabilities: [String]
+            }
+            #expect(
+                try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"])).status
+                    == 401,
+                "no token yet"
+            )
 
             #expect(try await client.send("POST", "/v1/nodes/node-1/approve").status == 401)
-            #expect(try await client.send("POST", "/v1/nodes/node-1/approve", headers: ["Authorization": "Bearer secret"]).status == 200)
+            #expect(
+                try await client.send("POST", "/v1/nodes/node-1/approve", headers: ["Authorization": "Bearer secret"])
+                    .status == 200
+            )
             let approved = try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"])
             let token = try #require(try SiloClient.decoder.decode(NodeStatus.self, from: approved.body).token)
-            #expect(try SiloClient.decoder.decode(NodeStatus.self, from: try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"]).body).token == nil, "once")
+            #expect(
+                try SiloClient.decoder.decode(
+                    NodeStatus.self,
+                    from: try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"]).body
+                ).token == nil,
+                "once"
+            )
 
-            let claim = try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"]), headers: ["Authorization": "Bearer \(token)"])
+            let claim = try await client.post(
+                "/v1/jobs/claim",
+                json: Claim(node: "node-1", capabilities: ["flac"]),
+                headers: ["Authorization": "Bearer \(token)"]
+            )
             #expect(claim.status == 200, "the node's token passes the node gate")
-            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"]), headers: ["Authorization": "Bearer nope"]).status == 401)
-            #expect(try await client.send("POST", "/v1/jobs/nothing/cancel", headers: ["Authorization": "Bearer \(token)"]).status == 401, "a node's token does not pass the operator's gate")
+            #expect(
+                try await client.post(
+                    "/v1/jobs/claim",
+                    json: Claim(node: "node-1", capabilities: ["flac"]),
+                    headers: ["Authorization": "Bearer nope"]
+                ).status == 401
+            )
+            #expect(
+                try await client.send("POST", "/v1/jobs/nothing/cancel", headers: ["Authorization": "Bearer \(token)"])
+                    .status == 401,
+                "a node's token does not pass the operator's gate"
+            )
 
-            #expect(try await client.send("POST", "/v1/nodes/node-1/revoke", headers: ["Authorization": "Bearer secret"]).status == 200)
-            #expect(try await client.post("/v1/jobs/claim", json: Claim(node: "node-1", capabilities: ["flac"]), headers: ["Authorization": "Bearer \(token)"]).status == 401, "revoked at once")
+            #expect(
+                try await client.send("POST", "/v1/nodes/node-1/revoke", headers: ["Authorization": "Bearer secret"])
+                    .status == 200
+            )
+            #expect(
+                try await client.post(
+                    "/v1/jobs/claim",
+                    json: Claim(node: "node-1", capabilities: ["flac"]),
+                    headers: ["Authorization": "Bearer \(token)"]
+                ).status == 401,
+                "revoked at once"
+            )
         }
     }
 }
@@ -894,20 +1534,41 @@ extension ServerTests {
         try await withClient { client in
             let server = try await client.get("/v1/server")
             #expect(server.status == 200)
-            struct Info: Decodable, Equatable { var id: String; var name: String; var bootstrap: Bool }
+            struct Info: Decodable, Equatable {
+                var id: String
+                var name: String
+                var bootstrap: Bool
+            }
             let info = try SiloClient.decoder.decode(Info.self, from: server.body)
             #expect(info.id == info.id.lowercased() && UUID(uuidString: info.id) != nil)
             #expect(info.name.hasPrefix("Silo on "))
             #expect(info.bootstrap == false, "the suite's state directory arrives with a credential")
-            #expect(try SiloClient.decoder.decode(Info.self, from: server.body) == info, "the same boot answers the same")
+            #expect(
+                try SiloClient.decoder.decode(Info.self, from: server.body) == info,
+                "the same boot answers the same"
+            )
         }
     }
 
     @Test func theSettingsAreReportedAndPatchedWhole() async throws {
         struct Report: Decodable {
-            struct Editable: Decodable, Equatable { var name: String; var embeddedNode: Bool; var advertise: Bool; var libraries: [Library] }
-            struct Library: Decodable, Equatable { var id: String; var path: String }
-            struct ReadOnly: Decodable { var serverID: String; var host: String; var port: Int; var libraryRoots: [String]; var stateDirectory: String }
+            struct Editable: Decodable, Equatable {
+                var name: String
+                var embeddedNode: Bool
+                var advertise: Bool
+                var libraries: [Library]
+            }
+            struct Library: Decodable, Equatable {
+                var id: String
+                var path: String
+            }
+            struct ReadOnly: Decodable {
+                var serverID: String
+                var host: String
+                var port: Int
+                var libraryRoots: [String]
+                var stateDirectory: String
+            }
             var editable: Editable
             var readOnly: ReadOnly
         }
@@ -923,28 +1584,62 @@ extension ServerTests {
             #expect(before.editable.embeddedNode == false)
             #expect(before.readOnly.stateDirectory == state.path, "where the reset file goes")
             #expect(before.readOnly.port == 8742)
-            struct Info: Decodable { var id: String; var name: String }
+            struct Info: Decodable {
+                var id: String
+                var name: String
+            }
             #expect(before.readOnly.serverID == (try await client.get("/v1/server").json(Info.self)).id)
             #expect(before.readOnly.libraryRoots == [Fixture.root.appendingPathComponent("Media").path])
-            #expect(before.editable.libraries == [
-                Report.Library(id: "main", path: Fixture.root.appendingPathComponent("Library").path),
-                Report.Library(id: "away", path: Fixture.root.appendingPathComponent("Away").path),
-            ])
+            #expect(
+                before.editable.libraries == [
+                    Report.Library(id: "main", path: Fixture.root.appendingPathComponent("Library").path),
+                    Report.Library(id: "away", path: Fixture.root.appendingPathComponent("Away").path),
+                ]
+            )
 
-            let refused = try await client.send("PATCH", "/v1/settings", body: Data(#"{"name": "  ", "advertise": false}"#.utf8), headers: operatorHeaders)
+            let refused = try await client.send(
+                "PATCH",
+                "/v1/settings",
+                body: Data(#"{"name": "  ", "advertise": false}"#.utf8),
+                headers: operatorHeaders
+            )
             #expect(refused.status == 400)
             #expect(refused.bodyText.contains("the name cannot be empty"))
             let unchanged = try await client.send("GET", "/v1/settings", headers: operatorHeaders).json(Report.self)
             #expect(unchanged.editable == before.editable, "a refused patch changes nothing")
 
-            let patched = try await client.send("PATCH", "/v1/settings", body: Data(#"{"name": "Living Room Silo"}"#.utf8), headers: operatorHeaders)
+            let patched = try await client.send(
+                "PATCH",
+                "/v1/settings",
+                body: Data(#"{"name": "Living Room Silo"}"#.utf8),
+                headers: operatorHeaders
+            )
             #expect(patched.status == 200)
-            #expect(try patched.json(Report.self).editable == Report.Editable(name: "Living Room Silo", embeddedNode: false, advertise: before.editable.advertise, libraries: before.editable.libraries))
-            #expect(try await client.get("/v1/server").json(Info.self).name == "Living Room Silo", "the server goes by it at once")
-            let onDisk = try JSONDecoder().decode([String: JSONValue].self, from: Data(contentsOf: state.appendingPathComponent("settings.json")))
+            #expect(
+                try patched.json(Report.self).editable
+                    == Report.Editable(
+                        name: "Living Room Silo",
+                        embeddedNode: false,
+                        advertise: before.editable.advertise,
+                        libraries: before.editable.libraries
+                    )
+            )
+            #expect(
+                try await client.get("/v1/server").json(Info.self).name == "Living Room Silo",
+                "the server goes by it at once"
+            )
+            let onDisk = try JSONDecoder().decode(
+                [String: JSONValue].self,
+                from: Data(contentsOf: state.appendingPathComponent("settings.json"))
+            )
             #expect(onDisk["name"] == .string("Living Room Silo"), "written to settings.json, so it survives a restart")
 
-            let restored = try await client.send("PATCH", "/v1/settings", body: try JSONEncoder().encode(["name": before.editable.name]), headers: operatorHeaders)
+            let restored = try await client.send(
+                "PATCH",
+                "/v1/settings",
+                body: try JSONEncoder().encode(["name": before.editable.name]),
+                headers: operatorHeaders
+            )
             #expect(restored.status == 200)
         }
     }
@@ -980,7 +1675,11 @@ extension ServerTests {
             struct Setup: Encodable { var passkey: String }
             let stage = try await client.post("/v1/setup", json: Setup(passkey: "horse-battery"))
             #expect(stage.status == 410, "a token in the environment means staging is gone")
-            let confirm = try await client.send("POST", "/v1/setup/confirm", headers: ["Authorization": "Bearer horse-battery"])
+            let confirm = try await client.send(
+                "POST",
+                "/v1/setup/confirm",
+                headers: ["Authorization": "Bearer horse-battery"]
+            )
             #expect(confirm.status == 404, "nothing was ever staged")
         }
     }
@@ -989,7 +1688,11 @@ extension ServerTests {
 extension ServerTests {
     /// A source as the API renders it, enough to check what came back.
     struct SourceBody: Decodable {
-        struct Copy: Decodable { var holder: String; var url: String; var secret: String? }
+        struct Copy: Decodable {
+            var holder: String
+            var url: String
+            var secret: String?
+        }
         var id: String
         var copies: [Copy]
     }
@@ -997,64 +1700,130 @@ extension ServerTests {
     static func registration(key: String?, copyOn node: String?, extraAudio: Bool = false) -> Data {
         let audio = extraAudio ? #", { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 }"# : ""
         let keyJSON = key.map { #", "key": { "scheme": "discTitle", "value": "\#($0)" }"# } ?? ""
-        let copyJSON = node.map { #", "copy": { "holder": "\#($0)", "url": "http://\#($0).local:8743/files/t.mkv", "secret": "s-\#($0)" }"# } ?? ""
-        return Data("""
-        { "input": { "format": 1, "streams": [
-            { "index": 0, "kind": "video", "codec": "h264", "width": 1920, "height": 1080, "frameRate": "24000/1001" },
-            { "index": 1, "kind": "audio", "codec": "truehd", "channels": 8, "language": "en" }\(audio)
-        ] }\(keyJSON)\(copyJSON) }
-        """.utf8)
+        let copyJSON =
+            node.map {
+                #", "copy": { "holder": "\#($0)", "url": "http://\#($0).local:8743/files/t.mkv", "secret": "s-\#($0)" }"#
+            } ?? ""
+        return Data(
+            """
+            { "input": { "format": 1, "streams": [
+                { "index": 0, "kind": "video", "codec": "h264", "width": 1920, "height": 1080, "frameRate": "24000/1001" },
+                { "index": 1, "kind": "audio", "codec": "truehd", "channels": 8, "language": "en" }\(audio)
+            ] }\(keyJSON)\(copyJSON) }
+            """.utf8
+        )
     }
 
     @Test func sourcesAreRegisteredOnceAndTheirCopiesKept() async throws {
         try await withClient { client in
             let json = ["Content-Type": "application/json"]
-            let refused = try await client.send("POST", "/v1/sources", body: Self.registration(key: nil, copyOn: nil), headers: json)
+            let refused = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Self.registration(key: nil, copyOn: nil),
+                headers: json
+            )
             #expect(refused.status == 401, "registering is the operator's")
 
-            let first = try await client.send("POST", "/v1/sources", body: Self.registration(key: "3F1AC2E9/00004", copyOn: "ripper"), headers: Self.operatorHeaders)
+            let first = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Self.registration(key: "3F1AC2E9/00004", copyOn: "ripper"),
+                headers: Self.operatorHeaders
+            )
             #expect(first.status == 201)
             let source = try first.json(SourceBody.self)
             #expect(source.copies.map(\.holder) == ["ripper"])
-            #expect(first.bodyText.contains("\"frameRate\":\"24000\\/1001\"") || first.bodyText.contains("\"frameRate\":\"24000/1001\""))
+            #expect(
+                first.bodyText.contains("\"frameRate\":\"24000\\/1001\"")
+                    || first.bodyText.contains("\"frameRate\":\"24000/1001\"")
+            )
 
-            let again = try await client.send("POST", "/v1/sources", body: Self.registration(key: "3F1AC2E9/00004", copyOn: "laptop"), headers: Self.operatorHeaders)
+            let again = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Self.registration(key: "3F1AC2E9/00004", copyOn: "laptop"),
+                headers: Self.operatorHeaders
+            )
             #expect(again.status == 200, "the natural key finds the source already registered")
             #expect(try again.json(SourceBody.self).id == source.id)
             #expect(Set(try again.json(SourceBody.self).copies.map(\.holder)) == ["ripper", "laptop"])
 
-            let otherwise = try await client.send("POST", "/v1/sources", body: Self.registration(key: "3F1AC2E9/00004", copyOn: nil, extraAudio: true), headers: Self.operatorHeaders)
+            let otherwise = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Self.registration(key: "3F1AC2E9/00004", copyOn: nil, extraAudio: true),
+                headers: Self.operatorHeaders
+            )
             #expect(otherwise.status == 409)
             #expect(otherwise.bodyText.contains("with a different input spec"))
 
-            let misspelt = Data(#"{ "input": { "format": 1, "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1, "intelaced": true } ] } }"#.utf8)
+            let misspelt = Data(
+                #"{ "input": { "format": 1, "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1, "intelaced": true } ] } }"#
+                    .utf8
+            )
             let bad = try await client.send("POST", "/v1/sources", body: misspelt, headers: Self.operatorHeaders)
             #expect(bad.status == 400)
             #expect(bad.bodyText.contains("streams[0].intelaced is not a field of an input spec"))
-            let newer = try await client.send("POST", "/v1/sources", body: Data(#"{ "input": { "format": 2, "streams": [], "segments": [] } }"#.utf8), headers: Self.operatorHeaders)
+            let newer = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Data(#"{ "input": { "format": 2, "streams": [], "segments": [] } }"#.utf8),
+                headers: Self.operatorHeaders
+            )
             #expect(newer.status == 400)
-            #expect(newer.bodyText.contains("input spec format 2 is newer than this silo reads (1)"), "newer, not unknown field")
+            #expect(
+                newer.bodyText.contains("input spec format 2 is newer than this silo reads (1)"),
+                "newer, not unknown field"
+            )
 
             let read = try await client.get("/v1/sources/\(source.id)")
             #expect(read.status == 200, "sources are read openly")
-            #expect(try read.json(SourceBody.self).copies.allSatisfy { $0.secret == nil }, "and never with a copy's secret")
+            #expect(
+                try read.json(SourceBody.self).copies.allSatisfy { $0.secret == nil },
+                "and never with a copy's secret"
+            )
             #expect(!read.bodyText.contains("s-ripper"))
             #expect(try await client.get("/v1/sources").json([SourceBody].self).contains { $0.id == source.id })
             #expect(try await client.get("/v1/sources/nothing").status == 404)
 
-            let gone = try await client.send("DELETE", "/v1/sources/\(source.id)/copies/ripper", headers: Self.operatorHeaders)
+            let gone = try await client.send(
+                "DELETE",
+                "/v1/sources/\(source.id)/copies/ripper",
+                headers: Self.operatorHeaders
+            )
             #expect(gone.status == 200)
             #expect(try gone.json(SourceBody.self).copies.map(\.holder) == ["laptop"])
-            let last = try await client.send("DELETE", "/v1/sources/\(source.id)/copies/laptop", headers: Self.operatorHeaders)
+            let last = try await client.send(
+                "DELETE",
+                "/v1/sources/\(source.id)/copies/laptop",
+                headers: Self.operatorHeaders
+            )
             #expect(try last.json(SourceBody.self).copies.isEmpty)
-            #expect(try await client.get("/v1/sources/\(source.id)").status == 200, "a source whose last copy goes is kept")
+            #expect(
+                try await client.get("/v1/sources/\(source.id)").status == 200,
+                "a source whose last copy goes is kept"
+            )
 
-            let copy = Data(#"{ "holder": "ripper", "url": "http://ripper.local:8743/files/t.mkv", "secret": "s2" }"#.utf8)
-            let held = try await client.send("POST", "/v1/sources/\(source.id)/copies", body: copy, headers: Self.operatorHeaders)
+            let copy = Data(
+                #"{ "holder": "ripper", "url": "http://ripper.local:8743/files/t.mkv", "secret": "s2" }"#.utf8
+            )
+            let held = try await client.send(
+                "POST",
+                "/v1/sources/\(source.id)/copies",
+                body: copy,
+                headers: Self.operatorHeaders
+            )
             #expect(held.status == 200)
             #expect(try held.json(SourceBody.self).copies.map(\.holder) == ["ripper"])
-            #expect(try await client.send("POST", "/v1/sources/nothing/copies", body: copy, headers: Self.operatorHeaders).status == 404)
-            #expect(try await client.send("POST", "/v1/sources/\(source.id)/copies", body: copy, headers: json).status == 401)
+            #expect(
+                try await client.send("POST", "/v1/sources/nothing/copies", body: copy, headers: Self.operatorHeaders)
+                    .status == 404
+            )
+            #expect(
+                try await client.send("POST", "/v1/sources/\(source.id)/copies", body: copy, headers: json).status
+                    == 401
+            )
         }
     }
 }
@@ -1079,102 +1848,215 @@ extension ServerTests {
 
     /// A ruleset of two outputs, whose mobile output scales its video.
     static let twoOutputs = """
-    <ruleset format="1" name="two">
-        <video id="mobile-video"><when fact="profile" is="mobile"/><encode codec="libx264"><scale height="720"/></encode></video>
-        <video><copy/></video>
-        <audio id="lossless-main"><when fact="audio.lossless" is="true"/><encode codec="flac"/></audio>
-        <audio><copy/></audio>
-        <output container="mkv"/>
-        <output profile="mobile" container="mp4"/>
-    </ruleset>
-    """
+        <ruleset format="1" name="two">
+            <video id="mobile-video"><when fact="profile" is="mobile"/><encode codec="libx264"><scale height="720"/></encode></video>
+            <video><copy/></video>
+            <audio id="lossless-main"><when fact="audio.lossless" is="true"/><encode codec="flac"/></audio>
+            <audio><copy/></audio>
+            <output container="mkv"/>
+            <output profile="mobile" container="mp4"/>
+        </ruleset>
+        """
 
     static func bindingBody(source: String, chapters: (Int, Int)? = nil, item: String = "part2") -> Data {
         let documents = String(decoding: try! JSONEncoder().encode(Self.documents), as: UTF8.self)
         let span = chapters.map { #", "chapters": { "from": \#($0.0), "to": \#($0.1) }"# } ?? ""
-        return Data("""
-        { "library": "main", "containers": \(documents), "item": "\(item)",
-          "tracks": [ { "feature": "commentary1", "audio": 2 } ],
-          "segments": [ { "source": "\(source)"\(span) } ] }
-        """.utf8)
+        return Data(
+            """
+            { "library": "main", "containers": \(documents), "item": "\(item)",
+              "tracks": [ { "feature": "commentary1", "audio": 2 } ],
+              "segments": [ { "source": "\(source)"\(span) } ] }
+            """.utf8
+        )
     }
 
     static func application(_ ruleset: String, version: Int? = nil, outputs: String? = nil) -> Data {
-        Data(#"{ "ruleset": "\#(ruleset)"\#(version.map { ", \"version\": \($0)" } ?? "")\#(outputs.map { ", \"outputs\": \($0)" } ?? "") }"#.utf8)
+        Data(
+            #"{ "ruleset": "\#(ruleset)"\#(version.map { ", \"version\": \($0)" } ?? "")\#(outputs.map { ", \"outputs\": \($0)" } ?? "") }"#
+                .utf8
+        )
     }
 
     @Test func entriesAreBoundAndRulesetsAppliedToThem() async throws {
         try await withClient { client in
             let ruleset = RulesetDocumentBody(name: "two", document: Self.twoOutputs)
-            let stored = try await client.send("PUT", "/v1/rulesets/two", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders)
+            let stored = try await client.send(
+                "PUT",
+                "/v1/rulesets/two",
+                body: try JSONEncoder().encode(ruleset),
+                headers: Self.operatorHeaders
+            )
             let version = try stored.json(RulesetDocumentBody.self).version!
             let spec = #"""
-            { "input": { "format": 1, "duration": 5990.4,
-              "chapters": [ { "index": 1, "start": 0 }, { "index": 2, "start": 1497.6 }, { "index": 3, "start": 2995.2 } ],
-              "streams": [
-                { "index": 0, "kind": "video", "codec": "mpeg2video", "width": 720, "height": 576 },
-                { "index": 1, "kind": "audio", "codec": "pcm_s16le", "channels": 2, "language": "en" },
-                { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "en" } ] } }
-            """#
-            let source = try await client.send("POST", "/v1/sources", body: Data(spec.utf8), headers: Self.operatorHeaders).json(SourceBody.self)
+                { "input": { "format": 1, "duration": 5990.4,
+                  "chapters": [ { "index": 1, "start": 0 }, { "index": 2, "start": 1497.6 }, { "index": 3, "start": 2995.2 } ],
+                  "streams": [
+                    { "index": 0, "kind": "video", "codec": "mpeg2video", "width": 720, "height": 576 },
+                    { "index": 1, "kind": "audio", "codec": "pcm_s16le", "channels": 2, "language": "en" },
+                    { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "en" } ] } }
+                """#
+            let source = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Data(spec.utf8),
+                headers: Self.operatorHeaders
+            ).json(SourceBody.self)
 
-            let refused = try await client.send("POST", "/v1/bindings", body: Self.bindingBody(source: source.id, chapters: (2, 2)), headers: ["Content-Type": "application/json"])
+            let refused = try await client.send(
+                "POST",
+                "/v1/bindings",
+                body: Self.bindingBody(source: source.id, chapters: (2, 2)),
+                headers: ["Content-Type": "application/json"]
+            )
             #expect(refused.status == 401, "binding is the operator's")
 
-            let made = try await client.send("POST", "/v1/bindings", body: Self.bindingBody(source: source.id, chapters: (2, 2)), headers: Self.operatorHeaders)
+            let made = try await client.send(
+                "POST",
+                "/v1/bindings",
+                body: Self.bindingBody(source: source.id, chapters: (2, 2)),
+                headers: Self.operatorHeaders
+            )
             #expect(made.status == 201)
             let binding = try made.json(BindingBody.self)
-            #expect(binding.segments == [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 2))])
+            #expect(
+                binding.segments == [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 2))]
+            )
             #expect(binding.recipes.isEmpty, "making a binding resolves nothing")
 
-            let applied = try await client.send("POST", "/v1/bindings/\(binding.id)/recipes", body: Self.application("two"), headers: Self.operatorHeaders)
+            let applied = try await client.send(
+                "POST",
+                "/v1/bindings/\(binding.id)/recipes",
+                body: Self.application("two"),
+                headers: Self.operatorHeaders
+            )
             #expect(applied.status == 201)
             let resolved = try applied.json([StoredRecipeBody].self)
             #expect(resolved.map(\.state) == ["resolved", "resolved"])
-            #expect(resolved.map(\.recipe.output) == [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")])
-            #expect(resolved.map(\.recipe.ruleset.description) == ["two@\(version)", "two@\(version)"], "each recipe records what made it")
+            #expect(
+                resolved.map(\.recipe.output) == [
+                    OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4"),
+                ]
+            )
+            #expect(
+                resolved.map(\.recipe.ruleset.description) == ["two@\(version)", "two@\(version)"],
+                "each recipe records what made it"
+            )
             #expect(resolved[0].recipe.video?.action == .copy)
             #expect(resolved[1].recipe.video?.rule == "mobile-video", "the mobile output is resolved with its profile")
 
             let read = try await client.get("/v1/bindings/\(binding.id)")
-            #expect(try read.json(BindingBody.self).recipes == resolved.map(\.id), "a binding is read with the ids of its recipes")
+            #expect(
+                try read.json(BindingBody.self).recipes == resolved.map(\.id),
+                "a binding is read with the ids of its recipes"
+            )
             #expect(try await client.get("/v1/bindings/nothing").status == 404)
-            #expect(try await client.get("/v1/recipes/\(resolved[0].id)").json(StoredRecipeBody.self).recipe.audio.first?.rule == "lossless-main")
+            #expect(
+                try await client.get("/v1/recipes/\(resolved[0].id)").json(StoredRecipeBody.self).recipe.audio.first?
+                    .rule == "lossless-main"
+            )
 
             // The producer's last word: keep the PCM, not FLAC — as the binding's own rules.
-            let keepPCM = Data(#"{ "document": "<rules><audio id=\"keep-the-pcm\"><when fact=\"audio.index\" is=\"1\"/><copy/></audio></rules>" }"#.utf8)
-            #expect(try await client.send("PUT", "/v1/bindings/\(binding.id)/rules", body: keepPCM, headers: ["Content-Type": "application/json"]).status == 401)
-            #expect(try await client.send("PUT", "/v1/bindings/nothing/rules", body: keepPCM, headers: Self.operatorHeaders).status == 404)
-            let refusedRules = try await client.send("PUT", "/v1/bindings/\(binding.id)/rules", body: Data(#"{ "document": "<rules><output container=\"mp4\"/></rules>" }"#.utf8), headers: Self.operatorHeaders)
+            let keepPCM = Data(
+                #"{ "document": "<rules><audio id=\"keep-the-pcm\"><when fact=\"audio.index\" is=\"1\"/><copy/></audio></rules>" }"#
+                    .utf8
+            )
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/bindings/\(binding.id)/rules",
+                    body: keepPCM,
+                    headers: ["Content-Type": "application/json"]
+                ).status == 401
+            )
+            #expect(
+                try await client.send("PUT", "/v1/bindings/nothing/rules", body: keepPCM, headers: Self.operatorHeaders)
+                    .status == 404
+            )
+            let refusedRules = try await client.send(
+                "PUT",
+                "/v1/bindings/\(binding.id)/rules",
+                body: Data(#"{ "document": "<rules><output container=\"mp4\"/></rules>" }"#.utf8),
+                headers: Self.operatorHeaders
+            )
             #expect(refusedRules.status == 400)
             #expect(refusedRules.bodyText.contains("is not an element of a container's or a binding's rules"))
-            let storedRules = try await client.send("PUT", "/v1/bindings/\(binding.id)/rules", body: keepPCM, headers: Self.operatorHeaders)
+            let storedRules = try await client.send(
+                "PUT",
+                "/v1/bindings/\(binding.id)/rules",
+                body: keepPCM,
+                headers: Self.operatorHeaders
+            )
             #expect(storedRules.status == 200)
             #expect(try storedRules.json(BindingRulesBody.self).activeVersion == 1)
             let rules = try await client.get("/v1/bindings/\(binding.id)/rules")
             #expect(rules.status == 200, "a binding's rules are read openly")
             #expect(try rules.json(BindingRulesBody.self).versions == [1])
             #expect(try rules.json(BindingRulesBody.self).document?.contains("keep-the-pcm") == true)
-            #expect(try await client.get("/v1/recipes/\(resolved[0].id)").json(StoredRecipeBody.self).recipe.audio.first?.rule == "lossless-main", "storing them changes no recipe")
-            #expect(try await client.send("PUT", "/v1/recipes/\(resolved[0].id)/adjustments", body: Data("[]".utf8), headers: Self.operatorHeaders).status != 200, "and a recipe is no longer adjusted")
-            let reapplied = try await client.send("POST", "/v1/bindings/\(binding.id)/recipes", body: Self.application("two", version: version, outputs: #"[ {} ]"#), headers: Self.operatorHeaders)
+            #expect(
+                try await client.get("/v1/recipes/\(resolved[0].id)").json(StoredRecipeBody.self).recipe.audio.first?
+                    .rule == "lossless-main",
+                "storing them changes no recipe"
+            )
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/recipes/\(resolved[0].id)/adjustments",
+                    body: Data("[]".utf8),
+                    headers: Self.operatorHeaders
+                ).status != 200,
+                "and a recipe is no longer adjusted"
+            )
+            let reapplied = try await client.send(
+                "POST",
+                "/v1/bindings/\(binding.id)/recipes",
+                body: Self.application("two", version: version, outputs: #"[ {} ]"#),
+                headers: Self.operatorHeaders
+            )
             let decided = try #require(try reapplied.json([StoredRecipeBody].self).first?.recipe.audio.first)
             #expect(decided.action == .copy)
             #expect(decided.rule == "keep-the-pcm")
             #expect(decided.layer == .layer(.binding(binding.id)), "the decision names the binding's rules")
 
-            #expect(try await client.send("DELETE", "/v1/recipes/\(resolved[1].id)", headers: Self.operatorHeaders).status == 204)
+            #expect(
+                try await client.send("DELETE", "/v1/recipes/\(resolved[1].id)", headers: Self.operatorHeaders).status
+                    == 204
+            )
             #expect(try await client.get("/v1/recipes/\(resolved[1].id)").status == 404)
 
             // The same ruleset again, and another: the same act, adding resolved recipes and leaving the rest.
-            let mobileOnly = try await client.send("POST", "/v1/bindings/\(binding.id)/recipes", body: Self.application("two", version: version, outputs: #"[ { "profile": "mobile" } ]"#), headers: Self.operatorHeaders)
+            let mobileOnly = try await client.send(
+                "POST",
+                "/v1/bindings/\(binding.id)/recipes",
+                body: Self.application("two", version: version, outputs: #"[ { "profile": "mobile" } ]"#),
+                headers: Self.operatorHeaders
+            )
             #expect(mobileOnly.status == 201)
             #expect(try mobileOnly.json([StoredRecipeBody].self).map(\.recipe.output.profile) == ["mobile"])
-            let copyAll = RulesetDocumentBody(name: "copyall", document: #"<ruleset format="1" name="copyall"><video><copy/></video><audio><copy/></audio></ruleset>"#)
-            _ = try await client.send("PUT", "/v1/rulesets/copyall", body: try JSONEncoder().encode(copyAll), headers: Self.operatorHeaders)
-            let other = try await client.send("POST", "/v1/bindings/\(binding.id)/recipes", body: Self.application("copyall"), headers: Self.operatorHeaders)
-            #expect(try other.json([StoredRecipeBody].self).map(\.recipe.ruleset.name) == ["copyall"], "another ruleset applied to the same binding")
-            #expect(try await client.get("/v1/recipes/\(resolved[0].id)").json(StoredRecipeBody.self).recipe.audio.first?.rule == "lossless-main", "and the earlier recipe as it was")
+            let copyAll = RulesetDocumentBody(
+                name: "copyall",
+                document: #"<ruleset format="1" name="copyall"><video><copy/></video><audio><copy/></audio></ruleset>"#
+            )
+            _ = try await client.send(
+                "PUT",
+                "/v1/rulesets/copyall",
+                body: try JSONEncoder().encode(copyAll),
+                headers: Self.operatorHeaders
+            )
+            let other = try await client.send(
+                "POST",
+                "/v1/bindings/\(binding.id)/recipes",
+                body: Self.application("copyall"),
+                headers: Self.operatorHeaders
+            )
+            #expect(
+                try other.json([StoredRecipeBody].self).map(\.recipe.ruleset.name) == ["copyall"],
+                "another ruleset applied to the same binding"
+            )
+            #expect(
+                try await client.get("/v1/recipes/\(resolved[0].id)").json(StoredRecipeBody.self).recipe.audio.first?
+                    .rule == "lossless-main",
+                "and the earlier recipe as it was"
+            )
             #expect(try await client.get("/v1/bindings/\(binding.id)").json(BindingBody.self).recipes.count == 4)
         }
     }
@@ -1182,13 +2064,23 @@ extension ServerTests {
     @Test func aBindingOrAnApplicationThatCannotBeMadeKeepsNothing() async throws {
         try await withClient { client in
             let ruleset = RulesetDocumentBody(name: "two", document: Self.twoOutputs)
-            _ = try await client.send("PUT", "/v1/rulesets/two", body: try JSONEncoder().encode(ruleset), headers: Self.operatorHeaders)
+            _ = try await client.send(
+                "PUT",
+                "/v1/rulesets/two",
+                body: try JSONEncoder().encode(ruleset),
+                headers: Self.operatorHeaders
+            )
             let spec = #"""
-            { "input": { "format": 1, "chapters": [ { "index": 1, "start": 0 }, { "index": 2, "start": 10 } ],
-              "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1 },
-                           { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2 }, { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 } ] } }
-            """#
-            let source = try await client.send("POST", "/v1/sources", body: Data(spec.utf8), headers: Self.operatorHeaders).json(SourceBody.self)
+                { "input": { "format": 1, "chapters": [ { "index": 1, "start": 0 }, { "index": 2, "start": 10 } ],
+                  "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1 },
+                               { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2 }, { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 } ] } }
+                """#
+            let source = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Data(spec.utf8),
+                headers: Self.operatorHeaders
+            ).json(SourceBody.self)
 
             func answer(_ path: String, _ body: Data) async throws -> (Int, String) {
                 let answer = try await client.send("POST", path, body: body, headers: Self.operatorHeaders)
@@ -1197,18 +2089,42 @@ extension ServerTests {
             let past = try await answer("/v1/bindings", Self.bindingBody(source: source.id, chapters: (2, 5)))
             #expect(past.0 == 400)
             #expect(past.1.contains("has no chapter 5"))
-            #expect(try await answer("/v1/bindings", Self.bindingBody(source: "nothing")).1.contains("no source nothing"))
-            #expect(try await answer("/v1/bindings", Self.bindingBody(source: source.id, item: "part9")).1.contains("has no item part9"))
+            #expect(
+                try await answer("/v1/bindings", Self.bindingBody(source: "nothing")).1.contains("no source nothing")
+            )
+            #expect(
+                try await answer("/v1/bindings", Self.bindingBody(source: source.id, item: "part9")).1.contains(
+                    "has no item part9"
+                )
+            )
 
-            let binding = try await client.send("POST", "/v1/bindings", body: Self.bindingBody(source: source.id), headers: Self.operatorHeaders).json(BindingBody.self)
+            let binding = try await client.send(
+                "POST",
+                "/v1/bindings",
+                body: Self.bindingBody(source: source.id),
+                headers: Self.operatorHeaders
+            ).json(BindingBody.self)
             let nope = try await answer("/v1/bindings/\(binding.id)/recipes", Self.application("nope"))
             #expect(nope.0 == 400)
             #expect(nope.1.contains("no ruleset nope"))
-            #expect(try await answer("/v1/bindings/\(binding.id)/recipes", Self.application("two", outputs: #"[ { "profile": "hdr" } ]"#)).1.contains("two makes no output for the profile hdr"))
+            #expect(
+                try await answer(
+                    "/v1/bindings/\(binding.id)/recipes",
+                    Self.application("two", outputs: #"[ { "profile": "hdr" } ]"#)
+                ).1.contains("two makes no output for the profile hdr")
+            )
             #expect(try await answer("/v1/bindings/nothing/recipes", Self.application("two")).0 == 404)
 
-            let videoOnly = RulesetDocumentBody(name: "videoonly", document: #"<ruleset format="1" name="videoonly"><video><copy/></video></ruleset>"#)
-            _ = try await client.send("PUT", "/v1/rulesets/videoonly", body: try JSONEncoder().encode(videoOnly), headers: Self.operatorHeaders)
+            let videoOnly = RulesetDocumentBody(
+                name: "videoonly",
+                document: #"<ruleset format="1" name="videoonly"><video><copy/></video></ruleset>"#
+            )
+            _ = try await client.send(
+                "PUT",
+                "/v1/rulesets/videoonly",
+                body: try JSONEncoder().encode(videoOnly),
+                headers: Self.operatorHeaders
+            )
             let undecided = try await answer("/v1/bindings/\(binding.id)/recipes", Self.application("videoonly"))
             #expect(undecided.0 == 422)
             #expect(undecided.1.contains("the unqualified output: no rule decides audio 1"))
@@ -1227,21 +2143,58 @@ extension ServerTests {
             // A ruleset of its own, so that no other test's versions move.
             let document = Fixture.household.replacingOccurrences(of: #"name="household""#, with: #"name="standard""#)
             let ruleset = RulesetDocumentBody(name: "standard", document: document)
-            _ = try await client.send("PUT", "/v1/rulesets/standard", body: try JSONEncoder().encode(ruleset), headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"])
+            _ = try await client.send(
+                "PUT",
+                "/v1/rulesets/standard",
+                body: try JSONEncoder().encode(ruleset),
+                headers: ["Content-Type": "application/json", "Authorization": "Bearer secret"]
+            )
             let headers = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
 
-            #expect(try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":"standard"}"#.utf8), headers: ["Content-Type": "application/json"]).status == 401)
-            #expect(try await client.send("PUT", "/v1/libraries/other/ruleset", body: Data(#"{"ruleset":"standard"}"#.utf8), headers: headers).status == 404)
-            let unknown = try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":"nothing"}"#.utf8), headers: headers)
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/libraries/main/ruleset",
+                    body: Data(#"{"ruleset":"standard"}"#.utf8),
+                    headers: ["Content-Type": "application/json"]
+                ).status == 401
+            )
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/libraries/other/ruleset",
+                    body: Data(#"{"ruleset":"standard"}"#.utf8),
+                    headers: headers
+                ).status == 404
+            )
+            let unknown = try await client.send(
+                "PUT",
+                "/v1/libraries/main/ruleset",
+                body: Data(#"{"ruleset":"nothing"}"#.utf8),
+                headers: headers
+            )
             #expect(unknown.status == 404, "a ruleset the silo does not hold")
             #expect(!(try await client.get("/v1/libraries").bodyText.contains("\"ruleset\"")), "and nothing changed")
 
-            let set = try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":"standard"}"#.utf8), headers: headers)
+            let set = try await client.send(
+                "PUT",
+                "/v1/libraries/main/ruleset",
+                body: Data(#"{"ruleset":"standard"}"#.utf8),
+                headers: headers
+            )
             #expect(set.status == 200)
             #expect(set.bodyText.contains("\"ruleset\":\"standard\""))
-            #expect(try await client.get("/v1/libraries").bodyText.contains("\"ruleset\":\"standard\""), "the listing names it")
+            #expect(
+                try await client.get("/v1/libraries").bodyText.contains("\"ruleset\":\"standard\""),
+                "the listing names it"
+            )
 
-            let cleared = try await client.send("PUT", "/v1/libraries/main/ruleset", body: Data(#"{"ruleset":null}"#.utf8), headers: headers)
+            let cleared = try await client.send(
+                "PUT",
+                "/v1/libraries/main/ruleset",
+                body: Data(#"{"ruleset":null}"#.utf8),
+                headers: headers
+            )
             #expect(cleared.status == 200)
             #expect(!(try await client.get("/v1/libraries").bodyText.contains("\"ruleset\"")))
         }
@@ -1252,35 +2205,91 @@ extension ServerTests {
             let headers = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
             let document = Fixture.household.replacingOccurrences(of: #"name="household""#, with: #"name="trialset""#)
             func store(_ branch: String? = nil, upToDateWith: Int? = nil) async throws -> (Int, Int?) {
-                struct Body: Encodable { var name: String; var branch: String?; var upToDateWith: Int?; var document: String }
-                let answer = try await client.send("PUT", "/v1/rulesets/trialset", body: try JSONEncoder().encode(Body(name: "trialset", branch: branch, upToDateWith: upToDateWith, document: document)), headers: headers)
+                struct Body: Encodable {
+                    var name: String
+                    var branch: String?
+                    var upToDateWith: Int?
+                    var document: String
+                }
+                let answer = try await client.send(
+                    "PUT",
+                    "/v1/rulesets/trialset",
+                    body: try JSONEncoder().encode(
+                        Body(name: "trialset", branch: branch, upToDateWith: upToDateWith, document: document)
+                    ),
+                    headers: headers
+                )
                 return (answer.status, try? answer.json(RulesetDocumentBody.self).version)
             }
             #expect(try await store().1 == 1)
 
-            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"trial","from":1}"#.utf8), headers: ["Content-Type": "application/json"]).status == 401)
-            let started = try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"trial","from":1}"#.utf8), headers: headers)
+            #expect(
+                try await client.send(
+                    "POST",
+                    "/v1/rulesets/trialset/branches",
+                    body: Data(#"{"name":"trial","from":1}"#.utf8),
+                    headers: ["Content-Type": "application/json"]
+                ).status == 401
+            )
+            let started = try await client.send(
+                "POST",
+                "/v1/rulesets/trialset/branches",
+                body: Data(#"{"name":"trial","from":1}"#.utf8),
+                headers: headers
+            )
             #expect(started.status == 201)
-            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"trial","from":1}"#.utf8), headers: headers).status == 409, "a name taken")
-            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches", body: Data(#"{"name":"other","from":9}"#.utf8), headers: headers).status == 400, "a version not on the standard")
+            #expect(
+                try await client.send(
+                    "POST",
+                    "/v1/rulesets/trialset/branches",
+                    body: Data(#"{"name":"trial","from":1}"#.utf8),
+                    headers: headers
+                ).status == 409,
+                "a name taken"
+            )
+            #expect(
+                try await client.send(
+                    "POST",
+                    "/v1/rulesets/trialset/branches",
+                    body: Data(#"{"name":"other","from":9}"#.utf8),
+                    headers: headers
+                ).status == 400,
+                "a version not on the standard"
+            )
             #expect(try await store("trial").1 == 2)
 
             // The standard moves on; promotion would lose it, until the branch takes it in.
             #expect(try await store().1 == 3)
-            let refused = try await client.send("POST", "/v1/rulesets/trialset/branches/trial/promote", headers: headers)
+            let refused = try await client.send(
+                "POST",
+                "/v1/rulesets/trialset/branches/trial/promote",
+                headers: headers
+            )
             #expect(refused.status == 409)
             #expect(refused.bodyText.contains("has not taken in trialset@3"))
             #expect(try await store("trial", upToDateWith: 3).1 == 4)
-            let promoted = try await client.send("POST", "/v1/rulesets/trialset/branches/trial/promote", headers: headers)
+            let promoted = try await client.send(
+                "POST",
+                "/v1/rulesets/trialset/branches/trial/promote",
+                headers: headers
+            )
             #expect(promoted.status == 201)
             #expect(promoted.bodyText.contains("\"version\":5"))
 
-            struct BranchBody: Decodable { var name: String; var base: Int?; var head: Int?; var closed: Bool }
+            struct BranchBody: Decodable {
+                var name: String
+                var base: Int?
+                var head: Int?
+                var closed: Bool
+            }
             let branches = try await client.get("/v1/rulesets/trialset/branches").json([BranchBody].self)
             #expect(branches.map(\.name) == ["standard", "trial"])
             #expect(branches[0].head == 5 && branches[1].closed && branches[1].base == 1)
             #expect(try await store("trial").0 == 409, "a closed branch takes no store")
-            #expect(try await client.send("POST", "/v1/rulesets/trialset/branches/nowhere/promote", headers: headers).status == 404)
+            #expect(
+                try await client.send("POST", "/v1/rulesets/trialset/branches/nowhere/promote", headers: headers).status
+                    == 404
+            )
             #expect(try await client.get("/v1/rulesets/nothing/branches").status == 404)
         }
     }
@@ -1289,8 +2298,15 @@ extension ServerTests {
         try await withClient { client in
             let report = try await client.get("/v1/libraries/main/out-of-date")
             #expect(report.status == 200)
-            struct ReportBody: Decodable { var presentations: [OutOfDateBody]; var pending: Int; var placedWithoutJob: Int }
-            struct OutOfDateBody: Decodable { var recipe: String; var outcome: String }
+            struct ReportBody: Decodable {
+                var presentations: [OutOfDateBody]
+                var pending: Int
+                var placedWithoutJob: Int
+            }
+            struct OutOfDateBody: Decodable {
+                var recipe: String
+                var outcome: String
+            }
             let body = try report.json(ReportBody.self)
             #expect(body.placedWithoutJob >= 2, "the fixture's presentations were placed by hand")
             #expect(try await client.get("/v1/libraries/other/out-of-date").status == 404)
@@ -1320,9 +2336,18 @@ extension ServerTests {
     /// under a name of their own, so that no other test's versions move.
     @Test func aRulesetIsReadWholeADraftCheckedAndAStoreBasedOnItsHead() async throws {
         try await withClient { client in
-            struct Store: Encodable { var name = "drafted"; var basedOn: Int?; var document: String }
+            struct Store: Encodable {
+                var name = "drafted"
+                var basedOn: Int?
+                var document: String
+            }
             func store(basedOn: Int?, _ document: String = Self.drafted) async throws -> (status: Int, text: String) {
-                let answer = try await client.send("PUT", "/v1/rulesets/drafted", body: try JSONEncoder().encode(Store(basedOn: basedOn, document: document)), headers: Self.operatorHeaders)
+                let answer = try await client.send(
+                    "PUT",
+                    "/v1/rulesets/drafted",
+                    body: try JSONEncoder().encode(Store(basedOn: basedOn, document: document)),
+                    headers: Self.operatorHeaders
+                )
                 return (Int(answer.status), answer.bodyText)
             }
             #expect(try await store(basedOn: 0).status == 201, "a new name, based on zero")
@@ -1333,31 +2358,68 @@ extension ServerTests {
             #expect(stale.text.contains("drafted@2"), "naming the head")
             #expect(try await store(basedOn: nil).status == 201, "without a base, whatever the head")
 
-            struct Version: Decodable, Equatable { var version: Int; var branch: String; var parent: Int?; var presentations: Int }
-            struct Summary: Decodable { var name: String; var version: Int; var standard: Int?; var versions: [Version]? }
-            let summary = try #require(try await client.get("/v1/rulesets").json([Summary].self).first { $0.name == "drafted" })
+            struct Version: Decodable, Equatable {
+                var version: Int
+                var branch: String
+                var parent: Int?
+                var presentations: Int
+            }
+            struct Summary: Decodable {
+                var name: String
+                var version: Int
+                var standard: Int?
+                var versions: [Version]?
+            }
+            let summary = try #require(
+                try await client.get("/v1/rulesets").json([Summary].self).first { $0.name == "drafted" }
+            )
             #expect(summary.version == 3 && summary.standard == 3)
-            #expect(summary.versions == [
-                Version(version: 1, branch: "standard", parent: nil, presentations: 0),
-                Version(version: 2, branch: "standard", parent: 1, presentations: 0),
-                Version(version: 3, branch: "standard", parent: 2, presentations: 0),
-            ])
+            #expect(
+                summary.versions == [
+                    Version(version: 1, branch: "standard", parent: nil, presentations: 0),
+                    Version(version: 2, branch: "standard", parent: 1, presentations: 0),
+                    Version(version: 3, branch: "standard", parent: 2, presentations: 0),
+                ]
+            )
 
-            struct Condition: Decodable, Equatable { var fact: String; var test: String; var value: String }
-            struct Rule: Decodable { var name: String; var scope: String; var conditions: [Condition]; var action: [String: Anything] }
+            struct Condition: Decodable, Equatable {
+                var fact: String
+                var test: String
+                var value: String
+            }
+            struct Rule: Decodable {
+                var name: String
+                var scope: String
+                var conditions: [Condition]
+                var action: [String: Anything]
+            }
             struct Anything: Decodable { init(from decoder: any Decoder) {} }
-            struct Reading: Decodable { var name: String; var rules: [Rule]; var outputs: [[String: String]] }
-            struct Document: Decodable { var version: Int; var document: String; var reading: Reading? }
+            struct Reading: Decodable {
+                var name: String
+                var rules: [Rule]
+                var outputs: [[String: String]]
+            }
+            struct Document: Decodable {
+                var version: Int
+                var document: String
+                var reading: Reading?
+            }
             let read = try await client.get("/v1/rulesets/drafted?version=1").json(Document.self)
             #expect(read.document == Self.drafted, "the document as it was stored")
             let reading = try #require(read.reading)
             #expect(reading.name == "drafted", "named by where it is stored, not by its own name attribute")
             #expect(reading.rules.map(\.name) == ["#1", "commentary", "#3", "#4", "#5", "#6"])
-            #expect(reading.rules[1].scope == "audio" && reading.rules[1].conditions == [Condition(fact: "audio.role", test: "is", value: "commentary")])
+            #expect(
+                reading.rules[1].scope == "audio"
+                    && reading.rules[1].conditions == [Condition(fact: "audio.role", test: "is", value: "commentary")]
+            )
             #expect(reading.rules[1].action.keys.sorted() == ["encode"])
             #expect(reading.rules[2].conditions.map(\.test) == ["is", "ge"])
             #expect(reading.rules[3].conditions == [Condition(fact: "subtitle.language", test: "in", value: "eng,fra")])
-            #expect(reading.rules[4].scope == "audio" && reading.rules[4].conditions.isEmpty && reading.rules[4].action.keys.sorted() == ["copy"])
+            #expect(
+                reading.rules[4].scope == "audio" && reading.rules[4].conditions.isEmpty
+                    && reading.rules[4].action.keys.sorted() == ["copy"]
+            )
 
             // A check reads as a store reads, refuses as a store refuses, and stores nothing.
             let mistyped = Self.drafted.replacingOccurrences(of: #"fact="audio.role""#, with: #"fact="subtitle.forcd""#)
@@ -1369,16 +2431,34 @@ extension ServerTests {
             let good = try await client.post("/v1/rulesets/drafted/check", json: Store(document: Self.drafted))
             #expect(good.status == 200)
             #expect(try good.json(Reading.self).rules.count == 6, "the reading a read of it would carry")
-            #expect(try await client.get("/v1/rulesets").json([Summary].self).first { $0.name == "drafted" }?.version == 3, "no version is added")
+            #expect(
+                try await client.get("/v1/rulesets").json([Summary].self).first { $0.name == "drafted" }?.version == 3,
+                "no version is added"
+            )
 
             // A draft's impact, openly: nothing placed was made by this ruleset, so nothing changes.
-            struct Impact: Encodable { var document: String; var basedOn: Int }
-            let impact = try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: Self.drafted, basedOn: 3))
+            struct Impact: Encodable {
+                var document: String
+                var basedOn: Int
+            }
+            let impact = try await client.post(
+                "/v1/rulesets/drafted/impact",
+                json: Impact(document: Self.drafted, basedOn: 3)
+            )
             #expect(impact.status == 200)
             #expect(impact.bodyText == "[]")
-            #expect(try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: mistyped, basedOn: 3)).status == 400)
-            #expect(try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: Self.drafted, basedOn: 9)).status == 404)
-            #expect(try await client.post("/v1/rulesets/nothing/impact", json: Impact(document: Self.drafted, basedOn: 1)).status == 404)
+            #expect(
+                try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: mistyped, basedOn: 3))
+                    .status == 400
+            )
+            #expect(
+                try await client.post("/v1/rulesets/drafted/impact", json: Impact(document: Self.drafted, basedOn: 9))
+                    .status == 404
+            )
+            #expect(
+                try await client.post("/v1/rulesets/nothing/impact", json: Impact(document: Self.drafted, basedOn: 1))
+                    .status == 404
+            )
         }
     }
 
@@ -1386,50 +2466,137 @@ extension ServerTests {
     /// them whole, so that what the console shows is what the silo said.
     @Test func theConsolesTypesReadTheSilosAnswers() async throws {
         try await withClient { client in
-            let stored = try await client.send("PUT", "/v1/rulesets/console-read", body: try JSONEncoder().encode(RulesetDocumentBody(name: "console-read", document: Self.drafted)), headers: Self.operatorHeaders)
+            let stored = try await client.send(
+                "PUT",
+                "/v1/rulesets/console-read",
+                body: try JSONEncoder().encode(RulesetDocumentBody(name: "console-read", document: Self.drafted)),
+                headers: Self.operatorHeaders
+            )
             #expect(stored.status == 201)
-            let summaries = try SiloClient.decoder.decode([SiloClient.RulesetSummary].self, from: try await client.get("/v1/rulesets").body)
+            let summaries = try SiloClient.decoder.decode(
+                [SiloClient.RulesetSummary].self,
+                from: try await client.get("/v1/rulesets").body
+            )
             let read = try #require(summaries.first { $0.name == "console-read" })
-            #expect(read.versions?.map { "\($0.version) \($0.branch) \($0.parent.map(String.init) ?? "-") \($0.presentations)" } == ["1 standard - 0"])
-            let document = try SiloClient.decoder.decode(SiloClient.RulesetDocument.self, from: try await client.get("/v1/rulesets/console-read").body)
+            #expect(
+                read.versions?.map {
+                    "\($0.version) \($0.branch) \($0.parent.map(String.init) ?? "-") \($0.presentations)"
+                } == ["1 standard - 0"]
+            )
+            let document = try SiloClient.decoder.decode(
+                SiloClient.RulesetDocument.self,
+                from: try await client.get("/v1/rulesets/console-read").body
+            )
             let reading = try #require(document.reading)
             #expect(reading.rules.map(\.name) == ["#1", "commentary", "#3", "#4", "#5", "#6"])
             #expect(reading.rules[1].action == .encode(EncodeSettings(codec: "aac", bitrate: "96k", channels: 2)))
             #expect(reading.outputs == [OutputPolicy(container: "mkv")])
-            let branches = try SiloClient.decoder.decode([SiloClient.Branch].self, from: try await client.get("/v1/rulesets/console-read/branches").body)
+            let branches = try SiloClient.decoder.decode(
+                [SiloClient.Branch].self,
+                from: try await client.get("/v1/rulesets/console-read/branches").body
+            )
             #expect(branches.map(\.name) == ["standard"])
-            let report = try SiloClient.decoder.decode(SiloClient.OutOfDateReport.self, from: try await client.get("/v1/libraries/main/out-of-date").body)
+            let report = try SiloClient.decoder.decode(
+                SiloClient.OutOfDateReport.self,
+                from: try await client.get("/v1/libraries/main/out-of-date").body
+            )
             #expect(report.placedWithoutJob >= 2)
-            struct Draft: Encodable { var name = "console-read"; var document: String; var basedOn: Int? }
-            let checked = try SiloClient.decoder.decode(SiloClient.RulesetReading.self, from: try await client.post("/v1/rulesets/console-read/check", json: Draft(document: Self.drafted)).body)
+            struct Draft: Encodable {
+                var name = "console-read"
+                var document: String
+                var basedOn: Int?
+            }
+            let checked = try SiloClient.decoder.decode(
+                SiloClient.RulesetReading.self,
+                from: try await client.post("/v1/rulesets/console-read/check", json: Draft(document: Self.drafted)).body
+            )
             #expect(checked == reading, "a check reads as a read does")
-            let impact = try SiloClient.decoder.decode([SiloClient.OutOfDatePresentation].self, from: try await client.post("/v1/rulesets/console-read/impact", json: Draft(document: Self.drafted, basedOn: 1)).body)
+            let impact = try SiloClient.decoder.decode(
+                [SiloClient.OutOfDatePresentation].self,
+                from: try await client.post(
+                    "/v1/rulesets/console-read/impact",
+                    json: Draft(document: Self.drafted, basedOn: 1)
+                ).body
+            )
             #expect(impact.isEmpty)
-            let libraries = try SiloClient.decoder.decode([SiloClient.Library].self, from: try await client.get("/v1/libraries").body)
+            let libraries = try SiloClient.decoder.decode(
+                [SiloClient.Library].self,
+                from: try await client.get("/v1/libraries").body
+            )
             #expect(libraries.map(\.id).contains("main"))
             #expect(libraries.first { $0.id == "main" }?.available == true)
-            let walk = try SiloClient.decoder.decode(SiloClient.LastWalk.self, from: try await client.get("/v1/libraries/main/scan", headers: Self.operatorHeaders).body)
+            let walk = try SiloClient.decoder.decode(
+                SiloClient.LastWalk.self,
+                from: try await client.get("/v1/libraries/main/scan", headers: Self.operatorHeaders).body
+            )
             #expect(walk.available)
-            let settings = try SiloClient.decoder.decode(SiloClient.SettingsReport.self, from: try await client.get("/v1/settings", headers: Self.operatorHeaders).body)
+            let settings = try SiloClient.decoder.decode(
+                SiloClient.SettingsReport.self,
+                from: try await client.get("/v1/settings", headers: Self.operatorHeaders).body
+            )
             #expect(settings.readOnly.libraryRoots == [Fixture.root.appendingPathComponent("Media").path])
             #expect(settings.editable.libraries.map(\.id).contains("main"))
-            struct NewLibrary: Encodable { var id = "main"; var path: String }
+            struct NewLibrary: Encodable {
+                var id = "main"
+                var path: String
+            }
             let gone = Fixture.root.appendingPathComponent("Media/Read/Gone").path
-            let check = try SiloClient.decoder.decode(SiloClient.LibraryCheck.self, from: try await client.post("/v1/libraries/check", json: NewLibrary(path: gone), headers: Self.operatorHeaders).body)
+            let check = try SiloClient.decoder.decode(
+                SiloClient.LibraryCheck.self,
+                from: try await client.post(
+                    "/v1/libraries/check",
+                    json: NewLibrary(path: gone),
+                    headers: Self.operatorHeaders
+                ).body
+            )
             #expect(check.components.suffix(2).map(\.state) == [.missing, .missing])
             #expect(check.refusal?.status == 422)
 
-            let roots = try SiloClient.decoder.decode([SiloClient.ContainerSummary].self, from: try await client.get("/v1/libraries/main/containers").body)
+            let roots = try SiloClient.decoder.decode(
+                [SiloClient.ContainerSummary].self,
+                from: try await client.get("/v1/libraries/main/containers").body
+            )
             #expect(roots.contains { $0.id == Fixture.unlisted.id.value && !$0.listed })
-            let opened = try SiloClient.decoder.decode(SiloClient.LibraryContainer.self, from: try await client.get("/v1/libraries/main/containers/\(Fixture.alien.id)").body)
+            let opened = try SiloClient.decoder.decode(
+                SiloClient.LibraryContainer.self,
+                from: try await client.get("/v1/libraries/main/containers/\(Fixture.alien.id)").body
+            )
             #expect(opened.path == "Alien (1997)/container.smd")
             #expect(opened.container.extras.first?.presentations.first?.displayName == "Theatrical")
             let sidecar = try await client.get("/v1/libraries/main/containers/\(Fixture.alien.id)/smd").body
-            struct Edit: Encodable { var document: String; var basedOn: String; var dryRun = true }
-            let filmDocument = String(decoding: ContainerFile.data(for: try SidecarFile.sidecar(from: sidecar).container), as: UTF8.self)
-            let dry = try SiloClient.decoder.decode(SiloClient.ContainerEditResult.self, from: try await client.send("PUT", "/v1/libraries/main/containers/\(Fixture.alien.id)", body: try JSONEncoder().encode(Edit(document: filmDocument, basedOn: opened.digest)), headers: Self.operatorHeaders).body)
+            struct Edit: Encodable {
+                var document: String
+                var basedOn: String
+                var dryRun = true
+            }
+            let filmDocument = String(
+                decoding: ContainerFile.data(for: try SidecarFile.sidecar(from: sidecar).container),
+                as: UTF8.self
+            )
+            let dry = try SiloClient.decoder.decode(
+                SiloClient.ContainerEditResult.self,
+                from: try await client.send(
+                    "PUT",
+                    "/v1/libraries/main/containers/\(Fixture.alien.id)",
+                    body: try JSONEncoder().encode(Edit(document: filmDocument, basedOn: opened.digest)),
+                    headers: Self.operatorHeaders
+                ).body
+            )
             #expect(!dry.applied && dry.digest == opened.digest, "an edit that changes nothing writes the same sidecar")
-            let refused = try SiloClient.decoder.decode(SiloClient.ContainerEditResult.self, from: try await client.send("PUT", "/v1/libraries/main/containers/\(Fixture.alien.id)", body: try JSONEncoder().encode(Edit(document: filmDocument.replacingOccurrences(of: "theatrical", with: "cinema"), basedOn: opened.digest)), headers: Self.operatorHeaders).body)
+            let refused = try SiloClient.decoder.decode(
+                SiloClient.ContainerEditResult.self,
+                from: try await client.send(
+                    "PUT",
+                    "/v1/libraries/main/containers/\(Fixture.alien.id)",
+                    body: try JSONEncoder().encode(
+                        Edit(
+                            document: filmDocument.replacingOccurrences(of: "theatrical", with: "cinema"),
+                            basedOn: opened.digest
+                        )
+                    ),
+                    headers: Self.operatorHeaders
+                ).body
+            )
             #expect(refused.findings.contains { $0.severity == .error }, "a refusal decodes as the result it carries")
         }
     }

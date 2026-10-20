@@ -2,7 +2,6 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
-import OpenAPIRuntime
 import SiloAPI
 import SiloKit
 import SiloStore
@@ -53,10 +52,13 @@ package struct SourceOperatorController {
     /// Raw, because which success it answers — 201 for a new source, 200 for one the natural key
     /// already names — is decided by the registration, not by the handler's signature.
     @RawOperation
-    package func registerSource(_ input: Operations.registerSource.Input) async throws -> Operations.registerSource.Output {
-        let body = switch input.body {
-        case .json(let body): body
-        }
+    package func registerSource(
+        _ input: Operations.registerSource.Input
+    ) async throws -> Operations.registerSource.Output {
+        let body =
+            switch input.body {
+            case .json(let body): body
+            }
         let document = try JSONEncoder().encode(body.input)
         let spec: InputSpec
         do throws(InputSpecError) {
@@ -77,7 +79,10 @@ package struct SourceOperatorController {
 
     @Operation
     @ErrorResponse(NoSuchSource.self, .notFound)
-    package func addSourceCopy(@Path id: String, @JSONBody body: Components.Schemas.FileRef) async throws -> Components.Schemas.Source {
+    package func addSourceCopy(
+        @Path id: String,
+        @JSONBody body: Components.Schemas.FileRef
+    ) async throws -> Components.Schemas.Source {
         let copy: FileRef = try Mapping.transcode(body)
         guard let source = try store.update(id, { $0.hold(copy) }) else { throw NoSuchSource() }
         return try Mapping.source(source)
@@ -86,7 +91,9 @@ package struct SourceOperatorController {
     @Operation
     @ErrorResponse(NoSuchSource.self, .notFound)
     package func removeSourceCopy(@Path id: String, @Path node: String) async throws -> Components.Schemas.Source {
-        guard let source = try store.update(id, { $0.copies.removeAll { $0.holder == node } }) else { throw NoSuchSource() }
+        guard let source = try store.update(id, { $0.copies.removeAll { $0.holder == node } }) else {
+            throw NoSuchSource()
+        }
         return try Mapping.source(source)
     }
 }

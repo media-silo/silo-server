@@ -27,7 +27,9 @@ public struct Index: Sendable {
         // index file, and a scan holds it for a moment.
         var configuration = GRDB.Configuration()
         configuration.busyMode = .timeout(5)
-        queue = try url.map { try DatabaseQueue(path: $0.path, configuration: configuration) } ?? DatabaseQueue(configuration: configuration)
+        queue =
+            try url.map { try DatabaseQueue(path: $0.path, configuration: configuration) }
+            ?? DatabaseQueue(configuration: configuration)
         try Self.migrator.migrate(queue)
     }
 
@@ -36,65 +38,80 @@ public struct Index: Sendable {
         // A container is keyed by its library and its id, since one container may be filed in several
         // libraries, each with a sidecar of its own.
         migrator.registerMigration("v1") { db in
-            try db.create(table: "container") { t in
-                t.column("library", .text).notNull()
-                t.column("id", .text).notNull()
-                t.column("folder", .text).notNull()
-                t.column("parent", .text)
-                t.column("type", .text).notNull()
-                t.column("title", .text).notNull()
-                t.column("displayTitle", .text).notNull().indexed()
-                t.column("year", .integer)
-                t.column("typeLabel", .text)
-                t.column("outline", .text)
-                t.column("listed", .boolean).notNull()
-                t.column("document", .blob).notNull()
-                t.primaryKey(["library", "id"])
+            try db.create(table: "container") { table in
+                table.column("library", .text).notNull()
+                table.column("id", .text).notNull()
+                table.column("folder", .text).notNull()
+                table.column("parent", .text)
+                table.column("type", .text).notNull()
+                table.column("title", .text).notNull()
+                table.column("displayTitle", .text).notNull().indexed()
+                table.column("year", .integer)
+                table.column("typeLabel", .text)
+                table.column("outline", .text)
+                table.column("listed", .boolean).notNull()
+                table.column("document", .blob).notNull()
+                table.primaryKey(["library", "id"])
             }
             try db.create(index: "container_parent", on: "container", columns: ["library", "parent"])
             try db.create(index: "container_id", on: "container", columns: ["id"])
-            try db.create(table: "item") { t in
-                t.column("library", .text).notNull()
-                t.column("container", .text).notNull()
-                t.column("id", .text).notNull()
-                t.column("position", .integer).notNull()
-                t.column("sequence", .text)
-                t.column("isExtra", .boolean).notNull()
-                t.column("type", .text)
-                t.column("title", .text).indexed()
-                t.column("childContainer", .text)
-                t.primaryKey(["library", "container", "id"])
-                t.foreignKey(["library", "container"], references: "container", columns: ["library", "id"], onDelete: .cascade)
+            try db.create(table: "item") { table in
+                table.column("library", .text).notNull()
+                table.column("container", .text).notNull()
+                table.column("id", .text).notNull()
+                table.column("position", .integer).notNull()
+                table.column("sequence", .text)
+                table.column("isExtra", .boolean).notNull()
+                table.column("type", .text)
+                table.column("title", .text).indexed()
+                table.column("childContainer", .text)
+                table.primaryKey(["library", "container", "id"])
+                table.foreignKey(
+                    ["library", "container"],
+                    references: "container",
+                    columns: ["library", "id"],
+                    onDelete: .cascade
+                )
             }
-            try db.create(table: "presentation") { t in
-                t.primaryKey("id", .text)
-                t.column("library", .text).notNull()
-                t.column("container", .text).notNull()
-                t.column("item", .text).notNull()
-                t.column("alternative", .text)
-                t.column("profile", .text)
-                t.column("file", .text).notNull()
-                t.column("path", .text).notNull()
-                t.foreignKey(["library", "container"], references: "container", columns: ["library", "id"], onDelete: .cascade)
+            try db.create(table: "presentation") { table in
+                table.primaryKey("id", .text)
+                table.column("library", .text).notNull()
+                table.column("container", .text).notNull()
+                table.column("item", .text).notNull()
+                table.column("alternative", .text)
+                table.column("profile", .text)
+                table.column("file", .text).notNull()
+                table.column("path", .text).notNull()
+                table.foreignKey(
+                    ["library", "container"],
+                    references: "container",
+                    columns: ["library", "id"],
+                    onDelete: .cascade
+                )
             }
             try db.create(index: "presentation_container", on: "presentation", columns: ["library", "container"])
-            try db.create(table: "externalRef") { t in
-                t.column("library", .text).notNull()
-                t.column("container", .text).notNull()
-                t.column("item", .text)
-                t.column("provider", .text).notNull()
-                t.column("value", .text).notNull()
-                t.uniqueKey(["library", "container", "item", "provider", "value"])
-                t.foreignKey(["library", "container"], references: "container", columns: ["library", "id"], onDelete: .cascade)
+            try db.create(table: "externalRef") { table in
+                table.column("library", .text).notNull()
+                table.column("container", .text).notNull()
+                table.column("item", .text)
+                table.column("provider", .text).notNull()
+                table.column("value", .text).notNull()
+                table.uniqueKey(["library", "container", "item", "provider", "value"])
+                table.foreignKey(
+                    ["library", "container"],
+                    references: "container",
+                    columns: ["library", "id"],
+                    onDelete: .cascade
+                )
             }
             try db.create(index: "externalRef_lookup", on: "externalRef", columns: ["provider", "value"])
-            try db.create(table: "sidecar") { t in
-                t.column("library", .text).notNull()
-                t.column("path", .text).notNull()
-                t.column("container", .text).notNull()
-                t.column("modified", .double)
-                t.column("size", .integer)
-                t.primaryKey(["library", "path"])
+            try db.create(table: "sidecar") { table in
+                table.column("library", .text).notNull()
+                table.column("path", .text).notNull()
+                table.column("container", .text).notNull()
+                table.column("modified", .double)
+                table.column("size", .integer)
+                table.primaryKey(["library", "path"])
             }
         }
         return migrator
@@ -130,19 +147,26 @@ public struct Index: Sendable {
 
     public func children(of id: ContainerID, in library: String) throws -> [IndexedContainer] {
         try queue.read { db in
-            try IndexedContainer.filter(Column("library") == library && Column("parent") == id.value).order(Column("displayTitle")).fetchAll(db)
+            try IndexedContainer.filter(Column("library") == library && Column("parent") == id.value).order(
+                Column("displayTitle")
+            ).fetchAll(db)
         }
     }
 
     public func items(of id: ContainerID, in library: String) throws -> [IndexedItem] {
         try queue.read { db in
-            try IndexedItem.filter(Column("library") == library && Column("container") == id.value).order(Column("position")).fetchAll(db)
+            try IndexedItem.filter(Column("library") == library && Column("container") == id.value).order(
+                Column("position")
+            ).fetchAll(db)
         }
     }
 
     public func presentations(of id: ContainerID, in library: String) throws -> [IndexedPresentation] {
         try queue.read { db in
-            try IndexedPresentation.filter(Column("library") == library && Column("container") == id.value).order(Column("item"), Column("id")).fetchAll(db)
+            try IndexedPresentation.filter(Column("library") == library && Column("container") == id.value).order(
+                Column("item"),
+                Column("id")
+            ).fetchAll(db)
         }
     }
 
@@ -154,10 +178,14 @@ public struct Index: Sendable {
     /// that holds one.
     public func lookup(provider: Provider, value: String) throws -> [IndexedContainer] {
         try queue.read { db in
-            try IndexedContainer.fetchAll(db, sql: """
-                SELECT * FROM container WHERE (library, id) IN (SELECT library, container FROM externalRef WHERE provider = ? AND value = ?)
-                ORDER BY displayTitle, library
-                """, arguments: [provider.rawValue, value])
+            try IndexedContainer.fetchAll(
+                db,
+                sql: """
+                    SELECT * FROM container WHERE (library, id) IN (SELECT library, container FROM externalRef WHERE provider = ? AND value = ?)
+                    ORDER BY displayTitle, library
+                    """,
+                arguments: [provider.rawValue, value]
+            )
         }
     }
 
@@ -166,14 +194,17 @@ public struct Index: Sendable {
     public func search(_ text: String, limit: Int = 50) throws -> [SearchHit] {
         let pattern = "%\(text.replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_"))%"
         return try queue.read { db in
-            let containers = try IndexedContainer
+            let containers =
+                try IndexedContainer
                 .filter(sql: "displayTitle LIKE ? ESCAPE '\\'", arguments: [pattern])
                 .order(Column("displayTitle")).limit(limit).fetchAll(db)
-            let items = try IndexedItem
+            let items =
+                try IndexedItem
                 .filter(sql: "title LIKE ? ESCAPE '\\'", arguments: [pattern])
                 .order(Column("title")).limit(limit).fetchAll(db)
             var seen: Set<SearchHit> = []
-            return (containers.map { SearchHit(container: $0.id, item: nil, title: $0.displayTitle) }
+            return
+                (containers.map { SearchHit(container: $0.id, item: nil, title: $0.displayTitle) }
                 + items.map { SearchHit(container: $0.container, item: $0.id, title: $0.title ?? $0.id) })
                 .filter { seen.insert($0).inserted }
         }
@@ -199,7 +230,9 @@ public struct Index: Sendable {
             for item in entry.items { try item.insert(db) }
             for presentation in entry.presentations { try presentation.insert(db) }
             for ref in entry.externalRefs { try ref.insert(db) }
-            try IndexedSidecar.filter(Column("library") == entry.sidecar.library && Column("path") == entry.sidecar.path).deleteAll(db)
+            try IndexedSidecar.filter(
+                Column("library") == entry.sidecar.library && Column("path") == entry.sidecar.path
+            ).deleteAll(db)
             try entry.sidecar.insert(db)
         }
     }
@@ -210,9 +243,14 @@ public struct Index: Sendable {
     func remove(sidecarsAt paths: [String], in library: String) throws {
         try queue.write { db in
             for path in paths {
-                if let row = try IndexedSidecar.filter(Column("library") == library && Column("path") == path).fetchOne(db) {
-                    let folder = path == SidecarFile.fileName ? "" : String(path.dropLast(SidecarFile.fileName.count + 1))
-                    try IndexedContainer.filter(Column("library") == library && Column("id") == row.container && Column("folder") == folder).deleteAll(db)
+                if let row = try IndexedSidecar.filter(Column("library") == library && Column("path") == path).fetchOne(
+                    db
+                ) {
+                    let folder =
+                        path == SidecarFile.fileName ? "" : String(path.dropLast(SidecarFile.fileName.count + 1))
+                    try IndexedContainer.filter(
+                        Column("library") == library && Column("id") == row.container && Column("folder") == folder
+                    ).deleteAll(db)
                     try row.delete(db)
                 }
             }
@@ -229,7 +267,10 @@ public struct Index: Sendable {
 
     func setParent(_ parent: ContainerID?, of child: ContainerID, in library: String) throws {
         try queue.write { db in
-            try db.execute(sql: "UPDATE container SET parent = ? WHERE library = ? AND id = ?", arguments: [parent?.value, library, child.value])
+            try db.execute(
+                sql: "UPDATE container SET parent = ? WHERE library = ? AND id = ?",
+                arguments: [parent?.value, library, child.value]
+            )
         }
     }
 }
@@ -296,10 +337,10 @@ public struct IndexedPresentation: Codable, Hashable, Sendable, FetchableRecord,
 
     public static func id(library: String, path: String) -> String {
         // FNV-1a, 64 bits: stable, dependency-free, and not asked to resist anything.
-        var hash: UInt64 = 0xcbf29ce484222325
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in "\(library)|\(path)".utf8 {
             hash ^= UInt64(byte)
-            hash = hash &* 0x100000001b3
+            hash = hash &* 0x100_0000_01b3
         }
         return String(format: "%016llx", hash)
     }
@@ -340,47 +381,124 @@ struct IndexEntry {
     var externalRefs: [IndexedExternalRef]
     var sidecar: IndexedSidecar
 
-    init(sidecar: Sidecar, document: Data, library: String, folder: String, parent: ContainerID?, modified: Date?, size: Int?) {
+    init(
+        sidecar: Sidecar,
+        document: Data,
+        library: String,
+        folder: String,
+        parent: ContainerID?,
+        modified: Date?,
+        size: Int?
+    ) {
         let container = sidecar.container
         self.container = IndexedContainer(
-            id: container.id.value, library: library, folder: folder, parent: parent?.value,
-            type: container.type.rawValue, title: container.title.rawValue, displayTitle: container.displayTitle,
-            year: container.year, typeLabel: container.typeLabel, outline: container.outline,
-            listed: container.listed, document: document
+            id: container.id.value,
+            library: library,
+            folder: folder,
+            parent: parent?.value,
+            type: container.type.rawValue,
+            title: container.title.rawValue,
+            displayTitle: container.displayTitle,
+            year: container.year,
+            typeLabel: container.typeLabel,
+            outline: container.outline,
+            listed: container.listed,
+            document: document
         )
+        self.items = Self.items(of: container, library: library)
+        self.presentations = sidecar.presentations.sorted(by: { $0.key < $1.key }).flatMap { item, presentations in
+            presentations.map { presentation in
+                let path = folder.isEmpty ? presentation.file : "\(folder)/\(presentation.file)"
+                return IndexedPresentation(
+                    id: IndexedPresentation.id(library: library, path: path),
+                    library: library,
+                    container: container.id.value,
+                    item: item,
+                    alternative: presentation.alternative,
+                    profile: presentation.profile,
+                    file: presentation.file,
+                    path: path
+                )
+            }
+        }
+        self.externalRefs = Self.externalRefs(of: container, library: library)
+        self.sidecar = IndexedSidecar(
+            library: library,
+            path: folder.isEmpty ? SidecarFile.fileName : "\(folder)/\(SidecarFile.fileName)",
+            container: container.id.value,
+            modified: modified?.timeIntervalSince1970,
+            size: size
+        )
+    }
+
+    /// The container's items, sequences' first in order and then its extras, positioned in that order.
+    private static func items(of container: Container, library: String) -> [IndexedItem] {
         var items: [IndexedItem] = []
         var position = 0
         for sequence in container.sequences {
             for entry in sequence.items {
                 guard let id = entry.id?.value else { continue }
-                items.append(IndexedItem(library: library, container: container.id.value, id: id, position: position, sequence: sequence.id, isExtra: false, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
+                items.append(
+                    IndexedItem(
+                        library: library,
+                        container: container.id.value,
+                        id: id,
+                        position: position,
+                        sequence: sequence.id,
+                        isExtra: false,
+                        type: entry.indexedType,
+                        title: entry.title,
+                        childContainer: entry.childContainer?.value
+                    )
+                )
                 position += 1
             }
         }
         for entry in container.extras {
             guard let id = entry.id?.value else { continue }
-            items.append(IndexedItem(library: library, container: container.id.value, id: id, position: position, sequence: nil, isExtra: true, type: entry.indexedType, title: entry.title, childContainer: entry.childContainer?.value))
+            items.append(
+                IndexedItem(
+                    library: library,
+                    container: container.id.value,
+                    id: id,
+                    position: position,
+                    sequence: nil,
+                    isExtra: true,
+                    type: entry.indexedType,
+                    title: entry.title,
+                    childContainer: entry.childContainer?.value
+                )
+            )
             position += 1
         }
-        self.items = items
-        self.presentations = sidecar.presentations.sorted(by: { $0.key < $1.key }).flatMap { item, presentations in
-            presentations.map { presentation in
-                let path = folder.isEmpty ? presentation.file : "\(folder)/\(presentation.file)"
-                return IndexedPresentation(
-                    id: IndexedPresentation.id(library: library, path: path), library: library,
-                    container: container.id.value, item: item, alternative: presentation.alternative,
-                    profile: presentation.profile, file: presentation.file, path: path
+        return items
+    }
+
+    /// The container's references and its items', once each.
+    private static func externalRefs(of container: Container, library: String) -> [IndexedExternalRef] {
+        var refs = container.externalRefs.map {
+            IndexedExternalRef(
+                library: library,
+                container: container.id.value,
+                item: nil,
+                provider: $0.provider.rawValue,
+                value: $0.value
+            )
+        }
+        for entry in container.sequences.flatMap(\.items) + container.extras {
+            for ref in entry.externalRefs {
+                refs.append(
+                    IndexedExternalRef(
+                        library: library,
+                        container: container.id.value,
+                        item: entry.id?.value,
+                        provider: ref.provider.rawValue,
+                        value: ref.value
+                    )
                 )
             }
         }
-        var refs = container.externalRefs.map { IndexedExternalRef(library: library, container: container.id.value, item: nil, provider: $0.provider.rawValue, value: $0.value) }
-        for entry in container.sequences.flatMap(\.items) + container.extras {
-            for ref in entry.externalRefs {
-                refs.append(IndexedExternalRef(library: library, container: container.id.value, item: entry.id?.value, provider: ref.provider.rawValue, value: ref.value))
-            }
-        }
-        self.externalRefs = Array(Set(refs))
-        self.sidecar = IndexedSidecar(library: library, path: folder.isEmpty ? SidecarFile.fileName : "\(folder)/\(SidecarFile.fileName)", container: container.id.value, modified: modified?.timeIntervalSince1970, size: size)
+        return Array(Set(refs))
     }
 }
 

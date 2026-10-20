@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
@@ -34,7 +35,6 @@ public enum RulesetFile {
         root.set("name", ruleset.name)
         root.set("version", ruleset.version.map(String.init))
 
-
         for rule in ruleset.rules {
             root.addChild(ruleElement(rule))
         }
@@ -66,12 +66,15 @@ public enum RulesetFile {
     /// its own tag.
     private static func written(_ element: XMLElement) -> String {
         func escaped(_ text: String, quote: Bool) -> String {
-            var escaped = text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+            var escaped = text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
             if quote { escaped = escaped.replacingOccurrences(of: "\"", with: "&quot;") }
             return escaped
         }
         let name = element.name ?? ""
-        let attributes = (element.attributes ?? []).map { " \($0.name ?? "")=\"\(escaped($0.stringValue ?? "", quote: true))\"" }.joined()
+        let attributes = (element.attributes ?? []).map {
+            " \($0.name ?? "")=\"\(escaped($0.stringValue ?? "", quote: true))\""
+        }.joined()
         let children = (element.children ?? []).compactMap { $0 as? XMLElement }
         if !children.isEmpty {
             return "<\(name)\(attributes)>" + children.map(written).joined() + "</\(name)>"
@@ -155,7 +158,9 @@ public enum RulesetFile {
         let parser = XMLParser(data: data)
         let parsed = parser.parse()
         if let error = parser.parserError {
-            throw RulesetFileError.malformed("line \(parser.lineNumber), column \(parser.columnNumber): \(error.localizedDescription)")
+            throw RulesetFileError.malformed(
+                "line \(parser.lineNumber), column \(parser.columnNumber): \(error.localizedDescription)"
+            )
         }
         guard parsed else { throw RulesetFileError.malformed("not well-formed XML") }
         let document: XMLDocument
@@ -175,7 +180,10 @@ public enum RulesetFile {
 
         var outputs: [OutputPolicy] = []
         for element in root.elements(forName: "output") {
-            let output = OutputPolicy(profile: element.attribute("profile"), container: element.attribute("container") ?? "mkv")
+            let output = OutputPolicy(
+                profile: element.attribute("profile"),
+                container: element.attribute("container") ?? "mkv"
+            )
             guard !outputs.contains(where: { $0.profile == output.profile }) else {
                 throw RulesetFileError.outputMadeTwice(profile: output.profile)
             }
@@ -203,7 +211,9 @@ public enum RulesetFile {
         let parser = XMLParser(data: data)
         let parsed = parser.parse()
         if let error = parser.parserError {
-            throw RulesetFileError.malformed("line \(parser.lineNumber), column \(parser.columnNumber): \(error.localizedDescription)")
+            throw RulesetFileError.malformed(
+                "line \(parser.lineNumber), column \(parser.columnNumber): \(error.localizedDescription)"
+            )
         }
         guard parsed, !data.isEmpty else { throw RulesetFileError.malformed("not well-formed XML") }
         let document: XMLDocument
@@ -301,9 +311,13 @@ public enum RulesetFile {
                     }
                     settings.filters.append(.deinterlace(parsed))
                 case "scale":
-                    settings.filters.append(.scale(width: try child.optionalInteger("width"), height: try child.optionalInteger("height")))
+                    settings.filters.append(
+                        .scale(width: try child.optionalInteger("width"), height: try child.optionalInteger("height"))
+                    )
                 case "filter":
-                    settings.filters.append(.custom(child.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""))
+                    settings.filters.append(
+                        .custom(child.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+                    )
                 case "option":
                     settings.options[try child.required("name")] = try child.required("value")
                 default:
@@ -336,13 +350,16 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
         switch self {
         case .malformed(let reason): "malformed XML: \(reason)"
         case .notARuleset: "the document is not rooted at <ruleset>"
-        case .unsupportedFormat(let format): "ruleset format \(format) is newer than this reader (\(RulesetFile.format))"
+        case .unsupportedFormat(let format):
+            "ruleset format \(format) is newer than this reader (\(RulesetFile.format))"
         case .missingAttribute(let element, let attribute): "<\(element)> is missing its \(attribute) attribute"
-        case .invalidValue(let element, let attribute, let value): "<\(element) \(attribute)=\"\(value)\"> is not a value this reader accepts"
+        case .invalidValue(let element, let attribute, let value):
+            "<\(element) \(attribute)=\"\(value)\"> is not a value this reader accepts"
         case .unknownElement(let name): "<\(name)> is not an element of a ruleset"
         case .unknownFact(let key): "\"\(key)\" is not a fact a rule can test"
         case .factOutOfScope(let fact, let scope): "\"\(fact)\" cannot be tested in a <\(scope.rawValue)> rule"
-        case .oneTestRequired(let rule, let fact): "rule \(rule): <when fact=\"\(fact)\"> needs exactly one of is, ne, in, lt, le, gt, ge"
+        case .oneTestRequired(let rule, let fact):
+            "rule \(rule): <when fact=\"\(fact)\"> needs exactly one of is, ne, in, lt, le, gt, ge"
         case .notNumeric(let fact, let op): "\"\(fact)\" is not a number and cannot be compared with \(op)"
         case .noAction(let rule): "rule \(rule) has no <copy/>, <drop/> or <encode>"
         case .multipleActions(let rule): "rule \(rule) has more than one action"
@@ -362,7 +379,12 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
 extension XMLElement {
     func set(_ name: String, _ value: String?) {
         guard let value else { return }
-        addAttribute(XMLNode.attribute(withName: name, stringValue: value) as! XMLNode)
+        // Foundation types the factory's result as `Any` on every platform, though it is always an
+        // attribute node.
+        guard let attribute = XMLNode.attribute(withName: name, stringValue: value) as? XMLNode else {
+            preconditionFailure("XMLNode.attribute(withName:stringValue:) returned a non-node")
+        }
+        addAttribute(attribute)
     }
 
     func attribute(_ name: String) -> String? {

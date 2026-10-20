@@ -28,10 +28,24 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg libsqlite3-dev avahi-utils
       # On Linux deliberately: nothing below the server imports anything Apple-only, and this job
       # is what keeps that true.
+      - name: Build tests
+        # -v captures the compiler invocations SwiftLint's analyzer reads; redirected to a file to
+        # keep the log readable.
+        run: swift build --build-tests -v > build.log 2>&1
       - name: Test
-        run: swift test
+        run: swift test --skip-build
       # A debug build and the tests export every internal symbol, so a reference to one in another
       # module links there and fails only when optimised. Building release is what catches that
       # before a deploy does, as it once failed on the middleware box wire-mvc kept internal.
       - name: Build release
         run: swift build -c release
+      - name: Install SwiftLint
+        run: |
+          curl -sL https://github.com/realm/SwiftLint/releases/download/0.63.2/swiftlint_linux_amd64.zip -o swiftlint.zip
+          unzip -o swiftlint.zip -d /usr/local/bin
+          chmod +x /usr/local/bin/swiftlint
+      # On Linux, so that an import only Darwin's Foundation needs is reported here rather than
+      # kept because macOS happens to build with it. The admin app is macOS-only and is not built
+      # here, so its imports go unchecked.
+      - name: SwiftLint unused imports
+        run: swiftlint analyze --strict --quiet --compiler-log-path build.log

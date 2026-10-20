@@ -4,6 +4,7 @@
 import Foundation
 import SiloStore
 import Testing
+
 @testable import SiloApp
 
 /// Bootstrap is computable from the state directory alone, and the gate takes the stored
@@ -26,10 +27,16 @@ struct OperatorCredentialTests {
     }
 
     @Test func theCredentialSurvivesARestartAsAHash() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("silo-credential-\(UUID().uuidString)")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "silo-credential-\(UUID().uuidString)"
+        )
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appendingPathComponent("operator-credential.json")
-        let service = ServerService(identity: ServerIdentity(id: "s1"), settings: settings, credential: OperatorCredential(file: file))
+        let service = ServerService(
+            identity: ServerIdentity(id: "s1"),
+            settings: settings,
+            credential: OperatorCredential(file: file)
+        )
         #expect(service.isInBootstrap)
         #expect(OperatorToken(credential: OperatorCredential(file: file)).accepts("Bearer horse-battery") == false)
 
@@ -37,7 +44,10 @@ struct OperatorCredentialTests {
 
         let reopened = OperatorCredential(file: file)
         #expect(reopened.current != nil)
-        #expect(!ServerService(identity: ServerIdentity(id: "s1"), settings: settings, credential: reopened).isInBootstrap, "the boot over it is no longer bootstrap")
+        #expect(
+            !ServerService(identity: ServerIdentity(id: "s1"), settings: settings, credential: reopened).isInBootstrap,
+            "the boot over it is no longer bootstrap"
+        )
         #expect(OperatorToken(credential: reopened).accepts("Bearer horse-battery"))
 
         let onDisk = String(decoding: try Data(contentsOf: file), as: UTF8.self)

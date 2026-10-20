@@ -4,6 +4,7 @@
 import Foundation
 import SiloKit
 import Testing
+
 @testable import Encoder
 
 struct PlainFileProducerTests {
@@ -13,13 +14,30 @@ struct PlainFileProducerTests {
         #expect(spec.medium == nil, "a plain file names no medium")
         #expect(spec.notes.isEmpty)
         #expect(spec.duration == 1500.32)
-        #expect(spec.chapters == [InputSpec.Chapter(index: 1, start: 0, title: "Part One"), InputSpec.Chapter(index: 2, start: 750)])
+        #expect(
+            spec.chapters == [
+                InputSpec.Chapter(index: 1, start: 0, title: "Part One"), InputSpec.Chapter(index: 2, start: 750),
+            ]
+        )
 
         let video = spec.streams[0]
-        #expect(video == InputSpec.Stream(
-            index: 0, kind: .video, codec: "h264", profile: "High", width: 1920, height: 1080, frameRate: 25,
-            interlaced: false, transfer: "bt709", bitDepth: 8, language: LanguageTag(canonicalizing: "en"), marks: [.default]
-        ))
+        #expect(
+            video
+                == InputSpec.Stream(
+                    index: 0,
+                    kind: .video,
+                    codec: "h264",
+                    profile: "High",
+                    width: 1920,
+                    height: 1080,
+                    frameRate: 25,
+                    interlaced: false,
+                    transfer: "bt709",
+                    bitDepth: 8,
+                    language: LanguageTag(canonicalizing: "en"),
+                    marks: [.default]
+                )
+        )
         #expect(spec.streams[1].kind == .audio)
         #expect(spec.streams[1].channels == 6)
         #expect(spec.streams[1].layout == "5.1(side)")
@@ -33,7 +51,9 @@ struct PlainFileProducerTests {
     }
 
     @Test func dispositionsBecomeMarks() {
-        #expect(InputSpec.Stream.marks(["default", "forced", "hearing_impaired"]) == [.default, .forced, .hearingImpaired])
+        #expect(
+            InputSpec.Stream.marks(["default", "forced", "hearing_impaired"]) == [.default, .forced, .hearingImpaired]
+        )
         #expect(InputSpec.Stream.marks(["comment"]) == [.commentary])
         #expect(InputSpec.Stream.marks(["visual_impaired"]) == [.descriptive])
         #expect(InputSpec.Stream.marks(["descriptions"]) == [.descriptive])
@@ -42,7 +62,16 @@ struct PlainFileProducerTests {
 
     @Test func fieldOrderDecidesInterlacing() {
         func interlaced(_ fieldOrder: String?) -> Bool? {
-            InputSpec.Stream(probed: ProbedStream(absoluteIndex: 0, kind: .video, codec: "mpeg2video", width: 720, height: 576, fieldOrder: fieldOrder)).interlaced
+            InputSpec.Stream(
+                probed: ProbedStream(
+                    absoluteIndex: 0,
+                    kind: .video,
+                    codec: "mpeg2video",
+                    width: 720,
+                    height: 576,
+                    fieldOrder: fieldOrder
+                )
+            ).interlaced
         }
         #expect(interlaced("tt") == true)
         #expect(interlaced("bb") == true)
@@ -55,7 +84,9 @@ struct PlainFileProducerTests {
 
     @Test func languagesTheProbeReportsAreMadeCanonical() {
         func language(_ tag: String?) -> String? {
-            InputSpec.Stream(probed: ProbedStream(absoluteIndex: 1, kind: .audio, codec: "ac3", channels: 2, language: tag)).language?.description
+            InputSpec.Stream(
+                probed: ProbedStream(absoluteIndex: 1, kind: .audio, codec: "ac3", channels: 2, language: tag)
+            ).language?.description
         }
         #expect(language("fre") == "fr", "a bibliographic code")
         #expect(language("fra") == "fr", "a terminological code")
@@ -68,7 +99,10 @@ struct PlainFileProducerTests {
     }
 
     @Test func chaptersThatDoNotAdvanceAreDropped() {
-        let probe = ProbedSource(streams: [], chapters: [ProbedChapter(start: 0), ProbedChapter(start: 0), ProbedChapter(start: 10)])
+        let probe = ProbedSource(
+            streams: [],
+            chapters: [ProbedChapter(start: 0), ProbedChapter(start: 0), ProbedChapter(start: 10)]
+        )
         #expect(InputSpec(probe: probe).chapters.map(\.start) == [0, 10])
         #expect(InputSpec(probe: probe).chapters.map(\.index) == [1, 2])
     }

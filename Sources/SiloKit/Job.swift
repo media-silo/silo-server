@@ -28,7 +28,14 @@ public struct Job: Identifiable, Hashable, Sendable, Codable {
     /// and never placed.
     public var trial: Bool
 
-    public init(id: String = UUID().uuidString.lowercased(), state: JobState = .pending, createdAt: Date = .now, recipe: String, requirements: [String] = [], trial: Bool = false) {
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        state: JobState = .pending,
+        createdAt: Date = .now,
+        recipe: String,
+        requirements: [String] = [],
+        trial: Bool = false
+    ) {
         self.trial = trial
         self.id = id
         self.state = state
@@ -50,7 +57,8 @@ public struct Job: Identifiable, Hashable, Sendable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, state, createdAt, updatedAt, recipe, requirements, attempts, lease, progress, output, result, placement, failure, trial
+        case id, state, createdAt, updatedAt, recipe, requirements, attempts, lease, progress, output, result,
+            placement, failure, trial
     }
 
     /// A record written before trials were is not one.
@@ -141,7 +149,13 @@ public struct JobProgress: Hashable, Sendable, Codable {
     public var speed: Double?
     public var updatedAt: Date
 
-    public init(fraction: Double? = nil, seconds: Double? = nil, fps: Double? = nil, speed: Double? = nil, updatedAt: Date = .now) {
+    public init(
+        fraction: Double? = nil,
+        seconds: Double? = nil,
+        fps: Double? = nil,
+        speed: Double? = nil,
+        updatedAt: Date = .now
+    ) {
         self.fraction = fraction
         self.seconds = seconds
         self.fps = fps

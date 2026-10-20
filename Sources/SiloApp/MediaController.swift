@@ -36,8 +36,8 @@ package struct MediaController {
         responseSender: consuming sending Sender
     ) async throws where Sender.Writer: ~Copyable {
         guard let id = pathParameters["presentation"].map(String.init),
-              let presentation = try index.presentation(id),
-              let library = libraries.library(presentation.library)
+            let presentation = try index.presentation(id),
+            let library = libraries.library(presentation.library)
         else {
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
             return
@@ -48,7 +48,9 @@ package struct MediaController {
         }
         let url = library.root.appendingPathComponent(presentation.path)
         guard FileManager.default.fileExists(atPath: url.path) else {
-            if let container = ContainerID(presentation.container) { try await libraries.refresh(container, in: library) }
+            if let container = ContainerID(presentation.container) {
+                try await libraries.refresh(container, in: library)
+            }
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
             return
         }
@@ -70,7 +72,10 @@ package struct MediaController {
         responseSender: consuming sending Sender
     ) async throws where Sender.Writer: ~Copyable {
         let row = try pathParameters["id"].flatMap { ContainerID(String($0)) }.flatMap { id in
-            let held = Dictionary(try index.containers(id).map { ($0.library, $0) }, uniquingKeysWith: { first, _ in first })
+            let held = Dictionary(
+                try index.containers(id).map { ($0.library, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
             return libraries.all.lazy.compactMap { held[$0.id] }.first
         }
         try await Self.send(row?.document, to: responseSender)
@@ -85,13 +90,16 @@ package struct MediaController {
     ) async throws where Sender.Writer: ~Copyable {
         let library = pathParameters["library"].map(String.init).flatMap(libraries.library)
         let row = try library.flatMap { library in
-            try pathParameters["id"].flatMap { ContainerID(String($0)) }.flatMap { try index.container($0, in: library.id) }
+            try pathParameters["id"].flatMap { ContainerID(String($0)) }.flatMap {
+                try index.container($0, in: library.id)
+            }
         }
         try await Self.send(row?.document, to: responseSender)
     }
 
     private static func send<Sender: HTTPResponseSender & ~Copyable & SendableMetatype>(
-        _ document: Data?, to responseSender: consuming sending Sender
+        _ document: Data?,
+        to responseSender: consuming sending Sender
     ) async throws where Sender.Writer: ~Copyable {
         guard let document else {
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
@@ -99,7 +107,10 @@ package struct MediaController {
         }
         var body = UniqueArray<UInt8>(copying: Array(document))
         try await responseSender.sendAndFinish(
-            HTTPResponse(status: .ok, headerFields: [.contentType: "application/xml; charset=utf-8", .contentLength: String(document.count)]),
+            HTTPResponse(
+                status: .ok,
+                headerFields: [.contentType: "application/xml; charset=utf-8", .contentLength: String(document.count)]
+            ),
             buffer: &body
         )
     }

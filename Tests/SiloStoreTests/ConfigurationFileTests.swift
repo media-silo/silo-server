@@ -4,6 +4,7 @@
 import Foundation
 import SiloKit
 import Testing
+
 @testable import SiloStore
 
 /// The two files' startup treatment: created, filled, never rewritten when complete, never repaired
@@ -36,22 +37,36 @@ struct ConfigurationFileTests {
 
         let (settings, settingsReport) = try SettingsStore.open(in: folder, defaultName: "Silo on cupboard")
         #expect(settingsReport.created)
-        #expect(settings.current == Settings(name: "Silo on cupboard", libraries: [], embeddedNode: false, advertise: true))
+        #expect(
+            settings.current == Settings(name: "Silo on cupboard", libraries: [], embeddedNode: false, advertise: true)
+        )
 
         let onDisk = try JSONDecoder().decode([String: JSONValue].self, from: read("silo.json", in: folder))
-        #expect(onDisk == [
-            "serverID": .string(silo.serverID), "host": .string("0.0.0.0"), "port": .integer(8742),
-            "libraryRoots": .array([.string("/srv"), .string("/media"), .string("/mnt")]),
-        ])
+        #expect(
+            onDisk == [
+                "serverID": .string(silo.serverID), "host": .string("0.0.0.0"), "port": .integer(8742),
+                "libraryRoots": .array([.string("/srv"), .string("/media"), .string("/mnt")]),
+            ]
+        )
     }
 
     /// The roots a fresh file is given, by platform and by whom the silo runs as, as the state
     /// directory's default is chosen.
     @Test func theDefaultRootsAreWhereAHouseholdsMediaAre() {
-        #expect(SiloFile.defaultLibraryRoots(platform: .macOS, isRoot: false, home: "/Users/simon") == ["/Volumes", "/Users/simon/Movies"])
+        #expect(
+            SiloFile.defaultLibraryRoots(platform: .macOS, isRoot: false, home: "/Users/simon") == [
+                "/Volumes", "/Users/simon/Movies",
+            ]
+        )
         #expect(SiloFile.defaultLibraryRoots(platform: .macOS, isRoot: true, home: "/var/root") == ["/Volumes"])
-        #expect(SiloFile.defaultLibraryRoots(platform: .linux, isRoot: true, home: "/root") == ["/srv", "/media", "/mnt"])
-        #expect(SiloFile.defaultLibraryRoots(platform: .linux, isRoot: false, home: "/home/silo") == ["/srv", "/media", "/mnt"])
+        #expect(
+            SiloFile.defaultLibraryRoots(platform: .linux, isRoot: true, home: "/root") == ["/srv", "/media", "/mnt"]
+        )
+        #expect(
+            SiloFile.defaultLibraryRoots(platform: .linux, isRoot: false, home: "/home/silo") == [
+                "/srv", "/media", "/mnt",
+            ]
+        )
     }
 
     @Test func rootsEmptiedByTheOwnerStayEmpty() throws {
@@ -64,8 +79,17 @@ struct ConfigurationFileTests {
         #expect(report == ConfigurationFileReport())
         #expect(String(decoding: try read("silo.json", in: folder), as: UTF8.self) == complete, "not rewritten")
 
-        try write(#"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "libraryRoots": ["media"]}"#, "silo.json", in: folder)
-        #expect(throws: ConfigurationFileError(file: folder.appendingPathComponent("silo.json"), reason: #""libraryRoots" must be a list of absolute paths"#)) {
+        try write(
+            #"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "libraryRoots": ["media"]}"#,
+            "silo.json",
+            in: folder
+        )
+        #expect(
+            throws: ConfigurationFileError(
+                file: folder.appendingPathComponent("silo.json"),
+                reason: #""libraryRoots" must be a list of absolute paths"#
+            )
+        ) {
             try SiloFile.open(in: folder)
         }
     }
@@ -95,7 +119,10 @@ struct ConfigurationFileTests {
 
         #expect(throws: ConfigurationFileError.self) { try SiloFile.open(in: folder) }
         #expect(throws: ConfigurationFileError.self) { try SettingsStore.open(in: folder, defaultName: "x") }
-        #expect(String(decoding: try read("silo.json", in: folder), as: UTF8.self) == broken, "left byte for byte as it was")
+        #expect(
+            String(decoding: try read("silo.json", in: folder), as: UTF8.self) == broken,
+            "left byte for byte as it was"
+        )
         #expect(String(decoding: try read("settings.json", in: folder), as: UTF8.self) == broken)
     }
 
@@ -103,21 +130,37 @@ struct ConfigurationFileTests {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
         try write(#"{"serverID": "abc", "host": "0.0.0.0", "port": "eighty"}"#, "silo.json", in: folder)
-        #expect(throws: ConfigurationFileError(file: folder.appendingPathComponent("silo.json"), reason: #""port" must be a whole number"#)) {
+        #expect(
+            throws: ConfigurationFileError(
+                file: folder.appendingPathComponent("silo.json"),
+                reason: #""port" must be a whole number"#
+            )
+        ) {
             try SiloFile.open(in: folder)
         }
-        try write(#"{"name": "x", "libraries": [{"id": "films"}], "embeddedNode": false, "advertise": true}"#, "settings.json", in: folder)
+        try write(
+            #"{"name": "x", "libraries": [{"id": "films"}], "embeddedNode": false, "advertise": true}"#,
+            "settings.json",
+            in: folder
+        )
         #expect(throws: ConfigurationFileError.self) { try SettingsStore.open(in: folder, defaultName: "x") }
     }
 
     @Test func anUnknownKeyIsReportedAndKeptThroughWrites() throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
-        try write(#"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "libraryRoots": [], "prot": 9000}"#, "silo.json", in: folder)
+        try write(
+            #"{"serverID": "abc", "host": "0.0.0.0", "port": 8742, "libraryRoots": [], "prot": 9000}"#,
+            "silo.json",
+            in: folder
+        )
         let (silo, report) = try SiloFile.open(in: folder)
         #expect(report.unknown == ["prot"])
         #expect(silo.port == 8742, "the typo does not move the port")
-        #expect(try JSONDecoder().decode([String: JSONValue].self, from: read("silo.json", in: folder))["prot"] == .integer(9000))
+        #expect(
+            try JSONDecoder().decode([String: JSONValue].self, from: read("silo.json", in: folder))["prot"]
+                == .integer(9000)
+        )
 
         try write(#"{"name": "Study", "future": {"nested": [true, 1.5, null]}}"#, "settings.json", in: folder)
         let (settings, settingsReport) = try SettingsStore.open(in: folder, defaultName: "x")
@@ -125,7 +168,10 @@ struct ConfigurationFileTests {
         #expect(settingsReport.filled == ["advertise", "embeddedNode", "libraries"])
         try settings.update { $0.embeddedNode = true }
         let onDisk = try JSONDecoder().decode([String: JSONValue].self, from: read("settings.json", in: folder))
-        #expect(onDisk["future"] == .object(["nested": .array([.bool(true), .number(1.5), .null])]), "kept exactly through a write")
+        #expect(
+            onDisk["future"] == .object(["nested": .array([.bool(true), .number(1.5), .null])]),
+            "kept exactly through a write"
+        )
         #expect(onDisk["embeddedNode"] == .bool(true))
     }
 
@@ -140,17 +186,28 @@ struct ConfigurationFileTests {
             $0.advertise = false
         }
         #expect(changed == settings.current)
-        #expect(String(decoding: try read("settings.json", in: folder), as: UTF8.self).contains(#""path" : "/Volumes/Media/Films""#), "paths are left readable")
+        #expect(
+            String(decoding: try read("settings.json", in: folder), as: UTF8.self).contains(
+                #""path" : "/Volumes/Media/Films""#
+            ),
+            "paths are left readable"
+        )
         let (reopened, report) = try SettingsStore.open(in: folder, defaultName: "ignored")
         #expect(report == ConfigurationFileReport())
-        #expect(reopened.current == Settings(name: "Living Room Silo", libraries: [films], embeddedNode: false, advertise: false))
+        #expect(
+            reopened.current
+                == Settings(name: "Living Room Silo", libraries: [films], embeddedNode: false, advertise: false)
+        )
     }
 
     @Test func existingStateIsRecognised() throws {
         let folder = try folder()
         defer { try? FileManager.default.removeItem(at: folder) }
         #expect(!stateDirectoryHoldsState(folder))
-        try FileManager.default.createDirectory(at: folder.appendingPathComponent("jobs"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: folder.appendingPathComponent("jobs"),
+            withIntermediateDirectories: true
+        )
         #expect(!stateDirectoryHoldsState(folder), "an empty folder is not state")
         try write("{}", "jobs/j1.json", in: folder)
         #expect(stateDirectoryHoldsState(folder))

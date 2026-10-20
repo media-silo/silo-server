@@ -38,7 +38,12 @@ public final class NodeStore: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var loaded: [String: Stored] = [:]
-        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let files =
+            (try? FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
         for file in files where file.pathExtension == "json" {
             if let stored = try? decoder.decode(Stored.self, from: try Data(contentsOf: file)) {
                 loaded[stored.node.id] = stored

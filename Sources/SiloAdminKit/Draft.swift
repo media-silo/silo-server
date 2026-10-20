@@ -25,7 +25,15 @@ public struct Draft: Hashable, Sendable, Identifiable, Codable {
     /// When the text last changed.
     public var edited: Date
 
-    public init(ruleset: String, base: Int?, baseBranch: String?, baseText: String, text: String, upToDateWith: Int? = nil, edited: Date = .now) {
+    public init(
+        ruleset: String,
+        base: Int?,
+        baseBranch: String?,
+        baseText: String,
+        text: String,
+        upToDateWith: Int? = nil,
+        edited: Date = .now
+    ) {
         self.id = UUID()
         self.edited = edited
         self.ruleset = ruleset
@@ -38,13 +46,25 @@ public struct Draft: Hashable, Sendable, Identifiable, Codable {
 
     /// A change from a version on screen, which is its base.
     public static func change(_ version: SiloClient.RulesetDocument) -> Draft {
-        Draft(ruleset: version.name, base: version.version, baseBranch: version.branch, baseText: version.document, text: version.document)
+        Draft(
+            ruleset: version.name,
+            base: version.version,
+            baseBranch: version.branch,
+            baseText: version.document,
+            text: version.document
+        )
     }
 
     /// A new ruleset from a copy of any version. The copy's `name` attribute is changed to the new
     /// name, as an edit the operator sees in the text and its difference.
     public static func copy(of version: SiloClient.RulesetDocument, as name: String) -> Draft {
-        Draft(ruleset: name, base: nil, baseBranch: nil, baseText: version.document, text: renamed(version.document, to: name))
+        Draft(
+            ruleset: name,
+            base: nil,
+            baseBranch: nil,
+            baseText: version.document,
+            text: renamed(version.document, to: name)
+        )
     }
 
     /// A new ruleset from the starter: a rule copying every stream of each scope, and the default
@@ -56,7 +76,13 @@ public struct Draft: Hashable, Sendable, Identifiable, Codable {
     /// A going back: an earlier version's document as a draft based on the head of its branch, so
     /// that storing it makes a new version saying what the earlier one said.
     public static func goingBack(to earlier: SiloClient.RulesetDocument, head: SiloClient.RulesetDocument) -> Draft {
-        Draft(ruleset: head.name, base: head.version, baseBranch: head.branch, baseText: head.document, text: earlier.document)
+        Draft(
+            ruleset: head.name,
+            base: head.version,
+            baseBranch: head.branch,
+            baseText: head.document,
+            text: earlier.document
+        )
     }
 
     /// The draft re-based on a version that landed since: its text as it is, read against the new base.
@@ -88,21 +114,27 @@ public struct Draft: Hashable, Sendable, Identifiable, Codable {
     public var reading: DraftReading {
         do {
             let read = try RulesetFile.ruleset(from: Data(text.utf8))
-            return .reading(SiloClient.RulesetReading(
-                name: ruleset,
-                rules: read.rules.enumerated().map { position, rule in
-                    SiloClient.RuleReading(
-                        name: rule.id ?? "#\(position + 1)",
-                        scope: rule.scope,
-                        conditions: rule.conditions.map { condition in
-                            let (test, value) = condition.test.attribute
-                            return SiloClient.ConditionReading(fact: condition.fact.rawValue, test: test, value: value)
-                        },
-                        action: rule.action
-                    )
-                },
-                outputs: read.outputs
-            ))
+            return .reading(
+                SiloClient.RulesetReading(
+                    name: ruleset,
+                    rules: read.rules.enumerated().map { position, rule in
+                        SiloClient.RuleReading(
+                            name: rule.id ?? "#\(position + 1)",
+                            scope: rule.scope,
+                            conditions: rule.conditions.map { condition in
+                                let (test, value) = condition.test.attribute
+                                return SiloClient.ConditionReading(
+                                    fact: condition.fact.rawValue,
+                                    test: test,
+                                    value: value
+                                )
+                            },
+                            action: rule.action
+                        )
+                    },
+                    outputs: read.outputs
+                )
+            )
         } catch {
             return .refused(String(describing: error))
         }
@@ -126,7 +158,7 @@ public struct Draft: Hashable, Sendable, Identifiable, Codable {
     /// The text with the root element's `name` attribute made `name`; untouched when it has none.
     static func renamed(_ text: String, to name: String) -> String {
         guard let root = text.range(of: "<ruleset\\b[^>]*>", options: .regularExpression),
-              let attribute = text.range(of: #"\bname="[^"]*""#, options: .regularExpression, range: root)
+            let attribute = text.range(of: #"\bname="[^"]*""#, options: .regularExpression, range: root)
         else { return text }
         var renamed = text
         renamed.replaceSubrange(attribute, with: #"name="\#(name)""#)

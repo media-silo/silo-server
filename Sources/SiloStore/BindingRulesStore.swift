@@ -19,8 +19,11 @@ public struct BindingRulesStore: Sendable {
 
     /// The versions staged for a binding, in order.
     public func versions(of binding: String) -> [Int] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: folder(of: binding), includingPropertiesForKeys: nil)) ?? []
-        return files.compactMap { $0.pathExtension == "xml" ? Int($0.deletingPathExtension().lastPathComponent) : nil }.sorted()
+        let files =
+            (try? FileManager.default.contentsOfDirectory(at: folder(of: binding), includingPropertiesForKeys: nil))
+            ?? []
+        return files.compactMap { $0.pathExtension == "xml" ? Int($0.deletingPathExtension().lastPathComponent) : nil }
+            .sorted()
     }
 
     /// One staged version's file, whether or not it is there.

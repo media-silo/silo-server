@@ -102,7 +102,11 @@ package final class ServerService: Sendable {
         return try staged.withLock { current in
             let now = self.now()
             if let pending = current, pending.confirmBy > now { throw StagePending(confirmBy: pending.confirmBy) }
-            let pending = PendingSetup(passkey: passkey, name: name ?? self.name, confirmBy: now.addingTimeInterval(stageWindow))
+            let pending = PendingSetup(
+                passkey: passkey,
+                name: name ?? self.name,
+                confirmBy: now.addingTimeInterval(stageWindow)
+            )
             current = pending
             return StagedSetup(name: pending.name, confirmBy: pending.confirmBy)
         }
@@ -113,7 +117,9 @@ package final class ServerService: Sendable {
     /// answers it — everywhere else keeps the operator gate.
     package func pendingConfirmBy(bearer: String?) throws {
         let confirmBy = staged.withLock { current -> Date? in
-            guard let pending = current, pending.confirmBy > now(), let bearer, !bearer.isEmpty, bearer == pending.passkey else { return nil }
+            guard let pending = current, pending.confirmBy > now(), let bearer, !bearer.isEmpty,
+                bearer == pending.passkey
+            else { return nil }
             return pending.confirmBy
         }
         if let confirmBy { throw PendingStage(confirmBy: confirmBy) }

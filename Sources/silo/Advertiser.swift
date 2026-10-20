@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import Logging
 import ServiceLifecycle
 import SiloApp
@@ -78,7 +77,9 @@ package final class Advertiser: Service, Sendable {
                         unavailableLogged = true
                     } else {
                         do {
-                            current = (wanted, try Discovery.advertise(name: wanted.name, port: config.port, txt: wanted.txt))
+                            current = (
+                                wanted, try Discovery.advertise(name: wanted.name, port: config.port, txt: wanted.txt)
+                            )
                             logger.info("advertising \"\(wanted.name)\" on port \(config.port)")
                         } catch {
                             logger.warning("not advertising: \(error)")

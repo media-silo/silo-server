@@ -54,7 +54,10 @@ public final class OperatorCredential: Sendable {
                 stored = credential
                 return
             }
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -83,7 +86,10 @@ public enum OperatorCredentialReset: Hashable, Sendable {
 /// gone and the token's SHA-256 is the operator credential. An empty file is no door — it is
 /// removed and the credential left alone. No network route offers this; that is the point of it
 /// being a file. Returns `nil` when no reset file exists.
-public func processOperatorCredentialReset(from file: URL, into credential: OperatorCredential) throws -> OperatorCredentialReset? {
+public func processOperatorCredentialReset(
+    from file: URL,
+    into credential: OperatorCredential
+) throws -> OperatorCredentialReset? {
     guard let raw = try? String(contentsOf: file, encoding: .utf8) else { return nil }
     let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if !token.isEmpty {

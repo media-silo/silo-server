@@ -10,6 +10,7 @@ import SmdKit
 import SmdSidecar
 import Synchronization
 import Wire
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -35,7 +36,16 @@ package struct JobService: Sendable, JobsAPI {
     private let logger = Logger(label: "silo.jobs")
 
     @Inject
-    package init(config: SiloConfig, jobs: JobStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, libraries: Libraries, stagedRules: BindingRulesStore, checks: CheckSignal) {
+    package init(
+        config: SiloConfig,
+        jobs: JobStore,
+        sources: SourceStore,
+        bindings: BindingStore,
+        recipes: RecipeStore,
+        libraries: Libraries,
+        stagedRules: BindingRulesStore,
+        checks: CheckSignal
+    ) {
         self.stagedRules = stagedRules
         self.checks = checks
         self.config = config
@@ -63,7 +73,8 @@ package struct JobService: Sendable, JobsAPI {
     /// being removed.
     package func liveJob(in library: String) -> Job? {
         jobs.all().first { job in
-            !job.state.isFinal && recipes.recipe(job.recipe).flatMap { bindings.binding($0.binding) }?.library == library
+            !job.state.isFinal
+                && recipes.recipe(job.recipe).flatMap { bindings.binding($0.binding) }?.library == library
         }
     }
 
@@ -75,8 +86,12 @@ package struct JobService: Sendable, JobsAPI {
     /// in the trial area rather than placed.
     package func make(from id: String, trial: Bool = false) throws -> Job {
         guard let recipe = recipes.recipe(id) else { throw NoSuchRecipe() }
-        guard recipe.state == .resolved else { throw CommittedRecipe(reason: "recipe \(id) is committed; a job has been made from it") }
-        guard let binding = bindings.binding(recipe.binding) else { throw Unrunnable(reason: "recipe \(id)'s binding \(recipe.binding) is gone") }
+        guard recipe.state == .resolved else {
+            throw CommittedRecipe(reason: "recipe \(id) is committed; a job has been made from it")
+        }
+        guard let binding = bindings.binding(recipe.binding) else {
+            throw Unrunnable(reason: "recipe \(id)'s binding \(recipe.binding) is gone")
+        }
         for segment in binding.segments where sources.source(segment.source)?.copies.isEmpty ?? true {
             throw Unrunnable(reason: "source \(segment.source) has no copy; no node could fetch it")
         }
@@ -95,7 +110,10 @@ package struct JobService: Sendable, JobsAPI {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
         switch current.state {
         case .pending, .encoded, .failed:
-            return try jobs.update(id) { $0.state = .cancelled; $0.lease = nil }!
+            return try jobs.update(id) {
+                $0.state = .cancelled
+                $0.lease = nil
+            }!
         case .claimed, .encoding:
             // The node learns at its next progress report and stops; its fail report finalises.
             return try jobs.update(id) { $0.state = .cancelling }!
@@ -106,7 +124,9 @@ package struct JobService: Sendable, JobsAPI {
 
     package func retry(_ id: String) throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
-        guard [.failed, .cancelled].contains(current.state) else { throw WrongState(current.state, "cannot be retried") }
+        guard [.failed, .cancelled].contains(current.state) else {
+            throw WrongState(current.state, "cannot be retried")
+        }
         return try jobs.update(id) { job in
             job.state = .pending
             job.attempts.removeAll()
@@ -126,16 +146,18 @@ package struct JobService: Sendable, JobsAPI {
     package func claim(node: String, capabilities: Set<String>) async throws -> Claim? {
         try reclaimLapsed()
         // Which jobs the node holds every source of, worked out before the job store's lock is taken.
-        let held = Set(jobs.all().filter { $0.state == .pending }.filter { job in
-            guard let sources = self.sources(of: job), !sources.isEmpty else { return false }
-            return sources.allSatisfy { source in source.copies.contains { $0.holder == node } }
-        }.map(\.id))
+        let held = Set(
+            jobs.all().filter { $0.state == .pending }.filter { job in
+                guard let sources = self.sources(of: job), !sources.isEmpty else { return false }
+                return sources.allSatisfy { source in source.copies.contains { $0.holder == node } }
+            }.map(\.id)
+        )
         let leased = try jobs.updateFirst(
             where: { $0.state == .pending && Set($0.requirements).isSubset(of: capabilities) },
-            sortedBy: { a, b in
-                let aHeld = held.contains(a.id)
-                let bHeld = held.contains(b.id)
-                return aHeld != bHeld ? aHeld : a.createdAt < b.createdAt
+            sortedBy: { lhs, rhs in
+                let lhsHeld = held.contains(lhs.id)
+                let rhsHeld = held.contains(rhs.id)
+                return lhsHeld != rhsHeld ? lhsHeld : lhs.createdAt < rhs.createdAt
             }
         ) { job in
             job.state = .claimed
@@ -151,7 +173,9 @@ package struct JobService: Sendable, JobsAPI {
     /// recipe, binding or copies have gone is handed over without its recipe, which the node fails.
     private func claim(of job: Job, by node: String) -> Claim {
         let unrunnable = Claim(job: job, recipe: nil, segments: [])
-        guard let recipe = recipes.recipe(job.recipe), let binding = bindings.binding(recipe.binding) else { return unrunnable }
+        guard let recipe = recipes.recipe(job.recipe), let binding = bindings.binding(recipe.binding) else {
+            return unrunnable
+        }
         var held: [String: Source] = [:]
         for segment in binding.segments {
             if let source = sources.source(segment.source) { held[source.id] = source }
@@ -161,16 +185,20 @@ package struct JobService: Sendable, JobsAPI {
         for timed in joined.segments {
             let copies = held[timed.source]?.copies ?? []
             guard let copy = copies.first(where: { $0.holder == node }) ?? copies.first else { return unrunnable }
-            segments.append(timed.isWhole
-                ? ClaimedSegment(source: timed.source, copy: copy)
-                : ClaimedSegment(source: timed.source, copy: copy, start: timed.start, end: timed.end))
+            segments.append(
+                timed.isWhole
+                    ? ClaimedSegment(source: timed.source, copy: copy)
+                    : ClaimedSegment(source: timed.source, copy: copy, start: timed.start, end: timed.end)
+            )
         }
         return Claim(job: job, recipe: recipe, segments: segments)
     }
 
     /// The sources a job's recipe's binding is made from, or nil when the recipe or binding has gone.
     private func sources(of job: Job) -> [Source]? {
-        guard let recipe = recipes.recipe(job.recipe), let binding = bindings.binding(recipe.binding) else { return nil }
+        guard let recipe = recipes.recipe(job.recipe), let binding = bindings.binding(recipe.binding) else {
+            return nil
+        }
         return binding.segments.compactMap { sources.source($0.source) }
     }
 
@@ -190,7 +218,9 @@ package struct JobService: Sendable, JobsAPI {
 
     package func complete(_ id: String, output: FileRef, result: EncodeResult) async throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
-        guard [.claimed, .encoding].contains(current.state) else { throw WrongState(current.state, "cannot be completed") }
+        guard [.claimed, .encoding].contains(current.state) else {
+            throw WrongState(current.state, "cannot be completed")
+        }
         let completed = try jobs.update(id) { job in
             job.output = output
             job.result = result
@@ -238,7 +268,8 @@ package struct JobService: Sendable, JobsAPI {
     /// again, or failed when it has been lost enough times.
     private func reclaimLapsed() throws {
         let now = Date.now
-        try jobs.updateAll(where: { [.claimed, .encoding].contains($0.state) && ($0.lease?.expiresAt ?? now) < now }) { job in
+        try jobs.updateAll(where: { [.claimed, .encoding].contains($0.state) && ($0.lease?.expiresAt ?? now) < now }) {
+            job in
             if var last = job.attempts.popLast() {
                 last.endedAt = now
                 last.outcome = "lost"
@@ -271,12 +302,17 @@ package struct JobService: Sendable, JobsAPI {
     package func fetchTrial(_ id: String) async throws -> Job {
         guard let current = jobs.job(id), current.trial else { throw NoSuchJob() }
         if current.state == .tried { return current }
-        guard current.state == .encoded, let output = current.output else { throw WrongState(current.state, "has no output to fetch") }
+        guard current.state == .encoded, let output = current.output else {
+            throw WrongState(current.state, "has no output to fetch")
+        }
         guard fetching.begin(id) else { return current }
         defer { fetching.end(id) }
         let destination = trialFile(of: current)
         do {
-            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             if output.url.isFileURL {
                 try? FileManager.default.removeItem(at: destination)
                 try FileManager.default.moveItem(at: output.url, to: destination)
@@ -310,9 +346,11 @@ package struct JobService: Sendable, JobsAPI {
         try? FileManager.default.removeItem(at: trialFile(of: trial))
         try jobs.remove(id)
     }
+}
 
-    // MARK: - Placement
+// MARK: - Placement
 
+extension JobService {
     /// Fetches the output from the node that holds it into the library's own filesystem, places
     /// it as the recipe's binding says, in the profile of the recipe's output, and re-reads the
     /// sidecars it wrote so the index learns of it without the library being walked.
@@ -328,25 +366,20 @@ package struct JobService: Sendable, JobsAPI {
         _ = try jobs.update(id) { $0.state = .placing }
 
         do {
-            let incoming = library.root.appendingPathComponent(".silo/incoming", isDirectory: true)
-            try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true)
-            let staged = incoming.appendingPathComponent("\(id).\(output.url.pathExtension.isEmpty ? "mkv" : output.url.pathExtension)")
-            if output.url.isFileURL {
-                // The embedded node's output is on this filesystem already.
-                try? FileManager.default.removeItem(at: staged)
-                try FileManager.default.moveItem(at: output.url, to: staged)
-            } else {
-                try await Self.fetch(output, to: staged)
-            }
+            let staged = try await Self.stage(output, of: id, in: library)
             let lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
-            var presentation = Presentation(alternative: binding.alternative, profile: stored.recipe.output.profile, file: "")
-            presentation.tracks = stored.recipe.tracks(for: binding.tracks)
-            presentation.chapters = binding.chapters
-            presentation.source = provenanceSource(of: binding)
-            presentation.transform = Self.transform(of: stored.recipe)
+            let presentation = presentation(of: binding, made: stored.recipe)
             let placement: Placement
             do {
-                placement = try Placer.compute(PlacementRequest(library: library.root, lineage: lineage, item: binding.item, presentation: presentation, source: staged))
+                placement = try Placer.compute(
+                    PlacementRequest(
+                        library: library.root,
+                        lineage: lineage,
+                        item: binding.item,
+                        presentation: presentation,
+                        source: staged
+                    )
+                )
             } catch let error as PlacementError {
                 throw PlacementRefusedError(reason: error.localizedDescription)
             }
@@ -371,15 +404,24 @@ package struct JobService: Sendable, JobsAPI {
             try Placer.apply(placement)
             if let itemFolder, let active = stagedVersions.last {
                 let sidecar = itemFolder.appendingPathComponent(SidecarFile.fileName)
-                try SidecarFile.data(settingRules: SidecarRules(path: rulesPath, activeVersion: active), binding: binding.id, item: binding.item, in: Data(contentsOf: sidecar))
-                    .write(to: sidecar, options: .atomic)
+                try SidecarFile.data(
+                    settingRules: SidecarRules(path: rulesPath, activeVersion: active),
+                    binding: binding.id,
+                    item: binding.item,
+                    in: Data(contentsOf: sidecar)
+                )
+                .write(to: sidecar, options: .atomic)
                 try stagedRules.remove(binding.id)
             }
             try await libraries.reread(placement.sidecars, in: library)
             let destination = LibraryWalker.relativePath(of: placement.destination, in: library.root)
             let placed = try jobs.update(id) { job in
                 job.state = .placed
-                job.placement = PlacementSummary(destination: destination, presentation: IndexedPresentation.id(library: library.id, path: destination), writes: placement.describe(relativeTo: library.root))
+                job.placement = PlacementSummary(
+                    destination: destination,
+                    presentation: IndexedPresentation.id(library: library.id, path: destination),
+                    writes: placement.describe(relativeTo: library.root)
+                )
             }!
             // A new presentation, never checked: the check records it against the rules in force.
             checks.request()
@@ -393,15 +435,53 @@ package struct JobService: Sendable, JobsAPI {
         }
     }
 
+    /// Brings the output into the library's own filesystem, under `.silo/incoming`, to be placed
+    /// from there.
+    private static func stage(_ output: FileRef, of id: String, in library: LibraryConfig) async throws -> URL {
+        let incoming = library.root.appendingPathComponent(".silo/incoming", isDirectory: true)
+        try FileManager.default.createDirectory(at: incoming, withIntermediateDirectories: true)
+        let staged = incoming.appendingPathComponent(
+            "\(id).\(output.url.pathExtension.isEmpty ? "mkv" : output.url.pathExtension)"
+        )
+        if output.url.isFileURL {
+            // The embedded node's output is on this filesystem already.
+            try? FileManager.default.removeItem(at: staged)
+            try FileManager.default.moveItem(at: output.url, to: staged)
+        } else {
+            try await fetch(output, to: staged)
+        }
+        return staged
+    }
+
+    /// The presentation a placement records for the binding's output, made by the recipe; the
+    /// placement gives it its file.
+    private func presentation(of binding: Binding, made recipe: Recipe) -> Presentation {
+        var presentation = Presentation(
+            alternative: binding.alternative,
+            profile: recipe.output.profile,
+            file: ""
+        )
+        presentation.tracks = recipe.tracks(for: binding.tracks)
+        presentation.chapters = binding.chapters
+        presentation.source = provenanceSource(of: binding)
+        presentation.transform = Self.transform(of: recipe)
+        return presentation
+    }
+
     /// Where a placed presentation came from, as its sidecar records it: the binding, by id, with a
     /// copy of its segments, each its source's natural key when it has one and its chapter span.
     private func provenanceSource(of binding: Binding) -> PresentationSource {
-        PresentationSource(binding: binding.id, segments: binding.segments.map { segment in
-            PresentationSource.Segment(
-                key: sources.source(segment.source)?.key.map { SmdSidecar.NaturalKey(scheme: $0.scheme, value: $0.value) },
-                chapters: segment.chapters.map { SmdSidecar.ChapterSpan(from: $0.from, to: $0.to) }
-            )
-        })
+        PresentationSource(
+            binding: binding.id,
+            segments: binding.segments.map { segment in
+                PresentationSource.Segment(
+                    key: sources.source(segment.source)?.key.map {
+                        SmdSidecar.NaturalKey(scheme: $0.scheme, value: $0.value)
+                    },
+                    chapters: segment.chapters.map { SmdSidecar.ChapterSpan(from: $0.from, to: $0.to) }
+                )
+            }
+        )
     }
 
     /// How a placed presentation was made, as its sidecar records it: the recipe's stack — its
@@ -409,13 +489,18 @@ package struct JobService: Sendable, JobsAPI {
     /// so has no version to name.
     private static func transform(of recipe: Recipe) -> Transform? {
         guard let version = recipe.ruleset.version else { return nil }
-        return Transform(ruleset: recipe.ruleset.name, version: version, layers: recipe.layers.compactMap { layer in
-            let subject: Transform.Layer.Subject? = switch layer.subject {
-            case .binding(let id): .binding(id)
-            case .container(let id): ContainerID(id).map(Transform.Layer.Subject.container)
+        return Transform(
+            ruleset: recipe.ruleset.name,
+            version: version,
+            layers: recipe.layers.compactMap { layer in
+                let subject: Transform.Layer.Subject? =
+                    switch layer.subject {
+                    case .binding(let id): .binding(id)
+                    case .container(let id): ContainerID(id).map(Transform.Layer.Subject.container)
+                    }
+                return subject.map { Transform.Layer($0, version: layer.version, digest: layer.digest) }
             }
-            return subject.map { Transform.Layer($0, version: layer.version, digest: layer.digest) }
-        })
+        )
     }
 
     private static func fetch(_ file: FileRef, to destination: URL) async throws {

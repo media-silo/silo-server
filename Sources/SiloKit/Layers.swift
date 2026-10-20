@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
-
 /// Whose rules a layer is: a container's, by its id, or a binding's, by its id. The ruleset applied
 /// is the stack's last layer and is named by the recipe itself. `LayeredRulesets.md`, *Layers*.
 public enum LayerSubject: Hashable, Sendable {
@@ -106,18 +104,25 @@ public enum DecisionLayer: Hashable, Sendable, Codable {
     }
 }
 
-fileprivate protocol SubjectKeys: CodingKey {
+private protocol SubjectKeys: CodingKey {
     static var container: Self { get }
     static var binding: Self { get }
 }
 
 extension LayerSubject {
     fileprivate init<Keys: SubjectKeys>(decodingFrom values: KeyedDecodingContainer<Keys>) throws {
-        switch (try values.decodeIfPresent(String.self, forKey: .container), try values.decodeIfPresent(String.self, forKey: .binding)) {
+        switch (
+            try values.decodeIfPresent(String.self, forKey: .container),
+            try values.decodeIfPresent(String.self, forKey: .binding)
+        ) {
         case (let container?, nil): self = .container(container)
         case (nil, let binding?): self = .binding(binding)
         default:
-            throw DecodingError.dataCorruptedError(forKey: Keys.container, in: values, debugDescription: "a layer names exactly one of a container and a binding")
+            throw DecodingError.dataCorruptedError(
+                forKey: Keys.container,
+                in: values,
+                debugDescription: "a layer names exactly one of a container and a binding"
+            )
         }
     }
 

@@ -40,7 +40,10 @@ struct Jobs: AsyncParsableCommand {
         mutating func run() async throws {
             let client = try connection.client()
             let jobs = try await client.jobs(state: state)
-            if jobs.isEmpty { print("no jobs"); return }
+            if jobs.isEmpty {
+                print("no jobs")
+                return
+            }
             let lines = Jobs.Lines(client: client)
             for job in jobs { print(await lines.line(job)) }
         }
@@ -62,7 +65,9 @@ struct Jobs: AsyncParsableCommand {
     }
 
     struct Cancel: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Cancel a job; one a node is on stops at its next report.")
+        static let configuration = CommandConfiguration(
+            abstract: "Cancel a job; one a node is on stops at its next report."
+        )
 
         @OptionGroup var connection: Connection
         @Argument var id: String
@@ -86,7 +91,9 @@ struct Jobs: AsyncParsableCommand {
     }
 
     struct Place: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Have the silo fetch an encoded job's output and place it.")
+        static let configuration = CommandConfiguration(
+            abstract: "Have the silo fetch an encoded job's output and place it."
+        )
 
         @OptionGroup var connection: Connection
         @Argument var id: String
@@ -112,7 +119,9 @@ struct Jobs: AsyncParsableCommand {
 
         func line(_ job: Job) async -> String {
             var parts = [job.id, job.state.rawValue.padding(toLength: 10, withPad: " ", startingAt: 0)]
-            if let progress = job.progress?.fraction, job.state == .encoding { parts.append(String(format: "%3.0f%%", progress * 100)) }
+            if let progress = job.progress?.fraction, job.state == .encoding {
+                parts.append(String(format: "%3.0f%%", progress * 100))
+            }
             if let recipe = try? await client.recipe(job.recipe), let binding = await binding(recipe.binding) {
                 parts.append("-> \(binding.item)\(recipe.recipe.output.profile.map { " (\($0))" } ?? "")")
             }

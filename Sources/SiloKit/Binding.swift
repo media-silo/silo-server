@@ -25,8 +25,15 @@ public struct Binding: Hashable, Sendable, Codable {
     public var createdAt: Date
 
     public init(
-        id: String = UUID().uuidString.lowercased(), library: String, containers: [String], item: String, alternative: String? = nil,
-        tracks: [TrackMapping] = [], chapters: [Chapter] = [], segments: [Segment], createdAt: Date = .now
+        id: String = UUID().uuidString.lowercased(),
+        library: String,
+        containers: [String],
+        item: String,
+        alternative: String? = nil,
+        tracks: [TrackMapping] = [],
+        chapters: [Chapter] = [],
+        segments: [Segment],
+        createdAt: Date = .now
     ) {
         self.id = id
         self.library = library
@@ -136,7 +143,9 @@ public struct JoinedMedia: Hashable, Sendable {
                 timed.append(TimedSegment(source: segment.source, start: 0, end: spec.duration, isWhole: true))
                 continue
             }
-            guard span.to >= span.from else { throw .spanBackwards(source: segment.source, from: span.from, to: span.to) }
+            guard span.to >= span.from else {
+                throw .spanBackwards(source: segment.source, from: span.from, to: span.to)
+            }
             guard let start = spec.chapters.first(where: { $0.index == span.from }) else {
                 throw .unknownChapter(source: segment.source, chapter: span.from)
             }
@@ -144,7 +153,14 @@ public struct JoinedMedia: Hashable, Sendable {
                 throw .unknownChapter(source: segment.source, chapter: span.to)
             }
             let after = spec.chapters.first { $0.index > span.to }
-            timed.append(TimedSegment(source: segment.source, start: start.start, end: after?.start ?? spec.duration, isWhole: false))
+            timed.append(
+                TimedSegment(
+                    source: segment.source,
+                    start: start.start,
+                    end: after?.start ?? spec.duration,
+                    isWhole: false
+                )
+            )
         }
         self.spec = first!
         self.segments = timed
@@ -153,12 +169,18 @@ public struct JoinedMedia: Hashable, Sendable {
     /// Segments are joined as the concat demuxer joins them, so a stream's index must mean the same
     /// in each: the same kind and codec at every index.
     private static func compare(_ first: InputSpec, _ other: InputSpec, segment: Int) throws(BindingError) {
-        let a = Dictionary(first.streams.map { ($0.index, $0) }, uniquingKeysWith: { lhs, _ in lhs })
-        let b = Dictionary(other.streams.map { ($0.index, $0) }, uniquingKeysWith: { lhs, _ in lhs })
-        for index in Set(a.keys).union(b.keys).sorted() {
-            let x = a[index], y = b[index]
-            guard x?.kind == y?.kind, x?.codec == y?.codec else {
-                throw .layoutDiffers(segment: segment, stream: index, first: x.map { "\($0.kind.rawValue) \($0.codec)" }, other: y.map { "\($0.kind.rawValue) \($0.codec)" })
+        let firstStreams = Dictionary(first.streams.map { ($0.index, $0) }, uniquingKeysWith: { lhs, _ in lhs })
+        let otherStreams = Dictionary(other.streams.map { ($0.index, $0) }, uniquingKeysWith: { lhs, _ in lhs })
+        for index in Set(firstStreams.keys).union(otherStreams.keys).sorted() {
+            let firstStream = firstStreams[index]
+            let otherStream = otherStreams[index]
+            guard firstStream?.kind == otherStream?.kind, firstStream?.codec == otherStream?.codec else {
+                throw .layoutDiffers(
+                    segment: segment,
+                    stream: index,
+                    first: firstStream.map { "\($0.kind.rawValue) \($0.codec)" },
+                    other: otherStream.map { "\($0.kind.rawValue) \($0.codec)" }
+                )
             }
         }
     }
@@ -176,7 +198,8 @@ public enum BindingError: Error, Hashable, Sendable, CustomStringConvertible {
         case .noSegments: "a binding needs at least one segment"
         case .unknownSource(let source): "no source \(source)"
         case .unknownChapter(let source, let chapter): "source \(source) has no chapter \(chapter)"
-        case .spanBackwards(let source, let from, let to): "the span of source \(source) runs backwards, from chapter \(from) to \(to)"
+        case .spanBackwards(let source, let from, let to):
+            "the span of source \(source) runs backwards, from chapter \(from) to \(to)"
         case .layoutDiffers(let segment, let stream, let first, let other):
             "segments cannot be joined: segment \(segment)'s stream \(stream) is \(other ?? "missing"), where segment 1's is \(first ?? "missing")"
         }
@@ -190,36 +213,37 @@ extension SourceFacts {
     /// knows of the entry — its kind, whether it is an extra, and the role each mapped audio stream
     /// takes from its feature — and the output being made. `Ingestion.md`: observed by the producer,
     /// derived by the silo.
-    public init(input spec: InputSpec, roles: [Int: AudioRole] = [:], kind: EntryType? = nil, extra: Bool? = nil, profile: String? = nil, duration: Double? = nil) {
+    public init(
+        input spec: InputSpec,
+        roles: [Int: AudioRole] = [:],
+        kind: EntryType? = nil,
+        extra: Bool? = nil,
+        profile: String? = nil,
+        duration: Double? = nil
+    ) {
         var hints = spec.notes.map { FactHint(stream: $0.stream, text: $0.text) }
 
         let videos = spec.streams.filter { $0.kind == .video }
         if videos.count > 1 {
             hints.append(FactHint(text: "the file has \(videos.count) video streams; only the first is described"))
         }
-        let video = videos.first.map { stream in
-            let hdr: HDRKind? = switch stream.transfer {
-            case "smpte2084": .hdr10
-            case "arib-std-b67": .hlg
-            default: nil
-            }
-            return VideoFacts(
-                absoluteIndex: stream.index,
-                codec: stream.codec,
-                width: stream.width ?? 0,
-                height: stream.height ?? 0,
-                frameRate: stream.frameRate?.value,
-                interlaced: stream.interlaced ?? false,
-                hdr: hdr,
-                bitDepth: stream.bitDepth
-            )
-        }
+        let video = videos.first.map(Self.videoFacts)
 
         let audio = spec.streams.filter { $0.kind == .audio }.enumerated().map { position, stream -> AudioFacts in
             let index = position + 1
-            let role = roles[index] ?? (stream.marks.contains(.commentary) ? .commentary : stream.marks.contains(.descriptive) ? .descriptive : .main)
-            if role == .main, let title = stream.title, title.range(of: "commentary", options: .caseInsensitive) != nil {
-                hints.append(FactHint(stream: stream.index, text: "titled \"\(title)\" but nothing marks it a commentary; assign it to a feature if it is one"))
+            let role =
+                roles[index]
+                ?? (stream.marks.contains(.commentary)
+                    ? .commentary : stream.marks.contains(.descriptive) ? .descriptive : .main)
+            if role == .main, let title = stream.title, title.range(of: "commentary", options: .caseInsensitive) != nil
+            {
+                hints.append(
+                    FactHint(
+                        stream: stream.index,
+                        text:
+                            "titled \"\(title)\" but nothing marks it a commentary; assign it to a feature if it is one"
+                    )
+                )
             }
             return AudioFacts(
                 index: index,
@@ -238,18 +262,8 @@ extension SourceFacts {
             )
         }
 
-        let subtitles = spec.streams.filter { $0.kind == .subtitle }.enumerated().map { position, stream -> SubtitleFacts in
-            SubtitleFacts(
-                index: position + 1,
-                absoluteIndex: stream.index,
-                codec: stream.codec,
-                language: stream.language?.language,
-                script: stream.language?.script,
-                region: stream.language?.region,
-                forced: stream.marks.contains(.forced),
-                hearingImpaired: stream.marks.contains(.hearingImpaired),
-                title: stream.title
-            )
+        let subtitles = spec.streams.filter { $0.kind == .subtitle }.enumerated().map {
+            Self.subtitleFacts(position: $0.offset, stream: $0.element)
         }
 
         self.init(
@@ -262,6 +276,41 @@ extension SourceFacts {
             audio: audio,
             subtitles: subtitles,
             hints: hints
+        )
+    }
+
+    /// The facts of the video stream a rule tests.
+    private static func videoFacts(_ stream: InputSpec.Stream) -> VideoFacts {
+        let hdr: HDRKind? =
+            switch stream.transfer {
+            case "smpte2084": .hdr10
+            case "arib-std-b67": .hlg
+            default: nil
+            }
+        return VideoFacts(
+            absoluteIndex: stream.index,
+            codec: stream.codec,
+            width: stream.width ?? 0,
+            height: stream.height ?? 0,
+            frameRate: stream.frameRate?.value,
+            interlaced: stream.interlaced ?? false,
+            hdr: hdr,
+            bitDepth: stream.bitDepth
+        )
+    }
+
+    /// The facts of the subtitle stream at `position` among the subtitle streams, counted from zero.
+    private static func subtitleFacts(position: Int, stream: InputSpec.Stream) -> SubtitleFacts {
+        SubtitleFacts(
+            index: position + 1,
+            absoluteIndex: stream.index,
+            codec: stream.codec,
+            language: stream.language?.language,
+            script: stream.language?.script,
+            region: stream.language?.region,
+            forced: stream.marks.contains(.forced),
+            hearingImpaired: stream.marks.contains(.hearingImpaired),
+            title: stream.title
         )
     }
 }

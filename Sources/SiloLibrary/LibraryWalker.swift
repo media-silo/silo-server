@@ -42,9 +42,18 @@ public struct LibraryNode: Sendable {
     public var size: Int?
 
     public var sidecarURL: URL { folder.appendingPathComponent(LibraryLayout.sidecarFileName) }
-    public var relativeSidecar: String { relativeFolder.isEmpty ? LibraryLayout.sidecarFileName : "\(relativeFolder)/\(LibraryLayout.sidecarFileName)" }
+    public var relativeSidecar: String {
+        relativeFolder.isEmpty ? LibraryLayout.sidecarFileName : "\(relativeFolder)/\(LibraryLayout.sidecarFileName)"
+    }
 
-    public init(folder: URL, relativeFolder: String, sidecar: Sidecar, children: [LibraryNode] = [], modified: Date? = nil, size: Int? = nil) {
+    public init(
+        folder: URL,
+        relativeFolder: String,
+        sidecar: Sidecar,
+        children: [LibraryNode] = [],
+        modified: Date? = nil,
+        size: Int? = nil
+    ) {
         self.folder = folder
         self.relativeFolder = relativeFolder
         self.sidecar = sidecar
@@ -81,12 +90,24 @@ public enum LibraryWalker {
         var found: [ContainerID: String] = [:]
         var roots: [LibraryNode] = []
 
-        let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
+        let folders =
+            (try? FileManager.default.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
         for folder in folders.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
             let sidecar = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
             guard FileManager.default.fileExists(atPath: sidecar.path) else { continue }
-            if let node = read(folder: folder, relativeFolder: folder.lastPathComponent, expecting: nil, reached: &reached, found: &found, findings: &findings) {
+            if let node = read(
+                folder: folder,
+                relativeFolder: folder.lastPathComponent,
+                expecting: nil,
+                reached: &reached,
+                found: &found,
+                findings: &findings
+            ) {
                 roots.append(node)
             }
         }
@@ -94,7 +115,11 @@ public enum LibraryWalker {
         // The enumerator's order is the filesystem's, which differs between platforms; the
         // findings are sorted so a report reads the same everywhere.
         var unreferenced: [String] = []
-        if let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        if let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) {
             for case let url as URL in enumerator where url.lastPathComponent == LibraryLayout.sidecarFileName {
                 let relative = relativePath(of: url, in: root)
                 if !reached.contains(relative) { unreferenced.append(relative) }
@@ -107,30 +132,31 @@ public enum LibraryWalker {
     }
 
     private static func read(
-        folder: URL, relativeFolder: String, expecting: ContainerID?, reached: inout Set<String>, found: inout [ContainerID: String], findings: inout [Finding]
+        folder: URL,
+        relativeFolder: String,
+        expecting: ContainerID?,
+        reached: inout Set<String>,
+        found: inout [ContainerID: String],
+        findings: inout [Finding]
     ) -> LibraryNode? {
         let url = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
         let relative = "\(relativeFolder)/\(LibraryLayout.sidecarFileName)"
         reached.insert(relative)
-        let sidecar: Sidecar
-        do {
-            sidecar = try SidecarFile.sidecar(from: Data(contentsOf: url))
-        } catch {
-            findings.append(Finding(.error, path: relative, "unreadable: \(error.localizedDescription)"))
-            return nil
-        }
-        if let expecting, sidecar.container.id != expecting {
-            findings.append(Finding(.error, path: relative, "describes \(sidecar.container.id) where its parent expects \(expecting)"))
-            return nil
-        }
+        guard let sidecar = load(url, relative: relative, expecting: expecting, findings: &findings) else { return nil }
         // A library holds a container once: the first sidecar reached for it is the one walked, and
         // which of the two is right is not the walk's to decide.
         if let first = found[sidecar.container.id] {
-            findings.append(Finding(.error, path: relative, "container \(sidecar.container.id) is already at \"\(first)\""))
+            findings.append(
+                Finding(.error, path: relative, "container \(sidecar.container.id) is already at \"\(first)\"")
+            )
             return nil
         }
         found[sidecar.container.id] = relativeFolder
-        if let finding = LibraryLayout.folderFinding(folder: relativeFolder, displayTitle: sidecar.container.displayTitle, id: sidecar.container.id) {
+        if let finding = LibraryLayout.folderFinding(
+            folder: relativeFolder,
+            displayTitle: sidecar.container.displayTitle,
+            id: sidecar.container.id
+        ) {
             findings.append(finding)
         }
         findings += Artwork.findings(in: folder, sidecar: relative)
@@ -142,45 +168,131 @@ public enum LibraryWalker {
             modified: attributes?[.modificationDate] as? Date,
             size: (attributes?[.size] as? NSNumber)?.intValue
         )
-        if let rules = sidecar.rules {
-            checkRules(rules, in: folder, sidecar: relative, findings: &findings)
-        }
-        for (item, bindings) in sidecar.bindingRules.sorted(by: { $0.key < $1.key }) {
-            for binding in bindings {
-                checkRules(binding.rules, in: folder, sidecar: relative, of: "binding \(binding.binding)", findings: &findings)
-                if !(sidecar.presentations[item]?.contains { $0.source?.binding == binding.binding } ?? false) {
-                    findings.append(Finding(.warning, path: relative, "rules for binding \(binding.binding), which no presentation of \(item) names"))
-                }
-            }
-        }
+        checkAllRules(of: sidecar, in: folder, sidecar: relative, findings: &findings)
         for (child, path) in sidecar.children.sorted(by: { $0.value < $1.value }) {
             guard LibraryLayout.isInside(path), path.hasSuffix("/\(LibraryLayout.sidecarFileName)") else {
-                findings.append(Finding(.error, path: relative, "child \(child) is at \"\(path)\", which is not a sidecar inside this folder"))
+                findings.append(
+                    Finding(
+                        .error,
+                        path: relative,
+                        "child \(child) is at \"\(path)\", which is not a sidecar inside this folder"
+                    )
+                )
                 continue
             }
-            let childFolder = folder.appendingPathComponent(String(path.dropLast(LibraryLayout.sidecarFileName.count + 1)))
+            let childFolder = folder.appendingPathComponent(
+                String(path.dropLast(LibraryLayout.sidecarFileName.count + 1))
+            )
             let childRelative = "\(relativeFolder)/\(String(path.dropLast(LibraryLayout.sidecarFileName.count + 1)))"
-            guard FileManager.default.fileExists(atPath: childFolder.appendingPathComponent(LibraryLayout.sidecarFileName).path) else {
-                findings.append(Finding(.error, path: relative, "child \(child) is at \"\(path)\", which does not exist"))
+            guard
+                FileManager.default.fileExists(
+                    atPath: childFolder.appendingPathComponent(LibraryLayout.sidecarFileName).path
+                )
+            else {
+                findings.append(
+                    Finding(.error, path: relative, "child \(child) is at \"\(path)\", which does not exist")
+                )
                 continue
             }
-            if let childNode = read(folder: childFolder, relativeFolder: childRelative, expecting: child, reached: &reached, found: &found, findings: &findings) {
+            if let childNode = read(
+                folder: childFolder,
+                relativeFolder: childRelative,
+                expecting: child,
+                reached: &reached,
+                found: &found,
+                findings: &findings
+            ) {
                 node.children.append(childNode)
             }
         }
         return node
     }
 
+    /// Reads the sidecar, or nil having reported why not: it is unreadable, or describes another
+    /// container than its parent expects.
+    private static func load(
+        _ url: URL,
+        relative: String,
+        expecting: ContainerID?,
+        findings: inout [Finding]
+    ) -> Sidecar? {
+        let sidecar: Sidecar
+        do {
+            sidecar = try SidecarFile.sidecar(from: Data(contentsOf: url))
+        } catch {
+            findings.append(Finding(.error, path: relative, "unreadable: \(error.localizedDescription)"))
+            return nil
+        }
+        if let expecting, sidecar.container.id != expecting {
+            findings.append(
+                Finding(
+                    .error,
+                    path: relative,
+                    "describes \(sidecar.container.id) where its parent expects \(expecting)"
+                )
+            )
+            return nil
+        }
+        return sidecar
+    }
+
+    /// The container's own rules and each binding's, checked; and a warning for a binding's rules
+    /// that no presentation of the item names.
+    private static func checkAllRules(
+        of sidecar: Sidecar,
+        in folder: URL,
+        sidecar relative: String,
+        findings: inout [Finding]
+    ) {
+        if let rules = sidecar.rules {
+            checkRules(rules, in: folder, sidecar: relative, findings: &findings)
+        }
+        for (item, bindings) in sidecar.bindingRules.sorted(by: { $0.key < $1.key }) {
+            for binding in bindings {
+                checkRules(
+                    binding.rules,
+                    in: folder,
+                    sidecar: relative,
+                    of: "binding \(binding.binding)",
+                    findings: &findings
+                )
+                if !(sidecar.presentations[item]?.contains { $0.source?.binding == binding.binding } ?? false) {
+                    findings.append(
+                        Finding(
+                            .warning,
+                            path: relative,
+                            "rules for binding \(binding.binding), which no presentation of \(item) names"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     /// A container's rules in force: inside its folder, there, and rules the reader takes. Each is
     /// an error, since an application through them would be refused.
-    private static func checkRules(_ rules: SidecarRules, in folder: URL, sidecar relative: String, of owner: String? = nil, findings: inout [Finding]) {
+    private static func checkRules(
+        _ rules: SidecarRules,
+        in folder: URL,
+        sidecar relative: String,
+        of owner: String? = nil,
+        findings: inout [Finding]
+    ) {
         let whose = owner.map { "\($0): " } ?? ""
         guard LibraryLayout.isInside(rules.activeFile) else {
-            findings.append(Finding(.error, path: relative, "\(whose)rules are at \"\(rules.path)\", which is not inside this folder"))
+            findings.append(
+                Finding(
+                    .error,
+                    path: relative,
+                    "\(whose)rules are at \"\(rules.path)\", which is not inside this folder"
+                )
+            )
             return
         }
         guard let data = try? Data(contentsOf: folder.appendingPathComponent(rules.activeFile)) else {
-            findings.append(Finding(.error, path: relative, "\(whose)rules version \(rules.activeVersion) is not there"))
+            findings.append(
+                Finding(.error, path: relative, "\(whose)rules version \(rules.activeVersion) is not there")
+            )
             return
         }
         do {
@@ -196,7 +308,9 @@ public enum LibraryWalker {
     /// back the resolved form of a root that was given as the link.
     public static func relativePath(of url: URL, in root: URL) -> String {
         if let relative = relative(url.path, under: root.path) { return relative }
-        if let relative = relative(url.resolvingSymlinksInPath().path, under: root.resolvingSymlinksInPath().path) { return relative }
+        if let relative = relative(url.resolvingSymlinksInPath().path, under: root.resolvingSymlinksInPath().path) {
+            return relative
+        }
         return url.path
     }
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import SiloKit
 
 /// A place where the encoded file disagrees with the recipe's layout. Any mismatch fails the job:
@@ -38,23 +37,38 @@ extension Recipe {
             }
             let found = actual[position]
             guard found.kind.rawValue == stream.kind.rawValue else {
-                mismatches.append(LayoutMismatch(position: position, expected: stream.kind.rawValue, found: found.kind.rawValue))
+                mismatches.append(
+                    LayoutMismatch(position: position, expected: stream.kind.rawValue, found: found.kind.rawValue)
+                )
                 continue
             }
             if let expected = expectedCodec(for: stream, source: source), expected != found.codec {
-                mismatches.append(LayoutMismatch(position: position, expected: "\(stream.kind.rawValue) \(expected)", found: "\(found.kind.rawValue) \(found.codec)"))
+                mismatches.append(
+                    LayoutMismatch(
+                        position: position,
+                        expected: "\(stream.kind.rawValue) \(expected)",
+                        found: "\(found.kind.rawValue) \(found.codec)"
+                    )
+                )
             }
         }
         if actual.count > layout.streams.count {
             for extra in actual[layout.streams.count...] {
-                mismatches.append(LayoutMismatch(position: extra.absoluteIndex, expected: "nothing", found: "\(extra.kind.rawValue) \(extra.codec)"))
+                mismatches.append(
+                    LayoutMismatch(
+                        position: extra.absoluteIndex,
+                        expected: "nothing",
+                        found: "\(extra.kind.rawValue) \(extra.codec)"
+                    )
+                )
             }
         }
         return mismatches
     }
 
     private func expectedCodec(for stream: LayoutStream, source: SourceFacts) -> String? {
-        guard let decision = decisions.first(where: { $0.kind == stream.kind && $0.sourceIndex == stream.sourceIndex }) else {
+        guard let decision = decisions.first(where: { $0.kind == stream.kind && $0.sourceIndex == stream.sourceIndex })
+        else {
             return nil
         }
         switch decision.action {

@@ -1,0 +1,19 @@
+disabled_rules:
+  - trailing_whitespace
+  - void_return
+analyzer_rules:
+  - unused_import
+included:
+  - Sources
+line_length: 150
+function_body_length:
+  warning: 50
+  error: 75
+# On Linux, `Date`, `UUID` and `Data` come from FoundationEssentials, which Foundation re-exports, so
+# the analyzer would call every `import Foundation` that needs nothing more unused. Removing them
+# breaks the macOS build, where Foundation is the only module that has those types.
+unused_import:
+  allowed_transitive_imports:
+    - module: Foundation
+      allowed_transitive_imports:
+        - FoundationEssentials

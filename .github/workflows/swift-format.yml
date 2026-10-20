@@ -1,0 +1,23 @@
+name: swift-format
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  SwiftFormat:
+    name: swift-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      # The formatter is the one in the toolchain .swift-version names, so the tree is formatted by
+      # the Swift it is built with and a new Swift reformats in the same change that adopts it.
+      - uses: swift-wire/setup-swift@v1
+      - name: Run swift-format
+        run: swift-format format --recursive --in-place .
+      - name: Check for formatting differences
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git diff --exit-code

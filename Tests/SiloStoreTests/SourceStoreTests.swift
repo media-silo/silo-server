@@ -4,6 +4,7 @@
 import Foundation
 import SiloKit
 import Testing
+
 @testable import SiloStore
 
 struct SourceStoreTests {
@@ -66,9 +67,15 @@ struct SourceStoreTests {
     }
 
     @Test func sourcesSurviveARestart() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("SourceStoreTests-\(UUID().uuidString)")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "SourceStoreTests-\(UUID().uuidString)"
+        )
         defer { try? FileManager.default.removeItem(at: folder) }
-        let (source, _) = try SourceStore(folder: folder).register(Self.spec, key: Self.discTitle, copy: Self.copy(on: "ripper"))
+        let (source, _) = try SourceStore(folder: folder).register(
+            Self.spec,
+            key: Self.discTitle,
+            copy: Self.copy(on: "ripper")
+        )
         let reopened = try SourceStore(folder: folder)
         #expect(reopened.source(source.id)?.input == Self.spec)
         #expect(reopened.source(source.id)?.key == Self.discTitle)

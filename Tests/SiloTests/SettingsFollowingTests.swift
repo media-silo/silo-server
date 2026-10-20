@@ -6,6 +6,7 @@ import Foundation
 import SiloKit
 import SiloStore
 import Testing
+
 @testable import SiloApp
 @testable import silo
 
@@ -17,17 +18,30 @@ struct AdvertiserTests {
         let credential = OperatorCredential()
         let server = ServerService(identity: ServerIdentity(id: "s1"), settings: settings, credential: credential)
         let advertiser = Advertiser(
-            config: SiloConfig(serverID: "s1", host: "0.0.0.0", port: 8742, stateDirectory: URL(fileURLWithPath: "/dev/null")),
-            server: server, settings: settings, interval: .milliseconds(10)
+            config: SiloConfig(
+                serverID: "s1",
+                host: "0.0.0.0",
+                port: 8742,
+                stateDirectory: URL(fileURLWithPath: "/dev/null")
+            ),
+            server: server,
+            settings: settings,
+            interval: .milliseconds(10)
         )
         #expect(advertiser.announcement == nil, "the setting is off")
 
         try settings.update { $0.advertise = true }
-        #expect(advertiser.announcement == Advertiser.Announcement(name: "Silo on attic", txt: ["v": "1", "id": "s1", "b": "1"]))
+        #expect(
+            advertiser.announcement
+                == Advertiser.Announcement(name: "Silo on attic", txt: ["v": "1", "id": "s1", "b": "1"])
+        )
 
         try settings.update { $0.name = "Living Room Silo" }
         try server.land(StoredOperatorCredential(passkeyHash: NodeStore.hash("horse-battery")))
-        #expect(advertiser.announcement == Advertiser.Announcement(name: "Living Room Silo", txt: ["v": "1", "id": "s1"]), "renamed, and out of bootstrap")
+        #expect(
+            advertiser.announcement == Advertiser.Announcement(name: "Living Room Silo", txt: ["v": "1", "id": "s1"]),
+            "renamed, and out of bootstrap"
+        )
     }
 }
 
@@ -46,10 +60,18 @@ struct EmbeddedNodeTests {
             "-map", "0:v", "-map", "1:a", "-map", "2:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "flac",
             file.path,
         ])
-        return (FileRef(holder: "embedded", url: file, path: file.path, secret: ""), InputSpec(probe: try await FFprobe().probe(file)))
+        return (
+            FileRef(holder: "embedded", url: file, path: file.path, secret: ""),
+            InputSpec(probe: try await FFprobe().probe(file))
+        )
     }
 
-    private func state(of job: String, in bench: JobServiceTests.Bench, becomes wanted: Set<JobState>, within seconds: Double) async throws -> JobState {
+    private func state(
+        of job: String,
+        in bench: JobServiceTests.Bench,
+        becomes wanted: Set<JobState>,
+        within seconds: Double
+    ) async throws -> JobState {
         let deadline = Date.now.addingTimeInterval(seconds)
         var state = try bench.service.job(job).state
         while !wanted.contains(state) && Date.now < deadline {
@@ -63,22 +85,35 @@ struct EmbeddedNodeTests {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
         let settings = SettingsStore(Settings(name: "Silo on attic", embeddedNode: false))
-        let node = EmbeddedNode(config: bench.config, jobs: bench.service, settings: settings, pollInterval: .milliseconds(50), progressInterval: .milliseconds(100))
+        let node = EmbeddedNode(
+            config: bench.config,
+            jobs: bench.service,
+            settings: settings,
+            pollInterval: .milliseconds(50),
+            progressInterval: .milliseconds(100)
+        )
         let running = Task { await node.follow() }
         defer { running.cancel() }
 
         let (first, firstInput) = try await sample(in: bench, named: "first.mkv")
-        let firstJob = try bench.service.make(from: try bench.resolved(input: firstInput, copy: first, profile: "mobile").id)
+        let firstJob = try bench.service.make(
+            from: try bench.resolved(input: firstInput, copy: first, profile: "mobile").id
+        )
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(firstJob.id).state == .pending, "off, it claims nothing")
 
         try settings.update { $0.embeddedNode = true }
-        #expect(try await state(of: firstJob.id, in: bench, becomes: [.encoded, .failed], within: 30) == .encoded, "on, it claims and encodes without a restart")
+        #expect(
+            try await state(of: firstJob.id, in: bench, becomes: [.encoded, .failed], within: 30) == .encoded,
+            "on, it claims and encodes without a restart"
+        )
 
         try settings.update { $0.embeddedNode = false }
         try await Task.sleep(for: .milliseconds(200))
         let (second, secondInput) = try await sample(in: bench, named: "second.mkv")
-        let secondJob = try bench.service.make(from: try bench.resolved(input: secondInput, copy: second, profile: "mobile").id)
+        let secondJob = try bench.service.make(
+            from: try bench.resolved(input: secondInput, copy: second, profile: "mobile").id
+        )
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(secondJob.id).state == .pending, "off again, it claims no more")
     }

@@ -73,7 +73,13 @@ struct Place: AsyncParsableCommand {
         presentation.chapters = try chapter.map(Self.parseChapter)
 
         let libraryURL = URL(fileURLWithPath: library, isDirectory: true)
-        let request = PlacementRequest(library: libraryURL, lineage: lineage, item: item, presentation: presentation, source: URL(fileURLWithPath: file))
+        let request = PlacementRequest(
+            library: libraryURL,
+            lineage: lineage,
+            item: item,
+            presentation: presentation,
+            source: URL(fileURLWithPath: file)
+        )
         let placement = try Placer.compute(request)
         for line in placement.describe(relativeTo: libraryURL) { print(line) }
         for finding in placement.findings { print(finding) }
@@ -89,7 +95,9 @@ struct Place: AsyncParsableCommand {
         var mapping = TrackMapping(feature: parts[0])
         for stream in parts[1].split(separator: ",") {
             let pair = stream.split(separator: ":").map(String.init)
-            guard pair.count == 2, let index = Int(pair[1]) else { throw ValidationError("--track takes feature=audio:N[,subtitle:M]") }
+            guard pair.count == 2, let index = Int(pair[1]) else {
+                throw ValidationError("--track takes feature=audio:N[,subtitle:M]")
+            }
             switch pair[0] {
             case "audio": mapping.audio = index
             case "subtitle": mapping.subtitle = index

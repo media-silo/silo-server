@@ -31,7 +31,12 @@ public final class FileServer: Sendable {
     private let logger: Logger
 
     /// `advertisedHost` is what other machines reach this one as; the bind host may be `0.0.0.0`.
-    public init(host: String = "0.0.0.0", port: Int, advertisedHost: String, logger: Logger = Logger(label: "silo.files")) throws {
+    public init(
+        host: String = "0.0.0.0",
+        port: Int,
+        advertisedHost: String,
+        logger: Logger = Logger(label: "silo.files")
+    ) throws {
         self.host = advertisedHost
         self.port = port
         self.logger = logger
@@ -49,7 +54,13 @@ public final class FileServer: Sendable {
     public func publish(_ url: URL, at path: String, secret: String = FileRef.mintSecret()) -> FileRef {
         files.withLock { $0[path] = Published(url: url, secret: secret) }
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
-        return FileRef(holder: "", url: URL(string: "http://\(host):\(port)/files/\(path)")!, path: url.path, sizeBytes: size, secret: secret)
+        return FileRef(
+            holder: "",
+            url: URL(string: "http://\(host):\(port)/files/\(path)")!,
+            path: url.path,
+            sizeBytes: size,
+            secret: secret
+        )
     }
 
     public func unpublish(_ path: String) {
@@ -81,9 +92,9 @@ public final class FileServer: Sendable {
             responseSender: consuming sending NIOHTTPServer.ResponseSender
         ) async throws {
             guard request.method == .get || request.method == .head,
-                  let path = request.path, path.hasPrefix("/files/"),
-                  let published = files.lookup(String(path.dropFirst("/files/".count))),
-                  request.headerFields[FileServer.secretHeader] == published.secret
+                let path = request.path, path.hasPrefix("/files/"),
+                let published = files.lookup(String(path.dropFirst("/files/".count))),
+                request.headerFields[FileServer.secretHeader] == published.secret
             else {
                 try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
                 return

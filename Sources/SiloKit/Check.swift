@@ -54,7 +54,15 @@ public struct CheckRecord: Hashable, Sendable, Codable {
     /// recipe at all.
     public var reason: String?
 
-    public init(job: String, recipe: String, checkedAgainst: CheckedStack, checkedAt: Date = .now, outcome: Outcome, changes: [StreamChange] = [], reason: String? = nil) {
+    public init(
+        job: String,
+        recipe: String,
+        checkedAgainst: CheckedStack,
+        checkedAt: Date = .now,
+        outcome: Outcome,
+        changes: [StreamChange] = [],
+        reason: String? = nil
+    ) {
         self.job = job
         self.recipe = recipe
         self.checkedAgainst = checkedAgainst
@@ -75,7 +83,11 @@ extension Recipe {
     /// layer decided is not compared, only what is done with the stream.
     public func changes(to other: Recipe) -> [StreamChange] {
         decisions.compactMap { decision in
-            guard let now = other.decisions.first(where: { $0.kind == decision.kind && $0.sourceIndex == decision.sourceIndex }), now.action != decision.action else {
+            guard
+                let now = other.decisions.first(where: {
+                    $0.kind == decision.kind && $0.sourceIndex == decision.sourceIndex
+                }), now.action != decision.action
+            else {
                 return nil
             }
             return StreamChange(kind: decision.kind, index: decision.sourceIndex, was: decision.action, now: now.action)

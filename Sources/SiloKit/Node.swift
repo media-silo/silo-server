@@ -19,7 +19,18 @@ public struct Node: Identifiable, Hashable, Sendable, Codable {
     public var approvedAt: Date?
     public var lastSeenAt: Date?
 
-    public init(id: String, name: String, platform: String, state: NodeState = .pending, capabilities: [String] = [], ffmpegVersion: String? = nil, cores: Int? = nil, registeredAt: Date = .now, approvedAt: Date? = nil, lastSeenAt: Date? = nil) {
+    public init(
+        id: String,
+        name: String,
+        platform: String,
+        state: NodeState = .pending,
+        capabilities: [String] = [],
+        ffmpegVersion: String? = nil,
+        cores: Int? = nil,
+        registeredAt: Date = .now,
+        approvedAt: Date? = nil,
+        lastSeenAt: Date? = nil
+    ) {
         self.id = id
         self.name = name
         self.platform = platform
@@ -48,7 +59,15 @@ public struct NodeRegistration: Hashable, Sendable, Codable {
     public var ffmpegVersion: String?
     public var cores: Int?
 
-    public init(id: String, secret: String, name: String, platform: String, capabilities: [String], ffmpegVersion: String? = nil, cores: Int? = nil) {
+    public init(
+        id: String,
+        secret: String,
+        name: String,
+        platform: String,
+        capabilities: [String],
+        ffmpegVersion: String? = nil,
+        cores: Int? = nil
+    ) {
         self.id = id
         self.secret = secret
         self.name = name
@@ -76,7 +95,11 @@ public struct NodeIdentity: Hashable, Sendable, Codable {
     public var secret: String
     public var token: String?
 
-    public init(id: String = UUID().uuidString.lowercased(), secret: String = FileRef.mintSecret(), token: String? = nil) {
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        secret: String = FileRef.mintSecret(),
+        token: String? = nil
+    ) {
         self.id = id
         self.secret = secret
         self.token = token

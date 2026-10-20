@@ -4,6 +4,7 @@
 import Foundation
 import Synchronization
 import Testing
+
 @testable import Encoder
 
 struct ProcessRunnerTests {
@@ -11,7 +12,10 @@ struct ProcessRunnerTests {
 
     @Test func aRunReturnsTheToolsLinesStatusAndErrorTail() async throws {
         let lines = Mutex<[String]>([])
-        let outcome = try await ProcessRunner.run(Self.shell, arguments: ["-c", "printf 'one\\ntwo'; printf 'went wrong' >&2; exit 3"]) { line in
+        let outcome = try await ProcessRunner.run(
+            Self.shell,
+            arguments: ["-c", "printf 'one\\ntwo'; printf 'went wrong' >&2; exit 3"]
+        ) { line in
             lines.withLock { $0.append(line) }
         }
         #expect(lines.withLock { $0 } == ["one", "two"], "the last line is delivered without a newline after it")
@@ -30,7 +34,10 @@ struct ProcessRunnerTests {
                 }
                 group.addTask {
                     let lines = Mutex<[String]>([])
-                    let outcome = try await ProcessRunner.run(Self.shell, arguments: ["-c", "seq 1 2000; echo run \(round) >&2"]) { line in
+                    let outcome = try await ProcessRunner.run(
+                        Self.shell,
+                        arguments: ["-c", "seq 1 2000; echo run \(round) >&2"]
+                    ) { line in
                         lines.withLock { $0.append(line) }
                     }
                     return (lines.withLock { $0 }, outcome.status)

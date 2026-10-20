@@ -3,15 +3,18 @@
 
 import Foundation
 import Testing
+
 @testable import SiloKit
 
 struct FactsTests {
-    @Test(arguments: [
-        ("truehd", nil, true), ("mlp", nil, true), ("flac", nil, true), ("alac", nil, true),
-        ("pcm_s24le", nil, true), ("pcm_bluray", nil, true),
-        ("dts", "DTS-HD MA", true), ("dts", "DTS-HD HRA", false), ("dts", "DTS", false), ("dts", nil, false),
-        ("ac3", nil, false), ("eac3", nil, false), ("aac", "LC", false), ("opus", nil, false),
-    ] as [(String, String?, Bool)])
+    @Test(
+        arguments: [
+            ("truehd", nil, true), ("mlp", nil, true), ("flac", nil, true), ("alac", nil, true),
+            ("pcm_s24le", nil, true), ("pcm_bluray", nil, true),
+            ("dts", "DTS-HD MA", true), ("dts", "DTS-HD HRA", false), ("dts", "DTS", false), ("dts", nil, false),
+            ("ac3", nil, false), ("eac3", nil, false), ("aac", "LC", false), ("opus", nil, false),
+        ] as [(String, String?, Bool)]
+    )
     func losslessIsAFunctionOfCodecAndProfile(codec: String, profile: String?, lossless: Bool) {
         #expect(AudioFacts.isLossless(codec: codec, profile: profile) == lossless)
     }

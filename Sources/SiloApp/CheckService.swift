@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import Logging
 import SiloKit
 import SiloStore
-import SmdKit
 import Wire
 
 /// Whether the rules in force would make each placed presentation differently. A presentation is
@@ -28,7 +26,17 @@ package struct CheckService: Sendable {
     private let logger = Logger(label: "silo.checks")
 
     @Inject
-    package init(jobs: JobStore, recipes: RecipeStore, bindings: BindingStore, sources: SourceStore, rulesets: RulesetStore, stack: RulesStack, checks: CheckStore, index: Index, libraries: Libraries) {
+    package init(
+        jobs: JobStore,
+        recipes: RecipeStore,
+        bindings: BindingStore,
+        sources: SourceStore,
+        rulesets: RulesetStore,
+        stack: RulesStack,
+        checks: CheckStore,
+        index: Index,
+        libraries: Libraries
+    ) {
         self.jobs = jobs
         self.recipes = recipes
         self.bindings = bindings
@@ -51,7 +59,9 @@ package struct CheckService: Sendable {
 
     private func placed() -> [Placed] {
         jobs.all().compactMap { job in
-            guard job.state == .placed, let recipe = recipes.recipe(job.recipe), let binding = bindings.binding(recipe.binding) else { return nil }
+            guard job.state == .placed, let recipe = recipes.recipe(job.recipe),
+                let binding = bindings.binding(recipe.binding)
+            else { return nil }
             return Placed(job: job, recipe: recipe, binding: binding)
         }
     }
@@ -60,8 +70,12 @@ package struct CheckService: Sendable {
     /// standard once that branch is promoted. `branch` checks a branch's head instead, for impact.
     private func ruleset(for recipe: Recipe, onBranch branch: String? = nil) throws -> Ruleset? {
         let name = recipe.ruleset.name
-        var line = branch ?? recipe.ruleset.version.flatMap { try? rulesets.branch(of: name, version: $0) } ?? RulesetStore.standard
-        if branch == nil, line != RulesetStore.standard, try rulesets.branches(of: name).first(where: { $0.name == line })?.closed != false {
+        var line =
+            branch ?? recipe.ruleset.version.flatMap { try? rulesets.branch(of: name, version: $0) }
+            ?? RulesetStore.standard
+        if branch == nil, line != RulesetStore.standard,
+            try rulesets.branches(of: name).first(where: { $0.name == line })?.closed != false
+        {
             line = RulesetStore.standard
         }
         guard let head = try rulesets.head(of: name, branch: line) else { return nil }
@@ -70,40 +84,77 @@ package struct CheckService: Sendable {
 
     /// Resolves a placed recipe's facts again through the rules in force — or through a branch's head,
     /// or a draft, in place of its ruleset's — and says what that decides otherwise.
-    private func resolveAgain(_ placed: Placed, onBranch branch: String? = nil, replacing draft: Ruleset? = nil) throws -> CheckRecord {
+    private func resolveAgain(
+        _ placed: Placed,
+        onBranch branch: String? = nil,
+        replacing draft: Ruleset? = nil
+    ) throws -> CheckRecord {
         let recorded = placed.recipe.recipe
         guard let ruleset = try draft ?? ruleset(for: recorded, onBranch: branch) else {
-            return CheckRecord(job: placed.job.id, recipe: placed.recipe.id, checkedAgainst: recorded.stack, outcome: .unresolvable, reason: "the ruleset \(recorded.ruleset.name) is not there")
+            return CheckRecord(
+                job: placed.job.id,
+                recipe: placed.recipe.id,
+                checkedAgainst: recorded.stack,
+                outcome: .unresolvable,
+                reason: "the ruleset \(recorded.ruleset.name) is not there"
+            )
         }
         let layers: [RulesLayer]
         do {
             layers = try stack.layers(of: placed.binding, lineage: try stack.lineage(of: placed.binding))
         } catch let error as Unresolvable {
-            return CheckRecord(job: placed.job.id, recipe: placed.recipe.id, checkedAgainst: CheckedStack(ruleset: RulesetRef(ruleset), layers: []), outcome: .unresolvable, reason: error.reason)
+            return CheckRecord(
+                job: placed.job.id,
+                recipe: placed.recipe.id,
+                checkedAgainst: CheckedStack(ruleset: RulesetRef(ruleset), layers: []),
+                outcome: .unresolvable,
+                reason: error.reason
+            )
         }
         let against = CheckedStack(ruleset: RulesetRef(ruleset), layers: layers.map(\.reference))
         let profile = recorded.output.profile
         guard profile == nil || ruleset.outputs.contains(where: { $0.profile == profile }) else {
-            return CheckRecord(job: placed.job.id, recipe: placed.recipe.id, checkedAgainst: against, outcome: .unresolvable, reason: "the rules make no \(profile!) output")
+            return CheckRecord(
+                job: placed.job.id,
+                recipe: placed.recipe.id,
+                checkedAgainst: against,
+                outcome: .unresolvable,
+                reason: "the rules make no \(profile!) output"
+            )
         }
         let again: Recipe
         do throws(ResolutionError) {
-            again = try RecipeResolver.resolve(placed.recipe.facts, with: ruleset, layers: layers, mappings: placed.binding.tracks)
+            again = try RecipeResolver.resolve(
+                placed.recipe.facts,
+                with: ruleset,
+                layers: layers,
+                mappings: placed.binding.tracks
+            )
         } catch {
-            return CheckRecord(job: placed.job.id, recipe: placed.recipe.id, checkedAgainst: against, outcome: .unresolvable, reason: error.description)
+            return CheckRecord(
+                job: placed.job.id,
+                recipe: placed.recipe.id,
+                checkedAgainst: against,
+                outcome: .unresolvable,
+                reason: error.description
+            )
         }
         let changes = recorded.changes(to: again)
         let reason = again.output == recorded.output ? nil : "the output becomes \(again.output.container)"
         return CheckRecord(
-            job: placed.job.id, recipe: placed.recipe.id, checkedAgainst: against,
-            outcome: changes.isEmpty && reason == nil ? .current : .outOfDate, changes: changes, reason: reason
+            job: placed.job.id,
+            recipe: placed.recipe.id,
+            checkedAgainst: against,
+            outcome: changes.isEmpty && reason == nil ? .current : .outOfDate,
+            changes: changes,
+            reason: reason
         )
     }
 
     /// The stack that applies to a placed recipe now, or nil when it cannot be read.
     private func stackInForce(_ placed: Placed) -> CheckedStack? {
         guard let ruleset = try? ruleset(for: placed.recipe.recipe),
-              let layers = try? stack.layers(of: placed.binding, lineage: stack.lineage(of: placed.binding))
+            let layers = try? stack.layers(of: placed.binding, lineage: stack.lineage(of: placed.binding))
         else { return nil }
         return CheckedStack(ruleset: RulesetRef(ruleset), layers: layers.map(\.reference))
     }
@@ -147,7 +198,9 @@ package struct CheckService: Sendable {
             return reported(placed, check)
         }
         let byJob = Set(here.compactMap(\.job.placement?.presentation))
-        return (reported, here.filter(needsCheck).count, try presentations(in: library).filter { !byJob.contains($0) }.count)
+        return (
+            reported, here.filter(needsCheck).count, try presentations(in: library).filter { !byJob.contains($0) }.count
+        )
     }
 
     /// What promoting a branch would put out of date: every placed presentation made under the
@@ -156,7 +209,9 @@ package struct CheckService: Sendable {
         guard try rulesets.branches(of: name).contains(where: { $0.name == branch }) else { throw NoSuchRuleset() }
         return try placed().compactMap { placed -> Reported? in
             let recorded = placed.recipe.recipe.ruleset
-            guard recorded.name == name, recorded.version.flatMap({ try? rulesets.branch(of: name, version: $0) }) == RulesetStore.standard else { return nil }
+            guard recorded.name == name,
+                recorded.version.flatMap({ try? rulesets.branch(of: name, version: $0) }) == RulesetStore.standard
+            else { return nil }
             let check = try resolveAgain(placed, onBranch: branch)
             return check.outcome == .current ? nil : reported(placed, check)
         }
@@ -169,7 +224,9 @@ package struct CheckService: Sendable {
         guard let line = try rulesets.branch(of: name, version: base) else { throw NoSuchRuleset() }
         return try placed().compactMap { placed -> Reported? in
             let recorded = placed.recipe.recipe.ruleset
-            guard recorded.name == name, recorded.version.flatMap({ try? rulesets.branch(of: name, version: $0) }) == line else { return nil }
+            guard recorded.name == name,
+                recorded.version.flatMap({ try? rulesets.branch(of: name, version: $0) }) == line
+            else { return nil }
             let check = try resolveAgain(placed, replacing: draft)
             return check.outcome == .current ? nil : reported(placed, check)
         }
@@ -188,7 +245,8 @@ package struct CheckService: Sendable {
     private func reported(_ placed: Placed, _ check: CheckRecord) -> Reported {
         Reported(
             presentation: placed.job.placement?.presentation.flatMap { try? index.presentation($0) },
-            recipe: placed.recipe, check: check,
+            recipe: placed.recipe,
+            check: check,
             sources: placed.binding.segments.compactMap { sources.source($0.source) }
         )
     }

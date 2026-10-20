@@ -83,8 +83,14 @@ public struct VideoFacts: Hashable, Sendable, Codable {
     public var bitDepth: Int?
 
     public init(
-        absoluteIndex: Int, codec: String, width: Int, height: Int, frameRate: Double? = nil,
-        interlaced: Bool = false, hdr: HDRKind? = nil, bitDepth: Int? = nil
+        absoluteIndex: Int,
+        codec: String,
+        width: Int,
+        height: Int,
+        frameRate: Double? = nil,
+        interlaced: Bool = false,
+        hdr: HDRKind? = nil,
+        bitDepth: Int? = nil
     ) {
         self.absoluteIndex = absoluteIndex
         self.codec = codec
@@ -121,9 +127,19 @@ public struct AudioFacts: Hashable, Sendable, Codable {
     public var title: String?
 
     public init(
-        index: Int, absoluteIndex: Int, codec: String, profile: String? = nil, lossless: Bool,
-        channels: Int, layout: String? = nil, language: String? = nil, script: String? = nil,
-        region: String? = nil, role: AudioRole = .main, core: Bool = false, title: String? = nil
+        index: Int,
+        absoluteIndex: Int,
+        codec: String,
+        profile: String? = nil,
+        lossless: Bool,
+        channels: Int,
+        layout: String? = nil,
+        language: String? = nil,
+        script: String? = nil,
+        region: String? = nil,
+        role: AudioRole = .main,
+        core: Bool = false,
+        title: String? = nil
     ) {
         self.index = index
         self.absoluteIndex = absoluteIndex
@@ -154,8 +170,15 @@ public struct SubtitleFacts: Hashable, Sendable, Codable {
     public var title: String?
 
     public init(
-        index: Int, absoluteIndex: Int, codec: String, language: String? = nil, script: String? = nil,
-        region: String? = nil, forced: Bool = false, hearingImpaired: Bool = false, title: String? = nil
+        index: Int,
+        absoluteIndex: Int,
+        codec: String,
+        language: String? = nil,
+        script: String? = nil,
+        region: String? = nil,
+        forced: Bool = false,
+        hearingImpaired: Bool = false,
+        title: String? = nil
     ) {
         self.index = index
         self.absoluteIndex = absoluteIndex

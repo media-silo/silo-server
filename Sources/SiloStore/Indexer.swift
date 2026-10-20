@@ -59,20 +59,24 @@ public enum Indexer {
         guard folderExists(library) else {
             throw LibraryUnavailable.missing
         }
-        var report = ScanReport()
         let known = Dictionary(uniqueKeysWithValues: try index.sidecars(in: library.id).map { ($0.path, $0) })
-        var reached: Set<String> = []
-        var found: [ContainerID: String] = [:]
+        var walk = Walk(library: library, index: index, known: known)
 
-        let folders = try FileManager.default.contentsOfDirectory(at: library.root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
-            .filter { folder in
-                (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-                    && FileManager.default.fileExists(atPath: folder.appendingPathComponent(SidecarFile.fileName).path)
-            }
+        let folders = try FileManager.default.contentsOfDirectory(
+            at: library.root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { folder in
+            (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                && FileManager.default.fileExists(atPath: folder.appendingPathComponent(SidecarFile.fileName).path)
+        }
         guard !folders.isEmpty || known.isEmpty else { throw LibraryUnavailable.empty }
         for folder in folders.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            try visit(folder: folder.lastPathComponent, parent: nil, expecting: nil, library: library, index: index, known: known, reached: &reached, found: &found, report: &report)
+            try visit(folder: folder.lastPathComponent, parent: nil, expecting: nil, walk: &walk)
         }
+        var report = walk.report
+        let reached = walk.reached
 
         let gone = Set(known.keys).subtracting(reached)
         if !gone.isEmpty {
@@ -82,7 +86,11 @@ public enum Indexer {
 
         // Sorted, as the walker sorts them: the enumerator's order is the filesystem's.
         var unreferenced: [String] = []
-        if let enumerator = FileManager.default.enumerator(at: library.root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+        if let enumerator = FileManager.default.enumerator(
+            at: library.root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) {
             for case let url as URL in enumerator where url.lastPathComponent == SidecarFile.fileName {
                 let relative = relativePath(of: url, in: library.root)
                 if !reached.contains(relative) { unreferenced.append(relative) }
@@ -110,7 +118,12 @@ public enum Indexer {
     /// Re-reads one container's sidecar, after a placement wrote it or a request found one of its
     /// files gone. The container must already be reachable, or the next full scan will find it; a
     /// sidecar that is no longer there is forgotten, as the walk would forget it.
-    public static func refresh(folder: String, parent: ContainerID?, in library: LibraryConfig, index: Index) throws -> ScanReport {
+    public static func refresh(
+        folder: String,
+        parent: ContainerID?,
+        in library: LibraryConfig,
+        index: Index
+    ) throws -> ScanReport {
         var report = ScanReport()
         let path = "\(folder)/\(SidecarFile.fileName)"
         guard FileManager.default.fileExists(atPath: library.root.appendingPathComponent(path).path) else {
@@ -120,91 +133,217 @@ public enum Indexer {
             }
             return report
         }
+        var walk = Walk(library: library, index: index, known: [:], descend: false, report: report)
+        try visit(folder: folder, parent: parent, expecting: nil, walk: &walk)
+        return walk.report
+    }
+
+    /// One walk's settings, and what it has gathered so far.
+    private struct Walk {
+        let library: LibraryConfig
+        let index: Index
+        /// The sidecars the index held before the walk, by path.
+        let known: [String: IndexedSidecar]
+        /// Whether to go on to each sidecar's children; a refresh reads one sidecar alone.
+        var descend = true
         var reached: Set<String> = []
         var found: [ContainerID: String] = [:]
-        try visit(folder: folder, parent: parent, expecting: nil, library: library, index: index, known: [:], reached: &reached, found: &found, report: &report, descend: false)
-        return report
+        var report = ScanReport()
+    }
+
+    /// A sidecar's modification time and size, as the index records them to tell it is unchanged.
+    private struct SidecarStamp {
+        var modified: Date?
+        var size: Int?
+    }
+
+    /// The container a visited sidecar describes, and the paths of its children's sidecars.
+    private struct VisitedSidecar {
+        var id: ContainerID
+        var children: [ContainerID: String]
     }
 
     private static func visit(
-        folder: String, parent: ContainerID?, expecting: ContainerID?, library: LibraryConfig, index: Index,
-        known: [String: IndexedSidecar], reached: inout Set<String>, found: inout [ContainerID: String], report: inout ScanReport,
-        descend: Bool = true
+        folder: String,
+        parent: ContainerID?,
+        expecting: ContainerID?,
+        walk: inout Walk
     ) throws {
         let path = "\(folder)/\(SidecarFile.fileName)"
-        guard reached.insert(path).inserted else { return }
-        let url = library.root.appendingPathComponent(path)
+        guard walk.reached.insert(path).inserted else { return }
+        let url = walk.library.root.appendingPathComponent(path)
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let modified = attributes?[.modificationDate] as? Date
-        let size = (attributes?[.size] as? NSNumber)?.intValue
+        let stamp = SidecarStamp(
+            modified: attributes?[.modificationDate] as? Date,
+            size: (attributes?[.size] as? NSNumber)?.intValue
+        )
 
-        let children: [ContainerID: String]
-        let id: ContainerID
-        if let recorded = known[path], recorded.modified == modified?.timeIntervalSince1970, recorded.size == size,
-           let container = try index.container(ContainerID(recorded.container)!, in: library.id), container.folder == folder,
-           found[container.containerID] == nil {
-            report.unchanged += 1
-            id = container.containerID
-            found[id] = folder
-            children = Dictionary(uniqueKeysWithValues: try index.children(of: id, in: library.id).map { ($0.containerID, "\($0.folder.dropFirst(folder.count + 1))/\(SidecarFile.fileName)") })
-            if container.parent != parent?.value { try index.setParent(parent, of: id, in: library.id) }
-            if let finding = LibraryLayout.folderFinding(folder: folder, displayTitle: container.displayTitle, id: id) {
-                report.findings.append(finding)
-            }
+        let visited: VisitedSidecar
+        if let unchanged = try unchangedSidecar(folder: folder, parent: parent, stamp: stamp, walk: &walk) {
+            visited = unchanged
         } else {
-            let document: Data
-            let sidecar: Sidecar
-            do {
-                document = try Data(contentsOf: url)
-                sidecar = try SidecarFile.sidecar(from: document)
-            } catch {
-                report.findings.append(Finding(.error, path: path, "unreadable: \(error.localizedDescription)"))
-                return
-            }
-            if let expecting, sidecar.container.id != expecting {
-                report.findings.append(Finding(.error, path: path, "describes \(sidecar.container.id) where its parent expects \(expecting)"))
-                return
-            }
-            // A library holds a container once. The walk keeps the first sidecar it reaches for it and
-            // reports any other; a refresh, which walks nothing, keeps the one the index holds while
-            // that one is still there.
-            id = sidecar.container.id
-            if let first = try found[id] ?? (descend ? nil : heldElsewhere(id, than: folder, in: library, index: index)) {
-                report.findings.append(Finding(.error, path: path, "container \(id) is already at \"\(first)\""))
-                try index.remove(sidecarsAt: [path], in: library.id)
-                return
-            }
-            found[id] = folder
-            if let finding = LibraryLayout.folderFinding(folder: folder, displayTitle: sidecar.container.displayTitle, id: id) {
-                report.findings.append(finding)
-            }
-            try index.store(IndexEntry(sidecar: sidecar, document: document, library: library.id, folder: folder, parent: parent, modified: modified, size: size))
-            report.read += 1
-            children = sidecar.children
+            guard
+                let read = try readSidecar(
+                    folder: folder,
+                    parent: parent,
+                    expecting: expecting,
+                    stamp: stamp,
+                    walk: &walk
+                )
+            else { return }
+            visited = read
         }
 
-        report.findings += Artwork.findings(in: library.root.appendingPathComponent(folder, isDirectory: true), sidecar: path)
+        walk.report.findings += Artwork.findings(
+            in: walk.library.root.appendingPathComponent(folder, isDirectory: true),
+            sidecar: path
+        )
 
-        guard descend else { return }
-        for (child, childPath) in children.sorted(by: { $0.value < $1.value }) {
+        guard walk.descend else { return }
+        try visitChildren(of: visited, folder: folder, walk: &walk)
+    }
+
+    /// The sidecar as the index holds it, when its time and size are what the index recorded and the
+    /// index holds its container at this folder, not yet reached by the walk. Its children are taken
+    /// from the index.
+    private static func unchangedSidecar(
+        folder: String,
+        parent: ContainerID?,
+        stamp: SidecarStamp,
+        walk: inout Walk
+    ) throws -> VisitedSidecar? {
+        let path = "\(folder)/\(SidecarFile.fileName)"
+        let library = walk.library
+        let index = walk.index
+        guard let recorded = walk.known[path], recorded.modified == stamp.modified?.timeIntervalSince1970,
+            recorded.size == stamp.size,
+            let container = try index.container(ContainerID(recorded.container)!, in: library.id),
+            container.folder == folder,
+            walk.found[container.containerID] == nil
+        else { return nil }
+        walk.report.unchanged += 1
+        let id = container.containerID
+        walk.found[id] = folder
+        let children = Dictionary(
+            uniqueKeysWithValues: try index.children(of: id, in: library.id).map {
+                ($0.containerID, "\($0.folder.dropFirst(folder.count + 1))/\(SidecarFile.fileName)")
+            }
+        )
+        if container.parent != parent?.value { try index.setParent(parent, of: id, in: library.id) }
+        if let finding = LibraryLayout.folderFinding(folder: folder, displayTitle: container.displayTitle, id: id) {
+            walk.report.findings.append(finding)
+        }
+        return VisitedSidecar(id: id, children: children)
+    }
+
+    /// Reads the sidecar and stores what it holds, or nil having reported why it was not: it is
+    /// unreadable, describes another container than its parent expects, or describes one the
+    /// library already holds elsewhere.
+    private static func readSidecar(
+        folder: String,
+        parent: ContainerID?,
+        expecting: ContainerID?,
+        stamp: SidecarStamp,
+        walk: inout Walk
+    ) throws -> VisitedSidecar? {
+        let path = "\(folder)/\(SidecarFile.fileName)"
+        let library = walk.library
+        let index = walk.index
+        let document: Data
+        let sidecar: Sidecar
+        do {
+            document = try Data(contentsOf: library.root.appendingPathComponent(path))
+            sidecar = try SidecarFile.sidecar(from: document)
+        } catch {
+            walk.report.findings.append(Finding(.error, path: path, "unreadable: \(error.localizedDescription)"))
+            return nil
+        }
+        if let expecting, sidecar.container.id != expecting {
+            walk.report.findings.append(
+                Finding(
+                    .error,
+                    path: path,
+                    "describes \(sidecar.container.id) where its parent expects \(expecting)"
+                )
+            )
+            return nil
+        }
+        // A library holds a container once. The walk keeps the first sidecar it reaches for it and
+        // reports any other; a refresh, which walks nothing, keeps the one the index holds while
+        // that one is still there.
+        let id = sidecar.container.id
+        if let first = try walk.found[id]
+            ?? (walk.descend ? nil : heldElsewhere(id, than: folder, in: library, index: index))
+        {
+            walk.report.findings.append(Finding(.error, path: path, "container \(id) is already at \"\(first)\""))
+            try index.remove(sidecarsAt: [path], in: library.id)
+            return nil
+        }
+        walk.found[id] = folder
+        if let finding = LibraryLayout.folderFinding(
+            folder: folder,
+            displayTitle: sidecar.container.displayTitle,
+            id: id
+        ) {
+            walk.report.findings.append(finding)
+        }
+        try index.store(
+            IndexEntry(
+                sidecar: sidecar,
+                document: document,
+                library: library.id,
+                folder: folder,
+                parent: parent,
+                modified: stamp.modified,
+                size: stamp.size
+            )
+        )
+        walk.report.read += 1
+        return VisitedSidecar(id: id, children: sidecar.children)
+    }
+
+    /// Visits each child the sidecar points at, in the order of their paths, reporting any that is
+    /// not a sidecar inside this folder or is not there.
+    private static func visitChildren(of visited: VisitedSidecar, folder: String, walk: inout Walk) throws {
+        let path = "\(folder)/\(SidecarFile.fileName)"
+        for (child, childPath) in visited.children.sorted(by: { $0.value < $1.value }) {
             guard LibraryLayout.isInside(childPath), childPath.hasSuffix("/\(SidecarFile.fileName)") else {
-                report.findings.append(Finding(.error, path: path, "child \(child) is at \"\(childPath)\", which is not a sidecar inside this folder"))
+                walk.report.findings.append(
+                    Finding(
+                        .error,
+                        path: path,
+                        "child \(child) is at \"\(childPath)\", which is not a sidecar inside this folder"
+                    )
+                )
                 continue
             }
             let childFolder = "\(folder)/\(childPath.dropLast(SidecarFile.fileName.count + 1))"
-            guard FileManager.default.fileExists(atPath: library.root.appendingPathComponent("\(childFolder)/\(SidecarFile.fileName)").path) else {
-                report.findings.append(Finding(.error, path: path, "child \(child) is at \"\(childPath)\", which does not exist"))
+            guard
+                FileManager.default.fileExists(
+                    atPath: walk.library.root.appendingPathComponent("\(childFolder)/\(SidecarFile.fileName)").path
+                )
+            else {
+                walk.report.findings.append(
+                    Finding(.error, path: path, "child \(child) is at \"\(childPath)\", which does not exist")
+                )
                 continue
             }
-            try visit(folder: childFolder, parent: id, expecting: child, library: library, index: index, known: known, reached: &reached, found: &found, report: &report)
+            try visit(folder: childFolder, parent: visited.id, expecting: child, walk: &walk)
         }
     }
 
     /// The folder of the library's sidecar for the container, when the index holds it at a folder other
     /// than this one and that sidecar is still there.
-    private static func heldElsewhere(_ id: ContainerID, than folder: String, in library: LibraryConfig, index: Index) throws -> String? {
+    private static func heldElsewhere(
+        _ id: ContainerID,
+        than folder: String,
+        in library: LibraryConfig,
+        index: Index
+    ) throws -> String? {
         guard let row = try index.container(id, in: library.id), row.folder != folder,
-              FileManager.default.fileExists(atPath: library.root.appendingPathComponent("\(row.folder)/\(SidecarFile.fileName)").path)
+            FileManager.default.fileExists(
+                atPath: library.root.appendingPathComponent("\(row.folder)/\(SidecarFile.fileName)").path
+            )
         else { return nil }
         return row.folder
     }

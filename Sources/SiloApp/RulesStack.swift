@@ -43,8 +43,11 @@ package struct RulesStack: Sendable {
             throw Unresolvable(reason: error.description)
         }
         for container in lineage.reversed() {
-            guard let row = try index.container(container.id, in: library.id), let reference = try index.sidecar(container.id, in: library.id)?.rules else { continue }
-            let folder = row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
+            guard let row = try index.container(container.id, in: library.id),
+                let reference = try index.sidecar(container.id, in: library.id)?.rules
+            else { continue }
+            let folder =
+                row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
             do throws(RulesLayerError) {
                 layers.append(try RulesLayerFile.read(.container(container.id.value), reference, in: folder))
             } catch {
@@ -67,11 +70,15 @@ package struct RulesStack: Sendable {
 
     package func home(of binding: Binding, lineage: [SmdKit.Container]) throws -> Home? {
         guard let library = libraries.library(binding.library), let container = lineage.last,
-              let row = try index.container(container.id, in: library.id), let sidecar = try index.sidecar(container.id, in: library.id)
+            let row = try index.container(container.id, in: library.id),
+            let sidecar = try index.sidecar(container.id, in: library.id)
         else { return nil }
-        let folder = row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
+        let folder =
+            row.folder.isEmpty ? library.root : library.root.appendingPathComponent(row.folder, isDirectory: true)
         return Home(
-            library: library, folder: folder, sidecar: folder.appendingPathComponent(SidecarFile.fileName),
+            library: library,
+            folder: folder,
+            sidecar: folder.appendingPathComponent(SidecarFile.fileName),
             placed: sidecar.presentations[binding.item]?.contains { $0.source?.binding == binding.id } ?? false,
             reference: sidecar.bindingRules[binding.item]?.first { $0.binding == binding.id }?.rules
         )
@@ -82,9 +89,15 @@ package struct RulesStack: Sendable {
     func bindingLayer(of binding: Binding, lineage: [SmdKit.Container]) throws(RulesLayerError) -> RulesLayer? {
         let home = try? self.home(of: binding, lineage: lineage)
         if let home, home.placed {
-            return try home.reference.map { reference throws(RulesLayerError) in try RulesLayerFile.read(.binding(binding.id), reference, in: home.folder) }
+            return try home.reference.map { reference throws(RulesLayerError) in
+                try RulesLayerFile.read(.binding(binding.id), reference, in: home.folder)
+            }
         }
         guard let version = staged.versions(of: binding.id).last else { return nil }
-        return try RulesLayerFile.read(.binding(binding.id), version: version, file: staged.file(of: binding.id, version: version))
+        return try RulesLayerFile.read(
+            .binding(binding.id),
+            version: version,
+            file: staged.file(of: binding.id, version: version)
+        )
     }
 }

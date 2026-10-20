@@ -6,6 +6,7 @@ import SiloClient
 import SiloKit
 import Synchronization
 import Testing
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -25,8 +26,13 @@ struct SiloClientTests {
         override func startLoading() {
             do {
                 guard let (status, data) = try Self.handler.withLock({ try $0(request) }),
-                      let url = request.url,
-                      let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])
+                    let url = request.url,
+                    let response = HTTPURLResponse(
+                        url: url,
+                        statusCode: status,
+                        httpVersion: nil,
+                        headerFields: ["Content-Type": "application/json"]
+                    )
                 else { throw SiloClientError.badPath(request.url?.absoluteString ?? "") }
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
                 client?.urlProtocol(self, didLoad: data)
@@ -46,7 +52,11 @@ struct SiloClientTests {
         Stub.handler.withLock { $0 = handler }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [Stub.self]
-        return SiloClient(baseURL: URL(string: "http://silo.local:8080")!, token: token, session: URLSession(configuration: configuration))
+        return SiloClient(
+            baseURL: URL(string: "http://silo.local:8080")!,
+            token: token,
+            session: URLSession(configuration: configuration)
+        )
     }
 
     private static func body(of request: URLRequest) -> Data? {
@@ -68,7 +78,12 @@ struct SiloClientTests {
     @Test func theServerRouteAnswersOpenly() async throws {
         let seen = Mutex<(String, String, String?)?>(nil)
         let client = Self.client { request in
-            seen.withLock { $0 = (request.httpMethod ?? "", request.url?.path ?? "", request.value(forHTTPHeaderField: "Authorization")) }
+            seen.withLock {
+                $0 = (
+                    request.httpMethod ?? "", request.url?.path ?? "",
+                    request.value(forHTTPHeaderField: "Authorization")
+                )
+            }
             return (200, Data(#"{"id":"s1","name":"Silo on attic","bootstrap":true}"#.utf8))
         }
 
@@ -84,7 +99,12 @@ struct SiloClientTests {
     @Test func theVerifyProbeSendsTheToken() async throws {
         let seen = Mutex<(String, String, String?)?>(nil)
         let client = Self.client(token: "horse-battery") { request in
-            seen.withLock { $0 = (request.httpMethod ?? "", request.url?.path ?? "", request.value(forHTTPHeaderField: "Authorization")) }
+            seen.withLock {
+                $0 = (
+                    request.httpMethod ?? "", request.url?.path ?? "",
+                    request.value(forHTTPHeaderField: "Authorization")
+                )
+            }
             return (200, Data(#"{"phase":"active"}"#.utf8))
         }
 
@@ -163,7 +183,12 @@ struct SiloClientTests {
     @Test func aConfirmSpendsTheStagedPasskeyAsBearer() async throws {
         let seen = Mutex<(String, String, String?)?>(nil)
         let client = Self.client { request in
-            seen.withLock { $0 = (request.httpMethod ?? "", request.url?.path ?? "", request.value(forHTTPHeaderField: "Authorization")) }
+            seen.withLock {
+                $0 = (
+                    request.httpMethod ?? "", request.url?.path ?? "",
+                    request.value(forHTTPHeaderField: "Authorization")
+                )
+            }
             return (201, Data(#"{"id":"s1","name":"Living Room Silo","bootstrap":false}"#.utf8))
         }
 
@@ -188,8 +213,16 @@ struct SiloClientTests {
     @Test func aJobIsMadeFromARecipeAndAClaimCarriesItsSegments() async throws {
         let seen = Mutex<[(String, String, Data?)]>([])
         let job = Job(id: "j1", createdAt: Date(timeIntervalSince1970: 0), recipe: "r1", requirements: ["flac"])
-        let copy = FileRef(holder: "ripper", url: URL(string: "http://ripper.local:8743/files/t.mkv")!, secret: "s3cret")
-        let claim = Claim(job: job, recipe: nil, segments: [ClaimedSegment(source: "s1", copy: copy, start: 1497.6, end: 2995.2)])
+        let copy = FileRef(
+            holder: "ripper",
+            url: URL(string: "http://ripper.local:8743/files/t.mkv")!,
+            secret: "s3cret"
+        )
+        let claim = Claim(
+            job: job,
+            recipe: nil,
+            segments: [ClaimedSegment(source: "s1", copy: copy, start: 1497.6, end: 2995.2)]
+        )
         let client = Self.client(token: "secret") { request in
             seen.withLock { $0.append((request.httpMethod ?? "", request.url?.path ?? "", Self.body(of: request))) }
             switch request.url?.path {

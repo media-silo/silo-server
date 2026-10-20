@@ -4,14 +4,6 @@
 import Foundation
 import SiloKit
 
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Musl)
-import Musl
-#elseif canImport(Darwin)
-import Darwin
-#endif
-
 /// Any JSON value, kept exactly: the form a configuration file is held in, so that a key the silo
 /// does not know survives the silo writing the file back. Decoded in a fixed order — a boolean
 /// before a number, an integer before a double — so a value reads the same on every platform.
@@ -100,7 +92,10 @@ public struct ConfigurationFileReport: Hashable, Sendable {
 enum ConfigurationFile {
     /// Opens `file`, giving each key in `defaults` its default where the file lacks it. The defaults
     /// are closures so that a minted value — a ServerID — is minted only when it is needed.
-    static func open(_ file: URL, defaults: [String: () -> JSONValue]) throws -> ([String: JSONValue], ConfigurationFileReport) {
+    static func open(
+        _ file: URL,
+        defaults: [String: () -> JSONValue]
+    ) throws -> ([String: JSONValue], ConfigurationFileReport) {
         guard FileManager.default.fileExists(atPath: file.path) else {
             let values = defaults.mapValues { $0() }
             try write(values, to: file)
@@ -134,7 +129,9 @@ enum ConfigurationFile {
         guard let error = error as? DecodingError else { return "\(error)" }
         switch error {
         case .dataCorrupted(let context):
-            if let underlying = context.underlyingError as NSError?, let detail = underlying.userInfo[NSDebugDescriptionErrorKey] as? String {
+            if let underlying = context.underlyingError as NSError?,
+                let detail = underlying.userInfo[NSDebugDescriptionErrorKey] as? String
+            {
                 return detail
             }
             return context.debugDescription
@@ -193,7 +190,12 @@ public struct SiloFile: Hashable, Sendable {
     /// the network can make the silo write, and the network cannot be the one to widen them.
     public var libraryRoots: [String]
 
-    public init(serverID: String, host: String = SiloFile.defaultHost, port: Int = SiloFile.defaultPort, libraryRoots: [String] = []) {
+    public init(
+        serverID: String,
+        host: String = SiloFile.defaultHost,
+        port: Int = SiloFile.defaultPort,
+        libraryRoots: [String] = []
+    ) {
         self.serverID = serverID
         self.host = host
         self.port = port
@@ -218,24 +220,43 @@ public struct SiloFile: Hashable, Sendable {
     }
 
     /// Opens `silo.json` in `folder`, minting the ServerID where the file has none.
-    public static func open(in folder: URL, defaultLibraryRoots roots: [String] = SiloFile.defaultLibraryRoots) throws -> (SiloFile, ConfigurationFileReport) {
+    public static func open(
+        in folder: URL,
+        defaultLibraryRoots roots: [String] = SiloFile.defaultLibraryRoots
+    ) throws -> (SiloFile, ConfigurationFileReport) {
         let file = folder.appendingPathComponent(fileName)
-        let (values, report) = try ConfigurationFile.open(file, defaults: [
-            "serverID": { .string(UUID().uuidString.lowercased()) },
-            "host": { .string(defaultHost) },
-            "port": { .integer(defaultPort) },
-            "libraryRoots": { .array(roots.map(JSONValue.string)) },
-        ])
+        let (values, report) = try ConfigurationFile.open(
+            file,
+            defaults: [
+                "serverID": { .string(UUID().uuidString.lowercased()) },
+                "host": { .string(defaultHost) },
+                "port": { .integer(defaultPort) },
+                "libraryRoots": { .array(roots.map(JSONValue.string)) },
+            ]
+        )
         let serverID = try ConfigurationFile.string("serverID", in: values, file: file)
         guard !serverID.isEmpty else { throw ConfigurationFile.wrongKind("serverID", "a non-empty string", file) }
         let port = try ConfigurationFile.integer("port", in: values, file: file)
-        guard (0...65535).contains(port) else { throw ConfigurationFile.wrongKind("port", "a port number, 0 to 65535", file) }
-        guard case .array(let entries)? = values["libraryRoots"] else { throw ConfigurationFile.wrongKind("libraryRoots", "a list of absolute paths", file) }
+        guard (0...65535).contains(port) else {
+            throw ConfigurationFile.wrongKind("port", "a port number, 0 to 65535", file)
+        }
+        guard case .array(let entries)? = values["libraryRoots"] else {
+            throw ConfigurationFile.wrongKind("libraryRoots", "a list of absolute paths", file)
+        }
         let libraryRoots = try entries.map { entry -> String in
-            guard case .string(let path) = entry, path.hasPrefix("/") else { throw ConfigurationFile.wrongKind("libraryRoots", "a list of absolute paths", file) }
+            guard case .string(let path) = entry, path.hasPrefix("/") else {
+                throw ConfigurationFile.wrongKind("libraryRoots", "a list of absolute paths", file)
+            }
             return path
         }
-        return (SiloFile(serverID: serverID, host: try ConfigurationFile.string("host", in: values, file: file), port: port, libraryRoots: libraryRoots), report)
+        return (
+            SiloFile(
+                serverID: serverID,
+                host: try ConfigurationFile.string("host", in: values, file: file),
+                port: port,
+                libraryRoots: libraryRoots
+            ), report
+        )
     }
 }
 

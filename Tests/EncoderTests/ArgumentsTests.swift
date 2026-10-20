@@ -5,20 +5,41 @@ import Foundation
 import SiloKit
 import SmdKit
 import Testing
+
 @testable import Encoder
 
 struct ArgumentsTests {
     static let household = Ruleset(
         name: "household",
         rules: [
-            Rule(id: "small-extras", scope: .video,
-                 conditions: [Condition(.kind, .equal("featurette")), Condition(.videoWidth, .less(576))],
-                 action: .encode(EncodeSettings(codec: "libx264", preset: "slow", crf: 22, pixelFormat: "yuv420p", filters: [.deinterlace(.auto)]))),
-            Rule(id: "lossless-main", scope: .audio,
-                 conditions: [Condition(.audioLossless, .equal("true")), Condition(.audioRole, .notEqual("commentary"))],
-                 action: .encode(EncodeSettings(codec: "flac", options: ["compression_level": "8"]))),
-            Rule(id: "commentary", scope: .audio, conditions: [Condition(.audioRole, .equal("commentary"))],
-                 action: .encode(EncodeSettings(codec: "aac", bitrate: "160k", channels: 2))),
+            Rule(
+                id: "small-extras",
+                scope: .video,
+                conditions: [Condition(.kind, .equal("featurette")), Condition(.videoWidth, .less(576))],
+                action: .encode(
+                    EncodeSettings(
+                        codec: "libx264",
+                        preset: "slow",
+                        crf: 22,
+                        pixelFormat: "yuv420p",
+                        filters: [.deinterlace(.auto)]
+                    )
+                )
+            ),
+            Rule(
+                id: "lossless-main",
+                scope: .audio,
+                conditions: [
+                    Condition(.audioLossless, .equal("true")), Condition(.audioRole, .notEqual("commentary")),
+                ],
+                action: .encode(EncodeSettings(codec: "flac", options: ["compression_level": "8"]))
+            ),
+            Rule(
+                id: "commentary",
+                scope: .audio,
+                conditions: [Condition(.audioRole, .equal("commentary"))],
+                action: .encode(EncodeSettings(codec: "aac", bitrate: "160k", channels: 2))
+            ),
             Rule(id: "no-core", scope: .audio, conditions: [Condition(.audioCore, .equal("true"))], action: .drop),
             Rule(scope: .video, action: .copy),
             Rule(scope: .audio, action: .copy),
@@ -30,7 +51,15 @@ struct ArgumentsTests {
         kind: .episode,
         video: VideoFacts(absoluteIndex: 0, codec: "h264", width: 1920, height: 1080),
         audio: [
-            AudioFacts(index: 1, absoluteIndex: 1, codec: "dts", profile: "DTS-HD MA", lossless: true, channels: 6, role: .main),
+            AudioFacts(
+                index: 1,
+                absoluteIndex: 1,
+                codec: "dts",
+                profile: "DTS-HD MA",
+                lossless: true,
+                channels: 6,
+                role: .main
+            ),
             AudioFacts(index: 2, absoluteIndex: 2, codec: "dts", lossless: false, channels: 6, role: .main, core: true),
             AudioFacts(index: 3, absoluteIndex: 3, codec: "ac3", lossless: false, channels: 2, role: .commentary),
         ],
@@ -39,40 +68,78 @@ struct ArgumentsTests {
 
     @Test func theRecipeIsTheArgumentList() throws {
         let recipe = try RecipeResolver.resolve(Self.episode, with: Self.household)
-        let arguments = recipe.ffmpegArguments(input: URL(fileURLWithPath: "/in/t00.mkv"), output: URL(fileURLWithPath: "/out/Part One.mkv"))
-        #expect(arguments == [
-            "-y", "-nostdin", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats",
-            "-i", "/in/t00.mkv",
-            "-map", "0:0", "-map", "0:1", "-map", "0:3", "-map", "0:4",
-            "-c:v:0", "copy",
-            "-c:a:0", "flac", "-compression_level:a:0", "8",
-            "-c:a:1", "aac", "-b:a:1", "160k", "-ac:a:1", "2",
-            "-c:s:0", "copy",
-            "-map_metadata", "0", "-map_chapters", "0", "-f", "matroska", "/out/Part One.mkv",
-        ])
-        #expect(recipe.tracks(for: [TrackMapping(feature: "commentary1", audio: 3)]) == [TrackMapping(feature: "commentary1", audio: 2)])
+        let arguments = recipe.ffmpegArguments(
+            input: URL(fileURLWithPath: "/in/t00.mkv"),
+            output: URL(fileURLWithPath: "/out/Part One.mkv")
+        )
+        #expect(
+            arguments == [
+                "-y", "-nostdin", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1", "-nostats",
+                "-i", "/in/t00.mkv",
+                "-map", "0:0", "-map", "0:1", "-map", "0:3", "-map", "0:4",
+                "-c:v:0", "copy",
+                "-c:a:0", "flac", "-compression_level:a:0", "8",
+                "-c:a:1", "aac", "-b:a:1", "160k", "-ac:a:1", "2",
+                "-c:s:0", "copy",
+                "-map_metadata", "0", "-map_chapters", "0", "-f", "matroska", "/out/Part One.mkv",
+            ]
+        )
+        #expect(
+            recipe.tracks(for: [TrackMapping(feature: "commentary1", audio: 3)]) == [
+                TrackMapping(feature: "commentary1", audio: 2)
+            ]
+        )
     }
 
     @Test func severalSegmentsOrASpanAreOneConcatInput() throws {
         let recipe = try RecipeResolver.resolve(Self.episode, with: Self.household)
         let list = URL(fileURLWithPath: "/work/j.concat")
-        let concat = recipe.ffmpegArguments(input: .concat(list: list), output: URL(fileURLWithPath: "/out/Part One.mkv"))
-        let file = recipe.ffmpegArguments(input: URL(fileURLWithPath: "/in/t00.mkv"), output: URL(fileURLWithPath: "/out/Part One.mkv"))
-        #expect(Array(concat[8..<14]) == ["-f", "concat", "-safe", "0", "-i", "/work/j.concat"], "given in place of -i <input>")
-        #expect(Array(concat[14...]) == Array(file[10...]), "and the rest as for one file, so the stream indices are the joined media's")
+        let concat = recipe.ffmpegArguments(
+            input: .concat(list: list),
+            output: URL(fileURLWithPath: "/out/Part One.mkv")
+        )
+        let file = recipe.ffmpegArguments(
+            input: URL(fileURLWithPath: "/in/t00.mkv"),
+            output: URL(fileURLWithPath: "/out/Part One.mkv")
+        )
+        #expect(
+            Array(concat[8..<14]) == ["-f", "concat", "-safe", "0", "-i", "/work/j.concat"],
+            "given in place of -i <input>"
+        )
+        #expect(
+            Array(concat[14...]) == Array(file[10...]),
+            "and the rest as for one file, so the stream indices are the joined media's"
+        )
 
         // An episode out of a play-all title, then a film across two discs, one of them oddly named.
-        #expect(ConcatList([ConcatList.Piece(file: URL(fileURLWithPath: "/rips/title.mkv"), inpoint: 1497.6, outpoint: 2995.2)]).text
-            == "ffconcat version 1.0\nfile '/rips/title.mkv'\ninpoint 1497.6\noutpoint 2995.2\n")
-        #expect(ConcatList([ConcatList.Piece(file: URL(fileURLWithPath: "/rips/disc1.mkv")), ConcatList.Piece(file: URL(fileURLWithPath: "/rips/Joe's disc2.mkv"))]).text
-            == "ffconcat version 1.0\nfile '/rips/disc1.mkv'\nfile '/rips/Joe'\\''s disc2.mkv'\n")
+        #expect(
+            ConcatList([
+                ConcatList.Piece(file: URL(fileURLWithPath: "/rips/title.mkv"), inpoint: 1497.6, outpoint: 2995.2)
+            ]).text
+                == "ffconcat version 1.0\nfile '/rips/title.mkv'\ninpoint 1497.6\noutpoint 2995.2\n"
+        )
+        #expect(
+            ConcatList([
+                ConcatList.Piece(file: URL(fileURLWithPath: "/rips/disc1.mkv")),
+                ConcatList.Piece(file: URL(fileURLWithPath: "/rips/Joe's disc2.mkv")),
+            ]).text
+                == "ffconcat version 1.0\nfile '/rips/disc1.mkv'\nfile '/rips/Joe'\\''s disc2.mkv'\n"
+        )
     }
 
     @Test func aReencodedVideoCarriesItsFilters() throws {
-        let facts = SourceFacts(kind: .featurette, video: VideoFacts(absoluteIndex: 0, codec: "mpeg2video", width: 352, height: 288, interlaced: true))
+        let facts = SourceFacts(
+            kind: .featurette,
+            video: VideoFacts(absoluteIndex: 0, codec: "mpeg2video", width: 352, height: 288, interlaced: true)
+        )
         let recipe = try RecipeResolver.resolve(facts, with: Self.household)
         let arguments = recipe.ffmpegArguments(input: URL(fileURLWithPath: "/a"), output: URL(fileURLWithPath: "/b"))
-        #expect(arguments.contains(["-c:v:0", "libx264", "-preset:v:0", "slow", "-crf:v:0", "22", "-pix_fmt:v:0", "yuv420p", "-filter:v:0", "yadif=deint=interlaced"]))
+        #expect(
+            arguments.contains([
+                "-c:v:0", "libx264", "-preset:v:0", "slow", "-crf:v:0", "22", "-pix_fmt:v:0", "yuv420p", "-filter:v:0",
+                "yadif=deint=interlaced",
+            ])
+        )
         #expect(Filter.scale(width: 1280, height: nil).ffmpegText == "scale=1280:-2")
         #expect(Filter.deinterlace(.always).ffmpegText == "yadif")
     }
@@ -95,19 +162,23 @@ struct ArgumentsTests {
             ProbedStream(absoluteIndex: 3, kind: .subtitle, codec: "hdmv_pgs_subtitle"),
             ProbedStream(absoluteIndex: 4, kind: .audio, codec: "ac3"),
         ])
-        #expect(recipe.verify(against: renumbered, source: Self.episode) == [
-            LayoutMismatch(position: 1, expected: "audio flac", found: "audio aac"),
-            LayoutMismatch(position: 2, expected: "audio aac", found: "audio flac"),
-            LayoutMismatch(position: 4, expected: "nothing", found: "audio ac3"),
-        ])
+        #expect(
+            recipe.verify(against: renumbered, source: Self.episode) == [
+                LayoutMismatch(position: 1, expected: "audio flac", found: "audio aac"),
+                LayoutMismatch(position: 2, expected: "audio aac", found: "audio flac"),
+                LayoutMismatch(position: 4, expected: "nothing", found: "audio ac3"),
+            ]
+        )
 
         let short = ProbedSource(streams: [ProbedStream(absoluteIndex: 0, kind: .video, codec: "hevc")])
-        #expect(recipe.verify(against: short, source: Self.episode).map(\.description) == [
-            "stream 0: expected video h264, found video hevc",
-            "stream 1: expected audio, found nothing",
-            "stream 2: expected audio, found nothing",
-            "stream 3: expected subtitle, found nothing",
-        ])
+        #expect(
+            recipe.verify(against: short, source: Self.episode).map(\.description) == [
+                "stream 0: expected video h264, found video hevc",
+                "stream 1: expected audio, found nothing",
+                "stream 2: expected audio, found nothing",
+                "stream 3: expected subtitle, found nothing",
+            ]
+        )
     }
 
     @Test func progressBlocksBecomeReports() {

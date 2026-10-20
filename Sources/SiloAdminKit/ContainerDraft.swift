@@ -27,7 +27,15 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
     /// When the text last changed.
     public var edited: Date
 
-    public init(library: String, container: String, title: String, base: String, baseText: String, text: String, edited: Date = .now) {
+    public init(
+        library: String,
+        container: String,
+        title: String,
+        base: String,
+        baseText: String,
+        text: String,
+        edited: Date = .now
+    ) {
         id = UUID()
         self.library = library
         self.container = container
@@ -42,8 +50,12 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
     public static func change(_ opened: SiloClient.LibraryContainer, sidecar: Data) throws -> ContainerDraft {
         let document = try Self.document(of: sidecar)
         return ContainerDraft(
-            library: opened.library, container: opened.container.id, title: opened.container.displayTitle,
-            base: opened.digest, baseText: document, text: document
+            library: opened.library,
+            container: opened.container.id,
+            title: opened.container.displayTitle,
+            base: opened.digest,
+            baseText: document,
+            text: document
         )
     }
 
@@ -101,7 +113,9 @@ public final class ContainerDraftStore: Sendable {
 
     /// A silo's drafts, by library and title, then most recently edited first.
     public func drafts(of silo: String) -> [ContainerDraft] {
-        entries.withLock { $0[silo] ?? [] }.sorted { ($0.library, $0.title, $1.edited) < ($1.library, $1.title, $0.edited) }
+        entries.withLock { $0[silo] ?? [] }.sorted {
+            ($0.library, $0.title, $1.edited) < ($1.library, $1.title, $0.edited)
+        }
     }
 
     /// The draft kept for a container in a library, when there is one.

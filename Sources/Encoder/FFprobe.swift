@@ -22,7 +22,9 @@ public struct FFprobe: Sendable {
     }
 
     public func probe(_ file: URL) async throws -> ProbedSource {
-        let arguments = ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", file.path]
+        let arguments = [
+            "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", file.path,
+        ]
         let collected = OutputCollector()
         let outcome = try await ProcessRunner.run(executable, arguments: arguments) { collected.append($0) }
         guard outcome.status == 0 else {
@@ -59,14 +61,15 @@ extension ProbedSource {
             throw ToolError.unreadableOutput(tool: "ffprobe", reason: String(describing: error))
         }
         let streams = document.streams.map { stream -> ProbedStream in
-            let kind: ProbedStream.Kind = switch stream.codecType {
-            case "video": .video
-            case "audio": .audio
-            case "subtitle": .subtitle
-            case "data": .data
-            case "attachment": .attachment
-            default: .other
-            }
+            let kind: ProbedStream.Kind =
+                switch stream.codecType {
+                case "video": .video
+                case "audio": .audio
+                case "subtitle": .subtitle
+                case "data": .data
+                case "attachment": .attachment
+                default: .other
+                }
             let dispositions = Set((stream.disposition ?? [:]).filter { $0.value != 0 }.keys)
             return ProbedStream(
                 absoluteIndex: stream.index,

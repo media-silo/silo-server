@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
-
 /// A named, ordered list of encoding rules and the outputs they make. What a source keeps is its
 /// producer's to decide; one that can choose reads the rules for what every output drops.
 /// `Silo.md`, *Encoding rules*.
@@ -17,7 +15,10 @@ public struct Ruleset: Hashable, Sendable, Codable {
     public var outputs: [OutputPolicy]
 
     public init(
-        name: String, version: Int? = nil, rules: [Rule], outputs: [OutputPolicy] = [OutputPolicy()]
+        name: String,
+        version: Int? = nil,
+        rules: [Rule],
+        outputs: [OutputPolicy] = [OutputPolicy()]
     ) {
         self.name = name
         self.version = version
@@ -144,15 +145,21 @@ public enum FactKey: String, Hashable, Sendable, Codable, CaseIterable {
     public var scope: Scope? {
         switch self {
         case .kind, .extra, .profile, .format, .duration: nil
-        case .videoCodec, .videoWidth, .videoHeight, .videoFrameRate, .videoInterlaced, .videoHDR, .videoBitDepth: .video
-        case .audioIndex, .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioScript, .audioRegion, .audioRole, .audioCore: .audio
-        case .subtitleIndex, .subtitleCodec, .subtitleLanguage, .subtitleScript, .subtitleRegion, .subtitleForced: .subtitle
+        case .videoCodec, .videoWidth, .videoHeight, .videoFrameRate, .videoInterlaced, .videoHDR, .videoBitDepth:
+            .video
+        case .audioIndex, .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioScript, .audioRegion,
+            .audioRole, .audioCore:
+            .audio
+        case .subtitleIndex, .subtitleCodec, .subtitleLanguage, .subtitleScript, .subtitleRegion, .subtitleForced:
+            .subtitle
         }
     }
 
     public var isNumeric: Bool {
         switch self {
-        case .duration, .videoWidth, .videoHeight, .videoFrameRate, .videoBitDepth, .audioIndex, .audioChannels, .subtitleIndex: true
+        case .duration, .videoWidth, .videoHeight, .videoFrameRate, .videoBitDepth, .audioIndex, .audioChannels,
+            .subtitleIndex:
+            true
         default: false
         }
     }
@@ -228,8 +235,13 @@ public struct EncodeSettings: Hashable, Sendable, Codable {
     public var options: [String: String]
 
     public init(
-        codec: String, preset: String? = nil, crf: Int? = nil, bitrate: String? = nil,
-        channels: Int? = nil, pixelFormat: String? = nil, filters: [Filter] = [],
+        codec: String,
+        preset: String? = nil,
+        crf: Int? = nil,
+        bitrate: String? = nil,
+        channels: Int? = nil,
+        pixelFormat: String? = nil,
+        filters: [Filter] = [],
         options: [String: String] = [:]
     ) {
         self.codec = codec
@@ -287,33 +299,27 @@ public enum StreamSelector: Hashable, Sendable {
 extension SourceFacts {
     public func value(_ key: FactKey, for stream: StreamSelector) -> FactValue {
         switch key {
-        case .kind: return kind.map { .text($0.rawValue) } ?? .absent
-        case .extra: return extra.map(FactValue.flag) ?? .absent
-        case .profile: return profile.map(FactValue.text) ?? .absent
-        case .format: return format.map { .text($0.rawValue) } ?? .absent
-        case .duration: return duration.map(FactValue.number) ?? .absent
-        case .videoCodec: return video.map { .text($0.codec) } ?? .absent
-        case .videoWidth: return video.map { .number(Double($0.width)) } ?? .absent
-        case .videoHeight: return video.map { .number(Double($0.height)) } ?? .absent
-        case .videoFrameRate: return video?.frameRate.map(FactValue.number) ?? .absent
-        case .videoInterlaced: return video.map { .flag($0.interlaced) } ?? .absent
-        case .videoHDR: return video?.hdr.map { .text($0.rawValue) } ?? .absent
-        case .videoBitDepth: return video?.bitDepth.map { .number(Double($0)) } ?? .absent
-        case .audioIndex: return audioFacts(stream).map { .number(Double($0.index)) } ?? .absent
-        case .audioCodec: return audioFacts(stream).map { .text($0.codec) } ?? .absent
-        case .audioLossless: return audioFacts(stream).map { .flag($0.lossless) } ?? .absent
-        case .audioChannels: return audioFacts(stream).map { .number(Double($0.channels)) } ?? .absent
-        case .audioLanguage: return audioFacts(stream)?.language.map(FactValue.text) ?? .absent
-        case .audioScript: return audioFacts(stream)?.script.map(FactValue.text) ?? .absent
-        case .audioRegion: return audioFacts(stream)?.region.map(FactValue.text) ?? .absent
-        case .audioRole: return audioFacts(stream).map { .text($0.role.rawValue) } ?? .absent
-        case .audioCore: return audioFacts(stream).map { .flag($0.core) } ?? .absent
-        case .subtitleIndex: return subtitleFacts(stream).map { .number(Double($0.index)) } ?? .absent
-        case .subtitleCodec: return subtitleFacts(stream).map { .text($0.codec) } ?? .absent
-        case .subtitleLanguage: return subtitleFacts(stream)?.language.map(FactValue.text) ?? .absent
-        case .subtitleScript: return subtitleFacts(stream)?.script.map(FactValue.text) ?? .absent
-        case .subtitleRegion: return subtitleFacts(stream)?.region.map(FactValue.text) ?? .absent
-        case .subtitleForced: return subtitleFacts(stream).map { .flag($0.forced) } ?? .absent
+        case .kind, .extra, .profile, .format, .duration:
+            return entryValue(key)
+        case .videoCodec, .videoWidth, .videoHeight, .videoFrameRate, .videoInterlaced, .videoHDR, .videoBitDepth:
+            return video.map { $0.value(key) } ?? .absent
+        case .audioIndex, .audioCodec, .audioLossless, .audioChannels, .audioLanguage, .audioScript, .audioRegion,
+            .audioRole, .audioCore:
+            return audioFacts(stream).map { $0.value(key) } ?? .absent
+        case .subtitleIndex, .subtitleCodec, .subtitleLanguage, .subtitleScript, .subtitleRegion, .subtitleForced:
+            return subtitleFacts(stream).map { $0.value(key) } ?? .absent
+        }
+    }
+
+    /// A fact of the entry and the output being made, rather than of one stream.
+    private func entryValue(_ key: FactKey) -> FactValue {
+        switch key {
+        case .kind: kind.map { .text($0.rawValue) } ?? .absent
+        case .extra: extra.map(FactValue.flag) ?? .absent
+        case .profile: profile.map(FactValue.text) ?? .absent
+        case .format: format.map { .text($0.rawValue) } ?? .absent
+        case .duration: duration.map(FactValue.number) ?? .absent
+        default: .absent
         }
     }
 
@@ -325,5 +331,52 @@ extension SourceFacts {
     private func subtitleFacts(_ stream: StreamSelector) -> SubtitleFacts? {
         guard case .subtitle(let index) = stream else { return nil }
         return subtitles.first { $0.index == index }
+    }
+}
+
+// Each kind of stream reads its own facts; `SourceFacts.value(_:for:)` names which keys go to which.
+extension VideoFacts {
+    fileprivate func value(_ key: FactKey) -> FactValue {
+        switch key {
+        case .videoCodec: .text(codec)
+        case .videoWidth: .number(Double(width))
+        case .videoHeight: .number(Double(height))
+        case .videoFrameRate: frameRate.map(FactValue.number) ?? .absent
+        case .videoInterlaced: .flag(interlaced)
+        case .videoHDR: hdr.map { .text($0.rawValue) } ?? .absent
+        case .videoBitDepth: bitDepth.map { .number(Double($0)) } ?? .absent
+        default: .absent
+        }
+    }
+}
+
+extension AudioFacts {
+    fileprivate func value(_ key: FactKey) -> FactValue {
+        switch key {
+        case .audioIndex: .number(Double(index))
+        case .audioCodec: .text(codec)
+        case .audioLossless: .flag(lossless)
+        case .audioChannels: .number(Double(channels))
+        case .audioLanguage: language.map(FactValue.text) ?? .absent
+        case .audioScript: script.map(FactValue.text) ?? .absent
+        case .audioRegion: region.map(FactValue.text) ?? .absent
+        case .audioRole: .text(role.rawValue)
+        case .audioCore: .flag(core)
+        default: .absent
+        }
+    }
+}
+
+extension SubtitleFacts {
+    fileprivate func value(_ key: FactKey) -> FactValue {
+        switch key {
+        case .subtitleIndex: .number(Double(index))
+        case .subtitleCodec: .text(codec)
+        case .subtitleLanguage: language.map(FactValue.text) ?? .absent
+        case .subtitleScript: script.map(FactValue.text) ?? .absent
+        case .subtitleRegion: region.map(FactValue.text) ?? .absent
+        case .subtitleForced: .flag(forced)
+        default: .absent
+        }
     }
 }

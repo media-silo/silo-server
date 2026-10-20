@@ -72,7 +72,10 @@ package struct BindingOperatorController {
     @ErrorResponse(BadApplication.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(ClosedBranch.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func applyRuleset(@Path id: String, @JSONBody body: Components.Schemas.Application) async throws -> [Components.Schemas.StoredRecipe] {
+    package func applyRuleset(
+        @Path id: String,
+        @JSONBody body: Components.Schemas.Application
+    ) async throws -> [Components.Schemas.StoredRecipe] {
         let application: Application = try Mapping.transcode(body)
         return try service.apply(application, to: id).map { try Mapping.transcode($0) }
     }
@@ -80,7 +83,10 @@ package struct BindingOperatorController {
     @Operation
     @ErrorResponse(NoSuchBinding.self, .notFound)
     @ErrorResponse(BadBindingRules.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    package func setBindingRules(@Path id: String, @JSONBody body: Components.Schemas.NewBindingRules) async throws -> Components.Schemas.BindingRules {
+    package func setBindingRules(
+        @Path id: String,
+        @JSONBody body: Components.Schemas.NewBindingRules
+    ) async throws -> Components.Schemas.BindingRules {
         _ = try await service.setRules(Data(body.document.utf8), of: id)
         return Mapping.bindingRules(try service.rules(of: id))
     }
@@ -106,16 +112,27 @@ private struct NewBinding: Decodable {
 
     var binding: Binding {
         Binding(
-            library: library, containers: containers, item: item, alternative: alternative, tracks: tracks ?? [],
-            chapters: chapters ?? [], segments: segments
+            library: library,
+            containers: containers,
+            item: item,
+            alternative: alternative,
+            tracks: tracks ?? [],
+            chapters: chapters ?? [],
+            segments: segments
         )
     }
 }
 
 extension Mapping {
     /// A binding's rules as the API renders them.
-    static func bindingRules(_ rules: (active: Int?, document: Data?, versions: [Int])) -> Components.Schemas.BindingRules {
-        Components.Schemas.BindingRules(activeVersion: rules.active, document: rules.document.map { String(decoding: $0, as: UTF8.self) }, versions: rules.versions)
+    static func bindingRules(
+        _ rules: (active: Int?, document: Data?, versions: [Int])
+    ) -> Components.Schemas.BindingRules {
+        Components.Schemas.BindingRules(
+            activeVersion: rules.active,
+            document: rules.document.map { String(decoding: $0, as: UTF8.self) },
+            versions: rules.versions
+        )
     }
 
     /// A binding as the API renders it, with the ids of its recipes.

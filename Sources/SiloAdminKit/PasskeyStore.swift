@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import Synchronization
 
 /// Where passkeys live once minted or claimed: one seam, two keepers — the Keychain where one
@@ -36,6 +35,8 @@ public final class InMemoryPasskeyStore: PasskeyStore, Sendable {
 }
 
 #if canImport(Security)
+// Only the Keychain's keeper uses Foundation, for the `Data` its calls trade in.
+import Foundation
 import Security
 
 /// The Keychain's keeper: generic passwords under the console's service, keyed by ServerID —
@@ -55,7 +56,7 @@ public struct KeychainPasskeyStore: PasskeyStore {
         ]
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data
+            let data = item as? Data
         else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
@@ -67,7 +68,9 @@ public struct KeychainPasskeyStore: PasskeyStore {
             kSecAttrService: service,
             kSecAttrAccount: serverID,
         ]
-        if SecItemAdd((key.merging([kSecValueData: data]) { _, new in new }) as CFDictionary, nil) == errSecDuplicateItem {
+        if SecItemAdd((key.merging([kSecValueData: data]) { _, new in new }) as CFDictionary, nil)
+            == errSecDuplicateItem
+        {
             SecItemUpdate(key as CFDictionary, [kSecValueData: data] as CFDictionary)
         }
     }

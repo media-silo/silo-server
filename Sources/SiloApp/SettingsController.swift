@@ -39,7 +39,9 @@ package struct SettingsController {
     /// All of the body or none of it: every field is checked before the store is touched.
     @Operation
     @ErrorResponse(BadSettings.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    package func updateSettings(@JSONBody body: Components.Schemas.SettingsPatch) async throws -> Components.Schemas.SettingsReport {
+    package func updateSettings(
+        @JSONBody body: Components.Schemas.SettingsPatch
+    ) async throws -> Components.Schemas.SettingsReport {
         if let name = body.name, name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             throw BadSettings(reason: "the name cannot be empty")
         }
@@ -55,7 +57,9 @@ package struct SettingsController {
         Components.Schemas.SettingsReport(
             editable: Components.Schemas.EditableSettings(
                 libraries: settings.libraries.map { Components.Schemas.LibrarySetting(id: $0.id, path: $0.root.path) },
-                name: settings.name, embeddedNode: settings.embeddedNode, advertise: settings.advertise
+                name: settings.name,
+                embeddedNode: settings.embeddedNode,
+                advertise: settings.advertise
             ),
             readOnly: Components.Schemas.MachineSettings(
                 serverID: config.serverID,

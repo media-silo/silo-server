@@ -39,8 +39,11 @@ package struct ArtworkController {
             return
         }
         try await FileResponse.send(
-            file: file.url, method: request.method, rangeHeader: request.headerFields[.range],
-            contentType: file.format.contentType, to: responseSender
+            file: file.url,
+            method: request.method,
+            rangeHeader: request.headerFields[.range],
+            contentType: file.format.contentType,
+            to: responseSender
         )
     }
 
@@ -49,7 +52,10 @@ package struct ArtworkController {
     @Put("/libraries/{library}/containers/{id}/artwork/{kind}")
     @RawRoute
     @Middleware(RouteMiddleware.requireOperator)
-    package func putArtwork<Reader: AsyncReader & ~Copyable & SendableMetatype, Sender: HTTPResponseSender & ~Copyable & SendableMetatype>(
+    package func putArtwork<
+        Reader: AsyncReader & ~Copyable & SendableMetatype,
+        Sender: HTTPResponseSender & ~Copyable & SendableMetatype
+    >(
         request: HTTPRequest,
         pathParameters: [String: Substring],
         reader: consuming sending Reader,
@@ -99,7 +105,10 @@ package struct ArtworkController {
 
         var body = UniqueArray<UInt8>(copying: Array(#"{"kind":"\#(kind)","format":"\#(format.rawValue)"}"#.utf8))
         try await responseSender.sendAndFinish(
-            HTTPResponse(status: .ok, headerFields: [.contentType: "application/json", .contentLength: String(body.count)]),
+            HTTPResponse(
+                status: .ok,
+                headerFields: [.contentType: "application/json", .contentLength: String(body.count)]
+            ),
             buffer: &body
         )
     }
@@ -126,9 +135,9 @@ package struct ArtworkController {
     /// is not one.
     private func folder(_ pathParameters: [String: Substring]) throws -> (URL, String)? {
         guard let library = pathParameters["library"].map(String.init).flatMap(libraries.library),
-              let id = pathParameters["id"].flatMap({ ContainerID(String($0)) }),
-              let kind = pathParameters["kind"].map(String.init), Artwork.kinds.contains(kind),
-              let row = try index.container(id, in: library.id)
+            let id = pathParameters["id"].flatMap({ ContainerID(String($0)) }),
+            let kind = pathParameters["kind"].map(String.init), Artwork.kinds.contains(kind),
+            let row = try index.container(id, in: library.id)
         else { return nil }
         return (library.root.appendingPathComponent(row.folder, isDirectory: true), kind)
     }

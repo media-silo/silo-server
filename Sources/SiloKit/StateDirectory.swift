@@ -3,14 +3,6 @@
 
 import Foundation
 
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Musl)
-import Musl
-#elseif canImport(Darwin)
-import Darwin
-#endif
-
 /// Where a daemon keeps its state: the folder its environment names, or a well-known place on the
 /// machine. `Configuration.md`, *Where the state directory lives*: the working directory plays no
 /// part, so the same binary started from anywhere is the same silo, and the folder the reset file
@@ -26,7 +18,11 @@ public struct StateDirectory: Sendable, Equatable {
         public var linuxFolder: String
 
         public static let silo = Owner(variable: "SILO_STATE_DIR", macOSFolder: "Silo", linuxFolder: "silo")
-        public static let node = Owner(variable: "SILO_NODE_STATE_DIR", macOSFolder: "Silo Node", linuxFolder: "silo-node")
+        public static let node = Owner(
+            variable: "SILO_NODE_STATE_DIR",
+            macOSFolder: "Silo Node",
+            linuxFolder: "silo-node"
+        )
     }
 
     /// Which table the default comes from. Its own type rather than `#if os`, so both tables are
@@ -77,7 +73,10 @@ public struct StateDirectory: Sendable, Equatable {
         platform: Platform
     ) -> StateDirectory {
         if let explicit = environment[owner.variable], !explicit.isEmpty {
-            return StateDirectory(url: URL(fileURLWithPath: explicit, isDirectory: true), source: .variable(owner.variable))
+            return StateDirectory(
+                url: URL(fileURLWithPath: explicit, isDirectory: true),
+                source: .variable(owner.variable)
+            )
         }
         let path: String
         switch (platform, isRoot) {
@@ -89,7 +88,8 @@ public struct StateDirectory: Sendable, Equatable {
             path = "/var/lib/\(owner.linuxFolder)"
         case (.linux, false):
             // The XDG specification says a relative value is invalid and to be ignored.
-            let stateHome = environment["XDG_STATE_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil } ?? home + "/.local/state"
+            let stateHome =
+                environment["XDG_STATE_HOME"].flatMap { $0.hasPrefix("/") ? $0 : nil } ?? home + "/.local/state"
             path = stateHome + "/\(owner.linuxFolder)"
         }
         return StateDirectory(url: URL(fileURLWithPath: path, isDirectory: true), source: .platformDefault)

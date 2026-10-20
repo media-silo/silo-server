@@ -34,7 +34,10 @@ struct SiloNode: AsyncParsableCommand {
     @Option(name: .customLong("serve-port"), help: "The port finished files are served on for the silo to fetch.")
     var servePort: Int = 18600
 
-    @Option(name: .customLong("advertised-host"), help: "The name the silo reaches this machine by. Defaults to the machine's host name.")
+    @Option(
+        name: .customLong("advertised-host"),
+        help: "The name the silo reaches this machine by. Defaults to the machine's host name."
+    )
     var advertisedHost: String?
 
     @Option(name: .customLong("poll"), help: "Seconds between asking for work.")
@@ -59,35 +62,19 @@ struct SiloNode: AsyncParsableCommand {
         let capabilities = try await ffmpeg.encoders()
         let version = try await ffmpeg.version()
 
-        // The silo: given, from the environment, or found.
-        let baseURL: URL
-        if let text = silo ?? environment["SILO_URL"], let url = URL(string: text) {
-            baseURL = url
-        } else {
-            guard Discovery.isAvailable else { throw ValidationError("give --silo; \(Discovery.unavailable)") }
-            logger.info("looking for a silo…")
-            let found = try await Discovery.browse()
-            guard let first = found.first else { throw ValidationError("no silo found on this network; give --silo") }
-            if found.count > 1 { logger.info("\(found.count) silos found; using \(first.name)") }
-            logger.info("found \(first.name) at \(first.url)")
-            baseURL = first.url
-        }
-
-        // The identity: minted once and kept.
+        let baseURL = try await siloURL(environment: environment, logger: logger)
         let identityURL = state.appendingPathComponent("identity.json")
-        var identity: NodeIdentity
-        if let data = try? Data(contentsOf: identityURL), let saved = try? JSONDecoder().decode(NodeIdentity.self, from: data) {
-            identity = saved
-        } else {
-            identity = NodeIdentity()
-            try JSONEncoder().encode(identity).write(to: identityURL, options: .atomic)
-        }
+        var identity = try Self.identity(at: identityURL)
 
         let registering = SiloClient(baseURL: baseURL)
         let registration = NodeRegistration(
-            id: identity.id, secret: identity.secret, name: nodeName,
-            platform: Self.platform, capabilities: capabilities.sorted(),
-            ffmpegVersion: version, cores: ProcessInfo.processInfo.activeProcessorCount
+            id: identity.id,
+            secret: identity.secret,
+            name: nodeName,
+            platform: Self.platform,
+            capabilities: capabilities.sorted(),
+            ffmpegVersion: version,
+            cores: ProcessInfo.processInfo.activeProcessorCount
         )
         var node = try await registering.registerNode(registration)
         logger.info("registered as \(node.name) (\(node.id)): \(node.state.rawValue)")
@@ -130,10 +117,38 @@ struct SiloNode: AsyncParsableCommand {
                 ref.holder = holder
                 return ref
             },
-            ffmpeg: ffmpeg, ffprobe: ffprobe, logger: logger
+            ffmpeg: ffmpeg,
+            ffprobe: ffprobe,
+            logger: logger
         )
         logger.info("ready: \(capabilities.count) encoders, serving outputs on port \(servePort)")
         await worker.run()
+    }
+
+    /// The silo: given, from the environment, or found.
+    private func siloURL(environment: [String: String], logger: Logger) async throws -> URL {
+        if let text = silo ?? environment["SILO_URL"], let url = URL(string: text) {
+            return url
+        }
+        guard Discovery.isAvailable else { throw ValidationError("give --silo; \(Discovery.unavailable)") }
+        logger.info("looking for a silo…")
+        let found = try await Discovery.browse()
+        guard let first = found.first else { throw ValidationError("no silo found on this network; give --silo") }
+        if found.count > 1 { logger.info("\(found.count) silos found; using \(first.name)") }
+        logger.info("found \(first.name) at \(first.url)")
+        return first.url
+    }
+
+    /// The identity: minted once and kept.
+    private static func identity(at url: URL) throws -> NodeIdentity {
+        if let data = try? Data(contentsOf: url),
+            let saved = try? JSONDecoder().decode(NodeIdentity.self, from: data)
+        {
+            return saved
+        }
+        let identity = NodeIdentity()
+        try JSONEncoder().encode(identity).write(to: url, options: .atomic)
+        return identity
     }
 
     static var platform: String {

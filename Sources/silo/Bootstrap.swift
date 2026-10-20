@@ -49,9 +49,14 @@ package struct AppBootstrap {
             let (silo, siloReport) = try SiloFile.open(in: state.url)
             log(siloReport, for: SiloFile.fileName, to: logger)
             if siloReport.defaulted("serverID") && heldState {
-                logger.warning("minted a new ServerID, \(silo.serverID), over a state directory that already holds a silo's state: this is a new server to every console that knew the old one")
+                logger.warning(
+                    "minted a new ServerID, \(silo.serverID), over a state directory that already holds a silo's state: this is a new server to every console that knew the old one"
+                )
             }
-            let (settings, settingsReport) = try SettingsStore.open(in: state.url, defaultName: "Silo on \(ProcessInfo.processInfo.hostName)")
+            let (settings, settingsReport) = try SettingsStore.open(
+                in: state.url,
+                defaultName: "Silo on \(ProcessInfo.processInfo.hostName)"
+            )
             log(settingsReport, for: SettingsStore.fileName, to: logger)
             return AppInputs(siloConfig: SiloConfig(silo: silo, stateDirectory: state.url), settings: settings)
         } catch {

@@ -4,7 +4,7 @@
 import Foundation
 import SiloClient
 import SiloDiscovery
-import SiloKit
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -164,11 +164,12 @@ public actor AdminConsole {
         // the class the registry's recorded verdicts imply — where there is no verdict, there
         // is nothing to hold, and the first miss reads unreachable at once.
         for entry in known.values where liveness[entry.id] == nil {
-            let held: Classification? = switch entry.lastKnownAccess {
-            case .some(true): .withAccess
-            case .some(false): .withoutAccess
-            case .none: nil
-            }
+            let held: Classification? =
+                switch entry.lastKnownAccess {
+                case .some(true): .withAccess
+                case .some(false): .withoutAccess
+                case .none: nil
+                }
             liveness[entry.id] = Liveness(misses: 0, held: held)
         }
 
@@ -196,8 +197,26 @@ public actor AdminConsole {
             let stored = passkeys.passkey(for: info.id)
             let (classification, lastKnownAccess) = await classify(info: info, url: url, stored: stored)
             let seenAt = now()
-            try? registry.merge(RegisteredSilo(id: info.id, name: info.name, url: url, lastSeen: seenAt, hasStoredPasskey: stored != nil, lastKnownAccess: lastKnownAccess))
-            rows.append(Silo(id: info.id, name: info.name, url: url, lastSeen: seenAt, classification: classification, lastKnownAccess: lastKnownAccess))
+            try? registry.merge(
+                RegisteredSilo(
+                    id: info.id,
+                    name: info.name,
+                    url: url,
+                    lastSeen: seenAt,
+                    hasStoredPasskey: stored != nil,
+                    lastKnownAccess: lastKnownAccess
+                )
+            )
+            rows.append(
+                Silo(
+                    id: info.id,
+                    name: info.name,
+                    url: url,
+                    lastSeen: seenAt,
+                    classification: classification,
+                    lastKnownAccess: lastKnownAccess
+                )
+            )
             liveness[info.id] = Liveness(misses: 0, held: classification)
         }
 
@@ -209,14 +228,16 @@ public actor AdminConsole {
             // The first miss holds the class the console last verified — only last-seen stops
             // advancing. The second consecutive miss is the one allowed to call it quiet.
             let classification: Classification = stance.misses == 1 ? stance.held ?? .unreachable : .unreachable
-            rows.append(Silo(
-                id: ghost.id,
-                name: ghost.name,
-                url: ghost.url,
-                lastSeen: ghost.lastSeen,
-                classification: classification,
-                lastKnownAccess: ghost.lastKnownAccess
-            ))
+            rows.append(
+                Silo(
+                    id: ghost.id,
+                    name: ghost.name,
+                    url: ghost.url,
+                    lastSeen: ghost.lastSeen,
+                    classification: classification,
+                    lastKnownAccess: ghost.lastKnownAccess
+                )
+            )
         }
 
         latest = rows.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -228,7 +249,11 @@ public actor AdminConsole {
     /// stored-but-refused are all `withoutAccess`, since the console can offer one act for all
     /// of them; the pair returned is the class and the verdict the passkey earned, for the
     /// registry to keep as the row's last-known access.
-    private func classify(info: SiloClient.ServerInfo, url: URL, stored: String?) async -> (Classification, lastKnownAccess: Bool?) {
+    private func classify(
+        info: SiloClient.ServerInfo,
+        url: URL,
+        stored: String?
+    ) async -> (Classification, lastKnownAccess: Bool?) {
         if info.bootstrap { return (.bootstrap, nil) }
         guard let stored else { return (.withoutAccess, nil) }
         return await hasAccess(url: url, passkey: stored) ? (.withAccess, true) : (.withoutAccess, false)
@@ -251,11 +276,24 @@ public actor AdminConsole {
     /// overwrites it. No residue mints straight away.
     public func prepareSetup(_ silo: Silo) async throws -> PreparedSetup {
         if let existing = passkeys.passkey(for: silo.id),
-           case .pending(let confirmBy)? = try await probeResidue(existing, at: silo.url) {
-            return PreparedSetup(serverID: silo.id, url: silo.url, presentation: .reused, resumingUntil: confirmBy, passkey: existing)
+            case .pending(let confirmBy)? = try await probeResidue(existing, at: silo.url)
+        {
+            return PreparedSetup(
+                serverID: silo.id,
+                url: silo.url,
+                presentation: .reused,
+                resumingUntil: confirmBy,
+                passkey: existing
+            )
         }
         let minted = Passkey.mint()
-        return PreparedSetup(serverID: silo.id, url: silo.url, presentation: .minted(minted), resumingUntil: nil, passkey: minted)
+        return PreparedSetup(
+            serverID: silo.id,
+            url: silo.url,
+            presentation: .minted(minted),
+            resumingUntil: nil,
+            passkey: minted
+        )
     }
 
     /// The residue's probe, a refusal read as a dead passkey — its stage ran out, was
@@ -293,8 +331,24 @@ public actor AdminConsole {
         passkeys.store(prepared.passkey, for: prepared.serverID)
         let info = try await client.confirmSetup(bearer: prepared.passkey)
 
-        let row = Silo(id: prepared.serverID, name: info.name, url: prepared.url, lastSeen: now(), classification: .withAccess, lastKnownAccess: true)
-        try? registry.merge(RegisteredSilo(id: row.id, name: row.name, url: row.url, lastSeen: row.lastSeen, hasStoredPasskey: true, lastKnownAccess: true))
+        let row = Silo(
+            id: prepared.serverID,
+            name: info.name,
+            url: prepared.url,
+            lastSeen: now(),
+            classification: .withAccess,
+            lastKnownAccess: true
+        )
+        try? registry.merge(
+            RegisteredSilo(
+                id: row.id,
+                name: row.name,
+                url: row.url,
+                lastSeen: row.lastSeen,
+                hasStoredPasskey: true,
+                lastKnownAccess: true
+            )
+        )
         render(row)
         return row
     }
@@ -306,8 +360,24 @@ public actor AdminConsole {
         let lastKnownAccess: Bool? = if let stored { await hasAccess(url: url, passkey: stored) } else { nil }
         let prior = registry.entry(for: serverID)
         let name = (try? await SiloClient(baseURL: url, session: session).server())?.name ?? prior?.name ?? serverID
-        let row = Silo(id: serverID, name: name, url: url, lastSeen: now(), classification: lastKnownAccess == true ? .withAccess : .withoutAccess, lastKnownAccess: lastKnownAccess)
-        try? registry.merge(RegisteredSilo(id: serverID, name: name, url: url, lastSeen: row.lastSeen, hasStoredPasskey: stored != nil, lastKnownAccess: lastKnownAccess))
+        let row = Silo(
+            id: serverID,
+            name: name,
+            url: url,
+            lastSeen: now(),
+            classification: lastKnownAccess == true ? .withAccess : .withoutAccess,
+            lastKnownAccess: lastKnownAccess
+        )
+        try? registry.merge(
+            RegisteredSilo(
+                id: serverID,
+                name: name,
+                url: url,
+                lastSeen: row.lastSeen,
+                hasStoredPasskey: stored != nil,
+                lastKnownAccess: lastKnownAccess
+            )
+        )
         render(row)
     }
 
@@ -328,14 +398,32 @@ public actor AdminConsole {
         guard status == .active else { throw ClaimRefused() }
 
         passkeys.store(passkey, for: silo.id)
-        let row = Silo(id: silo.id, name: silo.name, url: silo.url, lastSeen: now(), classification: .withAccess, lastKnownAccess: true)
-        try? registry.merge(RegisteredSilo(id: row.id, name: row.name, url: row.url, lastSeen: row.lastSeen, hasStoredPasskey: true, lastKnownAccess: true))
+        let row = Silo(
+            id: silo.id,
+            name: silo.name,
+            url: silo.url,
+            lastSeen: now(),
+            classification: .withAccess,
+            lastKnownAccess: true
+        )
+        try? registry.merge(
+            RegisteredSilo(
+                id: row.id,
+                name: row.name,
+                url: row.url,
+                lastSeen: row.lastSeen,
+                hasStoredPasskey: true,
+                lastKnownAccess: true
+            )
+        )
         render(row)
         return row
     }
+}
 
-    // MARK: - Settings
+// MARK: - Settings
 
+extension AdminConsole {
     /// A with-access silo's settings, asked with the passkey this Mac holds for it.
     public func settings(of silo: Silo) async throws -> SiloClient.SettingsReport {
         try await withOperator(silo) { try await $0.settings() }
@@ -345,19 +433,33 @@ public actor AdminConsole {
     /// comes back as `SettingsRefused` in the silo's own words; a rename is rendered on the row and
     /// kept in the registry, so the console calls the silo by its new name before the next sweep.
     @discardableResult
-    public func updateSettings(of silo: Silo, _ patch: SiloClient.SettingsPatch) async throws -> SiloClient.SettingsReport {
+    public func updateSettings(
+        of silo: Silo,
+        _ patch: SiloClient.SettingsPatch
+    ) async throws -> SiloClient.SettingsReport {
         let report: SiloClient.SettingsReport
         do {
             report = try await withOperator(silo) { try await $0.updateSettings(patch) }
         } catch SiloClientError.status(400, let body) {
             struct Problem: Decodable { var detail: String }
-            throw SettingsRefused(reason: (try? SiloClient.decoder.decode(Problem.self, from: Data(body.utf8)))?.detail ?? body)
+            throw SettingsRefused(
+                reason: (try? SiloClient.decoder.decode(Problem.self, from: Data(body.utf8)))?.detail ?? body
+            )
         }
         if report.editable.name != silo.name, let current = latest.first(where: { $0.id == silo.id }) {
             var renamed = current
             renamed.name = report.editable.name
             if let entry = registry.entry(for: silo.id) {
-                try? registry.merge(RegisteredSilo(id: entry.id, name: renamed.name, url: entry.url, lastSeen: entry.lastSeen, hasStoredPasskey: entry.hasStoredPasskey, lastKnownAccess: entry.lastKnownAccess))
+                try? registry.merge(
+                    RegisteredSilo(
+                        id: entry.id,
+                        name: renamed.name,
+                        url: entry.url,
+                        lastSeen: entry.lastSeen,
+                        hasStoredPasskey: entry.hasStoredPasskey,
+                        lastKnownAccess: entry.lastKnownAccess
+                    )
+                )
             }
             render(renamed)
         }
@@ -366,7 +468,10 @@ public actor AdminConsole {
 
     /// Runs `call` with the passkey this Mac holds for `silo` as its bearer; no passkey, or one the
     /// silo refuses, is `NoAccess`.
-    private func withOperator<T: Sendable>(_ silo: Silo, _ call: @Sendable (SiloClient) async throws -> T) async throws -> T {
+    func withOperator<T: Sendable>(
+        _ silo: Silo,
+        _ call: @Sendable (SiloClient) async throws -> T
+    ) async throws -> T {
         guard let passkey = passkeys.passkey(for: silo.id) else { throw NoAccess() }
         do {
             return try await call(SiloClient(baseURL: silo.url, token: passkey, session: session))
@@ -375,478 +480,8 @@ public actor AdminConsole {
         }
     }
 
-    // MARK: - Rulesets
-
-    /// A ruleset opened: its summary and branches, and one version's document as the silo stored it,
-    /// with the silo's reading of it.
-    public struct OpenedRuleset: Hashable, Sendable {
-        public var summary: SiloClient.RulesetSummary
-        public var branches: [SiloClient.Branch]
-        public var document: SiloClient.RulesetDocument
-    }
-
-    /// One library's out-of-date presentations, as the background check has found them so far.
-    public struct LibraryOutOfDate: Hashable, Sendable {
-        public var library: String
-        public var report: SiloClient.OutOfDateReport
-    }
-
-    /// The rulesets a with-access silo holds, each with every version.
-    public func rulesets(of silo: Silo) async throws -> [SiloClient.RulesetSummary] {
-        try await withOperator(silo) { try await $0.rulesets() }
-    }
-
-    /// Opens a ruleset at a version, or at its standard's head when none is named: the version the
-    /// library's applications take unless they name a branch.
-    public func open(ruleset name: String, version: Int? = nil, of silo: Silo) async throws -> OpenedRuleset {
-        try await withOperator(silo) { client in
-            guard let summary = try await client.rulesets().first(where: { $0.name == name }) else {
-                throw SiloClientError.status(404, "no ruleset \(name)")
-            }
-            let branches = try await client.branches(of: name)
-            let document = try await client.ruleset(named: name, version: version ?? summary.standard ?? summary.version)
-            return OpenedRuleset(summary: summary, branches: branches, document: document)
-        }
-    }
-
-    /// Each library's out-of-date presentations, in the order the silo lists its libraries.
-    public func outOfDate(of silo: Silo) async throws -> [LibraryOutOfDate] {
-        try await withOperator(silo) { client in
-            var reports: [LibraryOutOfDate] = []
-            for library in try await client.settings().editable.libraries {
-                reports.append(LibraryOutOfDate(library: library.id, report: try await client.outOfDate(in: library.id)))
-            }
-            return reports
-        }
-    }
-
-    // MARK: - Trials
-
-    /// A trial job, as the console follows it.
-    public typealias TrialJob = SiloKit.Job
-
-    /// What trying a branch's version on one binding made: a trial job for each recipe the
-    /// application made, or the silo's refusal of the application or a job, in its words.
-    public struct TrialStart: Hashable, Sendable {
-        public var binding: String
-        public var jobs: [SiloKit.Job]
-        public var refusal: String?
-    }
-
-    /// A binding worth trying a branch on: one whose placed presentation the branch would make
-    /// differently, as its impact on the standard says.
-    public struct TrialCandidate: Hashable, Sendable, Identifiable {
-        public var binding: String
-        public var container: String?
-        public var item: String?
-        public var profile: String?
-        public var id: String { "\(binding)/\(profile ?? "")" }
-    }
-
-    /// The bindings the branch's impact lists, each once, in the impact's order: what is offered first
-    /// to try a branch on.
-    public func trialCandidates(of ruleset: String, branch: String, on silo: Silo) async throws -> [TrialCandidate] {
-        try await withOperator(silo) { client in
-            var candidates: [TrialCandidate] = []
-            for entry in try await client.impact(ofBranch: branch, of: ruleset) {
-                guard let recipe = try? await client.recipe(entry.recipe),
-                      !candidates.contains(where: { $0.binding == recipe.binding })
-                else { continue }
-                candidates.append(TrialCandidate(binding: recipe.binding, container: entry.container, item: entry.item, profile: entry.profile))
-            }
-            return candidates
-        }
-    }
-
-    /// Applies a branch at a version to each binding and makes a trial job of every recipe it makes.
-    /// Places nothing: a trial never enters the library.
-    public func startTrials(of ruleset: String, branch: String, version: Int, on bindings: [String], of silo: Silo) async throws -> [TrialStart] {
-        try await withOperator(silo) { client in
-            var started: [TrialStart] = []
-            for binding in bindings {
-                do {
-                    var jobs: [SiloKit.Job] = []
-                    for recipe in try await client.apply(Application(ruleset: ruleset, branch: branch, version: version), to: binding) {
-                        jobs.append(try await client.createJob(recipe: recipe.id, trial: true))
-                    }
-                    started.append(TrialStart(binding: binding, jobs: jobs))
-                } catch SiloClientError.status(let status, let body) where status != 401 {
-                    started.append(TrialStart(binding: binding, jobs: [], refusal: Self.detail(body)))
-                }
-            }
-            return started
-        }
-    }
-
-    /// One stream of a trial beside the same stream as placed: what each recipe decided for it.
-    public struct StreamComparison: Hashable, Sendable {
-        public var stream: String
-        public var placed: Action?
-        public var tried: Action?
-    }
-
-    /// A tried trial beside the presentation its binding placed for the same output, when the
-    /// branch's impact lists one: each stream's decision in both recipes, and where both files are
-    /// served to play.
-    public struct TrialComparison: Hashable, Sendable {
-        public var trial: SiloClient.Trial
-        public var streams: [StreamComparison]
-        public var trialFile: URL
-        /// Where the placed presentation is served; nil when no placed one is known.
-        public var placedFile: URL?
-    }
-
-    /// The tried trials of a ruleset's branch, each compared with what its binding placed.
-    public func trials(of ruleset: String, branch: String, on silo: Silo) async throws -> [TrialComparison] {
-        try await withOperator(silo) { client in
-            let trials = try await client.trials(ruleset: ruleset, branch: branch)
-            guard !trials.isEmpty else { return [] }
-            // What the binding placed, as the branch's impact on the standard knows it.
-            var placed: [String: (recipe: StoredRecipe, presentation: String?)] = [:]
-            for entry in (try? await client.impact(ofBranch: branch, of: ruleset)) ?? [] {
-                guard let recipe = try? await client.recipe(entry.recipe) else { continue }
-                placed["\(recipe.binding)/\(recipe.recipe.output.profile ?? "")"] = (recipe, entry.presentation)
-            }
-            var compared: [TrialComparison] = []
-            for trial in trials {
-                let tried = try await client.recipe(trial.recipe)
-                let beside = placed["\(trial.binding)/\(trial.profile ?? "")"]
-                compared.append(TrialComparison(
-                    trial: trial,
-                    streams: Self.streams(placed: beside?.recipe.recipe, tried: tried.recipe),
-                    trialFile: client.trialFileURL(trial.job),
-                    placedFile: beside?.presentation.map(client.mediaURL)
-                ))
-            }
-            return compared
-        }
-    }
-
-    /// The trial jobs the console started, as the silo has them now: how far each has got.
-    public func trialJobs(_ ids: [String], on silo: Silo) async throws -> [SiloKit.Job] {
-        try await withOperator(silo) { client in
-            var jobs: [SiloKit.Job] = []
-            for id in ids {
-                if let job = try? await client.job(id) { jobs.append(job) }
-            }
-            return jobs
-        }
-    }
-
-    public func deleteTrial(_ job: String, on silo: Silo) async throws {
-        try await withOperator(silo) { try await $0.deleteTrial(job) }
-    }
-
-    /// Each stream either recipe decides, in the source's order, with what each decided.
-    static func streams(placed: Recipe?, tried: Recipe) -> [StreamComparison] {
-        func key(_ decision: StreamDecision) -> String { "\(decision.kind.rawValue) \(decision.sourceIndex)" }
-        var order: [String] = []
-        var placedActions: [String: Action] = [:]
-        var triedActions: [String: Action] = [:]
-        for decision in placed?.decisions ?? [] {
-            if placedActions[key(decision)] == nil { order.append(key(decision)) }
-            placedActions[key(decision)] = decision.action
-        }
-        for decision in tried.decisions {
-            if placedActions[key(decision)] == nil, triedActions[key(decision)] == nil { order.append(key(decision)) }
-            triedActions[key(decision)] = decision.action
-        }
-        return order.map { StreamComparison(stream: $0, placed: placedActions[$0], tried: triedActions[$0]) }
-    }
-
-    // MARK: - Changing rulesets
-
-    /// What the silo made of a draft's text: its reading, or its refusal in its own words.
-    public enum DraftCheck: Hashable, Sendable {
-        case reading(SiloClient.RulesetReading)
-        case refused(String)
-    }
-
-    /// Checks a draft with the silo as a store would, storing nothing.
-    public func check(_ draft: Draft, of silo: Silo) async throws -> DraftCheck {
-        do {
-            return .reading(try await withOperator(silo) { try await $0.check(ruleset: draft.text, as: draft.ruleset) })
-        } catch SiloClientError.status(400, let body) {
-            return .refused(Self.detail(body))
-        }
-    }
-
-    /// What a draft would put out of date were it stored on its base's branch. A new ruleset made
-    /// nothing, so it puts nothing out of date.
-    public func impact(of draft: Draft, of silo: Silo) async throws -> [SiloClient.OutOfDatePresentation] {
-        guard let base = draft.base else { return [] }
-        return try await withOperator(silo) { try await $0.impact(ofDraft: draft.text, basedOn: base, of: draft.ruleset) }
-    }
-
-    /// Where a draft is stored.
-    public enum StoreTarget: Hashable, Sendable {
-        /// Its base's branch, or the standard for a new ruleset.
-        case baseBranch
-        /// Another branch of the ruleset, at that branch's head.
-        case branch(String)
-        /// A branch started from the base, which must be on the standard.
-        case newBranch(String)
-    }
-
-    /// How a store ended: the version the silo gave the draft, which ends it; or another version
-    /// that landed on the branch first, which keeps it, for the operator to re-base or discard.
-    public enum StoreOutcome: Hashable, Sendable {
-        case stored(SiloClient.RulesetDocument)
-        case landedFirst(SiloClient.RulesetDocument)
-    }
-
-    /// The silo refused the store for something other than a version landing first, in its words.
-    public struct StoreRefused: Error, Hashable {
-        public var reason: String
-    }
-
-    /// Stores a draft, naming as `basedOn` the head of the branch it goes to as the draft knows it:
-    /// its base, on its base's branch; another branch's head as the silo lists it; or the base, for a
-    /// branch started from it. The console never merges: a version that landed first is fetched and
-    /// handed back with the draft kept.
-    public func store(_ draft: Draft, to target: StoreTarget, of silo: Silo) async throws -> StoreOutcome {
-        try await withOperator(silo) { client in
-            var branch: String?
-            var basedOn: Int
-            switch target {
-            case .baseBranch:
-                branch = draft.baseBranch
-                basedOn = draft.base ?? 0
-            case .branch(let name):
-                guard let head = try await client.branches(of: draft.ruleset).first(where: { $0.name == name })?.head else {
-                    throw StoreRefused(reason: "\(draft.ruleset) has no branch \(name)")
-                }
-                branch = name
-                basedOn = head
-            case .newBranch(let name):
-                guard let base = draft.base, draft.baseBranch == nil || draft.baseBranch == "standard" else {
-                    throw StoreRefused(reason: "a branch is started from a version of the standard")
-                }
-                do {
-                    _ = try await client.startBranch(name, of: draft.ruleset, from: base)
-                } catch SiloClientError.status(let status, let body) where status == 400 || status == 409 {
-                    throw StoreRefused(reason: Self.detail(body))
-                }
-                branch = name
-                basedOn = base
-            }
-            do {
-                return .stored(try await client.store(ruleset: draft.text, as: draft.ruleset, branch: branch, upToDateWith: draft.upToDateWith, basedOn: basedOn))
-            } catch SiloClientError.status(409, let body) {
-                let line = branch ?? "standard"
-                guard let head = try await client.branches(of: draft.ruleset).first(where: { $0.name == line })?.head, head != basedOn else {
-                    throw StoreRefused(reason: Self.detail(body))
-                }
-                return .landedFirst(try await client.ruleset(named: draft.ruleset, version: head))
-            } catch SiloClientError.status(400, let body) {
-                throw StoreRefused(reason: Self.detail(body))
-            }
-        }
-    }
-
-    /// What promoting a branch would put out of date, as the silo resolves it on request.
-    public func impact(ofBranch branch: String, of ruleset: String, on silo: Silo) async throws -> [SiloClient.OutOfDatePresentation] {
-        try await withOperator(silo) { try await $0.impact(ofBranch: branch, of: ruleset) }
-    }
-
-    /// A promotion the silo refused: the standard versions the branch has not taken in, and the
-    /// branch's base they are read against.
-    public struct PromotionRefused: Error, Hashable {
-        public var reason: String
-        public var notTakenIn: [SiloClient.RulesetDocument]
-        public var base: SiloClient.RulesetDocument?
-    }
-
-    /// Promotes a branch, answering the standard's new version. A refusal names the standard versions
-    /// the branch has not taken in, with their documents and its base's, so that each can be read for
-    /// how it differs before a draft taking them in is stored on the branch.
-    public func promote(_ branch: String, of ruleset: String, on silo: Silo) async throws -> SiloClient.RulesetDocument {
-        try await withOperator(silo) { client in
-            do {
-                let promoted = try await client.promote(branch, of: ruleset)
-                return try await client.ruleset(named: ruleset, version: promoted.version)
-            } catch SiloClientError.status(409, let body) {
-                let branches = try await client.branches(of: ruleset)
-                let line = branches.first { $0.name == branch }
-                let summary = try await client.rulesets().first { $0.name == ruleset }
-                let since = line?.upToDateWith ?? line?.base ?? 0
-                let missed = (summary?.versions ?? []).filter { $0.branch == "standard" && $0.version > since }.map(\.version)
-                var documents: [SiloClient.RulesetDocument] = []
-                for version in missed { documents.append(try await client.ruleset(named: ruleset, version: version)) }
-                let base = try await line?.base.asyncMap { try await client.ruleset(named: ruleset, version: $0) }
-                throw PromotionRefused(reason: Self.detail(body), notTakenIn: documents, base: base)
-            }
-        }
-    }
-
-    /// The libraries a with-access silo lists, each with its standard.
-    public func libraries(of silo: Silo) async throws -> [SiloClient.Library] {
-        try await withOperator(silo) { try await $0.libraries() }
-    }
-
-    /// Names a library's standard, or clears it with nil; the library as the silo answers.
-    public func setStandard(_ ruleset: String?, of library: String, on silo: Silo) async throws -> SiloClient.Library {
-        do {
-            return try await withOperator(silo) { try await $0.setStandard(ruleset, of: library) }
-        } catch SiloClientError.status(let status, let body) where status == 400 || status == 404 {
-            throw SettingsRefused(reason: Self.detail(body).isEmpty ? "no ruleset \(ruleset ?? "")" : Self.detail(body))
-        }
-    }
-
-    /// Each library's last walk, by its id, for the libraries a with-access silo lists. A library
-    /// whose walk cannot be read is left out.
-    public func lastWalks(of silo: Silo) async throws -> [String: SiloClient.LastWalk] {
-        try await withOperator(silo) { client in
-            var walks: [String: SiloClient.LastWalk] = [:]
-            for library in try await client.libraries() {
-                walks[library.id] = try? await client.lastWalk(of: library.id)
-            }
-            return walks
-        }
-    }
-
-    /// Adds a library at `path` on the silo's machine, making its missing folders with `create`; the
-    /// library as the silo answers, walked. The silo's refusal — outside its roots, a taken id, a
-    /// folder that is not there — comes back as `SettingsRefused` in its own words.
-    public func addLibrary(id: String, path: String, create: Bool = false, on silo: Silo) async throws -> SiloClient.Library {
-        do {
-            return try await withOperator(silo) { try await $0.addLibrary(id: id, path: path, create: create) }
-        } catch SiloClientError.status(let status, let body) where [400, 403, 409, 422].contains(status) {
-            throw SettingsRefused(reason: Self.detail(body))
-        }
-    }
-
-    /// What adding a library at `path` would find on the silo's machine, and the refusal it would
-    /// meet; nothing is added or made.
-    public func checkLibrary(id: String, path: String, create: Bool, on silo: Silo) async throws -> SiloClient.LibraryCheck {
-        try await withOperator(silo) { try await $0.checkLibrary(id: id, path: path, create: create) }
-    }
-
-    /// Removes a library, leaving its files on the silo's machine. A refusal — a live job filing into
-    /// it — comes back as `SettingsRefused`, naming the job.
-    public func removeLibrary(_ library: String, on silo: Silo) async throws {
-        do {
-            try await withOperator(silo) { try await $0.removeLibrary(library) }
-        } catch SiloClientError.status(let status, let body) where status == 404 || status == 409 {
-            throw SettingsRefused(reason: Self.detail(body).isEmpty ? "the silo has no library \(library)" : Self.detail(body))
-        }
-    }
-
-    // MARK: - Containers
-
-    /// A library's container as the console shows it: as the library's sidecar says it, the sidecar's
-    /// bytes, and what the library's last walk reported on that sidecar, in the walk's words.
-    public struct OpenedContainer: Hashable, Sendable {
-        public var container: SiloClient.LibraryContainer
-        public var sidecar: Data
-        public var findings: [SiloClient.LastWalk.Finding]
-    }
-
-    /// The containers at the top of a library, listed or not.
-    public func containers(in library: String, of silo: Silo) async throws -> [SiloClient.ContainerSummary] {
-        try await withOperator(silo) { try await $0.containers(in: library) }
-    }
-
-    /// A container in a library, with its sidecar and the last walk's findings on it. The findings are
-    /// the walk's, matched by the sidecar's path; the console adds no reading of its own.
-    public func open(container id: String, in library: String, of silo: Silo) async throws -> OpenedContainer {
-        try await withOperator(silo) { client in
-            let container = try await client.container(id, in: library)
-            let sidecar = try await client.sidecar(of: id, in: library)
-            let walk = try? await client.lastWalk(of: library)
-            return OpenedContainer(container: container, sidecar: sidecar, findings: (walk?.report.findings ?? []).filter { $0.path == container.path })
-        }
-    }
-
-    /// What the silo made of a container draft, asked as a dry run: what it would write and its
-    /// findings, refused or not; that the sidecar has moved on since the draft's base; or why the
-    /// document could not be read, in the silo's words.
-    public enum ContainerCheck: Hashable, Sendable {
-        case wouldWrite(SiloClient.ContainerEditResult)
-        case refused(SiloClient.ContainerEditResult)
-        case behind(String)
-        case unreadable(String)
-    }
-
-    /// Checks a container draft with the silo as a store would, storing nothing.
-    public func check(_ draft: ContainerDraft, of silo: Silo) async throws -> ContainerCheck {
-        do {
-            return .wouldWrite(try await withOperator(silo) {
-                try await $0.edit(container: draft.container, in: draft.library, document: draft.text, basedOn: draft.base, dryRun: true)
-            })
-        } catch SiloClientError.status(422, let body) {
-            guard let result = try? SiloClient.decoder.decode(SiloClient.ContainerEditResult.self, from: Data(body.utf8)) else { return .unreadable(Self.detail(body)) }
-            return .refused(result)
-        } catch SiloClientError.status(409, let body) {
-            return .behind(Self.detail(body))
-        } catch SiloClientError.status(400, let body) {
-            return .unreadable(Self.detail(body))
-        }
-    }
-
-    /// How a container store ended: the sidecar the silo wrote, which ends the draft; the findings
-    /// that refused it, which keep it; or the sidecar that landed first, which keeps it for the
-    /// operator to re-base or discard. The console never merges.
-    public enum ContainerStoreOutcome: Hashable, Sendable {
-        case stored(SiloClient.ContainerEditResult)
-        case refused(SiloClient.ContainerEditResult)
-        case landedFirst(OpenedContainer)
-    }
-
-    /// Stores a container draft onto the sidecar it was based on. A document the silo cannot read is
-    /// `StoreRefused`, in its words.
-    public func store(_ draft: ContainerDraft, of silo: Silo) async throws -> ContainerStoreOutcome {
-        do {
-            return .stored(try await withOperator(silo) {
-                try await $0.edit(container: draft.container, in: draft.library, document: draft.text, basedOn: draft.base)
-            })
-        } catch SiloClientError.status(422, let body) {
-            guard let result = try? SiloClient.decoder.decode(SiloClient.ContainerEditResult.self, from: Data(body.utf8)) else { throw StoreRefused(reason: Self.detail(body)) }
-            return .refused(result)
-        } catch SiloClientError.status(409, _) {
-            return .landedFirst(try await open(container: draft.container, in: draft.library, of: silo))
-        } catch SiloClientError.status(let status, let body) where status == 400 || status == 404 {
-            throw StoreRefused(reason: Self.detail(body).isEmpty ? "the library no longer holds the container" : Self.detail(body))
-        }
-    }
-
-    /// Where a kind of a container's artwork is served; the silo serves it to anyone who asks.
-    public nonisolated func artworkURL(_ kind: String, of container: String, in library: String, of silo: Silo) -> URL {
-        SiloClient(baseURL: silo.url).artworkURL(kind, of: container, in: library)
-    }
-
-    /// Puts an image as a kind of a container's artwork. The silo's refusal — not a JPEG or a PNG,
-    /// or too large — comes back as `SettingsRefused` in words.
-    public func putArtwork(_ image: Data, as kind: String, of container: String, in library: String, on silo: Silo) async throws {
-        do {
-            _ = try await withOperator(silo) { try await $0.putArtwork(image, as: kind, of: container, in: library) }
-        } catch SiloClientError.status(415, _) {
-            throw SettingsRefused(reason: "the silo takes artwork as a JPEG or a PNG, and this is neither")
-        } catch SiloClientError.status(413, _) {
-            throw SettingsRefused(reason: "the silo takes artwork up to 25 MB, and this is larger")
-        } catch SiloClientError.status(404, _) {
-            throw SettingsRefused(reason: "the library no longer holds the container")
-        }
-    }
-
-    /// Removes a kind of a container's artwork.
-    public func removeArtwork(_ kind: String, of container: String, in library: String, on silo: Silo) async throws {
-        do {
-            try await withOperator(silo) { try await $0.removeArtwork(kind, of: container, in: library) }
-        } catch SiloClientError.status(404, _) {
-            throw SettingsRefused(reason: "the container has no \(kind)")
-        }
-    }
-
-    /// The path a library added within `root` is at: the folder named inside it, or the root itself.
-    public static func path(_ folder: String, within root: String) -> String {
-        let inside = folder.trimmingCharacters(in: CharacterSet(charactersIn: "/").union(.whitespaces))
-        guard !inside.isEmpty else { return root }
-        return (root.hasSuffix("/") ? root : root + "/") + inside
-    }
-
     /// A problem's detail, or the body as it came.
-    private static func detail(_ body: String) -> String {
+    static func detail(_ body: String) -> String {
         struct Problem: Decodable { var detail: String }
         return (try? SiloClient.decoder.decode(Problem.self, from: Data(body.utf8)))?.detail ?? body
     }
@@ -875,35 +510,5 @@ public actor AdminConsole {
             latest.append(row)
         }
         latest.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-}
-
-extension Optional {
-    /// `map`, for a transform that suspends.
-    fileprivate func asyncMap<T>(_ transform: (Wrapped) async throws -> T) async rethrows -> T? {
-        guard let self else { return nil }
-        return try await transform(self)
-    }
-}
-
-extension SiloClient.LibraryCheck {
-    /// The path as far as it exists: up to the deepest folder along it that is there, or nothing
-    /// when not even the first is.
-    public var present: String {
-        components.last { $0.state == .folder }?.path ?? ""
-    }
-
-    /// The rest of the path, from the first folder that is missing or is not a folder: what the
-    /// console shows apart, to be made or refused.
-    public var absent: String {
-        String(path.dropFirst(present.count))
-    }
-
-    /// Whether the silo refuses the path itself, as against the name the library would have. The silo
-    /// judges the path before the name, so a refusal that is not a path's — outside the roots or where a
-    /// drive mounts (403), a file in the way, folders missing and not asked for — leaves the path good.
-    public func refusesPath(create: Bool) -> Bool {
-        guard let refusal else { return false }
-        return refusal.status == 403 || components.contains { $0.state == .notAFolder } || !creates.isEmpty && !create
     }
 }

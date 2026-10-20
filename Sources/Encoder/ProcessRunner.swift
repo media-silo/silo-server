@@ -3,6 +3,7 @@
 
 import Foundation
 import Synchronization
+
 #if canImport(Glibc)
 import Glibc
 #elseif canImport(Musl)
@@ -130,11 +131,15 @@ package enum ProcessRunner {
 
         static func resumeIfDone(_ state: borrowing Mutex<State>) {
             let outcome: (CheckedContinuation<Outcome, any Error>, Outcome)? = state.withLock { state in
-                guard let status = state.status, state.stdoutClosed, state.stderrClosed, let continuation = state.continuation else {
+                guard let status = state.status, state.stdoutClosed, state.stderrClosed,
+                    let continuation = state.continuation
+                else {
                     return nil
                 }
                 state.continuation = nil
-                let tail = String(decoding: state.stderrTail, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                let tail = String(decoding: state.stderrTail, as: UTF8.self).trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
                 return (continuation, Outcome(status: status, stderrTail: tail))
             }
             if let (continuation, result) = outcome {

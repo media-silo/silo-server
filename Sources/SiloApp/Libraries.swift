@@ -30,7 +30,9 @@ package struct LibraryCheck: Hashable, Sendable {
     }
 
     package enum Refusal: Hashable, Sendable {
-        case bad(String), outside(String), taken(String)
+        case bad(String)
+        case outside(String)
+        case taken(String)
 
         var error: any Error {
             switch self {
@@ -92,7 +94,13 @@ package final class Libraries: Sendable {
         var lanes: [String: LibraryLane] = [:]
     }
 
-    package init(config: SiloConfig, settings: SettingsStore, index: Index, checks: CheckSignal, mounts: MountPoints = .system) {
+    package init(
+        config: SiloConfig,
+        settings: SettingsStore,
+        index: Index,
+        checks: CheckSignal,
+        mounts: MountPoints = .system
+    ) {
         self.config = config
         self.settings = settings
         self.index = index
@@ -133,7 +141,9 @@ package final class Libraries: Sendable {
             logger.info("made \(check.creates.joined(separator: ", ")) for \(id)")
         }
         try settings.update { settings in
-            guard !settings.libraries.contains(where: { $0.id == id }) else { throw LibraryTaken(reason: "there is already a library \(id)") }
+            guard !settings.libraries.contains(where: { $0.id == id }) else {
+                throw LibraryTaken(reason: "there is already a library \(id)")
+            }
             settings.libraries.append(library)
         }
         logger.info("added \(id) at \(library.root.path)")
@@ -149,7 +159,12 @@ package final class Libraries: Sendable {
     /// children are drives, or below a mount point `/etc/fstab` declares with nothing mounted on it.
     package func check(id: String, path: String, create: Bool) -> LibraryCheck {
         guard path.hasPrefix("/") else {
-            return LibraryCheck(path: path, components: [], creates: [], refusal: .bad("\(path) is not an absolute path"))
+            return LibraryCheck(
+                path: path,
+                components: [],
+                creates: [],
+                refusal: .bad("\(path) is not an absolute path")
+            )
         }
         let standardized = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
         var components: [LibraryCheck.Component] = []
@@ -160,11 +175,12 @@ package final class Libraries: Sendable {
             if components.last?.state == .missing {
                 state = .missing
             } else {
-                state = switch Indexer.isFolder(atPath: prefix.path) {
-                case true?: .folder
-                case false?: .notAFolder
-                case nil: .missing
-                }
+                state =
+                    switch Indexer.isFolder(atPath: prefix.path) {
+                    case true?: .folder
+                    case false?: .notAFolder
+                    case nil: .missing
+                    }
             }
             components.append(LibraryCheck.Component(path: prefix.path, state: state))
             if state == .notAFolder { break }
@@ -179,21 +195,29 @@ package final class Libraries: Sendable {
         if let blocked = check.components.first(where: { $0.state == .notAFolder }) {
             return .bad("\(blocked.path) is not a folder")
         }
-        guard !roots.isEmpty else { return .outside("this silo's silo.json names no library roots, so nothing can be added over the network") }
+        guard !roots.isEmpty else {
+            return .outside("this silo's silo.json names no library roots, so nothing can be added over the network")
+        }
         // Only what exists has links to resolve; the folders below it are made as they are named.
         let existing = check.components.last { $0.state == .folder }?.path ?? "/"
         let existingURL = URL(fileURLWithPath: existing, isDirectory: true).resolvingSymlinksInPath()
         let resolvedExisting = existingURL.path
-        let resolved = check.creates.reduce(existingURL) { $0.appendingPathComponent(($1 as NSString).lastPathComponent) }.path
+        let resolved = check.creates.reduce(existingURL) {
+            $0.appendingPathComponent(($1 as NSString).lastPathComponent)
+        }.path
         let resolvedRoots = roots.map { ($0.path, $0.resolvingSymlinksInPath().path) }
         guard let root = resolvedRoots.first(where: { Self.path(resolved, liesWithin: $0.1) }) else {
-            return .outside("\(check.path) lies within none of the library roots: \(roots.map(\.path).joined(separator: ", "))")
+            return .outside(
+                "\(check.path) lies within none of the library roots: \(roots.map(\.path).joined(separator: ", "))"
+            )
         }
         check.root = root.0
         if !check.creates.isEmpty {
             // What could not be made even if asked is said before that nothing asked for it.
             guard Self.path(resolvedExisting, liesWithin: root.1) else {
-                return .outside("\(check.creates[0]) would be made outside the library roots: a root is made by the machine's owner")
+                return .outside(
+                    "\(check.creates[0]) would be made outside the library roots: a root is made by the machine's owner"
+                )
             }
             let along = check.components.filter { $0.state == .folder }.map(\.path)
             if let reason = mounts.reasonNotToMake(in: existing, along: along) {
@@ -278,13 +302,19 @@ package final class Libraries: Sendable {
     package func refresh(_ container: ContainerID, in library: LibraryConfig) async throws {
         guard let row = try index.container(container, in: library.id) else { return }
         try await lane(of: library.id).exclusively { [self] in
-            _ = try Indexer.refresh(folder: row.folder, parent: row.parent.flatMap(ContainerID.init), in: library, index: index)
+            _ = try Indexer.refresh(
+                folder: row.folder,
+                parent: row.parent.flatMap(ContainerID.init),
+                in: library,
+                index: index
+            )
         }
     }
 
     /// Runs `body` with the library to itself — no walk, re-read or other edit of it running — so that
     /// what it reads of a sidecar is still what is there when it writes.
-    package func exclusively<T: Sendable>(_ library: LibraryConfig, _ body: @Sendable () throws -> T) async throws -> T {
+    package func exclusively<T: Sendable>(_ library: LibraryConfig, _ body: @Sendable () throws -> T) async throws -> T
+    {
         try await lane(of: library.id).exclusively(body)
     }
 
@@ -297,7 +327,9 @@ package final class Libraries: Sendable {
             let report = try Indexer.scan(library, into: index)
             walk = LastWalk(walkedAt: .now, available: true, report: report)
             if always || report.read > 0 || report.removed > 0 {
-                logger.info("walked \(library.id): \(report.read) read, \(report.unchanged) unchanged, \(report.removed) removed")
+                logger.info(
+                    "walked \(library.id): \(report.read) read, \(report.unchanged) unchanged, \(report.removed) removed"
+                )
             }
             // The same findings at every tick are said once, when they first appear.
             if always || previous?.report.findings != report.findings {
@@ -364,7 +396,9 @@ package final class Libraries: Sendable {
         }
         guard changed else { return }
         if let reason {
-            logger.warning("\(library.id) is unavailable: \(reason) (\(library.root.path)); its index is kept, and its media answer 503")
+            logger.warning(
+                "\(library.id) is unavailable: \(reason) (\(library.root.path)); its index is kept, and its media answer 503"
+            )
         } else {
             logger.info("\(library.id) is available again")
         }

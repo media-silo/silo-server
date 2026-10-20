@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Foundation
 import SiloAPI
 import SiloStore
 import Wire
@@ -43,7 +42,9 @@ package struct ServerController {
     @ErrorResponse(EmptyPasskey.self, .badRequest)
     @ErrorResponse(StagePending.self, .conflict, { Components.Schemas.SetupConflict(confirmBy: $0.confirmBy) })
     @ErrorResponse(SetupGone.self, .gone)
-    package func stageSetup(@JSONBody body: Components.Schemas.SetupRequest) async throws -> Components.Schemas.SetupStage {
+    package func stageSetup(
+        @JSONBody body: Components.Schemas.SetupRequest
+    ) async throws -> Components.Schemas.SetupStage {
         let staged = try service.stageSetup(passkey: body.passkey, name: body.name)
         return Components.Schemas.SetupStage(id: service.identity.id, name: staged.name, confirmBy: staged.confirmBy)
     }

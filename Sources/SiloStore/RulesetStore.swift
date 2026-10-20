@@ -30,15 +30,26 @@ public final class RulesetStore: Sendable {
     }
 
     public func names() throws -> [String] {
-        try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])
-            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
-            .map(\.lastPathComponent)
-            .sorted()
+        try FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
+        .map(\.lastPathComponent)
+        .sorted()
     }
 
     public func versions(of name: String) throws -> [Int] {
-        let contents = (try? FileManager.default.contentsOfDirectory(at: folder.appendingPathComponent(name), includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        return contents.compactMap { $0.pathExtension == RulesetFile.fileExtension ? Int($0.deletingPathExtension().lastPathComponent) : nil }.sorted()
+        let contents =
+            (try? FileManager.default.contentsOfDirectory(
+                at: folder.appendingPathComponent(name),
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
+        return contents.compactMap {
+            $0.pathExtension == RulesetFile.fileExtension ? Int($0.deletingPathExtension().lastPathComponent) : nil
+        }.sorted()
     }
 
     public func latestVersion(of name: String) throws -> Int? {
@@ -77,22 +88,39 @@ public final class RulesetStore: Sendable {
     /// branch's next version, declaring with `upToDateWith` the standard version it takes in.
     /// `basedOn`, when given, is the head of that branch the document was made from, or zero for a
     /// name that must be new; the store goes ahead only if it still is. Returns the version.
-    public func store(_ data: Data, as name: String, branch: String? = nil, upToDateWith: Int? = nil, basedOn: Int? = nil) throws -> Int {
+    public func store(
+        _ data: Data,
+        as name: String,
+        branch: String? = nil,
+        upToDateWith: Int? = nil,
+        basedOn: Int? = nil
+    ) throws -> Int {
         _ = try read(data, as: name)
         return try lock.withLock { _ in
             let onBranch = branch.flatMap { $0 == Self.standard ? nil : $0 }
             if let basedOn {
                 let head = try head(of: name, branch: onBranch ?? Self.standard)
                 let fresh = basedOn == 0 ? try latestVersion(of: name) == nil : head == basedOn
-                guard fresh else { throw RulesetStoreError.notTheHead(name: name, branch: onBranch ?? Self.standard, basedOn: basedOn, head: head) }
+                guard fresh else {
+                    throw RulesetStoreError.notTheHead(
+                        name: name,
+                        branch: onBranch ?? Self.standard,
+                        basedOn: basedOn,
+                        head: head
+                    )
+                }
             }
             var record = VersionRecord(branch: Self.standard, parent: try head(of: name, branch: Self.standard))
             var updatedBranch: BranchRecord?
             if let onBranch {
-                guard var found = try branchRecord(name, onBranch) else { throw RulesetStoreError.noSuchBranch(name: name, branch: onBranch) }
+                guard var found = try branchRecord(name, onBranch) else {
+                    throw RulesetStoreError.noSuchBranch(name: name, branch: onBranch)
+                }
                 guard !found.closed else { throw RulesetStoreError.branchClosed(name: name, branch: onBranch) }
                 if let upToDateWith {
-                    guard try branchOf(name, version: upToDateWith) == Self.standard else { throw RulesetStoreError.notOnStandard(name: name, version: upToDateWith) }
+                    guard try branchOf(name, version: upToDateWith) == Self.standard else {
+                        throw RulesetStoreError.notOnStandard(name: name, version: upToDateWith)
+                    }
                     found.upToDateWith = max(found.upToDateWith, upToDateWith)
                 }
                 record = VersionRecord(branch: onBranch, parent: try head(of: name, branch: onBranch))
@@ -100,9 +128,14 @@ public final class RulesetStore: Sendable {
             }
             let version = (try latestVersion(of: name) ?? 0) + 1
             let url = fileURL(name: name, version: version)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             // The lock makes the number fresh; the check is against a file put there by hand.
-            guard !FileManager.default.fileExists(atPath: url.path) else { throw RulesetStoreError.versionExists(name: name, version: version) }
+            guard !FileManager.default.fileExists(atPath: url.path) else {
+                throw RulesetStoreError.versionExists(name: name, version: version)
+            }
             try data.write(to: url, options: .atomic)
             try write(record, name: name, version: version)
             if let onBranch, let updatedBranch { try write(updatedBranch, name: name, branch: onBranch) }
@@ -153,12 +186,32 @@ public final class RulesetStore: Sendable {
     /// The standard first, then each named branch by name.
     public func branches(of name: String) throws -> [Branch] {
         guard !(try versions(of: name)).isEmpty else { return [] }
-        var branches = [Branch(name: Self.standard, base: nil, head: try head(of: name, branch: Self.standard), upToDateWith: nil, closed: false)]
-        let records = (try? FileManager.default.contentsOfDirectory(at: branchesFolder(name), includingPropertiesForKeys: nil)) ?? []
-        for file in records.filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+        var branches = [
+            Branch(
+                name: Self.standard,
+                base: nil,
+                head: try head(of: name, branch: Self.standard),
+                upToDateWith: nil,
+                closed: false
+            )
+        ]
+        let records =
+            (try? FileManager.default.contentsOfDirectory(at: branchesFolder(name), includingPropertiesForKeys: nil))
+            ?? []
+        for file in records.filter({ $0.pathExtension == "json" }).sorted(by: {
+            $0.lastPathComponent < $1.lastPathComponent
+        }) {
             let branch = file.deletingPathExtension().lastPathComponent
             guard let record = try branchRecord(name, branch) else { continue }
-            branches.append(Branch(name: branch, base: record.base, head: try head(of: name, branch: branch), upToDateWith: record.upToDateWith, closed: record.closed))
+            branches.append(
+                Branch(
+                    name: branch,
+                    base: record.base,
+                    head: try head(of: name, branch: branch),
+                    upToDateWith: record.upToDateWith,
+                    closed: record.closed
+                )
+            )
         }
         return branches
     }
@@ -167,8 +220,12 @@ public final class RulesetStore: Sendable {
     public func startBranch(_ branch: String, of name: String, from base: Int) throws -> Branch {
         guard Self.isName(branch), branch != Self.standard else { throw RulesetStoreError.invalidName(branch) }
         return try lock.withLock { _ in
-            guard try branchRecord(name, branch) == nil else { throw RulesetStoreError.branchExists(name: name, branch: branch) }
-            guard try self.branch(of: name, version: base) == Self.standard else { throw RulesetStoreError.notOnStandard(name: name, version: base) }
+            guard try branchRecord(name, branch) == nil else {
+                throw RulesetStoreError.branchExists(name: name, branch: branch)
+            }
+            guard try self.branch(of: name, version: base) == Self.standard else {
+                throw RulesetStoreError.notOnStandard(name: name, version: base)
+            }
             try write(BranchRecord(base: base, upToDateWith: base, closed: false), name: name, branch: branch)
             return Branch(name: branch, base: base, head: base, upToDateWith: base, closed: false)
         }
@@ -178,19 +235,31 @@ public final class RulesetStore: Sendable {
     /// closes. Refused, naming them, while the standard has versions the branch has not taken in.
     public func promote(_ branch: String, of name: String) throws -> Int {
         try lock.withLock { _ in
-            guard var record = try branchRecord(name, branch) else { throw RulesetStoreError.noSuchBranch(name: name, branch: branch) }
+            guard var record = try branchRecord(name, branch) else {
+                throw RulesetStoreError.noSuchBranch(name: name, branch: branch)
+            }
             guard !record.closed else { throw RulesetStoreError.branchClosed(name: name, branch: branch) }
             let standard = try versions(of: name).filter { try branchOf(name, version: $0) == Self.standard }
             let missed = standard.filter { $0 > record.upToDateWith }
-            guard missed.isEmpty else { throw RulesetStoreError.notTakenIn(name: name, branch: branch, versions: missed) }
-            guard let from = try head(of: name, branch: branch), let (_, data) = try document(named: name, version: from) else {
+            guard missed.isEmpty else {
+                throw RulesetStoreError.notTakenIn(name: name, branch: branch, versions: missed)
+            }
+            guard let from = try head(of: name, branch: branch),
+                let (_, data) = try document(named: name, version: from)
+            else {
                 throw RulesetStoreError.noSuchBranch(name: name, branch: branch)
             }
             let version = (try latestVersion(of: name) ?? 0) + 1
             let url = fileURL(name: name, version: version)
-            guard !FileManager.default.fileExists(atPath: url.path) else { throw RulesetStoreError.versionExists(name: name, version: version) }
+            guard !FileManager.default.fileExists(atPath: url.path) else {
+                throw RulesetStoreError.versionExists(name: name, version: version)
+            }
             try data.write(to: url, options: .atomic)
-            try write(VersionRecord(branch: Self.standard, parent: standard.last, promotedFrom: from), name: name, version: version)
+            try write(
+                VersionRecord(branch: Self.standard, parent: standard.last, promotedFrom: from),
+                name: name,
+                version: version
+            )
             record.closed = true
             try write(record, name: name, branch: branch)
             return version
@@ -222,7 +291,9 @@ public final class RulesetStore: Sendable {
     }
 
     private func branchRecord(_ name: String, _ branch: String) throws -> BranchRecord? {
-        guard let data = try? Data(contentsOf: branchesFolder(name).appendingPathComponent("\(branch).json")) else { return nil }
+        guard let data = try? Data(contentsOf: branchesFolder(name).appendingPathComponent("\(branch).json")) else {
+            return nil
+        }
         return try JSONDecoder().decode(BranchRecord.self, from: data)
     }
 
@@ -232,7 +303,10 @@ public final class RulesetStore: Sendable {
 
     private func write(_ record: BranchRecord, name: String, branch: String) throws {
         try FileManager.default.createDirectory(at: branchesFolder(name), withIntermediateDirectories: true)
-        try JSONEncoder().encode(record).write(to: branchesFolder(name).appendingPathComponent("\(branch).json"), options: .atomic)
+        try JSONEncoder().encode(record).write(
+            to: branchesFolder(name).appendingPathComponent("\(branch).json"),
+            options: .atomic
+        )
     }
 
     private func fileURL(name: String, version: Int) -> URL {

@@ -27,7 +27,11 @@ public struct MountPoints: Sendable {
     /// Whether something is mounted on a folder. Asked of the filesystem each time, as availability is.
     public var isMounted: @Sendable (String) -> Bool
 
-    public init(holders: [String], declared: [Declared], isMounted: @escaping @Sendable (String) -> Bool = MountPoints.isMounted) {
+    public init(
+        holders: [String],
+        declared: [Declared],
+        isMounted: @escaping @Sendable (String) -> Bool = MountPoints.isMounted
+    ) {
         self.holders = holders
         self.declared = declared
         self.isMounted = isMounted
@@ -60,7 +64,8 @@ public struct MountPoints: Sendable {
             if line.hasPrefix("[") {
                 section = line
             } else if section == "[Mount]" || section == "[Automount]", let equals = line.firstIndex(of: "="),
-                      line[..<equals].trimmingCharacters(in: .whitespaces) == "Where" {
+                line[..<equals].trimmingCharacters(in: .whitespaces) == "Where"
+            {
                 // systemd allows space either side of the `=`.
                 let path = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
                 return path.hasPrefix("/") ? Declared(path: path, by: file) : nil
@@ -82,9 +87,10 @@ public struct MountPoints: Sendable {
         var found: [Declared] = []
         func read(_ path: String) {
             guard path.hasSuffix(".mount") || path.hasSuffix(".automount"),
-                  let text = try? String(contentsOfFile: path, encoding: .utf8),
-                  let declared = declared(unit: text, by: path),
-                  !found.contains(where: { $0.path == declared.path }) else { return }
+                let text = try? String(contentsOfFile: path, encoding: .utf8),
+                let declared = declared(unit: text, by: path),
+                !found.contains(where: { $0.path == declared.path })
+            else { return }
             found.append(declared)
         }
         for folder in folders {
@@ -105,7 +111,10 @@ public struct MountPoints: Sendable {
     /// This machine's.
     public static var system: MountPoints {
         let fstab = (try? String(contentsOfFile: "/etc/fstab", encoding: .utf8)) ?? ""
-        return MountPoints(holders: holders(platform: .current), declared: declared(fstab: fstab) + declared(units: unitFolders))
+        return MountPoints(
+            holders: holders(platform: .current),
+            declared: declared(fstab: fstab) + declared(units: unitFolders)
+        )
     }
 
     /// Whether a drive is mounted on `path`: its device is not its parent's. The top of the
@@ -113,7 +122,9 @@ public struct MountPoints: Sendable {
     @Sendable public static func isMounted(_ path: String) -> Bool {
         let parent = (path as NSString).deletingLastPathComponent
         guard path != "/", parent != path else { return true }
-        let device = { (path: String) in (try? FileManager.default.attributesOfItem(atPath: path))?[.systemNumber] as? Int }
+        let device = { (path: String) in
+            (try? FileManager.default.attributesOfItem(atPath: path))?[.systemNumber] as? Int
+        }
         guard let own = device(path), let above = device(parent) else { return false }
         return own != above
     }
@@ -128,7 +139,8 @@ public struct MountPoints: Sendable {
         }
         for folder in existing {
             if let declared = declared.first(where: { $0.path == folder }), !isMounted(folder) {
-                return "it would be created in \(folder), which \(declared.by) declares as a mount point and has nothing mounted on it"
+                return
+                    "it would be created in \(folder), which \(declared.by) declares as a mount point and has nothing mounted on it"
             }
         }
         return nil

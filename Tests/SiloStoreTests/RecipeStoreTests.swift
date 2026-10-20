@@ -4,13 +4,27 @@
 import Foundation
 import SiloKit
 import Testing
+
 @testable import SiloStore
 
 struct RecipeStoreTests {
     static func resolved(binding: String = "b") -> StoredRecipe {
-        let facts = SourceFacts(audio: [AudioFacts(index: 1, absoluteIndex: 0, codec: "truehd", lossless: true, channels: 8)])
-        let decision = StreamDecision(kind: .audio, sourceIndex: 1, sourceAbsoluteIndex: 0, rule: "lossless-main", action: .encode(EncodeSettings(codec: "flac")))
-        let recipe = Recipe(ruleset: RulesetRef(name: "household", version: 3), decisions: [decision], output: OutputPolicy(), layout: OutputLayout(keeping: [decision]))
+        let facts = SourceFacts(audio: [
+            AudioFacts(index: 1, absoluteIndex: 0, codec: "truehd", lossless: true, channels: 8)
+        ])
+        let decision = StreamDecision(
+            kind: .audio,
+            sourceIndex: 1,
+            sourceAbsoluteIndex: 0,
+            rule: "lossless-main",
+            action: .encode(EncodeSettings(codec: "flac"))
+        )
+        let recipe = Recipe(
+            ruleset: RulesetRef(name: "household", version: 3),
+            decisions: [decision],
+            output: OutputPolicy(),
+            layout: OutputLayout(keeping: [decision])
+        )
         return StoredRecipe(binding: binding, facts: facts, recipe: recipe)
     }
 
@@ -26,7 +40,8 @@ struct RecipeStoreTests {
 
     @Test func aResolvedRecipeIsDiscardedAndTheRestStay() throws {
         let store = RecipeStore()
-        let first = Self.resolved(), second = Self.resolved()
+        let first = Self.resolved()
+        let second = Self.resolved()
         try store.insert([first, second])
         #expect(try store.discard(first.id)?.id == first.id)
         #expect(store.recipe(first.id) == nil)
@@ -35,7 +50,9 @@ struct RecipeStoreTests {
     }
 
     @Test func bindingsAndRecipesSurviveARestart() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("RecipeStoreTests-\(UUID().uuidString)")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "RecipeStoreTests-\(UUID().uuidString)"
+        )
         defer { try? FileManager.default.removeItem(at: root) }
         let binding = Binding(library: "main", containers: [], item: "part1", segments: [Binding.Segment(source: "s")])
         try BindingStore(folder: root.appendingPathComponent("bindings")).insert(binding)
@@ -45,6 +62,9 @@ struct RecipeStoreTests {
         let reopened = try RecipeStore(folder: root.appendingPathComponent("recipes"))
         #expect(reopened.recipes(of: binding.id).map(\.id) == [resolved.id])
         _ = try reopened.discard(resolved.id)
-        #expect(try RecipeStore(folder: root.appendingPathComponent("recipes")).recipe(resolved.id) == nil, "a discarded recipe's file goes too")
+        #expect(
+            try RecipeStore(folder: root.appendingPathComponent("recipes")).recipe(resolved.id) == nil,
+            "a discarded recipe's file goes too"
+        )
     }
 }

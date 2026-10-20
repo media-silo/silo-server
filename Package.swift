@@ -67,11 +67,18 @@ let package = Package(
         .package(url: "https://github.com/swift-wire/swift-wire.git", branch: "main"),
         .package(url: "https://github.com/swift-wire/wire-open-api.git", branch: "main"),
         // `NIOHTTPServer` is the trait that stands a test suite up on a real loopback server.
-        .package(url: "https://github.com/swift-wire/wire-mvc.git", branch: "main", traits: [.defaults, "NIOHTTPServer"]),
+        .package(
+            url: "https://github.com/swift-wire/wire-mvc.git",
+            branch: "main",
+            traits: [.defaults, "NIOHTTPServer"]
+        ),
         // A fork, pinned: WireOpenAPI dispatches each operation by calling the generated per-operation
         // method, which the stock generator emits fileprivate. Points back at the release once upstream
         // takes it.
-        .package(url: "https://github.com/tachyonics/swift-openapi-generator.git", revision: "9e655e0adb9b993ef4cb29a6aa0dfc59b9b42b09"),
+        .package(
+            url: "https://github.com/tachyonics/swift-openapi-generator.git",
+            revision: "9e655e0adb9b993ef4cb29a6aa0dfc59b9b42b09"
+        ),
         .package(url: "https://github.com/apple/swift-openapi-runtime", from: "1.7.0"),
         .package(url: "https://github.com/apple/swift-http-api-proposal.git", .upToNextMinor(from: "0.2.0")),
         .package(url: "https://github.com/swift-server/swift-http-server.git", branch: "main"),
@@ -274,7 +281,10 @@ let package = Package(
         .testTarget(name: "SiloClientTests", dependencies: ["SiloClient"]),
         .testTarget(
             name: "SiloAdminKitTests",
-            dependencies: ["SiloAdminKit", "SiloClient", "SiloKit", .product(name: "SmdKit", package: "SmdKit"), .product(name: "SmdSidecar", package: "SmdKit")]
+            dependencies: [
+                "SiloAdminKit", "SiloClient", "SiloKit", .product(name: "SmdKit", package: "SmdKit"),
+                .product(name: "SmdSidecar", package: "SmdKit"),
+            ]
         ),
         // The window's model, which the kit's suite cannot see: the order the sheets and the
         // model hand things to each other in, against the same kind of stubbed silo.

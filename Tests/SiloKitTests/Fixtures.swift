@@ -11,20 +11,33 @@ extension Ruleset {
         name: "household",
         rules: [
             Rule(
-                id: "small-extras", scope: .video,
+                id: "small-extras",
+                scope: .video,
                 conditions: [
                     Condition(.extra, .equal("true")),
                     Condition(.videoWidth, .less(576)),
                 ],
-                action: .encode(EncodeSettings(codec: "libx264", preset: "slow", crf: 22, pixelFormat: "yuv420p", filters: [.deinterlace(.auto)]))
+                action: .encode(
+                    EncodeSettings(
+                        codec: "libx264",
+                        preset: "slow",
+                        crf: 22,
+                        pixelFormat: "yuv420p",
+                        filters: [.deinterlace(.auto)]
+                    )
+                )
             ),
             Rule(
-                id: "lossless-main", scope: .audio,
-                conditions: [Condition(.audioLossless, .equal("true")), Condition(.audioRole, .notEqual("commentary"))],
+                id: "lossless-main",
+                scope: .audio,
+                conditions: [
+                    Condition(.audioLossless, .equal("true")), Condition(.audioRole, .notEqual("commentary")),
+                ],
                 action: .encode(EncodeSettings(codec: "flac"))
             ),
             Rule(
-                id: "commentary", scope: .audio,
+                id: "commentary",
+                scope: .audio,
                 conditions: [Condition(.audioRole, .equal("commentary"))],
                 action: .encode(EncodeSettings(codec: "aac", bitrate: "160k", channels: 2))
             ),
@@ -53,9 +66,33 @@ extension SourceFacts {
         duration: 1500,
         video: VideoFacts(absoluteIndex: 0, codec: "h264", width: 1920, height: 1080, frameRate: 25),
         audio: [
-            AudioFacts(index: 1, absoluteIndex: 1, codec: "truehd", lossless: true, channels: 8, language: "en", role: .main),
-            AudioFacts(index: 2, absoluteIndex: 2, codec: "ac3", lossless: false, channels: 2, language: "en", role: .commentary),
-            AudioFacts(index: 3, absoluteIndex: 3, codec: "ac3", lossless: false, channels: 2, language: "en", role: .main),
+            AudioFacts(
+                index: 1,
+                absoluteIndex: 1,
+                codec: "truehd",
+                lossless: true,
+                channels: 8,
+                language: "en",
+                role: .main
+            ),
+            AudioFacts(
+                index: 2,
+                absoluteIndex: 2,
+                codec: "ac3",
+                lossless: false,
+                channels: 2,
+                language: "en",
+                role: .commentary
+            ),
+            AudioFacts(
+                index: 3,
+                absoluteIndex: 3,
+                codec: "ac3",
+                lossless: false,
+                channels: 2,
+                language: "en",
+                role: .main
+            ),
         ],
         subtitles: [
             SubtitleFacts(index: 1, absoluteIndex: 4, codec: "hdmv_pgs_subtitle", language: "en"),
@@ -69,7 +106,14 @@ extension SourceFacts {
         extra: true,
         format: .dvd,
         duration: 600,
-        video: VideoFacts(absoluteIndex: 0, codec: "mpeg2video", width: 352, height: 288, frameRate: 25, interlaced: true),
+        video: VideoFacts(
+            absoluteIndex: 0,
+            codec: "mpeg2video",
+            width: 352,
+            height: 288,
+            frameRate: 25,
+            interlaced: true
+        ),
         audio: [AudioFacts(index: 1, absoluteIndex: 1, codec: "ac3", lossless: false, channels: 2, language: "en")]
     )
 }

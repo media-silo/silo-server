@@ -6,6 +6,7 @@ import SiloClient
 import SiloKit
 import SiloStore
 import Testing
+
 @testable import SiloApp
 @testable import SiloDiscovery
 
@@ -14,15 +15,30 @@ import Testing
 struct NodeServiceTests {
     @Test func aNodeIsApprovedAndTakesItsTokenOnce() throws {
         let service = NodeService(nodes: NodeStore())
-        let registration = NodeRegistration(id: "n1", secret: "s1", name: "box", platform: "Linux", capabilities: ["flac", "aac"], ffmpegVersion: "ffmpeg 7", cores: 8)
+        let registration = NodeRegistration(
+            id: "n1",
+            secret: "s1",
+            name: "box",
+            platform: "Linux",
+            capabilities: ["flac", "aac"],
+            ffmpegVersion: "ffmpeg 7",
+            cores: 8
+        )
         let node = try service.register(registration)
         #expect(node.state == .pending)
         #expect(service.all().map(\.id) == ["n1"])
 
-        #expect(throws: WrongSecret.self) { try service.register(NodeRegistration(id: "n1", secret: "other", name: "box", platform: "Linux", capabilities: [])) }
+        #expect(throws: WrongSecret.self) {
+            try service.register(
+                NodeRegistration(id: "n1", secret: "other", name: "box", platform: "Linux", capabilities: [])
+            )
+        }
         var renamed = registration
         renamed.name = "the box"
-        #expect(try service.register(renamed).name == "the box", "a registration that knows the secret brings the record up to date")
+        #expect(
+            try service.register(renamed).name == "the box",
+            "a registration that knows the secret brings the record up to date"
+        )
 
         #expect(throws: WrongSecret.self) { try service.status("n1", secret: "other") }
         #expect(try service.status("n1", secret: "s1").token == nil, "nothing until approved")
@@ -51,7 +67,9 @@ struct NodeServiceTests {
         let token: String
         do {
             let service = NodeService(nodes: try NodeStore(folder: folder))
-            _ = try service.register(NodeRegistration(id: "n1", secret: "s1", name: "box", platform: "macOS", capabilities: []))
+            _ = try service.register(
+                NodeRegistration(id: "n1", secret: "s1", name: "box", platform: "macOS", capabilities: [])
+            )
             _ = try service.approve("n1")
             token = try #require(try service.status("n1", secret: "s1").token)
         }
@@ -59,7 +77,10 @@ struct NodeServiceTests {
         #expect(reopened.authenticate(bearer: token)?.name == "box")
         #expect(try reopened.status("n1", secret: "s1").token == nil)
         let stored = String(decoding: try Data(contentsOf: folder.appendingPathComponent("n1.json")), as: UTF8.self)
-        #expect(!stored.contains("s1") && !stored.contains(token), "neither the secret nor the token is stored, only their hashes")
+        #expect(
+            !stored.contains("s1") && !stored.contains(token),
+            "neither the secret nor the token is stored, only their hashes"
+        )
     }
 }
 
@@ -73,10 +94,17 @@ struct DiscoveryTests {
             "=;eth0;IPv4;Study;_silo._tcp;local;study.local;192.168.1.9;9090;",
         ]
         let found = Discovery.parseAvahi(lines)
-        #expect(found == [
-            DiscoveredSilo(name: "Living Room Silo", host: "nuc.local", port: 8080, txt: ["v": "1", "name": "Living Room Silo"]),
-            DiscoveredSilo(name: "Study", host: "study.local", port: 9090),
-        ])
+        #expect(
+            found == [
+                DiscoveredSilo(
+                    name: "Living Room Silo",
+                    host: "nuc.local",
+                    port: 8080,
+                    txt: ["v": "1", "name": "Living Room Silo"]
+                ),
+                DiscoveredSilo(name: "Study", host: "study.local", port: 9090),
+            ]
+        )
         #expect(found[0].url == URL(string: "http://nuc.local:8080"))
     }
 
@@ -98,7 +126,15 @@ struct DiscoveryTests {
             "15:21:06.010  Living\\032Room\\032Silo._silo._tcp.local. can be reached at nuc.local.:8080 (interface 6)",
             " v=1 name=Living\\032Room\\032Silo",
         ]
-        #expect(Discovery.parseDNSSDLookup(lookup, name: "Living Room Silo") == DiscoveredSilo(name: "Living Room Silo", host: "nuc.local", port: 8080, txt: ["v": "1", "name": "Living\\032Room\\032Silo"]))
+        #expect(
+            Discovery.parseDNSSDLookup(lookup, name: "Living Room Silo")
+                == DiscoveredSilo(
+                    name: "Living Room Silo",
+                    host: "nuc.local",
+                    port: 8080,
+                    txt: ["v": "1", "name": "Living\\032Room\\032Silo"]
+                )
+        )
         #expect(Discovery.parseDNSSDLookup(["nothing"], name: "x") == nil)
     }
 

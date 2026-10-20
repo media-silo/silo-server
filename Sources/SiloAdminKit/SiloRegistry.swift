@@ -18,7 +18,14 @@ public struct RegisteredSilo: Hashable, Sendable, Codable {
     /// only on contact, so an unreachable silo can render honest last-known access.
     public var lastKnownAccess: Bool?
 
-    public init(id: String, name: String, url: URL, lastSeen: Date, hasStoredPasskey: Bool, lastKnownAccess: Bool? = nil) {
+    public init(
+        id: String,
+        name: String,
+        url: URL,
+        lastSeen: Date,
+        hasStoredPasskey: Bool,
+        lastKnownAccess: Bool? = nil
+    ) {
         self.id = id
         self.name = name
         self.url = url

@@ -49,15 +49,17 @@ public enum FileResponse {
         to responseSender: consuming Sender
     ) async throws where Sender.Writer: ~Copyable {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = (attributes[.size] as? NSNumber)?.int64Value,
-              let handle = try? FileHandle(forReadingFrom: url)
+            let size = (attributes[.size] as? NSNumber)?.int64Value,
+            let handle = try? FileHandle(forReadingFrom: url)
         else {
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
             return
         }
         defer { try? handle.close() }
         let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-        var headers: HTTPFields = [.acceptRanges: "bytes", .eTag: "\"\(size)-\(Int64(modified))\"", .contentType: contentType]
+        var headers: HTTPFields = [
+            .acceptRanges: "bytes", .eTag: "\"\(size)-\(Int64(modified))\"", .contentType: contentType,
+        ]
 
         let status: HTTPResponse.Status
         let start: Int64

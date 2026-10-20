@@ -3,6 +3,7 @@
 
 import Foundation
 import Testing
+
 @testable import SiloKit
 
 struct RulesetFileTests {
@@ -13,12 +14,26 @@ struct RulesetFileTests {
     @Test func aRulesetSurvivesTheFile() throws {
         var ruleset = Ruleset.household
         ruleset.version = 7
-        ruleset.rules.append(Rule(
-            id: "mobile", scope: .video,
-            conditions: [Condition(.profile, .equal("mobile")), Condition(.videoFrameRate, .greaterOrEqual(29.97))],
-            action: .encode(EncodeSettings(codec: "libx265", crf: 28, filters: [.scale(width: 1280, height: nil), .custom("hqdn3d")], options: ["x265-params": "log-level=error"]))
-        ))
-        ruleset.rules.append(Rule(scope: .subtitle, conditions: [Condition(.subtitleForced, .equal("true"))], action: .drop))
+        ruleset.rules.append(
+            Rule(
+                id: "mobile",
+                scope: .video,
+                conditions: [
+                    Condition(.profile, .equal("mobile")), Condition(.videoFrameRate, .greaterOrEqual(29.97)),
+                ],
+                action: .encode(
+                    EncodeSettings(
+                        codec: "libx265",
+                        crf: 28,
+                        filters: [.scale(width: 1280, height: nil), .custom("hqdn3d")],
+                        options: ["x265-params": "log-level=error"]
+                    )
+                )
+            )
+        )
+        ruleset.rules.append(
+            Rule(scope: .subtitle, conditions: [Condition(.subtitleForced, .equal("true"))], action: .drop)
+        )
         let data = RulesetFile.data(for: ruleset)
         let text = String(decoding: data, as: UTF8.self)
         #expect(text.contains("<ruleset format=\"1\" name=\"household\" version=\"7\">"))
@@ -31,14 +46,29 @@ struct RulesetFileTests {
 
     @Test(arguments: [
         ("<when fact=\"audio.bitrate\" is=\"1\"/><copy/>", RulesetFileError.unknownFact("audio.bitrate")),
-        ("<when fact=\"video.width\" lt=\"1\"/><copy/>", RulesetFileError.factOutOfScope(fact: "video.width", scope: .audio)),
-        ("<when fact=\"audio.codec\" lt=\"1\"/><copy/>", RulesetFileError.notNumeric(fact: "audio.codec", operator: "lt")),
-        ("<when fact=\"audio.codec\" is=\"a\" ne=\"b\"/><copy/>", RulesetFileError.oneTestRequired(rule: "r", fact: "audio.codec")),
-        ("<when fact=\"audio.channels\" gt=\"many\"/><copy/>", RulesetFileError.invalidValue(element: "when", attribute: "gt", value: "many")),
+        (
+            "<when fact=\"video.width\" lt=\"1\"/><copy/>",
+            RulesetFileError.factOutOfScope(fact: "video.width", scope: .audio)
+        ),
+        (
+            "<when fact=\"audio.codec\" lt=\"1\"/><copy/>",
+            RulesetFileError.notNumeric(fact: "audio.codec", operator: "lt")
+        ),
+        (
+            "<when fact=\"audio.codec\" is=\"a\" ne=\"b\"/><copy/>",
+            RulesetFileError.oneTestRequired(rule: "r", fact: "audio.codec")
+        ),
+        (
+            "<when fact=\"audio.channels\" gt=\"many\"/><copy/>",
+            RulesetFileError.invalidValue(element: "when", attribute: "gt", value: "many")
+        ),
         ("<when fact=\"audio.codec\" is=\"a\"/>", RulesetFileError.noAction(rule: "r")),
         ("<copy/><drop/>", RulesetFileError.multipleActions(rule: "r")),
         ("<encode/>", RulesetFileError.missingAttribute(element: "encode", attribute: "codec")),
-        ("<encode codec=\"aac\"><deinterlace mode=\"sometimes\"/></encode>", RulesetFileError.invalidValue(element: "deinterlace", attribute: "mode", value: "sometimes")),
+        (
+            "<encode codec=\"aac\"><deinterlace mode=\"sometimes\"/></encode>",
+            RulesetFileError.invalidValue(element: "deinterlace", attribute: "mode", value: "sometimes")
+        ),
         ("<unless/><copy/>", RulesetFileError.unknownElement("unless")),
     ])
     func aRuleThatCannotBeReadIsRefused(body: String, expected: RulesetFileError) {
@@ -48,12 +78,23 @@ struct RulesetFileTests {
 
     @Test func aDocumentThatIsNotARulesetIsRefused() {
         #expect(throws: RulesetFileError.notARuleset) { try RulesetFile.ruleset(from: Data("<rules/>".utf8)) }
-        #expect(throws: RulesetFileError.unsupportedFormat(2)) { try RulesetFile.ruleset(from: Data("<ruleset format=\"2\" name=\"t\"/>".utf8)) }
-        #expect(throws: RulesetFileError.unknownElement("rule")) { try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><rule/></ruleset>".utf8)) }
-        #expect(throws: RulesetFileError.unknownElement("extraction"), "what a source keeps is said by drop rules, not an element of its own") {
-            try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><extraction subtitles=\"false\"/></ruleset>".utf8))
+        #expect(throws: RulesetFileError.unsupportedFormat(2)) {
+            try RulesetFile.ruleset(from: Data("<ruleset format=\"2\" name=\"t\"/>".utf8))
         }
-        #expect(throws: RulesetFileError.self) { try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><audio>".utf8)) }
+        #expect(throws: RulesetFileError.unknownElement("rule")) {
+            try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><rule/></ruleset>".utf8))
+        }
+        #expect(
+            throws: RulesetFileError.unknownElement("extraction"),
+            "what a source keeps is said by drop rules, not an element of its own"
+        ) {
+            try RulesetFile.ruleset(
+                from: Data("<ruleset format=\"1\" name=\"t\"><extraction subtitles=\"false\"/></ruleset>".utf8)
+            )
+        }
+        #expect(throws: RulesetFileError.self) {
+            try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"><audio>".utf8))
+        }
     }
 
     @Test func anEmptyRulesetHasTheToolsDefaults() throws {
@@ -65,23 +106,36 @@ struct RulesetFileTests {
 
     @Test func aRulesetMakesEachOutputItDeclares() throws {
         let xml = """
-        <ruleset format="1" name="t">
-            <output container="mkv"/>
-            <video><copy/></video>
-            <output profile="mobile" container="mp4"/>
-        </ruleset>
-        """
+            <ruleset format="1" name="t">
+                <output container="mkv"/>
+                <video><copy/></video>
+                <output profile="mobile" container="mp4"/>
+            </ruleset>
+            """
         let ruleset = try RulesetFile.ruleset(from: Data(xml.utf8))
-        #expect(ruleset.outputs == [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")], "in the document's order")
-        #expect(try RulesetFile.ruleset(from: RulesetFile.data(for: ruleset)).outputs == ruleset.outputs, "and they survive the file")
+        #expect(
+            ruleset.outputs == [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")],
+            "in the document's order"
+        )
+        #expect(
+            try RulesetFile.ruleset(from: RulesetFile.data(for: ruleset)).outputs == ruleset.outputs,
+            "and they survive the file"
+        )
     }
 
     @Test func anOutputMadeTwiceIsRefused() {
         #expect(throws: RulesetFileError.outputMadeTwice(profile: "mobile")) {
-            try RulesetFile.ruleset(from: Data(#"<ruleset format="1" name="t"><output profile="mobile"/><output profile="mobile" container="mp4"/></ruleset>"#.utf8))
+            try RulesetFile.ruleset(
+                from: Data(
+                    #"<ruleset format="1" name="t"><output profile="mobile"/><output profile="mobile" container="mp4"/></ruleset>"#
+                        .utf8
+                )
+            )
         }
         #expect(throws: RulesetFileError.outputMadeTwice(profile: nil)) {
-            try RulesetFile.ruleset(from: Data(#"<ruleset format="1" name="t"><output/><output container="mp4"/></ruleset>"#.utf8))
+            try RulesetFile.ruleset(
+                from: Data(#"<ruleset format="1" name="t"><output/><output container="mp4"/></ruleset>"#.utf8)
+            )
         }
         #expect(RulesetFileError.outputMadeTwice(profile: "mobile").description == "the profile mobile is made twice")
         #expect(RulesetFileError.outputMadeTwice(profile: nil).description == "the unqualified output is made twice")

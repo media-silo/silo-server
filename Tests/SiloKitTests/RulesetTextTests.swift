@@ -40,27 +40,49 @@ struct RulesetTextTests {
         #expect(text.outputs.count == 1)
         let commentary = text.rules(of: .audio)[1].element
         let unit = String(decoding: Array(Self.household.utf8)[commentary.unit], as: UTF8.self)
-        #expect(unit.hasPrefix("  <!-- Commentaries are speech: AAC is plenty. -->\n  <audio id='commentary'>"), "its comment and its whole lines")
+        #expect(
+            unit.hasPrefix("  <!-- Commentaries are speech: AAC is plenty. -->\n  <audio id='commentary'>"),
+            "its comment and its whole lines"
+        )
         #expect(unit.hasSuffix("  </audio>\n"))
         #expect(commentary.indentation == "  ")
         let video = text.rules(of: .video)[0].element
-        #expect(String(decoding: Array(Self.household.utf8)[video.unit], as: UTF8.self) == "  <video><copy/></video>\n", "no comment of its own")
+        #expect(
+            String(decoding: Array(Self.household.utf8)[video.unit], as: UTF8.self) == "  <video><copy/></video>\n",
+            "no comment of its own"
+        )
     }
 
     @Test func aMoveLeavesEverythingElseAsItWas() throws {
         let moved = try RulesetText(Self.household).movingRule(1, of: .audio, to: 0)
         let read = try RulesetText(moved)
         #expect(read.rules(of: .audio).map(\.rule.id) == ["commentary", "lossless-main", nil], "the two rules swapped")
-        #expect(moved.contains("""
-              <!-- Commentaries are speech: AAC is plenty. -->
-              <audio id='commentary'>
-            """), "the comment above the commentary rule still, and its quoting as written")
-        #expect(moved.components(separatedBy: "\n").sorted() == Self.household.components(separatedBy: "\n").sorted(), "every line as it was, only their order changed")
+        #expect(
+            moved.contains(
+                """
+                  <!-- Commentaries are speech: AAC is plenty. -->
+                  <audio id='commentary'>
+                """
+            ),
+            "the comment above the commentary rule still, and its quoting as written"
+        )
+        #expect(
+            moved.components(separatedBy: "\n").sorted() == Self.household.components(separatedBy: "\n").sorted(),
+            "every line as it was, only their order changed"
+        )
 
         let toTheEnd = try RulesetText(Self.household).movingRule(0, of: .audio, to: 3)
-        #expect(try RulesetText(toTheEnd).rules(of: .audio).map(\.rule.id) == ["commentary", nil, "lossless-main"], "after the scope's last rule")
-        #expect(toTheEnd.components(separatedBy: "\n").sorted() == Self.household.components(separatedBy: "\n").sorted())
-        #expect(try RulesetText(Self.household).movingRule(1, of: .audio, to: 2) == Self.household, "a move to where it is changes nothing")
+        #expect(
+            try RulesetText(toTheEnd).rules(of: .audio).map(\.rule.id) == ["commentary", nil, "lossless-main"],
+            "after the scope's last rule"
+        )
+        #expect(
+            toTheEnd.components(separatedBy: "\n").sorted() == Self.household.components(separatedBy: "\n").sorted()
+        )
+        #expect(
+            try RulesetText(Self.household).movingRule(1, of: .audio, to: 2) == Self.household,
+            "a move to where it is changes nothing"
+        )
     }
 
     @Test func anEditBesideACommentLeavesTheCommentAsItWas() throws {
@@ -74,17 +96,31 @@ struct RulesetTextTests {
         let after = edited.components(separatedBy: "\n")
         #expect(after.prefix(5) == before.prefix(5), "the comment above, and the blank line, as they were")
         #expect(after.suffix(8) == before.suffix(8), "and everything after the rule")
-        #expect(after.contains(#"  <audio id="commentary"><when fact="audio.role" is="commentary"/><encode codec="aac" bitrate="96k" channels="2"/></audio>"#), "the rule rewritten where it stood: \(after)")
+        #expect(
+            after.contains(
+                #"  <audio id="commentary"><when fact="audio.role" is="commentary"/><encode codec="aac" bitrate="96k" channels="2"/></audio>"#
+            ),
+            "the rule rewritten where it stood: \(after)"
+        )
     }
 
     @Test func anAddedRuleTakesItsNeighboursIndentation() throws {
-        let added = try RulesetText(Self.household).addingRule(Rule(scope: .subtitle, conditions: [Condition(.subtitleForced, .equal("true"))], action: .copy))
-        #expect(lines(added, without: Set(Self.household.components(separatedBy: "\n"))) == [
-            #"  <subtitle><when fact="subtitle.forced" is="true"/><copy/></subtitle>"#,
-        ], "one line added")
+        let added = try RulesetText(Self.household).addingRule(
+            Rule(scope: .subtitle, conditions: [Condition(.subtitleForced, .equal("true"))], action: .copy)
+        )
+        #expect(
+            lines(added, without: Set(Self.household.components(separatedBy: "\n"))) == [
+                #"  <subtitle><when fact="subtitle.forced" is="true"/><copy/></subtitle>"#
+            ],
+            "one line added"
+        )
         #expect(try RulesetText(added).rules(of: .subtitle).count == 2)
         let output = try RulesetText(Self.household).addingOutput(OutputPolicy(profile: "mobile", container: "mp4"))
-        #expect(lines(output, without: Set(Self.household.components(separatedBy: "\n"))) == [#"  <output profile="mobile" container="mp4"/>"#])
+        #expect(
+            lines(output, without: Set(Self.household.components(separatedBy: "\n"))) == [
+                #"  <output profile="mobile" container="mp4"/>"#
+            ]
+        )
         #expect(try RulesetText(output).outputs.last?.output == OutputPolicy(profile: "mobile", container: "mp4"))
     }
 
@@ -97,7 +133,12 @@ struct RulesetTextTests {
 
     @Test func aDocumentTheReaderRefusesOffersNoEdit() {
         #expect(throws: RulesetFileError.unknownFact("subtitle.forcd")) {
-            try RulesetText(Self.household.replacingOccurrences(of: "subtitle.forced", with: "subtitle.forcd").replacingOccurrences(of: "<subtitle><copy/></subtitle>", with: #"<subtitle><when fact="subtitle.forcd" is="true"/><copy/></subtitle>"#))
+            try RulesetText(
+                Self.household.replacingOccurrences(of: "subtitle.forced", with: "subtitle.forcd").replacingOccurrences(
+                    of: "<subtitle><copy/></subtitle>",
+                    with: #"<subtitle><when fact="subtitle.forcd" is="true"/><copy/></subtitle>"#
+                )
+            )
         }
     }
 
