@@ -9,8 +9,9 @@ import PackageDescription
 // the rules, the encoder, and later the client, discovery and file serving — by this package's
 // URL. SwiftPM cannot reach a package inside a folder of another, so the pieces share a manifest.
 //
-// Swift 6.4 and macOS 26 are the floor the server's stack sets: the swift-http-api-proposal server
-// the silo will serve on is built with them, and the ingestion tool raised its own floor to match.
+// Swift 6.4 and macOS 27 are the floor the server's stack sets: wire-mvc serves on swift-http-server's
+// `NIOHTTPServer`, which is available only from macOS 27, and this package's own file serving uses it
+// directly.
 // Nothing below the server imports anything Apple-only; the Linux CI job is what keeps that true.
 // The flag set wire-mvc and wire-open-api compile their own API with, applied to the modules that name
 // the proposal's types — the controllers, the composition root and the tests. Kept whole, as
@@ -38,7 +39,7 @@ let wirePlugins: [Target.PluginUsage] = [
 let package = Package(
     name: "silo-server",
     platforms: [
-        .macOS(.v26)
+        .macOS(.v27)
     ],
     products: [
         .library(name: "SiloKit", targets: ["SiloKit"]),

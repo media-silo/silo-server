@@ -1,6 +1,18 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright (c) 2026 the media-silo project authors -->
 
+<p align="center">
+  <a href="https://github.com/media-silo/silo-server/actions/workflows/build.yml">
+    <img src="https://github.com/media-silo/silo-server/actions/workflows/build.yml/badge.svg" alt="Build">
+  </a>
+  <a href="https://codecov.io/gh/media-silo/silo-server">
+    <img src="https://codecov.io/gh/media-silo/silo-server/graph/badge.svg" alt="Code coverage">
+  </a>
+  <a href="https://www.apache.org/licenses/LICENSE-2.0">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0">
+  </a>
+</p>
+
 # silo-server
 
 A server for one household's library of smd-shaped containers: the structure the
