@@ -1856,7 +1856,8 @@ extension AdminConsoleTests {
 
     /// A silo with access whose library `tv` holds `held`'s sidecars and nothing else: it answers each
     /// one's library route and bytes, edits them onto their digest, and makes containers beneath one it
-    /// holds, refusing one held already and a parent that does not name the top, as the silo would.
+    /// holds, refusing one held already and a parent that does not name the top, as the silo would. A
+    /// container titled `Refused` stands for one the silo's validator refuses, made or edited.
     private static func smddbSilo(_ held: HeldLibrary) -> @Sendable (URLRequest) throws -> (Int, Data)? {
         { request in
             guard let url = request.url else { return nil }
@@ -1886,6 +1887,9 @@ extension AdminConsoleTests {
                 }
                 for container in containers where held.container(container.id) != nil {
                     findings.append(finding("container \(container.id) is already at \\\"\(container.id)\\\""))
+                }
+                for container in containers where container.title.rawValue == "Refused" {
+                    findings.append(finding("\(container.id): the validator refuses it"))
                 }
                 let writes = containers.map { #"{"path":"\#($0.id)/container.smd","creates":true}"# }
                 func result(_ applied: Bool) -> Data {
@@ -1918,6 +1922,15 @@ extension AdminConsoleTests {
                     let edit = try JSONDecoder().decode(Edit.self, from: body)
                     guard edit.basedOn == digest else { return (409, Data(#"{"detail":"moved"}"#.utf8)) }
                     let value = try ContainerFile.container(from: Data(edit.document.utf8))
+                    if value.title.rawValue == "Refused" {
+                        return (
+                            422,
+                            Data(
+                                #"{"applied":false,"sidecar":"","digest":"","findings":[\#(finding("the validator refuses it"))]}"#
+                                    .utf8
+                            )
+                        )
+                    }
                     let written = try SidecarFile.data(settingContainer: value, in: bytes)
                     if edit.dryRun != true { held.sidecars.withLock { $0[rest[0]] = written } }
                     return (
@@ -2192,5 +2205,122 @@ extension AdminConsoleTests {
         await #expect(throws: ContributionError.self) {
             try await console.export(series, choosing: [Self.season13.id], to: database)
         }
+    }
+
+    /// What the silo refuses, and what cannot be asked of it, comes back in its words: an id smddb does
+    /// not have, a container held since the plan was made, a parent gone, a new container or a parent's
+    /// edit the validator refuses; a container already named by its parent is made without an edit.
+    @Test func smddbRefusalsAreSaidInTheSilosWords() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let series = Self.series(naming: [Self.season12, Self.season13])
+        for container in [series, Self.season12, Self.ark, Self.season13] { try await database.save(container) }
+        let refusing = Container(id: ContainerID("0000000000000069")!, type: .series, title: Title("Refused")!)
+        let held = HeldLibrary([series, Self.season13, refusing])
+        let (console, home) = try await Self.smddbConsole(held)
+
+        await #expect(throws: AdminConsole.SettingsRefused.self) {
+            try await console.planImport(ContainerID("00000000000000dd")!, into: "tv", of: home, from: database)
+        }
+
+        guard
+            case .plan(let plan) = try await console.planImport(Self.season12.id, into: "tv", of: home, from: database)
+        else {
+            Issue.record("Season 12 is planned")
+            return
+        }
+        guard
+            case .wouldMake(let dry) = try await console.importContainers(
+                plan,
+                choosing: [],
+                dryRun: true,
+                of: home,
+                from: database
+            )
+        else {
+            Issue.record("the series names Season 12, so the dry run would make it")
+            return
+        }
+        #expect(dry.writes.count == 1 && !dry.applied)
+
+        // Held since the plan was made: refused with no parent to bring from smddb.
+        held.sidecars.withLock {
+            $0[Self.season12.id.value] = try! SidecarFile.data(for: Sidecar(container: Self.season12))
+        }
+        guard
+            case .refused(let refused, nil) = try await console.importContainers(
+                plan,
+                choosing: [],
+                dryRun: true,
+                of: home,
+                from: database
+            )
+        else {
+            Issue.record("a container held since is refused, with nothing to bring first")
+            return
+        }
+        #expect(refused.findings.count == 1)
+
+        // The parent gone: the silo cannot be asked, and says why.
+        held.sidecars.withLock { $0[series.id.value] = nil }
+        await #expect(throws: AdminConsole.StoreRefused.self) {
+            try await console.importContainers(plan, choosing: [], dryRun: true, of: home, from: database)
+        }
+        held.sidecars.withLock { $0[series.id.value] = try! SidecarFile.data(for: Sidecar(container: series)) }
+
+        // A new container the validator refuses, checked and made at the top of the library.
+        var refused2 = try await console.newContainer(
+            .movie,
+            titled: Title("Refused")!,
+            in: "tv",
+            at: ContainerDraft.Creating(),
+            of: home,
+            from: database
+        )
+        guard case .refused = try await console.check(new: refused2, of: home) else {
+            Issue.record("the dry run of making it is refused")
+            return
+        }
+        guard case .refused(let made) = try await console.create(refused2, of: home) else {
+            Issue.record("making it is refused, and the draft kept")
+            return
+        }
+        #expect(!made.applied)
+        #expect(console.containerDrafts.draft(of: refused2.container, in: "tv", of: home.id) != nil)
+        refused2.text = "<nope/>"
+        guard case .unreadable = try await console.check(new: refused2, of: home) else {
+            Issue.record("a document that is not a container is unreadable")
+            return
+        }
+        await #expect(throws: AdminConsole.StoreRefused.self) { try await console.create(refused2, of: home) }
+
+        // Beneath a parent whose edit the validator refuses: the parent's refusal, nothing made.
+        let child = try await console.newContainer(
+            .season,
+            titled: Title("Season 1")!,
+            in: "tv",
+            at: ContainerDraft.Creating(parent: refusing.id.value),
+            of: home,
+            from: database
+        )
+        guard case .parentRefused = try await console.create(child, of: home) else {
+            Issue.record("the parent's edit is refused")
+            return
+        }
+        #expect(held.container(ContainerID(child.container)!) == nil)
+
+        // A container its parent already names is made with no edit of the parent.
+        let named = ContainerDraft.new(Self.season12, in: "tv", at: ContainerDraft.Creating(parent: series.id.value))
+        held.sidecars.withLock { $0[Self.season12.id.value] = nil }
+        let before = held.sidecars.withLock { $0[series.id.value] }
+        guard case .created = try await console.create(named, of: home) else {
+            Issue.record("Season 12 is made beneath the series that names it")
+            return
+        }
+        #expect(held.sidecars.withLock { $0[series.id.value] } == before, "the series is not edited")
+        #expect(
+            AdminConsole.naming(Self.season12, in: series, at: ContainerDraft.Creating()) == series,
+            "naming a child already named changes nothing"
+        )
     }
 }
