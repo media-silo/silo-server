@@ -53,7 +53,9 @@ public enum Artwork {
     /// A warning, on the sidecar, for each kind the folder holds in both formats.
     public static func findings(in folder: URL, sidecar: String) -> [Finding] {
         kinds.compactMap { kind in
-            let both = Format.allCases.allSatisfy { FileManager.default.fileExists(atPath: folder.appendingPathComponent("\(kind).\($0.rawValue)").path) }
+            let both = Format.allCases.allSatisfy {
+                FileManager.default.fileExists(atPath: folder.appendingPathComponent("\(kind).\($0.rawValue)").path)
+            }
             return both ? Finding(.warning, path: sidecar, "\(kind) is both \(kind).jpg and \(kind).png") : nil
         }
     }

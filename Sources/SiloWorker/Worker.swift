@@ -5,6 +5,8 @@ import Encoder
 import Foundation
 import Logging
 import SiloKit
+import Synchronization
+
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -24,7 +26,13 @@ public actor Worker {
         /// node a `file://` URL the silo reads directly.
         public var publish: @Sendable (_ job: String, _ file: URL) async throws -> FileRef
 
-        public init(nodeID: String, workFolder: URL, pollInterval: Duration = .seconds(5), progressInterval: Duration = .seconds(5), publish: @escaping @Sendable (String, URL) async throws -> FileRef) {
+        public init(
+            nodeID: String,
+            workFolder: URL,
+            pollInterval: Duration = .seconds(5),
+            progressInterval: Duration = .seconds(5),
+            publish: @escaping @Sendable (String, URL) async throws -> FileRef
+        ) {
             self.nodeID = nodeID
             self.workFolder = workFolder
             self.pollInterval = pollInterval
@@ -40,7 +48,13 @@ public actor Worker {
     private let logger: Logger
     private var capabilities: Set<String>?
 
-    public init(api: any JobsAPI, configuration: Configuration, ffmpeg: FFmpeg, ffprobe: FFprobe, logger: Logger = Logger(label: "silo.worker")) {
+    public init(
+        api: any JobsAPI,
+        configuration: Configuration,
+        ffmpeg: FFmpeg,
+        ffprobe: FFprobe,
+        logger: Logger = Logger(label: "silo.worker")
+    ) {
         self.api = api
         self.configuration = configuration
         self.ffmpeg = ffmpeg
@@ -72,7 +86,9 @@ public actor Worker {
     @discardableResult
     public func runOnce() async throws -> Bool {
         let capabilities = try await capabilities()
-        guard let claim = try await api.claim(node: configuration.nodeID, capabilities: capabilities) else { return false }
+        guard let claim = try await api.claim(node: configuration.nodeID, capabilities: capabilities) else {
+            return false
+        }
         let job = claim.job
         logger.info("claimed \(job.id)")
         do {
@@ -102,34 +118,8 @@ public actor Worker {
         let facts = stored.facts
         try FileManager.default.createDirectory(at: configuration.workFolder, withIntermediateDirectories: true)
 
-        // Each segment's source, reached once however many segments it has: opened where it is when
-        // this node holds it, fetched by range otherwise.
-        var reached: [String: URL] = [:]
-        for (position, segment) in claim.segments.enumerated() where reached[segment.source] == nil {
-            let copy = segment.copy
-            if copy.holder == configuration.nodeID, let path = copy.path {
-                reached[segment.source] = URL(fileURLWithPath: path)
-            } else if copy.url.isFileURL {
-                reached[segment.source] = copy.url
-            } else {
-                let fetched = configuration.workFolder.appendingPathComponent("\(job.id).\(position + 1).source.\(copy.url.pathExtension.isEmpty ? "mkv" : copy.url.pathExtension)")
-                try await RangeDownloader.download(copy, to: fetched) { [logger] received, total in
-                    logger.debug("\(job.id): fetched \(received)\(total.map { " of \($0)" } ?? "")")
-                }
-                reached[segment.source] = fetched
-            }
-        }
-
-        // One whole segment is its file; several, or a span of one, are one concat input.
-        let input: EncodeInput
-        if claim.segments.count == 1, claim.segments[0].isWhole {
-            input = .file(reached[claim.segments[0].source]!)
-        } else {
-            let list = configuration.workFolder.appendingPathComponent("\(job.id).concat")
-            let pieces = claim.segments.map { ConcatList.Piece(file: reached[$0.source]!, inpoint: $0.start, outpoint: $0.end) }
-            try ConcatList(pieces).text.write(to: list, atomically: true, encoding: .utf8)
-            input = .concat(list: list)
-        }
+        let reached = try await reachSources(of: claim)
+        let input = try encodeInput(for: claim, reached: reached)
 
         let output = configuration.workFolder.appendingPathComponent("\(job.id).\(recipe.output.fileExtension)")
         try? FileManager.default.removeItem(at: output)
@@ -152,17 +142,24 @@ public actor Worker {
 
         let encode = Task { [ffmpeg] in
             try await ffmpeg.run(recipe.ffmpegArguments(input: input, output: output)) { progress in
-                latest.update(JobProgress(
-                    fraction: duration.flatMap { total in progress.seconds.map { min(1, $0 / total) } },
-                    seconds: progress.seconds, fps: progress.fps, speed: progress.speed
-                ))
+                latest.update(
+                    JobProgress(
+                        fraction: duration.flatMap { total in progress.seconds.map { min(1, $0 / total) } },
+                        seconds: progress.seconds,
+                        fps: progress.fps,
+                        speed: progress.speed
+                    )
+                )
             }
         }
         // Whichever finishes first: the encode, or the reporter learning of a cancel.
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { try await encode.value }
             group.addTask { try await reporter.value }
-            defer { encode.cancel(); reporter.cancel() }
+            defer {
+                encode.cancel()
+                reporter.cancel()
+            }
             try await group.next()
             group.cancelAll()
         }
@@ -172,7 +169,9 @@ public actor Worker {
         let size = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? NSNumber)?.int64Value
         let result = EncodeResult(
             sizeBytes: size,
-            streams: probed.streams.filter { [.video, .audio, .subtitle].contains($0.kind) }.map { "\($0.kind.rawValue) \($0.codec)" },
+            streams: probed.streams.filter { [.video, .audio, .subtitle].contains($0.kind) }.map {
+                "\($0.kind.rawValue) \($0.codec)"
+            },
             layoutMatched: mismatches.isEmpty
         )
         guard mismatches.isEmpty else {
@@ -182,6 +181,45 @@ public actor Worker {
         _ = try await api.complete(job.id, output: published, result: result)
         logger.info("encoded \(job.id) to \(output.lastPathComponent)")
     }
+
+    /// Each segment's source, reached once however many segments it has: opened where it is when
+    /// this node holds it, fetched by range otherwise.
+    private func reachSources(of claim: Claim) async throws -> [String: URL] {
+        let job = claim.job
+        var reached: [String: URL] = [:]
+        for (position, segment) in claim.segments.enumerated() where reached[segment.source] == nil {
+            let copy = segment.copy
+            if copy.holder == configuration.nodeID, let path = copy.path {
+                reached[segment.source] = URL(fileURLWithPath: path)
+            } else if copy.url.isFileURL {
+                reached[segment.source] = copy.url
+            } else {
+                let fetched = configuration.workFolder.appendingPathComponent(
+                    "\(job.id).\(position + 1).source.\(copy.url.pathExtension.isEmpty ? "mkv" : copy.url.pathExtension)"
+                )
+                try await RangeDownloader.download(copy, to: fetched) { [logger] received, total in
+                    logger.debug("\(job.id): fetched \(received)\(total.map { " of \($0)" } ?? "")")
+                }
+                reached[segment.source] = fetched
+            }
+        }
+        return reached
+    }
+
+    /// One whole segment is its file; several, or a span of one, are one concat input.
+    private func encodeInput(for claim: Claim, reached: [String: URL]) throws -> EncodeInput {
+        let job = claim.job
+        if claim.segments.count == 1, claim.segments[0].isWhole {
+            return .file(reached[claim.segments[0].source]!)
+        } else {
+            let list = configuration.workFolder.appendingPathComponent("\(job.id).concat")
+            let pieces = claim.segments.map {
+                ConcatList.Piece(file: reached[$0.source]!, inpoint: $0.start, outpoint: $0.end)
+            }
+            try ConcatList(pieces).text.write(to: list, atomically: true, encoding: .utf8)
+            return .concat(list: list)
+        }
+    }
 }
 
 final class ProgressBox: Sendable {
@@ -189,8 +227,6 @@ final class ProgressBox: Sendable {
     func update(_ progress: JobProgress) { box.withLock { $0 = progress } }
     func take() -> JobProgress { box.withLock { $0 } }
 }
-
-import Synchronization
 
 public enum WorkerError: Error, CustomStringConvertible {
     case notReady(String)
@@ -200,7 +236,8 @@ public enum WorkerError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .notReady(let job): "job \(job) has no recipe to run"
-        case .layoutMismatch(let mismatches): "the output's layout is not the recipe's: " + mismatches.joined(separator: "; ")
+        case .layoutMismatch(let mismatches):
+            "the output's layout is not the recipe's: " + mismatches.joined(separator: "; ")
         case .download(let reason): "fetching a source failed: \(reason)"
         }
     }
@@ -209,8 +246,13 @@ public enum WorkerError: Error, CustomStringConvertible {
 /// Fetches a file from the node that holds it, by range, resuming from what is already on disk
 /// after an interruption.
 public enum RangeDownloader {
-    public static func download(_ file: FileRef, to destination: URL, progress: @escaping @Sendable (Int64, Int64?) -> Void = { _, _ in }) async throws {
-        let existing = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? 0
+    public static func download(
+        _ file: FileRef,
+        to destination: URL,
+        progress: @escaping @Sendable (Int64, Int64?) -> Void = { _, _ in }
+    ) async throws {
+        let existing =
+            (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? 0
         if let size = file.sizeBytes, existing == size, size > 0 { return }
         var request = URLRequest(url: file.url)
         request.setValue(file.secret, forHTTPHeaderField: "x-silo-secret")
@@ -234,7 +276,9 @@ public enum RangeDownloader {
             session.dataTask(with: request).resume()
         }
         if let size = file.sizeBytes {
-            let final = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value ?? -1
+            let final =
+                (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? NSNumber)?.int64Value
+                ?? -1
             guard final == size else { throw WorkerError.download("got \(final) bytes of \(size)") }
         }
     }
@@ -253,7 +297,12 @@ public enum RangeDownloader {
             self.progress = progress
         }
 
-        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        func urlSession(
+            _ session: URLSession,
+            dataTask: URLSessionDataTask,
+            didReceive response: URLResponse,
+            completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+        ) {
             status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard status == 200 || status == 206 else {
                 completionHandler(.cancel)

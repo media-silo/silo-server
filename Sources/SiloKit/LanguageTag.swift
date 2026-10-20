@@ -30,7 +30,9 @@ public struct LanguageTag: Hashable, Sendable, CustomStringConvertible {
     /// The canonical form of `text`, or nil when it is not a well-formed tag this reads.
     public init?(canonicalizing text: String) {
         let subtags = text.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
-        guard !subtags.isEmpty, subtags.allSatisfy({ (1...8).contains($0.count) && $0.allSatisfy(\.isASCIIAlphanumeric) }) else {
+        guard !subtags.isEmpty,
+            subtags.allSatisfy({ (1...8).contains($0.count) && $0.allSatisfy(\.isASCIIAlphanumeric) })
+        else {
             return nil
         }
         var position = 0
@@ -49,7 +51,9 @@ public struct LanguageTag: Hashable, Sendable, CustomStringConvertible {
         }
 
         if let subtag = next(),
-           (subtag.count == 2 && subtag.allSatisfy(\.isASCIILetter)) || (subtag.count == 3 && subtag.allSatisfy(\.isASCIIDigit)) {
+            (subtag.count == 2 && subtag.allSatisfy(\.isASCIILetter))
+                || (subtag.count == 3 && subtag.allSatisfy(\.isASCIIDigit))
+        {
             region = subtag.uppercased()
             position += 1
         } else {

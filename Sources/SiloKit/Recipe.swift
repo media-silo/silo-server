@@ -22,7 +22,14 @@ public struct Recipe: Hashable, Sendable, Codable {
     /// is a reasonable thing to make.
     public var warnings: [String]
 
-    public init(ruleset: RulesetRef, layers: [RecipeLayer] = [], decisions: [StreamDecision], output: OutputPolicy, layout: OutputLayout, warnings: [String] = []) {
+    public init(
+        ruleset: RulesetRef,
+        layers: [RecipeLayer] = [],
+        decisions: [StreamDecision],
+        output: OutputPolicy,
+        layout: OutputLayout,
+        warnings: [String] = []
+    ) {
         self.ruleset = ruleset
         self.layers = layers
         self.decisions = decisions
@@ -44,9 +51,11 @@ public struct Recipe: Hashable, Sendable, Codable {
 
     /// The encoders the recipe needs, by `ffmpeg`'s names: what a node has to have to claim it.
     public var encoders: Set<String> {
-        Set(decisions.compactMap { decision in
-            if case .encode(let settings) = decision.action { settings.codec } else { nil }
-        })
+        Set(
+            decisions.compactMap { decision in
+                if case .encode(let settings) = decision.action { settings.codec } else { nil }
+            }
+        )
     }
 
     /// The binding's feature map, renumbered to the output: the commentary that was source
@@ -98,7 +107,14 @@ public struct StreamDecision: Hashable, Sendable, Codable {
     public var layer: DecisionLayer?
     public var action: Action
 
-    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, rule: String, layer: DecisionLayer? = nil, action: Action) {
+    public init(
+        kind: StreamKind,
+        sourceIndex: Int,
+        sourceAbsoluteIndex: Int,
+        rule: String,
+        layer: DecisionLayer? = nil,
+        action: Action
+    ) {
         self.kind = kind
         self.sourceIndex = sourceIndex
         self.sourceAbsoluteIndex = sourceAbsoluteIndex
@@ -129,13 +145,15 @@ public struct OutputLayout: Hashable, Sendable, Codable {
         for kind in [StreamKind.video, .audio, .subtitle] {
             for decision in decisions where decision.kind == kind && decision.isKept {
                 perKind[kind, default: 0] += 1
-                streams.append(LayoutStream(
-                    kind: kind,
-                    sourceIndex: decision.sourceIndex,
-                    sourceAbsoluteIndex: decision.sourceAbsoluteIndex,
-                    outputIndex: perKind[kind]!,
-                    outputAbsoluteIndex: streams.count
-                ))
+                streams.append(
+                    LayoutStream(
+                        kind: kind,
+                        sourceIndex: decision.sourceIndex,
+                        sourceAbsoluteIndex: decision.sourceAbsoluteIndex,
+                        outputIndex: perKind[kind]!,
+                        outputAbsoluteIndex: streams.count
+                    )
+                )
             }
         }
         self.streams = streams
@@ -162,7 +180,13 @@ public struct LayoutStream: Hashable, Sendable, Codable {
     /// From zero, across the output: `ffmpeg`'s own count.
     public var outputAbsoluteIndex: Int
 
-    public init(kind: StreamKind, sourceIndex: Int, sourceAbsoluteIndex: Int, outputIndex: Int, outputAbsoluteIndex: Int) {
+    public init(
+        kind: StreamKind,
+        sourceIndex: Int,
+        sourceAbsoluteIndex: Int,
+        outputIndex: Int,
+        outputAbsoluteIndex: Int
+    ) {
         self.kind = kind
         self.sourceIndex = sourceIndex
         self.sourceAbsoluteIndex = sourceAbsoluteIndex

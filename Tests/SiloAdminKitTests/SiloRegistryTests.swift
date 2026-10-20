@@ -19,14 +19,44 @@ struct SiloRegistryTests {
         let seen = Date(timeIntervalSince1970: 1_790_000_000)
 
         let first = SiloRegistry(file: file)
-        try first.merge(RegisteredSilo(id: "s1", name: "Attic Silo", url: URL(string: "http://attic.local:8080")!, lastSeen: seen, hasStoredPasskey: true))
-        try first.merge(RegisteredSilo(id: "s2", name: "Living Room Silo", url: URL(string: "http://living.local:9000")!, lastSeen: seen, hasStoredPasskey: false))
+        try first.merge(
+            RegisteredSilo(
+                id: "s1",
+                name: "Attic Silo",
+                url: URL(string: "http://attic.local:8080")!,
+                lastSeen: seen,
+                hasStoredPasskey: true
+            )
+        )
+        try first.merge(
+            RegisteredSilo(
+                id: "s2",
+                name: "Living Room Silo",
+                url: URL(string: "http://living.local:9000")!,
+                lastSeen: seen,
+                hasStoredPasskey: false
+            )
+        )
         try first.notePasskey(true, for: "s2")
 
         let reopened = SiloRegistry(file: file)
-        #expect(reopened.all == [
-            RegisteredSilo(id: "s1", name: "Attic Silo", url: URL(string: "http://attic.local:8080")!, lastSeen: seen, hasStoredPasskey: true),
-            RegisteredSilo(id: "s2", name: "Living Room Silo", url: URL(string: "http://living.local:9000")!, lastSeen: seen, hasStoredPasskey: true),
-        ])
+        #expect(
+            reopened.all == [
+                RegisteredSilo(
+                    id: "s1",
+                    name: "Attic Silo",
+                    url: URL(string: "http://attic.local:8080")!,
+                    lastSeen: seen,
+                    hasStoredPasskey: true
+                ),
+                RegisteredSilo(
+                    id: "s2",
+                    name: "Living Room Silo",
+                    url: URL(string: "http://living.local:9000")!,
+                    lastSeen: seen,
+                    hasStoredPasskey: true
+                ),
+            ]
+        )
     }
 }

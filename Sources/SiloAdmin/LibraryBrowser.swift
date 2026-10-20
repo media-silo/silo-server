@@ -19,10 +19,12 @@ struct LibraryBrowser: View {
     let model: ConsoleModel
 
     var body: some View {
-        List(selection: Binding(
-            get: { model.browsed[silo.id] },
-            set: { chosen in Task { await model.browse(chosen, on: silo) } }
-        )) {
+        List(
+            selection: Binding(
+                get: { model.browsed[silo.id] },
+                set: { chosen in Task { await model.browse(chosen, on: silo) } }
+            )
+        ) {
             let drafts = model.containerDrafts[silo.id] ?? []
             if !drafts.isEmpty {
                 Section("Drafts") {
@@ -31,9 +33,19 @@ struct LibraryBrowser: View {
                             Text(draft.title)
                             Text(draft.library).font(.caption).foregroundStyle(.secondary)
                         } icon: {
-                            Image(systemName: model.isBehind(draft, on: silo) ? "clock.badge.exclamationmark" : "pencil")
+                            Image(
+                                systemName: model.isBehind(draft, on: silo) ? "clock.badge.exclamationmark" : "pencil"
+                            )
                         }
-                        .tag(ConsoleModel.Browsed.container(ConsoleModel.ContainerKey(silo: silo.id, library: draft.library, container: draft.container)))
+                        .tag(
+                            ConsoleModel.Browsed.container(
+                                ConsoleModel.ContainerKey(
+                                    silo: silo.id,
+                                    library: draft.library,
+                                    container: draft.container
+                                )
+                            )
+                        )
                     }
                 }
             }
@@ -64,18 +76,31 @@ private struct LibraryNode: View {
                 Text("No containers").foregroundStyle(.secondary)
             }
             ForEach(roots) { root in
-                ContainerNode(summary: root, key: ConsoleModel.ContainerKey(silo: silo.id, library: library, container: root.id), model: model)
+                ContainerNode(
+                    summary: root,
+                    key: ConsoleModel.ContainerKey(silo: silo.id, library: library, container: root.id),
+                    model: model
+                )
             }
         } label: {
             HStack {
                 Label(library, systemImage: "externaldrive")
-                if model.libraries[silo.id]?.first(where: { $0.id == library })?.available == false || model.lastWalks[silo.id]?[library]?.available == false {
-                    Image(systemName: "externaldrive.badge.exclamationmark").foregroundStyle(.orange).help("Unavailable")
+                if model.libraries[silo.id]?.first(where: { $0.id == library })?.available == false
+                    || model.lastWalks[silo.id]?[library]?.available == false
+                {
+                    Image(systemName: "externaldrive.badge.exclamationmark").foregroundStyle(.orange).help(
+                        "Unavailable"
+                    )
                 }
                 if let findings = model.lastWalks[silo.id]?[library]?.report.findings, !findings.isEmpty {
-                    Image(systemName: findings.contains { $0.severity == .error } ? "exclamationmark.octagon" : "exclamationmark.triangle")
-                        .foregroundStyle(findings.contains { $0.severity == .error } ? .red : .orange)
-                        .help("The last walk found \(findings.count == 1 ? "something" : "\(findings.count) things") to report")
+                    Image(
+                        systemName: findings.contains { $0.severity == .error }
+                            ? "exclamationmark.octagon" : "exclamationmark.triangle"
+                    )
+                    .foregroundStyle(findings.contains { $0.severity == .error } ? .red : .orange)
+                    .help(
+                        "The last walk found \(findings.count == 1 ? "something" : "\(findings.count) things") to report"
+                    )
                 }
             }
         }
@@ -97,7 +122,11 @@ private struct ContainerNode: View {
         } else {
             DisclosureGroup(isExpanded: $expanded) {
                 ForEach(model.containers[key]?.container.container.children ?? []) { child in
-                    ContainerNode(summary: child, key: ConsoleModel.ContainerKey(silo: key.silo, library: key.library, container: child.id), model: model)
+                    ContainerNode(
+                        summary: child,
+                        key: ConsoleModel.ContainerKey(silo: key.silo, library: key.library, container: child.id),
+                        model: model
+                    )
                 }
             } label: {
                 label
@@ -119,8 +148,11 @@ private struct ContainerNode: View {
                 Image(systemName: "pencil").foregroundStyle(.secondary).help("A draft is kept for this container")
             }
             if let findings = model.containers[key]?.findings, !findings.isEmpty {
-                Image(systemName: findings.contains { $0.severity == .error } ? "exclamationmark.octagon" : "exclamationmark.triangle")
-                    .foregroundStyle(findings.contains { $0.severity == .error } ? .red : .orange)
+                Image(
+                    systemName: findings.contains { $0.severity == .error }
+                        ? "exclamationmark.octagon" : "exclamationmark.triangle"
+                )
+                .foregroundStyle(findings.contains { $0.severity == .error } ? .red : .orange)
             }
         }
     }
@@ -142,8 +174,10 @@ struct ContainerDetail: View {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(container.displayTitle).font(.title2.bold())
-                        Text("\(container.typeLabel ?? container.type.capitalized) in \(opened.container.library), at \(opened.container.path)")
-                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(
+                            "\(container.typeLabel ?? container.type.capitalized) in \(opened.container.library), at \(opened.container.path)"
+                        )
+                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                     Spacer()
                     Button(model.containerDraft(for: key) == nil ? "Edit…" : "Open Draft") { model.editContainer(key) }
@@ -165,14 +199,21 @@ struct ContainerDetail: View {
                     field("Type", container.typeLabel.map { "\($0) (\(container.type))" } ?? container.type)
                     field("Listed", container.listed ? "Yes" : "No")
                     field("Outline", container.outline)
-                    field("External references", container.externalRefs.isEmpty ? nil : container.externalRefs.map { "\($0.provider) \($0.value)" }.joined(separator: ", "))
+                    field(
+                        "External references",
+                        container.externalRefs.isEmpty
+                            ? nil : container.externalRefs.map { "\($0.provider) \($0.value)" }.joined(separator: ", ")
+                    )
                     field("Default alternative", container.defaultAlternative)
                 }
 
                 if !container.alternatives.isEmpty {
                     GroupBox("Alternatives") {
                         ForEach(container.alternatives, id: \.id) { alternative in
-                            LabeledContent(alternative.title ?? alternative.id, value: "\(alternative.id), plays \(alternative.sequence)")
+                            LabeledContent(
+                                alternative.title ?? alternative.id,
+                                value: "\(alternative.id), plays \(alternative.sequence)"
+                            )
                         }
                     }
                 }
@@ -197,7 +238,15 @@ struct ContainerDetail: View {
                     GroupBox("Children") {
                         ForEach(container.children) { child in
                             Button(child.displayTitle) {
-                                Task { await model.select(ConsoleModel.ContainerKey(silo: key.silo, library: key.library, container: child.id)) }
+                                Task {
+                                    await model.select(
+                                        ConsoleModel.ContainerKey(
+                                            silo: key.silo,
+                                            library: key.library,
+                                            container: child.id
+                                        )
+                                    )
+                                }
                             }
                             .buttonStyle(.link)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,11 +280,16 @@ private struct ItemsList: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Text(item.title ?? item.id ?? "an item declared elsewhere").bold()
-                        Text([item.id, item.type].compactMap { $0 }.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                        Text([item.id, item.type].compactMap { $0 }.joined(separator: ", ")).font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     if let child = item.container {
                         Button("Container \(child)") {
-                            Task { await model.select(ConsoleModel.ContainerKey(silo: key.silo, library: key.library, container: child)) }
+                            Task {
+                                await model.select(
+                                    ConsoleModel.ContainerKey(silo: key.silo, library: key.library, container: child)
+                                )
+                            }
                         }
                         .buttonStyle(.link)
                         .font(.caption)
@@ -268,10 +322,13 @@ struct FindingsList: View {
 
     var body: some View {
         ForEach(findings, id: \.self) { finding in
-            Label(finding.text, systemImage: finding.severity == .error ? "exclamationmark.octagon" : "exclamationmark.triangle")
-                .foregroundStyle(finding.severity == .error ? .red : .orange)
-                .font(.caption)
-                .textSelection(.enabled)
+            Label(
+                finding.text,
+                systemImage: finding.severity == .error ? "exclamationmark.octagon" : "exclamationmark.triangle"
+            )
+            .foregroundStyle(finding.severity == .error ? .red : .orange)
+            .font(.caption)
+            .textSelection(.enabled)
         }
     }
 }
@@ -287,11 +344,16 @@ private struct ArtworkStrip: View {
         ScrollView(.horizontal) {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(SiloClient.artworkKinds, id: \.self) { kind in
-                    ArtworkWell(kind: kind, url: held.contains(kind) ? model.artworkURL(kind, of: key) : nil, onPut: { image in
-                        Task { await model.putArtwork(image, as: kind, of: key) }
-                    }, onRemove: {
-                        Task { await model.removeArtwork(kind, of: key) }
-                    })
+                    ArtworkWell(
+                        kind: kind,
+                        url: held.contains(kind) ? model.artworkURL(kind, of: key) : nil,
+                        onPut: { image in
+                            Task { await model.putArtwork(image, as: kind, of: key) }
+                        },
+                        onRemove: {
+                            Task { await model.removeArtwork(kind, of: key) }
+                        }
+                    )
                 }
             }
         }
@@ -312,7 +374,10 @@ private struct ArtworkWell: View {
         VStack(spacing: 4) {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(targeted ? Color.accentColor : Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: url == nil ? [4] : []))
+                    .strokeBorder(
+                        targeted ? Color.accentColor : Color.secondary.opacity(0.4),
+                        style: StrokeStyle(lineWidth: 1, dash: url == nil ? [4] : [])
+                    )
                 if let url {
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFit()
@@ -322,7 +387,9 @@ private struct ArtworkWell: View {
                     .id(generation)
                     .padding(2)
                 } else {
-                    Text("Drop a JPEG or PNG").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(4)
+                    Text("Drop a JPEG or PNG").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(
+                        .center
+                    ).padding(4)
                 }
             }
             .frame(width: 96, height: 96)
@@ -330,7 +397,9 @@ private struct ArtworkWell: View {
                 guard let file = urls.first, let image = try? Data(contentsOf: file) else { return false }
                 put(image)
                 return true
-            } isTargeted: { targeted = $0 }
+            } isTargeted: {
+                targeted = $0
+            }
             HStack(spacing: 4) {
                 Text(kind).font(.caption)
                 Button("Choose \(kind)…", systemImage: "photo.badge.plus") { choosing = true }
@@ -371,7 +440,8 @@ struct ContainerEditor: View {
             HStack {
                 VStack(alignment: .leading) {
                     Text("Editing \(draft.title)").font(.title3.bold())
-                    Text("In \(draft.library), from the sidecar \(draft.base.prefix(12))…").font(.caption).foregroundStyle(.secondary)
+                    Text("In \(draft.library), from the sidecar \(draft.base.prefix(12))…").font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Picker("View", selection: $asText) {
@@ -392,9 +462,14 @@ struct ContainerEditor: View {
             }
             ContainerVerdict(check: model.containerCheck(of: silo))
             if asText {
-                TextEditor(text: Binding(get: { model.containerDraft(of: silo)?.text ?? draft.text }, set: { model.editContainerDraft($0, for: silo) }))
-                    .font(.system(.callout, design: .monospaced))
-                    .autocorrectionDisabled()
+                TextEditor(
+                    text: Binding(
+                        get: { model.containerDraft(of: silo)?.text ?? draft.text },
+                        set: { model.editContainerDraft($0, for: silo) }
+                    )
+                )
+                .font(.system(.callout, design: .monospaced))
+                .autocorrectionDisabled()
             } else if let value = draft.value {
                 ContainerForm(container: value) { changed in
                     var edited = draft
@@ -421,15 +496,21 @@ private struct ContainerVerdict: View {
     var body: some View {
         switch check {
         case .wouldWrite(let result)?:
-            Label(result.findings.isEmpty ? "The silo would write it" : "The silo would write it, and says", systemImage: "checkmark.circle")
-                .foregroundStyle(.green).font(.caption)
+            Label(
+                result.findings.isEmpty ? "The silo would write it" : "The silo would write it, and says",
+                systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(.green).font(.caption)
             FindingsList(findings: result.findings)
         case .refused(let result)?:
             Label("The silo refuses it", systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
             FindingsList(findings: result.findings)
         case .behind(let reason)?:
-            Label("The sidecar has changed since this draft was made: \(reason)", systemImage: "clock.badge.exclamationmark")
-                .foregroundStyle(.orange).font(.caption).textSelection(.enabled)
+            Label(
+                "The sidecar has changed since this draft was made: \(reason)",
+                systemImage: "clock.badge.exclamationmark"
+            )
+            .foregroundStyle(.orange).font(.caption).textSelection(.enabled)
         case .unreadable(let reason)?:
             Label("The silo cannot read it: \(reason)", systemImage: "exclamationmark.octagon")
                 .foregroundStyle(.red).font(.caption).textSelection(.enabled)
@@ -452,9 +533,16 @@ struct ContainerReviewSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             if let landed = review.landed {
                 Text("Someone Edited \(review.draft.title) First").font(.title3.bold())
-                Text("The library's sidecar changed after this draft was made. This is how what landed differs from the draft's base; the draft is kept as it is.")
-                    .foregroundStyle(.secondary)
-                DifferenceView(lines: LineDifference.lines(from: review.draft.baseText, to: (try? ContainerDraft.document(of: landed.sidecar)) ?? ""))
+                Text(
+                    "The library's sidecar changed after this draft was made. This is how what landed differs from the draft's base; the draft is kept as it is."
+                )
+                .foregroundStyle(.secondary)
+                DifferenceView(
+                    lines: LineDifference.lines(
+                        from: review.draft.baseText,
+                        to: (try? ContainerDraft.document(of: landed.sidecar)) ?? ""
+                    )
+                )
                 HStack {
                     Spacer()
                     Button("Cancel", role: .cancel) { dismiss() }
@@ -464,8 +552,10 @@ struct ContainerReviewSheet: View {
                 }
             } else {
                 Text("Store the Edit to \(review.draft.title)").font(.title3.bold())
-                Text("The difference from the sidecar it was based on, in \(review.draft.library). Only the container's own fields change; its presentations, children and rules stay as they are, and no folder is renamed.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    "The difference from the sidecar it was based on, in \(review.draft.library). Only the container's own fields change; its presentations, children and rules stay as they are, and no folder is renamed."
+                )
+                .foregroundStyle(.secondary)
                 DifferenceView(lines: LineDifference.changes(from: review.draft.baseText, to: review.draft.text))
                 ContainerVerdict(check: review.check)
                 HStack {

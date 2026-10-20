@@ -12,7 +12,11 @@ import SmdSidecar
 /// force has moved on. `LayeredRulesets.md`, *A container's rules*.
 public enum RulesLayerFile {
     /// The version in force of the rules `reference` names, read from beside the sidecar in `folder`.
-    public static func read(_ subject: LayerSubject, _ reference: SidecarRules, in folder: URL) throws(RulesLayerError) -> RulesLayer {
+    public static func read(
+        _ subject: LayerSubject,
+        _ reference: SidecarRules,
+        in folder: URL
+    ) throws(RulesLayerError) -> RulesLayer {
         try read(subject, version: reference.activeVersion, file: folder.appendingPathComponent(reference.activeFile))
     }
 
@@ -22,7 +26,12 @@ public enum RulesLayerFile {
             throw RulesLayerError(subject: subject, version: version, reason: "rules version \(version) is not there")
         }
         do {
-            return RulesLayer(subject: subject, version: version, digest: digest(of: data), rules: try RulesetFile.layerRules(from: data))
+            return RulesLayer(
+                subject: subject,
+                version: version,
+                digest: digest(of: data),
+                rules: try RulesetFile.layerRules(from: data)
+            )
         } catch {
             throw RulesLayerError(subject: subject, version: version, reason: "rules version \(version): \(error)")
         }

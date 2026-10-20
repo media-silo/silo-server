@@ -16,7 +16,13 @@ package struct SiloConfig: Sendable {
     package var stateDirectory: URL
     package var libraryRoots: [URL]
 
-    package init(serverID: String = UUID().uuidString.lowercased(), host: String, port: Int, stateDirectory: URL, libraryRoots: [URL] = []) {
+    package init(
+        serverID: String = UUID().uuidString.lowercased(),
+        host: String,
+        port: Int,
+        stateDirectory: URL,
+        libraryRoots: [URL] = []
+    ) {
         self.serverID = serverID
         self.host = host
         self.port = port

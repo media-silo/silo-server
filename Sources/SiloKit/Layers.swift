@@ -106,18 +106,25 @@ public enum DecisionLayer: Hashable, Sendable, Codable {
     }
 }
 
-fileprivate protocol SubjectKeys: CodingKey {
+private protocol SubjectKeys: CodingKey {
     static var container: Self { get }
     static var binding: Self { get }
 }
 
 extension LayerSubject {
     fileprivate init<Keys: SubjectKeys>(decodingFrom values: KeyedDecodingContainer<Keys>) throws {
-        switch (try values.decodeIfPresent(String.self, forKey: .container), try values.decodeIfPresent(String.self, forKey: .binding)) {
+        switch (
+            try values.decodeIfPresent(String.self, forKey: .container),
+            try values.decodeIfPresent(String.self, forKey: .binding)
+        ) {
         case (let container?, nil): self = .container(container)
         case (nil, let binding?): self = .binding(binding)
         default:
-            throw DecodingError.dataCorruptedError(forKey: Keys.container, in: values, debugDescription: "a layer names exactly one of a container and a binding")
+            throw DecodingError.dataCorruptedError(
+                forKey: Keys.container,
+                in: values,
+                debugDescription: "a layer names exactly one of a container and a binding"
+            )
         }
     }
 

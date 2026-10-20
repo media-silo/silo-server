@@ -46,7 +46,18 @@ package struct BindingService: Sendable {
     private let logger = Logger(label: "silo.bindings")
 
     @Inject
-    package init(settings: SettingsStore, index: Index, rulesets: RulesetStore, sources: SourceStore, bindings: BindingStore, recipes: RecipeStore, staged: BindingRulesStore, stack: RulesStack, libraries: Libraries, checks: CheckSignal) {
+    package init(
+        settings: SettingsStore,
+        index: Index,
+        rulesets: RulesetStore,
+        sources: SourceStore,
+        bindings: BindingStore,
+        recipes: RecipeStore,
+        staged: BindingRulesStore,
+        stack: RulesStack,
+        libraries: Libraries,
+        checks: CheckSignal
+    ) {
         self.staged = staged
         self.stack = stack
         self.libraries = libraries
@@ -72,15 +83,22 @@ package struct BindingService: Sendable {
     /// the binding already has is left as it was.
     package func apply(_ application: Application, to id: String) throws -> [StoredRecipe] {
         guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
-        guard let name = application.ruleset ?? settings.current.libraries.first(where: { $0.id == binding.library })?.ruleset else {
-            throw BadApplication(reason: "the application names no ruleset, and library \(binding.library) has none of its own")
+        guard
+            let name = application.ruleset
+                ?? settings.current.libraries.first(where: { $0.id == binding.library })?.ruleset
+        else {
+            throw BadApplication(
+                reason: "the application names no ruleset, and library \(binding.library) has none of its own"
+            )
         }
         let branch = application.branch ?? RulesetStore.standard
         if branch != RulesetStore.standard {
             guard let found = try rulesets.branches(of: name).first(where: { $0.name == branch }) else {
                 throw BadApplication(reason: "\(name) has no branch \(branch)")
             }
-            guard !found.closed else { throw ClosedBranch(reason: "\(name)'s branch \(branch) has been promoted, and is closed") }
+            guard !found.closed else {
+                throw ClosedBranch(reason: "\(name)'s branch \(branch) has been promoted, and is closed")
+            }
         }
         if let version = application.version, let on = try rulesets.branch(of: name, version: version), on != branch {
             throw BadApplication(reason: "\(name)@\(version) is on \(on), not \(branch)")
@@ -93,7 +111,10 @@ package struct BindingService: Sendable {
         if let chosen = application.outputs {
             outputs = try chosen.map { choice in
                 guard let output = ruleset.outputs.first(where: { $0.profile == choice.profile }) else {
-                    throw BadApplication(reason: choice.profile.map { "\(ruleset.name) makes no output for the profile \($0)" } ?? "\(ruleset.name) makes no unqualified output")
+                    throw BadApplication(
+                        reason: choice.profile.map { "\(ruleset.name) makes no output for the profile \($0)" }
+                            ?? "\(ruleset.name) makes no unqualified output"
+                    )
                 }
                 return output
             }
@@ -110,12 +131,22 @@ package struct BindingService: Sendable {
         }
         let layers = try stack.layers(of: binding, lineage: entry.lineage)
         let made = try outputs.map { output in
-            let facts = SourceFacts(input: entry.joined.spec, roles: entry.roles, kind: entry.kind, extra: entry.extra, profile: output.profile, duration: entry.joined.duration)
+            let facts = SourceFacts(
+                input: entry.joined.spec,
+                roles: entry.roles,
+                kind: entry.kind,
+                extra: entry.extra,
+                profile: output.profile,
+                duration: entry.joined.duration
+            )
             do throws(ResolutionError) {
                 let recipe = try RecipeResolver.resolve(facts, with: ruleset, layers: layers, mappings: binding.tracks)
                 return StoredRecipe(binding: binding.id, facts: facts, recipe: recipe)
             } catch {
-                throw Unresolvable(reason: "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)")
+                throw Unresolvable(
+                    reason:
+                        "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)"
+                )
             }
         }
         try recipes.insert(made)
@@ -159,12 +190,15 @@ package struct BindingService: Sendable {
         let versions = home.folder.appendingPathComponent(reference.path, isDirectory: true)
         try FileManager.default.createDirectory(at: versions, withIntermediateDirectories: true)
         var version = max(home.reference?.activeVersion ?? 0, staged.versions(of: id).last ?? 0) + 1
-        while FileManager.default.fileExists(atPath: home.folder.appendingPathComponent(reference.file(version: version)).path) {
+        while FileManager.default.fileExists(
+            atPath: home.folder.appendingPathComponent(reference.file(version: version)).path
+        ) {
             version += 1
         }
         try document.write(to: home.folder.appendingPathComponent(reference.file(version: version)), options: .atomic)
         let moved = SidecarRules(path: reference.path, activeVersion: version)
-        try SidecarFile.data(settingRules: moved, binding: id, item: binding.item, in: Data(contentsOf: home.sidecar)).write(to: home.sidecar, options: .atomic)
+        try SidecarFile.data(settingRules: moved, binding: id, item: binding.item, in: Data(contentsOf: home.sidecar))
+            .write(to: home.sidecar, options: .atomic)
         if let container = lineage.last { try await libraries.refresh(container.id, in: home.library) }
         logger.info("wrote version \(version) of \(id)'s rules beside \(home.sidecar.path)")
         checks.request()
@@ -178,12 +212,20 @@ package struct BindingService: Sendable {
         if let home = try stack.home(of: binding, lineage: lineage), home.placed {
             guard let reference = home.reference else { return (nil, nil, []) }
             let folder = home.folder.appendingPathComponent(reference.path, isDirectory: true)
-            let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
-            let versions = files.compactMap { $0.pathExtension == "xml" ? Int($0.deletingPathExtension().lastPathComponent) : nil }.sorted()
-            return (reference.activeVersion, try? Data(contentsOf: home.folder.appendingPathComponent(reference.activeFile)), versions)
+            let files =
+                (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            let versions = files.compactMap {
+                $0.pathExtension == "xml" ? Int($0.deletingPathExtension().lastPathComponent) : nil
+            }.sorted()
+            return (
+                reference.activeVersion,
+                try? Data(contentsOf: home.folder.appendingPathComponent(reference.activeFile)), versions
+            )
         }
         let versions = staged.versions(of: id)
-        return (versions.last, versions.last.flatMap { try? Data(contentsOf: staged.file(of: id, version: $0)) }, versions)
+        return (
+            versions.last, versions.last.flatMap { try? Data(contentsOf: staged.file(of: id, version: $0)) }, versions
+        )
     }
 
     // MARK: - Checking
@@ -202,7 +244,9 @@ package struct BindingService: Sendable {
     }
 
     private func entry(of binding: Binding) throws -> Entry {
-        guard libraries.library(binding.library) != nil else { throw BadBinding(reason: "no library \(binding.library)") }
+        guard libraries.library(binding.library) != nil else {
+            throw BadBinding(reason: "no library \(binding.library)")
+        }
         let lineage: [SmdKit.Container]
         do {
             lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
@@ -238,16 +282,23 @@ package struct BindingService: Sendable {
             }
             if let audio = track.audio {
                 guard audio >= 1, audio <= audioStreams else {
-                    throw BadBinding(reason: "feature \(track.feature) is mapped to audio \(audio), which the joined media does not have")
+                    throw BadBinding(
+                        reason:
+                            "feature \(track.feature) is mapped to audio \(audio), which the joined media does not have"
+                    )
                 }
-                roles[audio] = switch feature.type {
-                case .commentary: .commentary
-                case .isolatedMusic: .isolatedMusic
-                default: .other
-                }
+                roles[audio] =
+                    switch feature.type {
+                    case .commentary: .commentary
+                    case .isolatedMusic: .isolatedMusic
+                    default: .other
+                    }
             }
             if let subtitle = track.subtitle, subtitle < 1 || subtitle > subtitleStreams {
-                throw BadBinding(reason: "feature \(track.feature) is mapped to subtitle \(subtitle), which the joined media does not have")
+                throw BadBinding(
+                    reason:
+                        "feature \(track.feature) is mapped to subtitle \(subtitle), which the joined media does not have"
+                )
             }
         }
         return Entry(kind: item.type, extra: inSequence == nil, roles: roles, joined: joined, lineage: lineage)

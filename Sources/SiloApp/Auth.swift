@@ -189,7 +189,10 @@ where Reader.ReadElement == UInt8, Reader.FinalElement == HTTPFields?, Sender.Wr
                 if let pending {
                     var body = UniqueArray<UInt8>(copying: Array(pending.body.utf8))
                     try await sender.sendAndFinish(
-                        HTTPResponse(status: pending.status, headerFields: [.contentType: "application/json", .contentLength: String(body.count)]),
+                        HTTPResponse(
+                            status: pending.status,
+                            headerFields: [.contentType: "application/json", .contentLength: String(body.count)]
+                        ),
                         buffer: &body
                     )
                 } else {

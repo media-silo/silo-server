@@ -34,18 +34,25 @@ package struct LibraryController {
     package func libraryOutOfDate(@Path library: String) async throws -> Components.Schemas.OutOfDateReport {
         let report = try checks.report(library: library)
         return Components.Schemas.OutOfDateReport(
-            presentations: try report.outOfDate.map(Mapping.outOfDate), pending: report.pending, placedWithoutJob: report.placedWithoutJob
+            presentations: try report.outOfDate.map(Mapping.outOfDate),
+            pending: report.pending,
+            placedWithoutJob: report.placedWithoutJob
         )
     }
 
     @Operation
     package func listLibraries() async throws -> [Components.Schemas.Library] {
         let counts = LibraryCounts(index: index)
-        let standards = Dictionary(settings.current.libraries.map { ($0.id, $0.ruleset) }, uniquingKeysWith: { first, _ in first })
+        let standards = Dictionary(
+            settings.current.libraries.map { ($0.id, $0.ruleset) },
+            uniquingKeysWith: { first, _ in first }
+        )
         return try libraries.all.map { library in
             Components.Schemas.Library(
-                id: library.id, ruleset: standards[library.id] ?? nil,
-                containers: try counts.containers(in: library.id), presentations: try counts.presentations(in: library.id),
+                id: library.id,
+                ruleset: standards[library.id] ?? nil,
+                containers: try counts.containers(in: library.id),
+                presentations: try counts.presentations(in: library.id),
                 available: libraries.availability(of: library)
             )
         }
@@ -62,7 +69,10 @@ package struct LibraryController {
     @ErrorResponse(NoSuchContainer.self, .notFound)
     package func getContainer(@Path id: String, @Query profile: String?) async throws -> Components.Schemas.Container {
         guard let containerID = ContainerID(id) else { throw NoSuchContainer() }
-        let held = Dictionary(try index.containers(containerID).map { ($0.library, $0) }, uniquingKeysWith: { first, _ in first })
+        let held = Dictionary(
+            try index.containers(containerID).map { ($0.library, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         guard let row = libraries.all.lazy.compactMap({ held[$0.id] }).first else { throw NoSuchContainer() }
         return try container(row, profile: profile)
     }
@@ -77,13 +87,21 @@ package struct LibraryController {
     @Operation
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     @ErrorResponse(NoSuchContainer.self, .notFound)
-    package func getLibraryContainer(@Path library: String, @Path id: String) async throws -> Components.Schemas.LibraryContainer {
+    package func getLibraryContainer(
+        @Path library: String,
+        @Path id: String
+    ) async throws -> Components.Schemas.LibraryContainer {
         guard libraries.library(library) != nil else { throw NoSuchLibrary() }
-        guard let containerID = ContainerID(id), let row = try index.container(containerID, in: library) else { throw NoSuchContainer() }
+        guard let containerID = ContainerID(id), let row = try index.container(containerID, in: library) else {
+            throw NoSuchContainer()
+        }
         let folder = libraries.library(library)!.root.appendingPathComponent(row.folder, isDirectory: true)
         return Components.Schemas.LibraryContainer(
-            library: library, path: "\(row.folder)/\(SidecarFile.fileName)", digest: row.digest,
-            artwork: Artwork.held(in: folder).compactMap { .init(rawValue: $0) }, container: try container(row, profile: nil)
+            library: library,
+            path: "\(row.folder)/\(SidecarFile.fileName)",
+            digest: row.digest,
+            artwork: Artwork.held(in: folder).compactMap { .init(rawValue: $0) },
+            container: try container(row, profile: nil)
         )
     }
 
@@ -92,7 +110,8 @@ package struct LibraryController {
     private func container(_ row: IndexedContainer, profile: String?) throws -> Components.Schemas.Container {
         let sidecar = try SidecarFile.sidecar(from: row.document)
         return Mapping.container(
-            row, sidecar: sidecar,
+            row,
+            sidecar: sidecar,
             children: try index.children(of: row.containerID, in: row.library),
             presentations: try index.presentations(of: row.containerID, in: row.library),
             profile: profile
@@ -100,13 +119,18 @@ package struct LibraryController {
     }
 
     @Operation
-    package func lookup(@Query provider: String, @Query value: String) async throws -> [Components.Schemas.ContainerSummary] {
+    package func lookup(
+        @Query provider: String,
+        @Query value: String
+    ) async throws -> [Components.Schemas.ContainerSummary] {
         try index.lookup(provider: Provider(rawValue: provider), value: value).map(Mapping.summary)
     }
 
     @Operation
-    package func search(@Query q: String) async throws -> [Components.Schemas.SearchHit] {
-        try index.search(q).map { Components.Schemas.SearchHit(container: $0.container, item: $0.item, title: $0.title) }
+    package func search(@Query("q") query: String) async throws -> [Components.Schemas.SearchHit] {
+        try index.search(query).map {
+            Components.Schemas.SearchHit(container: $0.container, item: $0.item, title: $0.title)
+        }
     }
 
 }

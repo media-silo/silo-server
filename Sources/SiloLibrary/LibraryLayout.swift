@@ -18,7 +18,8 @@ public enum LibraryLayout {
     /// replaced, whitespace collapsed, and nothing that would hide the entry or walk out of the
     /// folder. Empty after all that, the caller falls back to an id.
     public static func sanitise(_ name: String) -> String {
-        var text = name
+        var text =
+            name
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: "\0", with: "")
@@ -42,7 +43,11 @@ public enum LibraryLayout {
         let name = (relativeFolder as NSString).lastPathComponent
         let expected = folderName(displayTitle: displayTitle, id: id)
         guard !name.isEmpty, name != expected else { return nil }
-        return Finding(.warning, path: "\(relativeFolder)/\(sidecarFileName)", "folder \"\(name)\" is not the name the layout would give it, \"\(expected)\"")
+        return Finding(
+            .warning,
+            path: "\(relativeFolder)/\(sidecarFileName)",
+            "folder \"\(name)\" is not the name the layout would give it, \"\(expected)\""
+        )
     }
 
     /// The `smd` path a parent's sidecar records for a child: the child's folder, inside the
@@ -63,7 +68,12 @@ public enum LibraryLayout {
     }
 
     /// The path a sidecar records for a presentation of an item, relative to the sidecar's folder.
-    public static func relativePath(for item: Entry, isExtra: Bool, displayName: String?, fileExtension: String) -> String {
+    public static func relativePath(
+        for item: Entry,
+        isExtra: Bool,
+        displayName: String?,
+        fileExtension: String
+    ) -> String {
         let name = fileName(for: item, displayName: displayName, fileExtension: fileExtension)
         return isExtra ? "\(extrasFolder)/\(name)" : name
     }

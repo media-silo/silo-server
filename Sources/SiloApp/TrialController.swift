@@ -31,16 +31,24 @@ package struct TrialController {
     /// Each tried trial with the ruleset version that made its recipe and the branch that version
     /// is on, filtered by either.
     @Operation
-    package func listTrials(@Query ruleset: String?, @Query branch: String?) async throws -> [Components.Schemas.Trial] {
+    package func listTrials(@Query ruleset: String?, @Query branch: String?) async throws -> [Components.Schemas.Trial]
+    {
         try service.trials().compactMap { job -> Components.Schemas.Trial? in
             guard let stored = recipes.recipe(job.recipe) else { return nil }
             let made = stored.recipe.ruleset
-            let on = try made.version.flatMap { try rulesets.branch(of: made.name, version: $0) } ?? RulesetStore.standard
+            let on =
+                try made.version.flatMap { try rulesets.branch(of: made.name, version: $0) } ?? RulesetStore.standard
             guard ruleset.map({ $0 == made.name }) ?? true, branch.map({ $0 == on }) ?? true else { return nil }
             return Components.Schemas.Trial(
-                job: job.id, recipe: job.recipe, ruleset: made.name, version: made.version, branch: on,
-                binding: stored.binding, profile: stored.recipe.output.profile,
-                result: try job.result.map { try Mapping.transcode($0) }, createdAt: job.createdAt
+                job: job.id,
+                recipe: job.recipe,
+                ruleset: made.name,
+                version: made.version,
+                branch: on,
+                binding: stored.binding,
+                profile: stored.recipe.output.profile,
+                result: try job.result.map { try Mapping.transcode($0) },
+                createdAt: job.createdAt
             )
         }
     }
@@ -69,7 +77,11 @@ package struct TrialOperatorController {
     @Operation
     @ErrorResponse(NoSuchJob.self, .notFound)
     @ErrorResponse(WrongState.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
-    @ErrorResponse(PlacementFetchError.self, .badGateway, { Components.Schemas.Problem(detail: $0.localizedDescription) })
+    @ErrorResponse(
+        PlacementFetchError.self,
+        .badGateway,
+        { Components.Schemas.Problem(detail: $0.localizedDescription) }
+    )
     package func fetchTrial(@Path id: String) async throws -> Components.Schemas.Job {
         try Mapping.transcode(try await service.fetchTrial(id))
     }

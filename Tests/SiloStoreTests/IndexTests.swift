@@ -6,33 +6,72 @@ import SiloLibrary
 import SmdKit
 import SmdSidecar
 import Testing
+
 @testable import SiloStore
 
 struct IndexTests {
     static let series: Container = {
-        var series = Container(id: ContainerID("0000000000000001")!, type: .series, title: Title("Doctor Who")!, year: 1963, yearInTitle: true, externalRefs: [ExternalRef(provider: .tvdb, value: "76107")])
-        series.sequences = [Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s13")!, container: season.id))])]
+        var series = Container(
+            id: ContainerID("0000000000000001")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            year: 1963,
+            yearInTitle: true,
+            externalRefs: [ExternalRef(provider: .tvdb, value: "76107")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s13")!, container: season.id))])
+        ]
         return series
     }()
     static let season: Container = {
         var season = Container(id: ContainerID("0000000000000002")!, type: .season, title: Title("Season 13")!)
-        season.sequences = [Sequence(id: "stories", items: [.child(Entry.Child(id: ItemID("pyramids")!, container: serial.id))])]
+        season.sequences = [
+            Sequence(id: "stories", items: [.child(Entry.Child(id: ItemID("pyramids")!, container: serial.id))])
+        ]
         return season
     }()
     static let serial: Container = {
-        var serial = Container(id: ContainerID("0000000000000003")!, type: .serial, typeLabel: "Story", title: Title("Pyramids of Mars")!)
+        var serial = Container(
+            id: ContainerID("0000000000000003")!,
+            type: .serial,
+            typeLabel: "Story",
+            title: Title("Pyramids of Mars")!
+        )
         serial.alternatives = [Alternative(id: "broadcast", sequence: "parts", title: "Broadcast version")]
         serial.defaultAlternative = "broadcast"
-        serial.sequences = [Sequence(id: "parts", items: [
-            .leaf(Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One", externalRefs: [ExternalRef(provider: .tvdb, value: "1")])),
-            .leaf(Entry.Leaf(id: ItemID("part2")!, type: .episode, title: "Part Two")),
-        ])]
+        serial.sequences = [
+            Sequence(
+                id: "parts",
+                items: [
+                    .leaf(
+                        Entry.Leaf(
+                            id: ItemID("part1")!,
+                            type: .episode,
+                            title: "Part One",
+                            externalRefs: [ExternalRef(provider: .tvdb, value: "1")]
+                        )
+                    ),
+                    .leaf(Entry.Leaf(id: ItemID("part2")!, type: .episode, title: "Part Two")),
+                ]
+            )
+        ]
         serial.extras = [.leaf(Entry.Leaf(id: ItemID("now-and-then")!, type: .featurette, title: "Now and Then"))]
         return serial
     }()
     static let unlisted: Container = {
-        var behind = Container(id: ContainerID("0000000000000004")!, type: .series, title: Title("Behind the Sofa")!, listed: false)
-        behind.sequences = [Sequence(id: "all", items: [.leaf(Entry.Leaf(id: ItemID("ep1")!, type: .episode, title: "Pyramids of Mars"))])]
+        var behind = Container(
+            id: ContainerID("0000000000000004")!,
+            type: .series,
+            title: Title("Behind the Sofa")!,
+            listed: false
+        )
+        behind.sequences = [
+            Sequence(
+                id: "all",
+                items: [.leaf(Entry.Leaf(id: ItemID("ep1")!, type: .episode, title: "Pyramids of Mars"))]
+            )
+        ]
         return behind
     }()
 
@@ -44,10 +83,25 @@ struct IndexTests {
             library = LibraryConfig(id: "main", root: root.appendingPathComponent("Library"))
             try FileManager.default.createDirectory(at: library.root, withIntermediateDirectories: true)
         }
-        func place(_ lineage: [Container], item: String, profile: String? = nil, into library: LibraryConfig? = nil) throws {
+        func place(
+            _ lineage: [Container],
+            item: String,
+            profile: String? = nil,
+            into library: LibraryConfig? = nil
+        ) throws {
             let source = root.appendingPathComponent("\(UUID().uuidString).mkv")
             try Data("video".utf8).write(to: source)
-            try Placer.apply(try Placer.compute(PlacementRequest(library: (library ?? self.library).root, lineage: lineage, item: item, presentation: Presentation(profile: profile, file: ""), source: source)))
+            try Placer.apply(
+                try Placer.compute(
+                    PlacementRequest(
+                        library: (library ?? self.library).root,
+                        lineage: lineage,
+                        item: item,
+                        presentation: Presentation(profile: profile, file: ""),
+                        source: source
+                    )
+                )
+            )
         }
         func remove() { try? FileManager.default.removeItem(at: root) }
     }
@@ -79,18 +133,27 @@ struct IndexTests {
         #expect(try index.items(of: Self.serial.id, in: "main").map(\.isExtra) == [false, false, true])
 
         let presentations = try index.presentations(of: Self.serial.id, in: "main")
-        #expect(presentations.map(\.path) == [
-            "Doctor Who (1963)/Season 13/Pyramids of Mars/extras/Now and Then.mkv",
-            "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One.mkv",
-            "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One - mobile.mkv",
-        ])
+        #expect(
+            presentations.map(\.path) == [
+                "Doctor Who (1963)/Season 13/Pyramids of Mars/extras/Now and Then.mkv",
+                "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One.mkv",
+                "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One - mobile.mkv",
+            ]
+        )
         let mobile = try #require(presentations.first { $0.profile == "mobile" })
         #expect(try index.presentation(mobile.id) == mobile)
         #expect(mobile.id == IndexedPresentation.id(library: "main", path: mobile.path))
 
         #expect(try index.lookup(provider: .tvdb, value: "76107").map(\.id) == [Self.series.id.value])
-        #expect(try index.lookup(provider: .tvdb, value: "1").map(\.id) == [Self.serial.id.value], "an item's reference names its container")
-        #expect(try index.search("pyramids").map { "\($0.container)/\($0.item ?? "-")" } == ["0000000000000003/-", "0000000000000004/ep1"])
+        #expect(
+            try index.lookup(provider: .tvdb, value: "1").map(\.id) == [Self.serial.id.value],
+            "an item's reference names its container"
+        )
+        #expect(
+            try index.search("pyramids").map { "\($0.container)/\($0.item ?? "-")" } == [
+                "0000000000000003/-", "0000000000000004/ep1",
+            ]
+        )
         #expect(try index.search("part").map(\.title) == ["Part One", "Part Two"])
     }
 
@@ -115,7 +178,12 @@ struct IndexTests {
 
         // Or the placement tells the index directly.
         try sandbox.place([Self.series, Self.season, Self.serial], item: "now-and-then")
-        let refreshed = try Indexer.refresh(folder: "Doctor Who (1963)/Season 13/Pyramids of Mars", parent: Self.season.id, in: sandbox.library, index: index)
+        let refreshed = try Indexer.refresh(
+            folder: "Doctor Who (1963)/Season 13/Pyramids of Mars",
+            parent: Self.season.id,
+            in: sandbox.library,
+            index: index
+        )
         #expect(refreshed.read == 1)
         #expect(try index.presentations(of: Self.serial.id, in: "main").count == 3)
 
@@ -124,10 +192,12 @@ struct IndexTests {
         try FileManager.default.removeItem(at: seasonFolder.appendingPathComponent("container.smd"))
         let gone = try Indexer.scan(sandbox.library, into: index)
         #expect(gone.removed == 2)
-        #expect(gone.findings.map(\.description) == [
-            "error: Doctor Who (1963)/container.smd: child 0000000000000002 is at \"Season 13/container.smd\", which does not exist",
-            "warning: Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd: a sidecar nothing references",
-        ])
+        #expect(
+            gone.findings.map(\.description) == [
+                "error: Doctor Who (1963)/container.smd: child 0000000000000002 is at \"Season 13/container.smd\", which does not exist",
+                "warning: Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd: a sidecar nothing references",
+            ]
+        )
         #expect(try index.count() == (containers: 1, presentations: 0))
     }
 
@@ -161,8 +231,16 @@ struct IndexTests {
     @Test func aContainerFiledTwiceInALibraryIsReportedOnce() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }
-        var film = Container(id: ContainerID("0000000000000005")!, type: .movie, title: Title("Alien")!, year: 1979, yearInTitle: true)
-        film.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: "Alien"))])]
+        var film = Container(
+            id: ContainerID("0000000000000005")!,
+            type: .movie,
+            title: Title("Alien")!,
+            year: 1979,
+            yearInTitle: true
+        )
+        film.sequences = [
+            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: "Alien"))])
+        ]
         func file(_ folder: String) throws {
             let url = sandbox.library.root.appendingPathComponent(folder)
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -174,14 +252,26 @@ struct IndexTests {
 
         try file("Alien")
         let report = try Indexer.scan(sandbox.library, into: index)
-        #expect(report.findings.map(\.description) == [
-            "warning: Alien/container.smd: folder \"Alien\" is not the name the layout would give it, \"Alien (1979)\"",
-            "error: Alien (1979)/container.smd: container 0000000000000005 is already at \"Alien\"",
-        ])
+        #expect(
+            report.findings.map(\.description) == [
+                "warning: Alien/container.smd: folder \"Alien\" is not the name the layout would give it, \"Alien (1979)\"",
+                "error: Alien (1979)/container.smd: container 0000000000000005 is already at \"Alien\"",
+            ]
+        )
         #expect(try index.containers(film.id).map(\.folder) == ["Alien"])
-        #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == report.findings.map(\.description), "the walker says the same")
-        #expect(try Indexer.scan(sandbox.library, into: index).findings == report.findings, "and so does every walk after")
-        #expect(try Indexer.refresh(folder: "Alien (1979)", parent: nil, in: sandbox.library, index: index).findings == report.findings.filter { $0.severity == .error }, "and a refresh")
+        #expect(
+            LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == report.findings.map(\.description),
+            "the walker says the same"
+        )
+        #expect(
+            try Indexer.scan(sandbox.library, into: index).findings == report.findings,
+            "and so does every walk after"
+        )
+        #expect(
+            try Indexer.refresh(folder: "Alien (1979)", parent: nil, in: sandbox.library, index: index).findings
+                == report.findings.filter { $0.severity == .error },
+            "and a refresh"
+        )
         #expect(try index.containers(film.id).map(\.folder) == ["Alien"])
 
         try FileManager.default.removeItem(at: sandbox.library.root.appendingPathComponent("Alien"))
@@ -195,8 +285,16 @@ struct IndexTests {
     @Test func aFolderNotNamedAsTheLayoutWouldNameItIsAWarning() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }
-        var film = Container(id: ContainerID("0000000000000005")!, type: .movie, title: Title("Alien")!, year: 1997, yearInTitle: true)
-        film.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: "Alien"))])]
+        var film = Container(
+            id: ContainerID("0000000000000005")!,
+            type: .movie,
+            title: Title("Alien")!,
+            year: 1997,
+            yearInTitle: true
+        )
+        film.sequences = [
+            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: "Alien"))])
+        ]
         try sandbox.place([film], item: "feature")
         let index = try Index(at: nil)
         #expect(try Indexer.scan(sandbox.library, into: index).findings.isEmpty)
@@ -204,9 +302,13 @@ struct IndexTests {
         let sidecar = sandbox.library.root.appendingPathComponent("Alien (1997)/container.smd")
         film.year = 1979
         try SidecarFile.data(settingContainer: film, in: try Data(contentsOf: sidecar)).write(to: sidecar)
-        let warning = "warning: Alien (1997)/container.smd: folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""
+        let warning =
+            "warning: Alien (1997)/container.smd: folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""
         #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning])
-        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning], "an unchanged sidecar too")
+        #expect(
+            try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning],
+            "an unchanged sidecar too"
+        )
         #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == [warning])
         #expect(try index.containers(film.id).map(\.folder) == ["Alien (1997)"], "the folder is where it was")
     }

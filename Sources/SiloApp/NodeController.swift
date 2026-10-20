@@ -23,7 +23,9 @@ package struct NodeController {
 
     @Operation
     @ErrorResponse(WrongSecret.self, .forbidden)
-    package func registerNode(@JSONBody body: Components.Schemas.NodeRegistration) async throws -> Components.Schemas.Node {
+    package func registerNode(
+        @JSONBody body: Components.Schemas.NodeRegistration
+    ) async throws -> Components.Schemas.Node {
         let registration: NodeRegistration = try Mapping.transcode(body)
         return try Mapping.transcode(try service.register(registration))
     }
@@ -31,7 +33,10 @@ package struct NodeController {
     @Operation
     @ErrorResponse(NoSuchNode.self, .notFound)
     @ErrorResponse(WrongSecret.self, .forbidden)
-    package func nodeStatus(@Path id: String, @Header("x-silo-node-secret") secret: String) async throws -> Components.Schemas.NodeStatus {
+    package func nodeStatus(
+        @Path id: String,
+        @Header("x-silo-node-secret") secret: String
+    ) async throws -> Components.Schemas.NodeStatus {
         try Mapping.transcode(try service.status(id, secret: secret))
     }
 }

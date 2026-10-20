@@ -4,7 +4,9 @@
 import Foundation
 import SiloKit
 import SmdKit
+import Synchronization
 import Testing
+
 @testable import Encoder
 
 /// The one test that runs the real tools, on a sample the tools make: two seconds of test pattern
@@ -39,19 +41,42 @@ struct IntegrationTests {
         #expect(facts.audio.map(\.lossless) == [true, true])
         #expect(facts.audio.map(\.role) == [.main, .commentary])
 
-        let ruleset = Ruleset(name: "test", rules: [
-            Rule(id: "small-extras", scope: .video,
-                 conditions: [Condition(.kind, .equal("featurette")), Condition(.videoWidth, .less(576))],
-                 action: .encode(EncodeSettings(codec: "libx264", preset: "ultrafast", crf: 30, pixelFormat: "yuv420p", filters: [.deinterlace(.auto)]))),
-            Rule(id: "lossless-main", scope: .audio,
-                 conditions: [Condition(.audioLossless, .equal("true")), Condition(.audioRole, .notEqual("commentary"))],
-                 action: .encode(EncodeSettings(codec: "flac"))),
-            Rule(id: "commentary", scope: .audio, conditions: [Condition(.audioRole, .equal("commentary"))],
-                 action: .encode(EncodeSettings(codec: "aac", bitrate: "96k", channels: 2))),
-            Rule(scope: .video, action: .copy),
-            Rule(scope: .audio, action: .copy),
-            Rule(scope: .subtitle, action: .copy),
-        ])
+        let ruleset = Ruleset(
+            name: "test",
+            rules: [
+                Rule(
+                    id: "small-extras",
+                    scope: .video,
+                    conditions: [Condition(.kind, .equal("featurette")), Condition(.videoWidth, .less(576))],
+                    action: .encode(
+                        EncodeSettings(
+                            codec: "libx264",
+                            preset: "ultrafast",
+                            crf: 30,
+                            pixelFormat: "yuv420p",
+                            filters: [.deinterlace(.auto)]
+                        )
+                    )
+                ),
+                Rule(
+                    id: "lossless-main",
+                    scope: .audio,
+                    conditions: [
+                        Condition(.audioLossless, .equal("true")), Condition(.audioRole, .notEqual("commentary")),
+                    ],
+                    action: .encode(EncodeSettings(codec: "flac"))
+                ),
+                Rule(
+                    id: "commentary",
+                    scope: .audio,
+                    conditions: [Condition(.audioRole, .equal("commentary"))],
+                    action: .encode(EncodeSettings(codec: "aac", bitrate: "96k", channels: 2))
+                ),
+                Rule(scope: .video, action: .copy),
+                Rule(scope: .audio, action: .copy),
+                Rule(scope: .subtitle, action: .copy),
+            ]
+        )
         let mappings = [TrackMapping(feature: "commentary1", audio: 2)]
         let recipe = try RecipeResolver.resolve(facts, with: ruleset, mappings: mappings)
         #expect(recipe.decisions.map(\.rule) == ["small-extras", "lossless-main", "commentary"])
@@ -71,7 +96,9 @@ struct IntegrationTests {
     @Test func aFailureCarriesWhatFFmpegSaid() async throws {
         let ffmpeg = try FFmpeg()
         await #expect(throws: ToolError.self) {
-            try await ffmpeg.run(["-nostdin", "-hide_banner", "-loglevel", "error", "-i", "/nonexistent/file.mkv", "-f", "null", "-"])
+            try await ffmpeg.run([
+                "-nostdin", "-hide_banner", "-loglevel", "error", "-i", "/nonexistent/file.mkv", "-f", "null", "-",
+            ])
         }
     }
 
@@ -88,5 +115,3 @@ final class Reports: Sendable {
     var count: Int { reports.withLock { $0.count } }
     var last: EncodeProgress? { reports.withLock { $0.last } }
 }
-
-import Synchronization

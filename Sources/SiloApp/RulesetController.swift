@@ -5,8 +5,8 @@ import Foundation
 import OpenAPIRuntime  // swiftlint:disable:this unused_import
 import SiloAPI
 import SiloKit
-import SmdKit
 import SiloStore
+import SmdKit
 import Wire
 import WireMVC
 import WireOpenAPI
@@ -34,18 +34,28 @@ package struct RulesetController {
             let made = checks.made(by: name)
             let versions = try store.versions(of: name).map { version in
                 Components.Schemas.RulesetVersion(
-                    version: version, branch: try store.branch(of: name, version: version) ?? RulesetStore.standard,
-                    parent: try store.parent(of: name, version: version), presentations: made[version] ?? 0
+                    version: version,
+                    branch: try store.branch(of: name, version: version) ?? RulesetStore.standard,
+                    parent: try store.parent(of: name, version: version),
+                    presentations: made[version] ?? 0
                 )
             }
-            return Components.Schemas.RulesetSummary(name: name, version: latest, standard: try store.head(of: name, branch: RulesetStore.standard), versions: versions)
+            return Components.Schemas.RulesetSummary(
+                name: name,
+                version: latest,
+                standard: try store.head(of: name, branch: RulesetStore.standard),
+                versions: versions
+            )
         }
     }
 
     /// A document read as a store would read it, and nothing stored.
     @Operation
     @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    package func checkRuleset(@Path name: String, @JSONBody body: Components.Schemas.RulesetDocument) async throws -> Components.Schemas.RulesetReading {
+    package func checkRuleset(
+        @Path name: String,
+        @JSONBody body: Components.Schemas.RulesetDocument
+    ) async throws -> Components.Schemas.RulesetReading {
         try Mapping.reading(try read(body.document, as: name))
     }
 
@@ -53,7 +63,10 @@ package struct RulesetController {
     @Operation
     @ErrorResponse(NoSuchRuleset.self, .notFound)
     @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    package func draftImpact(@Path name: String, @JSONBody body: Components.Schemas.DraftImpactRequest) async throws -> [Components.Schemas.OutOfDatePresentation] {
+    package func draftImpact(
+        @Path name: String,
+        @JSONBody body: Components.Schemas.DraftImpactRequest
+    ) async throws -> [Components.Schemas.OutOfDatePresentation] {
         let draft = try read(body.document, as: name)
         return try checks.impact(ofDraft: draft, basedOn: body.basedOn, of: name).map(Mapping.outOfDate)
     }
@@ -70,7 +83,10 @@ package struct RulesetController {
 
     @Operation
     @ErrorResponse(NoSuchRuleset.self, .notFound)
-    package func branchImpact(@Path name: String, @Path branch: String) async throws -> [Components.Schemas.OutOfDatePresentation] {
+    package func branchImpact(
+        @Path name: String,
+        @Path branch: String
+    ) async throws -> [Components.Schemas.OutOfDatePresentation] {
         try checks.impact(of: branch, of: name).map(Mapping.outOfDate)
     }
 
@@ -84,12 +100,16 @@ package struct RulesetController {
 
     @Operation
     @ErrorResponse(NoSuchRuleset.self, .notFound)
-    package func getRuleset(@Path name: String, @Query version: Int?) async throws -> Components.Schemas.RulesetDocument {
+    package func getRuleset(@Path name: String, @Query version: Int?) async throws -> Components.Schemas.RulesetDocument
+    {
         guard let (found, data) = try store.document(named: name, version: version) else { throw NoSuchRuleset() }
         guard let ruleset = try store.ruleset(named: name, version: found) else { throw NoSuchRuleset() }
         return Components.Schemas.RulesetDocument(
-            name: name, version: found, branch: try store.branch(of: name, version: found),
-            document: String(decoding: data, as: UTF8.self), reading: try Mapping.reading(ruleset)
+            name: name,
+            version: found,
+            branch: try store.branch(of: name, version: found),
+            document: String(decoding: data, as: UTF8.self),
+            reading: try Mapping.reading(ruleset)
         )
     }
 
@@ -99,7 +119,11 @@ package struct RulesetController {
     @ErrorResponse(NoSuchRuleset.self, .notFound)
     @ErrorResponse(BadBinding.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
-    package func resolveRecipe(@Path name: String, @Query version: Int?, @JSONBody body: Components.Schemas.ResolveRequest) async throws -> [Components.Schemas.Recipe] {
+    package func resolveRecipe(
+        @Path name: String,
+        @Query version: Int?,
+        @JSONBody body: Components.Schemas.ResolveRequest
+    ) async throws -> [Components.Schemas.Recipe] {
         guard let ruleset = try store.ruleset(named: name, version: version) else { throw NoSuchRuleset() }
         var specs: [String: InputSpec] = [:]
         var segments: [Binding.Segment] = []
@@ -125,13 +149,20 @@ package struct RulesetController {
         let mappings: [TrackMapping] = try Mapping.transcode(body.mappings ?? [])
         return try ruleset.outputs.map { output in
             let facts = SourceFacts(
-                input: joined.spec, roles: roles, kind: body.kind.flatMap(EntryType.init(rawValue:)),
-                extra: body.extra, profile: output.profile, duration: joined.duration
+                input: joined.spec,
+                roles: roles,
+                kind: body.kind.flatMap(EntryType.init(rawValue:)),
+                extra: body.extra,
+                profile: output.profile,
+                duration: joined.duration
             )
             do {
                 return try Mapping.transcode(try RecipeResolver.resolve(facts, with: ruleset, mappings: mappings))
             } catch let error as ResolutionError {
-                throw Unresolvable(reason: "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)")
+                throw Unresolvable(
+                    reason:
+                        "\(output.profile.map { "the \($0) output" } ?? "the unqualified output"): \(error.description)"
+                )
             }
         }
     }

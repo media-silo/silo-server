@@ -35,11 +35,23 @@ package final class EmbeddedNode: Service, Sendable {
 
     @Inject
     package convenience init(config: SiloConfig, jobs: JobService, settings: SettingsStore) {
-        self.init(config: config, jobs: jobs, settings: settings, pollInterval: .seconds(5), progressInterval: .seconds(5))
+        self.init(
+            config: config,
+            jobs: jobs,
+            settings: settings,
+            pollInterval: .seconds(5),
+            progressInterval: .seconds(5)
+        )
     }
 
     /// The timing seams, for tests.
-    package init(config: SiloConfig, jobs: JobService, settings: SettingsStore, pollInterval: Duration, progressInterval: Duration) {
+    package init(
+        config: SiloConfig,
+        jobs: JobService,
+        settings: SettingsStore,
+        pollInterval: Duration,
+        progressInterval: Duration
+    ) {
         self.config = config
         self.jobs = jobs
         self.settings = settings
@@ -73,7 +85,9 @@ package final class EmbeddedNode: Service, Sendable {
                 continue
             }
             if !running {
-                logger.info("embedded node running; work in \(config.stateDirectory.appendingPathComponent("work").path)")
+                logger.info(
+                    "embedded node running; work in \(config.stateDirectory.appendingPathComponent("work").path)"
+                )
                 running = true
             }
             do {
@@ -108,7 +122,9 @@ package final class EmbeddedNode: Service, Sendable {
             ) { _, file in
                 FileRef(holder: "embedded", url: file, path: file.path, secret: "")
             },
-            ffmpeg: ffmpeg, ffprobe: ffprobe, logger: logger
+            ffmpeg: ffmpeg,
+            ffprobe: ffprobe,
+            logger: logger
         )
         worker.withLock { $0 = made }
         return made

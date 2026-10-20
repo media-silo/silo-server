@@ -47,12 +47,15 @@ public final class SettingsStore: Sendable {
     /// Opens `settings.json` in `folder`; `defaultName` is the name a first boot fixes.
     public static func open(in folder: URL, defaultName: String) throws -> (SettingsStore, ConfigurationFileReport) {
         let file = folder.appendingPathComponent(fileName)
-        let (values, report) = try ConfigurationFile.open(file, defaults: [
-            "name": { .string(defaultName) },
-            "libraries": { .array([]) },
-            "embeddedNode": { .bool(false) },
-            "advertise": { .bool(true) },
-        ])
+        let (values, report) = try ConfigurationFile.open(
+            file,
+            defaults: [
+                "name": { .string(defaultName) },
+                "libraries": { .array([]) },
+                "embeddedNode": { .bool(false) },
+                "advertise": { .bool(true) },
+            ]
+        )
         return (SettingsStore(file: file, values: values, settings: try settings(from: values, file: file)), report)
     }
 
@@ -70,11 +73,13 @@ public final class SettingsStore: Sendable {
             try change(&settings)
             var values = state.values
             values["name"] = .string(settings.name)
-            values["libraries"] = .array(settings.libraries.map { library in
-                var entry: [String: JSONValue] = ["id": .string(library.id), "path": .string(library.root.path)]
-                if let ruleset = library.ruleset { entry["ruleset"] = .string(ruleset) }
-                return .object(entry)
-            })
+            values["libraries"] = .array(
+                settings.libraries.map { library in
+                    var entry: [String: JSONValue] = ["id": .string(library.id), "path": .string(library.root.path)]
+                    if let ruleset = library.ruleset { entry["ruleset"] = .string(ruleset) }
+                    return .object(entry)
+                }
+            )
             values["embeddedNode"] = .bool(settings.embeddedNode)
             values["advertise"] = .bool(settings.advertise)
             if file.path != "/dev/null" {
@@ -90,14 +95,21 @@ public final class SettingsStore: Sendable {
             throw ConfigurationFile.wrongKind("libraries", "a list of libraries, each an id and a path", file)
         }
         let libraries = try entries.map { entry -> LibraryConfig in
-            guard case .object(let library) = entry, case .string(let id)? = library["id"], case .string(let path)? = library["path"], !id.isEmpty, !path.isEmpty else {
+            guard case .object(let library) = entry, case .string(let id)? = library["id"],
+                case .string(let path)? = library["path"], !id.isEmpty, !path.isEmpty
+            else {
                 throw ConfigurationFile.wrongKind("libraries", "a list of libraries, each an id and a path", file)
             }
             let ruleset: String?
             switch library["ruleset"] {
             case nil, .null?: ruleset = nil
             case .string(let name)? where !name.isEmpty: ruleset = name
-            default: throw ConfigurationFile.wrongKind("libraries", "a list of libraries, each an id, a path and optionally the name of its ruleset", file)
+            default:
+                throw ConfigurationFile.wrongKind(
+                    "libraries",
+                    "a list of libraries, each an id, a path and optionally the name of its ruleset",
+                    file
+                )
             }
             return LibraryConfig(id: id, root: URL(fileURLWithPath: path, isDirectory: true), ruleset: ruleset)
         }

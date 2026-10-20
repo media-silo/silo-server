@@ -38,8 +38,13 @@ package struct EditRefused: Error {
 /// `Containers.md`, *The edit*.
 enum ContainerEditor {
     static func edit(
-        _ id: ContainerID, in library: LibraryConfig, document: String, basedOn: String, dryRun: Bool,
-        libraries: Libraries, index: Index
+        _ id: ContainerID,
+        in library: LibraryConfig,
+        document: String,
+        basedOn: String,
+        dryRun: Bool,
+        libraries: Libraries,
+        index: Index
     ) async throws -> ContainerEditOutcome {
         let container: Container
         do {
@@ -65,7 +70,12 @@ enum ContainerEditor {
                 // A sidecar changed behind the index's back is read now, so the editor's next read
                 // finds the digest this answer names.
                 if held != row.document {
-                    _ = try Indexer.refresh(folder: row.folder, parent: row.parent.flatMap(ContainerID.init), in: library, index: index)
+                    _ = try Indexer.refresh(
+                        folder: row.folder,
+                        parent: row.parent.flatMap(ContainerID.init),
+                        in: library,
+                        index: index
+                    )
                 }
                 throw EditConflict(reason: "the sidecar is now \(digest), not \(basedOn)")
             }
@@ -86,15 +96,29 @@ enum ContainerEditor {
             findings += try taken(from: SidecarFile.sidecar(from: held), by: container, in: library, index: index).map {
                 Finding(.error, path: path, $0)
             }
-            if let folder = LibraryLayout.folderFinding(folder: row.folder, displayTitle: container.displayTitle, id: id) {
+            if let folder = LibraryLayout.folderFinding(
+                folder: row.folder,
+                displayTitle: container.displayTitle,
+                id: id
+            ) {
                 findings.append(folder)
             }
-            var outcome = ContainerEditOutcome(applied: false, sidecar: written, digest: IndexedContainer.digest(of: written), findings: findings)
+            var outcome = ContainerEditOutcome(
+                applied: false,
+                sidecar: written,
+                digest: IndexedContainer.digest(of: written),
+                findings: findings
+            )
             guard outcome.errors.isEmpty else { throw EditRefused(outcome: outcome) }
             guard !dryRun else { return outcome }
 
             try written.write(to: url, options: .atomic)
-            _ = try Indexer.refresh(folder: row.folder, parent: row.parent.flatMap(ContainerID.init), in: library, index: index)
+            _ = try Indexer.refresh(
+                folder: row.folder,
+                parent: row.parent.flatMap(ContainerID.init),
+                in: library,
+                index: index
+            )
             outcome.applied = true
             return outcome
         }
@@ -104,7 +128,12 @@ enum ContainerEditor {
     /// declares, of which the library holds presentations or whose container it holds a sidecar for.
     /// What the validator finds of the result — a presentation naming an alternative that is gone, a
     /// track for a feature that is gone — it reports itself.
-    private static func taken(from held: Sidecar, by container: Container, in library: LibraryConfig, index: Index) throws -> [String] {
+    private static func taken(
+        from held: Sidecar,
+        by container: Container,
+        in library: LibraryConfig,
+        index: Index
+    ) throws -> [String] {
         let declared = Set((container.sequences.flatMap(\.items) + container.extras).compactMap { $0.id?.value })
         var reasons: [String] = []
         for entry in held.container.sequences.flatMap(\.items) + held.container.extras {

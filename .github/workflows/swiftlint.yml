@@ -1,0 +1,24 @@
+name: swiftlint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  SwiftLint:
+    name: SwiftLint 0.63.2
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      # The same SwiftLint, and the same `.swiftlint.yml`, as swift-wire's gate. Lint reads source
+      # alone, so it needs no toolchain; the `unused_import` analyzer rule needs the compiler's own
+      # invocations and runs in the build job instead, from that job's build log.
+      - name: Install SwiftLint
+        run: |
+          curl -sL https://github.com/realm/SwiftLint/releases/download/0.63.2/swiftlint_linux_amd64.zip -o swiftlint.zip
+          unzip -o swiftlint.zip -d /usr/local/bin
+          chmod +x /usr/local/bin/swiftlint
+      - name: SwiftLint
+        run: swiftlint lint --quiet

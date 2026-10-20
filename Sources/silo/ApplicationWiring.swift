@@ -19,7 +19,12 @@ package enum ApplicationWiring {
     /// Every library walked before the first request is answered. One whose folder is missing is
     /// unavailable, and the boot goes on without it.
     @Provides
-    package static func libraries(config: SiloConfig, settings: SettingsStore, index: Index, checks: CheckSignal) throws -> Libraries {
+    package static func libraries(
+        config: SiloConfig,
+        settings: SettingsStore,
+        index: Index,
+        checks: CheckSignal
+    ) throws -> Libraries {
         let libraries = Libraries(config: config, settings: settings, index: index, checks: checks)
         try libraries.walkAtBoot()
         return libraries
@@ -77,16 +82,22 @@ package enum ApplicationWiring {
     /// a credential, so a reset never returns the silo to bootstrap.
     @Provides
     package static func operatorCredential(config: SiloConfig) throws -> OperatorCredential {
-        let credential = OperatorCredential(file: config.stateDirectory.appendingPathComponent("operator-credential.json"))
+        let credential = OperatorCredential(
+            file: config.stateDirectory.appendingPathComponent("operator-credential.json")
+        )
         let reset = try processOperatorCredentialReset(
             from: config.stateDirectory.appendingPathComponent("operator-credential.reset"),
             into: credential
         )
         switch reset {
         case .rotated:
-            Logger(label: "silo.credential").warning("operator credential rotated from operator-credential.reset; the file is gone")
+            Logger(label: "silo.credential").warning(
+                "operator credential rotated from operator-credential.reset; the file is gone"
+            )
         case .ignored:
-            Logger(label: "silo.credential").warning("operator-credential.reset was empty — removed, the credential is unchanged")
+            Logger(label: "silo.credential").warning(
+                "operator-credential.reset was empty — removed, the credential is unchanged"
+            )
         case nil:
             break
         }

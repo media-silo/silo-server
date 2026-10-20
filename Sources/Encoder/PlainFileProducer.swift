@@ -15,7 +15,9 @@ extension InputSpec {
         let chapters = probe.chapters.enumerated()
             .filter { position, chapter in position == 0 || chapter.start > starts[position - 1] }
             .enumerated()
-            .map { number, element in Chapter(index: number + 1, start: element.element.start, title: element.element.title) }
+            .map { number, element in
+                Chapter(index: number + 1, start: element.element.start, title: element.element.title)
+            }
         self.init(
             duration: probe.duration,
             chapters: chapters,
@@ -26,12 +28,13 @@ extension InputSpec {
 
 extension InputSpec.Stream {
     init(probed stream: ProbedStream) {
-        let kind: Kind = switch stream.kind {
-        case .video: .video
-        case .audio: .audio
-        case .subtitle: .subtitle
-        case .data, .attachment, .other: .other
-        }
+        let kind: Kind =
+            switch stream.kind {
+            case .video: .video
+            case .audio: .audio
+            case .subtitle: .subtitle
+            case .data, .attachment, .other: .other
+            }
         self.init(
             index: stream.absoluteIndex,
             kind: kind,
@@ -45,7 +48,9 @@ extension InputSpec.Stream {
             bitDepth: kind == .video ? stream.bitsPerRawSample : nil,
             channels: kind == .audio ? stream.channels ?? 0 : nil,
             layout: kind == .audio ? stream.channelLayout : nil,
-            language: stream.language.flatMap(LanguageTag.init(canonicalizing:)).flatMap { $0.description == "und" ? nil : $0 },
+            language: stream.language.flatMap(LanguageTag.init(canonicalizing:)).flatMap {
+                $0.description == "und" ? nil : $0
+            },
             title: stream.title,
             marks: Self.marks(stream.dispositions)
         )
@@ -59,7 +64,9 @@ extension InputSpec.Stream {
         if dispositions.contains("forced") { marks.insert(.forced) }
         if dispositions.contains("hearing_impaired") { marks.insert(.hearingImpaired) }
         if dispositions.contains("comment") { marks.insert(.commentary) }
-        if dispositions.contains("visual_impaired") || dispositions.contains("descriptions") { marks.insert(.descriptive) }
+        if dispositions.contains("visual_impaired") || dispositions.contains("descriptions") {
+            marks.insert(.descriptive)
+        }
         return marks
     }
 }

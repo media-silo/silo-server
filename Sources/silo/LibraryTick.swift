@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-import Logging
 import ServiceLifecycle
 import SiloApp
 import Wire

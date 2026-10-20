@@ -3,6 +3,7 @@
 
 import Foundation
 import Testing
+
 @testable import SiloKit
 
 struct StateDirectoryTests {
@@ -12,7 +13,13 @@ struct StateDirectoryTests {
         on platform: StateDirectory.Platform,
         for owner: StateDirectory.Owner = .silo
     ) -> StateDirectory {
-        StateDirectory.resolve(for: owner, environment: environment, isRoot: root, home: "/home/ada", platform: platform)
+        StateDirectory.resolve(
+            for: owner,
+            environment: environment,
+            isRoot: root,
+            home: "/home/ada",
+            platform: platform
+        )
     }
 
     @Test(arguments: [
@@ -60,7 +67,9 @@ struct StateDirectoryTests {
     @Test func theNodeDoesNotReadTheSilosVariable() {
         let environment = ["SILO_STATE_DIR": "/var/lib/silo"]
         #expect(resolve(environment, root: true, on: .linux, for: .node).url.path == "/var/lib/silo-node")
-        #expect(resolve(["SILO_NODE_STATE_DIR": "/srv/node"], root: true, on: .linux, for: .node).url.path == "/srv/node")
+        #expect(
+            resolve(["SILO_NODE_STATE_DIR": "/srv/node"], root: true, on: .linux, for: .node).url.path == "/srv/node"
+        )
     }
 
     @Test func anAbsoluteXDGStateHomeIsHonouredAndARelativeOneIgnored() {

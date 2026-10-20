@@ -5,7 +5,6 @@ import Foundation
 import OpenAPIRuntime  // swiftlint:disable:this unused_import
 import SiloAPI
 import SiloKit
-import SiloLibrary
 import Wire
 import WireMVC
 import WireOpenAPI
@@ -75,7 +74,11 @@ package struct JobOperatorController {
     @ErrorResponse(WrongState.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
     @ErrorResponse(PlacementRefusedError.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(TrialNeverPlaced.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
-    @ErrorResponse(PlacementFetchError.self, .badGateway, { Components.Schemas.Problem(detail: $0.localizedDescription) })
+    @ErrorResponse(
+        PlacementFetchError.self,
+        .badGateway,
+        { Components.Schemas.Problem(detail: $0.localizedDescription) }
+    )
     package func placeJob(@Path id: String) async throws -> Components.Schemas.Job {
         try Mapping.transcode(try await service.place(id))
     }
@@ -95,23 +98,34 @@ package struct JobNodeController {
     }
 
     @Operation
-    package func claimJob(@JSONBody body: Components.Schemas.ClaimRequest) async throws -> Components.Schemas.ClaimReply {
-        guard let claim = try await service.claim(node: body.node, capabilities: Set(body.capabilities)) else { return Components.Schemas.ClaimReply() }
+    package func claimJob(@JSONBody body: Components.Schemas.ClaimRequest) async throws -> Components.Schemas.ClaimReply
+    {
+        guard let claim = try await service.claim(node: body.node, capabilities: Set(body.capabilities)) else {
+            return Components.Schemas.ClaimReply()
+        }
         return try Mapping.transcode(claim)
     }
 
     @Operation
     @ErrorResponse(NoSuchJob.self, .notFound)
-    package func reportProgress(@Path id: String, @JSONBody body: Components.Schemas.Progress) async throws -> Components.Schemas.ProgressReply {
+    package func reportProgress(
+        @Path id: String,
+        @JSONBody body: Components.Schemas.Progress
+    ) async throws -> Components.Schemas.ProgressReply {
         let progress: JobProgress = try Mapping.transcode(body)
         let state = try await service.report(id, progress: progress)
-        return Components.Schemas.ProgressReply(state: Components.Schemas.JobState(rawValue: state.rawValue) ?? .pending)
+        return Components.Schemas.ProgressReply(
+            state: Components.Schemas.JobState(rawValue: state.rawValue) ?? .pending
+        )
     }
 
     @Operation
     @ErrorResponse(NoSuchJob.self, .notFound)
     @ErrorResponse(WrongState.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
-    package func completeJob(@Path id: String, @JSONBody body: Components.Schemas.CompleteRequest) async throws -> Components.Schemas.Job {
+    package func completeJob(
+        @Path id: String,
+        @JSONBody body: Components.Schemas.CompleteRequest
+    ) async throws -> Components.Schemas.Job {
         let output: FileRef = try Mapping.transcode(body.output)
         let result: EncodeResult = try Mapping.transcode(body.result)
         return try Mapping.transcode(try await service.complete(id, output: output, result: result))
@@ -120,7 +134,10 @@ package struct JobNodeController {
     @Operation
     @ErrorResponse(NoSuchJob.self, .notFound)
     @ErrorResponse(WrongState.self, .conflict, { Components.Schemas.Problem(detail: $0.description) })
-    package func failJob(@Path id: String, @JSONBody body: Components.Schemas.FailRequest) async throws -> Components.Schemas.Job {
+    package func failJob(
+        @Path id: String,
+        @JSONBody body: Components.Schemas.FailRequest
+    ) async throws -> Components.Schemas.Job {
         try Mapping.transcode(try await service.fail(id, reason: body.reason))
     }
 }

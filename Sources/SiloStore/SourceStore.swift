@@ -19,7 +19,12 @@ public final class SourceStore: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var loaded: [String: Source] = [:]
-        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let files =
+            (try? FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
         for file in files where file.pathExtension == "json" {
             if let source = try? decoder.decode(Source.self, from: try Data(contentsOf: file)) {
                 loaded[source.id] = source
@@ -46,10 +51,13 @@ public final class SourceStore: Sendable {
     /// Registers a source, or finds the one its natural key already names. A match whose input spec
     /// differs is refused, since one of the two descriptions is wrong; a match whose spec agrees
     /// takes the copy given. `created` says which happened.
-    public func register(_ input: InputSpec, key: NaturalKey?, copy: FileRef?) throws -> (source: Source, created: Bool) {
+    public func register(_ input: InputSpec, key: NaturalKey?, copy: FileRef?) throws -> (source: Source, created: Bool)
+    {
         try sources.withLock { sources -> (Source, Bool) in
             if let key, var existing = sources.values.first(where: { $0.key == key }) {
-                guard existing.input == input else { throw SourceStoreError.keyDescribedOtherwise(key: key, source: existing.id) }
+                guard existing.input == input else {
+                    throw SourceStoreError.keyDescribedOtherwise(key: key, source: existing.id)
+                }
                 if let copy {
                     existing.hold(copy)
                     sources[existing.id] = existing

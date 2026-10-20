@@ -29,6 +29,9 @@ struct PasskeyTests {
 
     @Test func theGroupingFollowsTheAlphabet() {
         var zeroes = Fixed(state: 36)
-        #expect(Passkey.mint(using: &zeroes) == "00000-00000-00000-00000-00000", "the alphabet's first symbol, grouped in fives")
+        #expect(
+            Passkey.mint(using: &zeroes) == "00000-00000-00000-00000-00000",
+            "the alphabet's first symbol, grouped in fives"
+        )
     }
 }

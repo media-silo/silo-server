@@ -16,7 +16,13 @@ public struct Source: Hashable, Sendable, Codable {
     public var copies: [FileRef]
     public var createdAt: Date
 
-    public init(id: String = UUID().uuidString.lowercased(), input: InputSpec, key: NaturalKey? = nil, copies: [FileRef] = [], createdAt: Date = .now) {
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        input: InputSpec,
+        key: NaturalKey? = nil,
+        copies: [FileRef] = [],
+        createdAt: Date = .now
+    ) {
         self.id = id
         self.input = input
         self.key = key

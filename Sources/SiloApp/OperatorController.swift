@@ -29,7 +29,14 @@ package struct OperatorController {
     private let jobs: JobService
 
     @Inject
-    package init(libraries: Libraries, index: Index, store: RulesetStore, settings: SettingsStore, checks: CheckSignal, jobs: JobService) {
+    package init(
+        libraries: Libraries,
+        index: Index,
+        store: RulesetStore,
+        settings: SettingsStore,
+        checks: CheckSignal,
+        jobs: JobService
+    ) {
         self.jobs = jobs
         self.libraries = libraries
         self.index = index
@@ -50,11 +57,15 @@ package struct OperatorController {
 
     /// What `addLibrary` would find and answer for the same body, making and writing nothing.
     @Operation
-    package func checkLibrary(@JSONBody body: Components.Schemas.NewLibrary) async throws -> Components.Schemas.LibraryCheck {
+    package func checkLibrary(
+        @JSONBody body: Components.Schemas.NewLibrary
+    ) async throws -> Components.Schemas.LibraryCheck {
         let check = libraries.check(id: body.id, path: body.path, create: body.create ?? false)
         return Components.Schemas.LibraryCheck(
             path: check.path,
-            components: check.components.map { Components.Schemas.PathComponent(path: $0.path, state: .init(rawValue: $0.state.rawValue)!) },
+            components: check.components.map {
+                Components.Schemas.PathComponent(path: $0.path, state: .init(rawValue: $0.state.rawValue)!)
+            },
             root: check.root,
             creates: check.creates,
             refusal: check.refusal.map { refusal in
@@ -86,7 +97,10 @@ package struct OperatorController {
     @Operation
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     @ErrorResponse(NoSuchRuleset.self, .notFound)
-    package func setLibraryRuleset(@Path library: String, @JSONBody body: Components.Schemas.LibraryRuleset) async throws -> Components.Schemas.Library {
+    package func setLibraryRuleset(
+        @Path library: String,
+        @JSONBody body: Components.Schemas.LibraryRuleset
+    ) async throws -> Components.Schemas.Library {
         guard libraries.library(library) != nil else { throw NoSuchLibrary() }
         if let name = body.ruleset {
             guard try store.latestVersion(of: name) != nil else { throw NoSuchRuleset() }
@@ -101,8 +115,10 @@ package struct OperatorController {
     private func listing(_ library: String, ruleset: String?) throws -> Components.Schemas.Library {
         let counts = LibraryCounts(index: index)
         return Components.Schemas.Library(
-            id: library, ruleset: ruleset,
-            containers: try counts.containers(in: library), presentations: try counts.presentations(in: library),
+            id: library,
+            ruleset: ruleset,
+            containers: try counts.containers(in: library),
+            presentations: try counts.presentations(in: library),
             available: libraries.isAvailable(library)
         )
     }
@@ -110,11 +126,19 @@ package struct OperatorController {
     @Operation
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     package func lastWalk(@Path library: String) async throws -> Components.Schemas.LastWalk {
-        guard libraries.library(library) != nil, let walk = libraries.lastWalk(of: library) else { throw NoSuchLibrary() }
+        guard libraries.library(library) != nil, let walk = libraries.lastWalk(of: library) else {
+            throw NoSuchLibrary()
+        }
         let report = walk.report
         return Components.Schemas.LastWalk(
-            walkedAt: walk.walkedAt, available: walk.available,
-            report: Components.Schemas.ScanReport(read: report.read, unchanged: report.unchanged, removed: report.removed, findings: report.findings.map(Mapping.finding))
+            walkedAt: walk.walkedAt,
+            available: walk.available,
+            report: Components.Schemas.ScanReport(
+                read: report.read,
+                unchanged: report.unchanged,
+                removed: report.removed,
+                findings: report.findings.map(Mapping.finding)
+            )
         )
     }
 
@@ -125,12 +149,22 @@ package struct OperatorController {
     @ErrorResponse(BadEdit.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(EditConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(EditRefusedResult.self, .unprocessableContent, { $0.result })
-    package func editContainer(@Path library: String, @Path id: String, @JSONBody body: Components.Schemas.ContainerEdit) async throws -> Components.Schemas.ContainerEditResult {
+    package func editContainer(
+        @Path library: String,
+        @Path id: String,
+        @JSONBody body: Components.Schemas.ContainerEdit
+    ) async throws -> Components.Schemas.ContainerEditResult {
         guard let library = libraries.library(library) else { throw NoSuchLibrary() }
         guard let id = ContainerID(id) else { throw NoSuchContainer() }
         do {
             let outcome = try await ContainerEditor.edit(
-                id, in: library, document: body.document, basedOn: body.basedOn, dryRun: body.dryRun ?? false, libraries: libraries, index: index
+                id,
+                in: library,
+                document: body.document,
+                basedOn: body.basedOn,
+                dryRun: body.dryRun ?? false,
+                libraries: libraries,
+                index: index
             )
             return Mapping.editResult(outcome)
         } catch let refused as EditRefused {
@@ -142,7 +176,10 @@ package struct OperatorController {
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     @ErrorResponse(BadPlacement.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(PlacementRefused.self, .conflict, { $0.result })
-    package func placeFile(@Path library: String, @JSONBody body: Components.Schemas.PlaceRequest) async throws -> Components.Schemas.PlacementResult {
+    package func placeFile(
+        @Path library: String,
+        @JSONBody body: Components.Schemas.PlaceRequest
+    ) async throws -> Components.Schemas.PlacementResult {
         guard let library = libraries.library(library) else { throw NoSuchLibrary() }
         let lineage: [SmdKit.Container]
         do {
@@ -151,9 +188,17 @@ package struct OperatorController {
             throw BadPlacement(reason: "a container document cannot be read: \(error.localizedDescription)")
         }
         var presentation = Presentation(alternative: body.alternative, profile: body.profile, file: "")
-        presentation.tracks = (body.tracks ?? []).map { TrackMapping(feature: $0.feature, audio: $0.audio, subtitle: $0.subtitle) }
+        presentation.tracks = (body.tracks ?? []).map {
+            TrackMapping(feature: $0.feature, audio: $0.audio, subtitle: $0.subtitle)
+        }
         presentation.chapters = (body.chapters ?? []).map { Chapter(index: $0.index, title: $0.title) }
-        let request = PlacementRequest(library: library.root, lineage: lineage, item: body.item, presentation: presentation, source: URL(fileURLWithPath: body.file))
+        let request = PlacementRequest(
+            library: library.root,
+            lineage: lineage,
+            item: body.item,
+            presentation: presentation,
+            source: URL(fileURLWithPath: body.file)
+        )
         let placement: Placement
         do {
             placement = try Placer.compute(request)
@@ -182,11 +227,20 @@ package struct OperatorController {
     @Operation
     @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func storeRuleset(@Path name: String, @JSONBody body: Components.Schemas.RulesetDocument) async throws -> Components.Schemas.RulesetDocument {
+    package func storeRuleset(
+        @Path name: String,
+        @JSONBody body: Components.Schemas.RulesetDocument
+    ) async throws -> Components.Schemas.RulesetDocument {
         let data = Data(body.document.utf8)
         let version: Int
         do {
-            version = try store.store(data, as: name, branch: body.branch, upToDateWith: body.upToDateWith, basedOn: body.basedOn)
+            version = try store.store(
+                data,
+                as: name,
+                branch: body.branch,
+                upToDateWith: body.upToDateWith,
+                basedOn: body.basedOn
+            )
             checks.request()
         } catch let error as RulesetFileError {
             throw BadRuleset(reason: error.description)
@@ -196,7 +250,12 @@ package struct OperatorController {
             default: throw BadRuleset(reason: error.description)
             }
         }
-        return Components.Schemas.RulesetDocument(name: name, version: version, branch: body.branch ?? RulesetStore.standard, document: body.document)
+        return Components.Schemas.RulesetDocument(
+            name: name,
+            version: version,
+            branch: body.branch ?? RulesetStore.standard,
+            document: body.document
+        )
     }
 
     @Operation
@@ -204,7 +263,10 @@ package struct OperatorController {
     @ErrorResponse(NoSuchRuleset.self, .notFound)
     @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
     @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func startBranch(@Path name: String, @JSONBody body: Components.Schemas.NewBranch) async throws -> Components.Schemas.Branch {
+    package func startBranch(
+        @Path name: String,
+        @JSONBody body: Components.Schemas.NewBranch
+    ) async throws -> Components.Schemas.Branch {
         guard try store.latestVersion(of: name) != nil else { throw NoSuchRuleset() }
         do {
             return Mapping.branch(try store.startBranch(body.name, of: name, from: body.from))
@@ -218,7 +280,10 @@ package struct OperatorController {
     @JSONResponse(status: .created)
     @ErrorResponse(NoSuchRuleset.self, .notFound)
     @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func promoteBranch(@Path name: String, @Path branch: String) async throws -> Components.Schemas.RulesetSummary {
+    package func promoteBranch(
+        @Path name: String,
+        @Path branch: String
+    ) async throws -> Components.Schemas.RulesetSummary {
         do {
             let version = try store.promote(branch, of: name)
             checks.request()

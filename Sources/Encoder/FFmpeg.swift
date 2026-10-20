@@ -2,7 +2,6 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
-import SiloKit
 import Synchronization
 
 /// `ffmpeg`, as a process: given an argument list, runs it, reports progress, and either returns or
@@ -21,7 +20,10 @@ public struct FFmpeg: Sendable {
         Tools.locate("ffmpeg", environmentKey: "FFMPEG_PATH") != nil
     }
 
-    public func run(_ arguments: [String], progress: @escaping @Sendable (EncodeProgress) -> Void = { _ in }) async throws {
+    public func run(
+        _ arguments: [String],
+        progress: @escaping @Sendable (EncodeProgress) -> Void = { _ in }
+    ) async throws {
         let parser = ProgressParser()
         let outcome = try await ProcessRunner.run(executable, arguments: arguments) { line in
             if let report = parser.consume(line) { progress(report) }
@@ -34,7 +36,9 @@ public struct FFmpeg: Sendable {
     /// The first line of `ffmpeg -version`: what a node reports as the build it runs.
     public func version() async throws -> String {
         let collected = OutputCollector()
-        let outcome = try await ProcessRunner.run(executable, arguments: ["-hide_banner", "-version"]) { collected.append($0) }
+        let outcome = try await ProcessRunner.run(executable, arguments: ["-hide_banner", "-version"]) {
+            collected.append($0)
+        }
         guard outcome.status == 0 else {
             throw ToolError.failed(tool: "ffmpeg", status: outcome.status, stderr: outcome.stderrTail)
         }
@@ -44,7 +48,9 @@ public struct FFmpeg: Sendable {
     /// The encoders this `ffmpeg` has, by name: what a node reports as its capabilities.
     public func encoders() async throws -> Set<String> {
         let collected = OutputCollector()
-        let outcome = try await ProcessRunner.run(executable, arguments: ["-hide_banner", "-encoders"]) { collected.append($0) }
+        let outcome = try await ProcessRunner.run(executable, arguments: ["-hide_banner", "-encoders"]) {
+            collected.append($0)
+        }
         guard outcome.status == 0 else {
             throw ToolError.failed(tool: "ffmpeg", status: outcome.status, stderr: outcome.stderrTail)
         }
@@ -52,7 +58,10 @@ public struct FFmpeg: Sendable {
         var names: Set<String> = []
         var pastHeader = false
         for line in collected.text.split(separator: "\n") {
-            if line.hasPrefix(" ------") { pastHeader = true; continue }
+            if line.hasPrefix(" ------") {
+                pastHeader = true
+                continue
+            }
             guard pastHeader else { continue }
             let fields = line.split(separator: " ", omittingEmptySubsequences: true)
             if fields.count >= 2 { names.insert(String(fields[1])) }
@@ -71,7 +80,13 @@ public struct EncodeProgress: Hashable, Sendable {
     public var speed: Double?
     public var finished: Bool
 
-    public init(frame: Int? = nil, fps: Double? = nil, seconds: Double? = nil, speed: Double? = nil, finished: Bool = false) {
+    public init(
+        frame: Int? = nil,
+        fps: Double? = nil,
+        seconds: Double? = nil,
+        speed: Double? = nil,
+        finished: Bool = false
+    ) {
         self.frame = frame
         self.fps = fps
         self.seconds = seconds

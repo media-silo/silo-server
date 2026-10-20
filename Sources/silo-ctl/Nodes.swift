@@ -21,13 +21,18 @@ struct Nodes: AsyncParsableCommand {
 
         mutating func run() async throws {
             let nodes = try await connection.client().nodes()
-            if nodes.isEmpty { print("no nodes"); return }
+            if nodes.isEmpty {
+                print("no nodes")
+                return
+            }
             for node in nodes { print(Nodes.line(node)) }
         }
     }
 
     struct Approve: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Let a node take work. Its next poll gives it its token.")
+        static let configuration = CommandConfiguration(
+            abstract: "Let a node take work. Its next poll gives it its token."
+        )
 
         @OptionGroup var connection: Jobs.Connection
         @Argument var id: String
@@ -38,7 +43,9 @@ struct Nodes: AsyncParsableCommand {
     }
 
     struct Revoke: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Stop a node taking work; its token stops working at once.")
+        static let configuration = CommandConfiguration(
+            abstract: "Stop a node taking work; its token stops working at once."
+        )
 
         @OptionGroup var connection: Jobs.Connection
         @Argument var id: String
@@ -57,15 +64,22 @@ struct Nodes: AsyncParsableCommand {
         mutating func run() async throws {
             guard Discovery.isAvailable else { throw ValidationError(Discovery.unavailable) }
             let found = try await Discovery.browse(timeout: .seconds(seconds))
-            if found.isEmpty { print("no silos found"); return }
+            if found.isEmpty {
+                print("no silos found")
+                return
+            }
             for silo in found {
-                print("\(silo.name)  \(silo.url)\(silo.txt.isEmpty ? "" : "  " + silo.txt.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }.joined(separator: " "))")
+                print(
+                    "\(silo.name)  \(silo.url)\(silo.txt.isEmpty ? "" : "  " + silo.txt.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }.joined(separator: " "))"
+                )
             }
         }
     }
 
     static func line(_ node: Node) -> String {
-        var parts = [node.id, node.state.rawValue.padding(toLength: 9, withPad: " ", startingAt: 0), node.name, node.platform]
+        var parts = [
+            node.id, node.state.rawValue.padding(toLength: 9, withPad: " ", startingAt: 0), node.name, node.platform,
+        ]
         if let cores = node.cores { parts.append("\(cores) cores") }
         parts.append("\(node.capabilities.count) encoders")
         if let seen = node.lastSeenAt { parts.append("seen \(seen.formatted(date: .abbreviated, time: .shortened))") }

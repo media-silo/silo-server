@@ -25,8 +25,13 @@ public struct InputSpec: Hashable, Sendable {
     public var notes: [Note]
 
     public init(
-        format: Int = InputSpec.format, label: String? = nil, medium: SourceFormat? = nil, duration: Double? = nil,
-        chapters: [Chapter] = [], streams: [Stream], notes: [Note] = []
+        format: Int = InputSpec.format,
+        label: String? = nil,
+        medium: SourceFormat? = nil,
+        duration: Double? = nil,
+        chapters: [Chapter] = [],
+        streams: [Stream],
+        notes: [Note] = []
     ) {
         self.format = format
         self.label = label
@@ -80,10 +85,22 @@ public struct InputSpec: Hashable, Sendable {
         public var coreOf: Int?
 
         public init(
-            index: Int, kind: Kind, codec: String, profile: String? = nil, width: Int? = nil, height: Int? = nil,
-            frameRate: FrameRate? = nil, interlaced: Bool? = nil, transfer: String? = nil, bitDepth: Int? = nil,
-            channels: Int? = nil, layout: String? = nil, language: LanguageTag? = nil, title: String? = nil,
-            marks: Set<Mark> = [], coreOf: Int? = nil
+            index: Int,
+            kind: Kind,
+            codec: String,
+            profile: String? = nil,
+            width: Int? = nil,
+            height: Int? = nil,
+            frameRate: FrameRate? = nil,
+            interlaced: Bool? = nil,
+            transfer: String? = nil,
+            bitDepth: Int? = nil,
+            channels: Int? = nil,
+            layout: String? = nil,
+            language: LanguageTag? = nil,
+            title: String? = nil,
+            marks: Set<Mark> = [],
+            coreOf: Int? = nil
         ) {
             self.index = index
             self.kind = kind
@@ -139,7 +156,9 @@ public struct FrameRate: Hashable, Sendable, CustomStringConvertible {
             guard let whole = Int(parts[0]), whole > 0 else { return nil }
             self.init(whole, 1)
         case 2:
-            guard let numerator = Int(parts[0]), let denominator = Int(parts[1]), numerator > 0, denominator > 0 else { return nil }
+            guard let numerator = Int(parts[0]), let denominator = Int(parts[1]), numerator > 0, denominator > 0 else {
+                return nil
+            }
             self.init(numerator, denominator)
         default:
             return nil
@@ -218,9 +237,11 @@ public enum InputSpecError: Error, Hashable, Sendable, CustomStringConvertible {
         case .repeatedStreamIndex(let index): "stream index \(index) is used twice"
         case .repeatedChapterIndex(let index): "chapter \(index) is listed twice"
         case .chapterOutOfOrder(let index): "chapter \(index) is out of order"
-        case .notCanonical(let field, let value, let canonical): "\(field) is \(value), which is not canonical; write \(canonical)"
+        case .notCanonical(let field, let value, let canonical):
+            "\(field) is \(value), which is not canonical; write \(canonical)"
         case .unknownLanguage(let field): "\(field) is und; an unknown language is no tag"
-        case .coreOfNothing(let stream, let names): "stream \(stream)'s coreOf names \(names), which is not another audio stream of this spec"
+        case .coreOfNothing(let stream, let names):
+            "stream \(stream)'s coreOf names \(names), which is not another audio stream of this spec"
         }
     }
 }
@@ -317,7 +338,9 @@ extension InputSpec {
             guard chapterIndices.insert(chapter.index).inserted else { throw .repeatedChapterIndex(chapter.index) }
             if position > 0 {
                 let previous = chapters[position - 1]
-                guard chapter.index > previous.index, chapter.start > previous.start else { throw .chapterOutOfOrder(chapter.index) }
+                guard chapter.index > previous.index, chapter.start > previous.start else {
+                    throw .chapterOutOfOrder(chapter.index)
+                }
             }
         }
         let audio = Set(streams.filter { $0.kind == .audio }.map(\.index))
@@ -347,7 +370,13 @@ extension InputSpec {
         var chapters: [Chapter] = []
         for chapter in try reader.objects("chapters") {
             try chapter.refuseUnknown(["index", "start", "title"])
-            chapters.append(Chapter(index: try chapter.requiredInt("index"), start: try chapter.requiredNumber("start"), title: try chapter.string("title")))
+            chapters.append(
+                Chapter(
+                    index: try chapter.requiredInt("index"),
+                    start: try chapter.requiredNumber("start"),
+                    title: try chapter.string("title")
+                )
+            )
         }
         self.chapters = chapters
         guard reader.has("streams") else { throw .missingField(reader.at("streams")) }
@@ -374,7 +403,11 @@ extension InputSpec.Stream {
         index = try reader.requiredInt("index")
         let kindText = try reader.requiredString("kind")
         guard let kind = Kind(rawValue: kindText) else {
-            throw .invalidValue(field: reader.at("kind"), value: "\"\(kindText)\"", expected: "video, audio, subtitle or other")
+            throw .invalidValue(
+                field: reader.at("kind"),
+                value: "\"\(kindText)\"",
+                expected: "video, audio, subtitle or other"
+            )
         }
         self.kind = kind
         codec = try reader.requiredString("codec")
@@ -392,7 +425,11 @@ extension InputSpec.Stream {
         var marks: Set<InputSpec.Mark> = []
         for text in try reader.strings("marks") {
             guard let mark = InputSpec.Mark(rawValue: text) else {
-                throw .invalidValue(field: reader.at("marks"), value: "\"\(text)\"", expected: "a mark: default, forced, commentary, descriptive or hearingImpaired")
+                throw .invalidValue(
+                    field: reader.at("marks"),
+                    value: "\"\(text)\"",
+                    expected: "a mark: default, forced, commentary, descriptive or hearingImpaired"
+                )
             }
             marks.insert(mark)
         }
@@ -484,7 +521,9 @@ private struct Reader {
 
     func int(_ key: String) throws(InputSpecError) -> Int? {
         guard has(key) else { return nil }
-        guard case .number(let number) = object[key], let value = Int(exactly: number) else { throw refuse(key, expected: "a whole number") }
+        guard case .number(let number) = object[key], let value = Int(exactly: number) else {
+            throw refuse(key, expected: "a whole number")
+        }
         return value
     }
 
@@ -529,7 +568,9 @@ private struct Reader {
         guard let text = try string(key) else { return nil }
         guard let tag = LanguageTag(canonicalizing: text) else { throw refuse(key, expected: "a BCP 47 language tag") }
         guard tag.description != "und" else { throw .unknownLanguage(field: at(key)) }
-        guard tag.description == text else { throw .notCanonical(field: at(key), value: text, canonical: tag.description) }
+        guard tag.description == text else {
+            throw .notCanonical(field: at(key), value: text, canonical: tag.description)
+        }
         return tag
     }
 

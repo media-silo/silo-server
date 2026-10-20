@@ -36,10 +36,11 @@ extension Action {
         case .copy: "copy"
         case .drop: "drop"
         case .encode(let settings):
-            (["encode", settings.codec] + [
-                settings.preset, settings.crf.map { "crf \($0)" }, settings.bitrate,
-                settings.channels.map { "\($0)ch" }, settings.pixelFormat,
-            ].compactMap { $0 }).joined(separator: " ")
+            (["encode", settings.codec]
+                + [
+                    settings.preset, settings.crf.map { "crf \($0)" }, settings.bitrate,
+                    settings.channels.map { "\($0)ch" }, settings.pixelFormat,
+                ].compactMap { $0 }).joined(separator: " ")
         }
     }
 }
@@ -47,12 +48,13 @@ extension Action {
 extension CheckedStack {
     /// The ruleset and every layer above it, nearest first: `household@1 + binding v2 + container v1`.
     public var summary: String {
-        ([ruleset.description] + layers.map { layer in
-            switch layer.subject {
-            case .binding: "binding rules v\(layer.version)"
-            case .container(let id): "\(id)'s rules v\(layer.version)"
-            }
-        }).joined(separator: " + ")
+        ([ruleset.description]
+            + layers.map { layer in
+                switch layer.subject {
+                case .binding: "binding rules v\(layer.version)"
+                case .container(let id): "\(id)'s rules v\(layer.version)"
+                }
+            }).joined(separator: " + ")
     }
 }
 

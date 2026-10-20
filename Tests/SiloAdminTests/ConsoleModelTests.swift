@@ -23,8 +23,13 @@ struct ConsoleModelTests {
 
         override func startLoading() {
             guard let (status, data) = Self.handler.withLock({ $0(request) }),
-                  let url = request.url,
-                  let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])
+                let url = request.url,
+                let response = HTTPURLResponse(
+                    url: url,
+                    statusCode: status,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )
             else {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
@@ -66,12 +71,14 @@ struct ConsoleModelTests {
         }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [Stub.self]
-        let model = ConsoleModel(console: AdminConsole(
-            registry: SiloRegistry(),
-            passkeys: store,
-            session: URLSession(configuration: configuration),
-            browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
-        ))
+        let model = ConsoleModel(
+            console: AdminConsole(
+                registry: SiloRegistry(),
+                passkeys: store,
+                session: URLSession(configuration: configuration),
+                browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
+            )
+        )
 
         await model.refresh()
         let silo = try #require(model.silos.first { $0.id == "s1" })
@@ -101,27 +108,45 @@ struct ConsoleModelTests {
         Stub.handler.withLock {
             $0 = { request in
                 let head = standard.withLock { $0 }
-                let versions = (1...head).map { #"{"version":\#($0),"branch":"standard","presentations":0}"# }.joined(separator: ",")
+                let versions = (1...head).map { #"{"version":\#($0),"branch":"standard","presentations":0}"# }.joined(
+                    separator: ","
+                )
                 switch request.url?.path {
                 case "/v1/server": return (200, Self.serverInfo(bootstrap: false))
                 case "/v1/operator": return (200, Data(#"{"phase":"active"}"#.utf8))
-                case "/v1/rulesets": return (200, Data(#"[{"name":"household","version":\#(head),"standard":\#(head),"versions":[\#(versions)]}]"#.utf8))
-                case "/v1/rulesets/household/branches": return (200, Data(#"[{"name":"standard","head":\#(head),"closed":false}]"#.utf8))
+                case "/v1/rulesets":
+                    return (
+                        200,
+                        Data(
+                            #"[{"name":"household","version":\#(head),"standard":\#(head),"versions":[\#(versions)]}]"#
+                                .utf8
+                        )
+                    )
+                case "/v1/rulesets/household/branches":
+                    return (200, Data(#"[{"name":"standard","head":\#(head),"closed":false}]"#.utf8))
                 case "/v1/rulesets/household":
                     let version = request.url?.query?.split(separator: "=").last.flatMap { Int($0) } ?? head
-                    return (200, Data(#"{"name":"household","version":\#(version),"branch":"standard","document":"<ruleset/>"}"#.utf8))
+                    return (
+                        200,
+                        Data(
+                            #"{"name":"household","version":\#(version),"branch":"standard","document":"<ruleset/>"}"#
+                                .utf8
+                        )
+                    )
                 default: return nil
                 }
             }
         }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [Stub.self]
-        let model = ConsoleModel(console: AdminConsole(
-            registry: SiloRegistry(),
-            passkeys: store,
-            session: URLSession(configuration: configuration),
-            browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
-        ))
+        let model = ConsoleModel(
+            console: AdminConsole(
+                registry: SiloRegistry(),
+                passkeys: store,
+                session: URLSession(configuration: configuration),
+                browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
+            )
+        )
 
         await model.refresh()
         let silo = try #require(model.silos.first { $0.id == "s1" })
@@ -134,7 +159,10 @@ struct ConsoleModelTests {
         standard.withLock { $0 = 4 }
         await model.refresh()
         #expect(model.rulesets[silo.id]?.first?.standard == 4, "the list takes the version stored elsewhere")
-        #expect(model.opened[silo.id]?.summary.versions?.map(\.version) == [1, 2, 3, 4], "and so do the open ruleset's versions")
+        #expect(
+            model.opened[silo.id]?.summary.versions?.map(\.version) == [1, 2, 3, 4],
+            "and so do the open ruleset's versions"
+        )
         #expect(model.opened[silo.id]?.document.version == 3, "while the version the operator chose stays chosen")
     }
 
@@ -152,72 +180,147 @@ struct ConsoleModelTests {
     private nonisolated static func changingSilo(_ state: SiloState) -> @Sendable (URLRequest) -> (Int, Data)? {
         { request in
             let current = state.head.withLock { $0 }
-            let body = request.httpBodyStream.map { stream -> String in
-                stream.open()
-                defer { stream.close() }
-                var data = Data()
-                var buffer = [UInt8](repeating: 0, count: 4096)
-                while stream.hasBytesAvailable {
-                    let read = stream.read(&buffer, maxLength: buffer.count)
-                    guard read > 0 else { break }
-                    data.append(buffer, count: read)
-                }
-                return String(decoding: data, as: UTF8.self)
-            } ?? String(decoding: request.httpBody ?? Data(), as: UTF8.self)
-            let commentary = #"<ruleset format=\"1\" name=\"household\">\n<audio id=\"commentary\"><encode codec=\"aac\" bitrate=\"160k\"/></audio>\n</ruleset>"#
+            let body =
+                request.httpBodyStream.map { stream -> String in
+                    stream.open()
+                    defer { stream.close() }
+                    var data = Data()
+                    var buffer = [UInt8](repeating: 0, count: 4096)
+                    while stream.hasBytesAvailable {
+                        let read = stream.read(&buffer, maxLength: buffer.count)
+                        guard read > 0 else { break }
+                        data.append(buffer, count: read)
+                    }
+                    return String(decoding: data, as: UTF8.self)
+                } ?? String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+            let commentary =
+                #"<ruleset format=\"1\" name=\"household\">\n<audio id=\"commentary\"><encode codec=\"aac\" bitrate=\"160k\"/></audio>\n</ruleset>"#
             switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
             case (_, "/v1/server"): return (200, Self.serverInfo(bootstrap: false))
             case (_, "/v1/operator"): return (200, Data(#"{"phase":"active"}"#.utf8))
             case ("POST", "/v1/rulesets/household/check"):
                 state.checks.withLock { $0 += 1 }
-                if body.contains("subtitle.forcd") { return (400, Data(#"{"detail":"subtitle.forcd is not a fact a rule can test"}"#.utf8)) }
+                if body.contains("subtitle.forcd") {
+                    return (400, Data(#"{"detail":"subtitle.forcd is not a fact a rule can test"}"#.utf8))
+                }
                 return (200, Data(#"{"name":"household","rules":[],"outputs":[{"container":"mkv"}]}"#.utf8))
             case ("POST", "/v1/rulesets/household/impact"):
-                let one = #"{"recipe":"r%d","outcome":"outOfDate","madeBy":{"ruleset":{"name":"household","version":3},"layers":[]},"checkedAgainst":{"ruleset":{"name":"household"},"layers":[]},"changes":[{"kind":"audio","index":2,"was":{"encode":{"_0":{"codec":"aac","bitrate":"160k","filters":[],"options":{}}}},"now":{"encode":{"_0":{"codec":"aac","bitrate":"96k","filters":[],"options":{}}}}}],"sources":[]}"#
+                let one =
+                    #"{"recipe":"r%d","outcome":"outOfDate","madeBy":{"ruleset":{"name":"household","version":3},"layers":[]},"checkedAgainst":{"ruleset":{"name":"household"},"layers":[]},"changes":[{"kind":"audio","index":2,"was":{"encode":{"_0":{"codec":"aac","bitrate":"160k","filters":[],"options":{}}}},"now":{"encode":{"_0":{"codec":"aac","bitrate":"96k","filters":[],"options":{}}}}}],"sources":[]}"#
                 return (200, Data(("[" + (1...12).map { String(format: one, $0) }.joined(separator: ",") + "]").utf8))
             case ("PUT", "/v1/rulesets/household"):
                 if body.contains(#""basedOn":"#) && !body.contains(#""basedOn":\#(current)"#) {
                     return (409, Data(#"{"detail":"household's standard is at household@\#(current)"}"#.utf8))
                 }
-                return (201, Data(#"{"name":"household","version":\#(current + 1),"branch":"standard","document":"<stored/>"}"#.utf8))
+                return (
+                    201,
+                    Data(
+                        #"{"name":"household","version":\#(current + 1),"branch":"standard","document":"<stored/>"}"#
+                            .utf8
+                    )
+                )
             case (_, "/v1/rulesets"):
-                let later = (3...max(3, current)).map { #"{"version":\#($0),"branch":"standard","presentations":0}"# }.joined(separator: ",")
-                return (200, Data(#"[{"name":"household","version":\#(current),"standard":\#(current),"versions":[{"version":1,"branch":"standard","presentations":41},{"version":2,"branch":"trial","parent":1,"presentations":0},\#(later)]}]"#.utf8))
-            case (_, "/v1/rulesets/household/branches"): return (200, Data(#"[{"name":"standard","head":\#(current),"closed":false},{"name":"trial","base":1,"head":2,"upToDateWith":1,"closed":false}]"#.utf8))
+                let later = (3...max(3, current)).map { #"{"version":\#($0),"branch":"standard","presentations":0}"# }
+                    .joined(separator: ",")
+                return (
+                    200,
+                    Data(
+                        #"[{"name":"household","version":\#(current),"standard":\#(current),"versions":[{"version":1,"branch":"standard","presentations":41},{"version":2,"branch":"trial","parent":1,"presentations":0},\#(later)]}]"#
+                            .utf8
+                    )
+                )
+            case (_, "/v1/rulesets/household/branches"):
+                return (
+                    200,
+                    Data(
+                        #"[{"name":"standard","head":\#(current),"closed":false},{"name":"trial","base":1,"head":2,"upToDateWith":1,"closed":false}]"#
+                            .utf8
+                    )
+                )
             case (_, "/v1/rulesets/household"):
                 let version = request.url?.query?.split(separator: "=").last.flatMap { Int($0) } ?? current
-                return (200, Data(#"{"name":"household","version":\#(version),"branch":"\#(version == 2 ? "trial" : "standard")","document":"\#(commentary)"}"#.utf8))
+                return (
+                    200,
+                    Data(
+                        #"{"name":"household","version":\#(version),"branch":"\#(version == 2 ? "trial" : "standard")","document":"\#(commentary)"}"#
+                            .utf8
+                    )
+                )
             case (_, "/v1/rulesets/household/branches/trial/impact"): return (200, Data("[]".utf8))
-            case ("POST", "/v1/rulesets/household/branches/trial/promote"): return (409, Data(#"{"detail":"household's branch trial has not taken in household@\#(current) from the standard"}"#.utf8))
-            case ("PUT", "/v1/libraries/films/ruleset"): return (200, Data(#"{"id":"films","ruleset":"household","containers":1,"presentations":41,"available":true}"#.utf8))
+            case ("POST", "/v1/rulesets/household/branches/trial/promote"):
+                return (
+                    409,
+                    Data(
+                        #"{"detail":"household's branch trial has not taken in household@\#(current) from the standard"}"#
+                            .utf8
+                    )
+                )
+            case ("PUT", "/v1/libraries/films/ruleset"):
+                return (
+                    200,
+                    Data(
+                        #"{"id":"films","ruleset":"household","containers":1,"presentations":41,"available":true}"#.utf8
+                    )
+                )
             case ("GET", "/v1/libraries/films/containers"):
-                return (200, Data(#"[{"id":"alien","library":"films","type":"movie","title":"Alien","displayTitle":"Alien (1997)","year":1997,"listed":true}]"#.utf8))
-            case ("GET", "/v1/libraries"): return (200, Data(#"[{"id":"films","containers":1,"presentations":41,"available":false}]"#.utf8))
+                return (
+                    200,
+                    Data(
+                        #"[{"id":"alien","library":"films","type":"movie","title":"Alien","displayTitle":"Alien (1997)","year":1997,"listed":true}]"#
+                            .utf8
+                    )
+                )
+            case ("GET", "/v1/libraries"):
+                return (200, Data(#"[{"id":"films","containers":1,"presentations":41,"available":false}]"#.utf8))
             case ("GET", "/v1/libraries/films/scan"):
-                return (200, Data(#"{"walkedAt":"2026-10-19T09:30:00Z","available":false,"report":{"read":0,"unchanged":0,"removed":0,"findings":[{"severity":"error","text":"not applied: its folder does not exist"}]}}"#.utf8))
+                return (
+                    200,
+                    Data(
+                        #"{"walkedAt":"2026-10-19T09:30:00Z","available":false,"report":{"read":0,"unchanged":0,"removed":0,"findings":[{"severity":"error","text":"not applied: its folder does not exist"}]}}"#
+                            .utf8
+                    )
+                )
             case (_, "/v1/settings"):
                 let roots = state.roots.withLock { $0 }.map { #""\#($0)""# }.joined(separator: ",")
-                return (200, Data(#"{"editable":{"name":"Home Silo","embeddedNode":false,"advertise":true,"libraries":[{"id":"films","path":"/srv/media/films"}]},"readOnly":{"serverID":"s1","host":"0.0.0.0","port":8742,"libraryRoots":[\#(roots)],"stateDirectory":"/var/lib/silo"}}"#.utf8))
+                return (
+                    200,
+                    Data(
+                        #"{"editable":{"name":"Home Silo","embeddedNode":false,"advertise":true,"libraries":[{"id":"films","path":"/srv/media/films"}]},"readOnly":{"serverID":"s1","host":"0.0.0.0","port":8742,"libraryRoots":[\#(roots)],"stateDirectory":"/var/lib/silo"}}"#
+                            .utf8
+                    )
+                )
             case ("POST", "/v1/libraries"):
-                return (403, Data(#"{"detail":"this silo's silo.json names no library roots, so nothing can be added over the network"}"#.utf8))
+                return (
+                    403,
+                    Data(
+                        #"{"detail":"this silo's silo.json names no library roots, so nothing can be added over the network"}"#
+                            .utf8
+                    )
+                )
             default: return nil
             }
         }
     }
 
-    private func changingModel(_ state: SiloState, drafts: DraftStore = DraftStore()) async throws -> (ConsoleModel, AdminConsole.Silo) {
+    private func changingModel(
+        _ state: SiloState,
+        drafts: DraftStore = DraftStore()
+    ) async throws -> (ConsoleModel, AdminConsole.Silo) {
         let store = InMemoryPasskeyStore()
         store.store("held", for: "s1")
         Stub.handler.withLock { $0 = Self.changingSilo(state) }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [Stub.self]
-        let model = ConsoleModel(console: AdminConsole(
-            registry: SiloRegistry(),
-            drafts: drafts,
-            passkeys: store,
-            session: URLSession(configuration: configuration),
-            browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
-        ), checkDelay: .milliseconds(50))
+        let model = ConsoleModel(
+            console: AdminConsole(
+                registry: SiloRegistry(),
+                drafts: drafts,
+                passkeys: store,
+                session: URLSession(configuration: configuration),
+                browse: { [DiscoveredSilo(name: "Fresh Silo", host: "fresh.local", port: 8080)] }
+            ),
+            checkDelay: .milliseconds(50)
+        )
         await model.refresh()
         let silo = try #require(model.silos.first { $0.id == "s1" })
         model.selected = [silo.id]
@@ -233,19 +336,28 @@ struct ConsoleModelTests {
         let opened = try #require(model.opened[silo.id])
         model.startDraft(.change(opened.document), for: silo)
         await model.settleCheck(for: silo)
-        guard case .reading? = model.draftCheck(of: silo) else { Issue.record("a fresh draft is read"); return }
+        guard case .reading? = model.draftCheck(of: silo) else {
+            Issue.record("a fresh draft is read")
+            return
+        }
 
         let base = try #require(model.draft(of: silo)).text
         model.editDraft(base + "<subtitle><when fact=\"subtitle.forc", for: silo)
         model.editDraft(base + #"<subtitle><when fact="subtitle.forcd" is="true"/><copy/></subtitle>"#, for: silo)
         await model.settleCheck(for: silo)
-        #expect(model.draftCheck(of: silo) == .refused("subtitle.forcd is not a fact a rule can test"), "the reading gives way to the silo's refusal")
+        #expect(
+            model.draftCheck(of: silo) == .refused("subtitle.forcd is not a fact a rule can test"),
+            "the reading gives way to the silo's refusal"
+        )
         #expect(state.checks.withLock { $0 } == 2, "the first draft, then only the text the typing stopped on")
 
         model.section = .outOfDate
         model.section = .rulesets
         await model.refresh()
-        #expect(model.draft(of: silo)?.text.contains("subtitle.forcd") == true, "the draft outlives its section closing and refreshing")
+        #expect(
+            model.draft(of: silo)?.text.contains("subtitle.forcd") == true,
+            "the draft outlives its section closing and refreshing"
+        )
     }
 
     @Test func aDraftIsKeptOnThisMacListedUnderItsBranchAndMarkedBehind() async throws {
@@ -263,15 +375,24 @@ struct ConsoleModelTests {
         // The app quits; another starts over the same file.
         let (again, sameSilo) = try await changingModel(state, drafts: DraftStore(file: file))
         let kept = try #require(again.drafts[sameSilo.id]?.first)
-        #expect(kept.text.hasSuffix("<!-- left overnight -->") && kept.base == 3 && kept.branch == "standard", "with the edit, under the standard")
+        #expect(
+            kept.text.hasSuffix("<!-- left overnight -->") && kept.base == 3 && kept.branch == "standard",
+            "with the edit, under the standard"
+        )
         #expect(!kept.isBehind(in: again.rulesets[sameSilo.id] ?? []))
 
         state.head.withLock { $0 = 4 }
         await again.loadRulesets(for: sameSilo)
-        #expect(kept.isBehind(in: again.rulesets[sameSilo.id] ?? []), "version 4 stored from another Mac: the draft is behind")
+        #expect(
+            kept.isBehind(in: again.rulesets[sameSilo.id] ?? []),
+            "version 4 stored from another Mac: the draft is behind"
+        )
         again.openDraft(kept.id, for: sameSilo)
         await again.rebaseOnHead(for: sameSilo)
-        #expect(again.draft(of: sameSilo)?.base == 4 && again.draft(of: sameSilo)?.text == kept.text, "re-based on the head, its text as it was")
+        #expect(
+            again.draft(of: sameSilo)?.base == 4 && again.draft(of: sameSilo)?.text == kept.text,
+            "re-based on the head, its text as it was"
+        )
         #expect(again.drafts[sameSilo.id]?.count == 1, "the same draft, not a second")
     }
 
@@ -285,7 +406,10 @@ struct ConsoleModelTests {
 
         await model.beginReview(for: silo)
         let review = try #require(model.review)
-        #expect(review.draft.difference.filter { $0.kind != .same }.map(\.kind) == [.removed, .added], "the one line that changed")
+        #expect(
+            review.draft.difference.filter { $0.kind != .same }.map(\.kind) == [.removed, .added],
+            "the one line that changed"
+        )
         #expect(review.impact.count == 12, "the twelve with a commentary, each with its encode before and after")
         #expect(review.impact.allSatisfy { $0.changes.first?.was != $0.changes.first?.now })
 
@@ -312,14 +436,20 @@ struct ConsoleModelTests {
 
         await model.takeIn(9, on: try #require(model.promotion))
         let draft = try #require(model.draft(of: silo))
-        #expect(draft.base == 2 && draft.baseBranch == "trial" && draft.upToDateWith == 9, "on the branch, from its head, taking 9 in")
+        #expect(
+            draft.base == 2 && draft.baseBranch == "trial" && draft.upToDateWith == 9,
+            "on the branch, from its head, taking 9 in"
+        )
     }
 
     @Test func anUnavailableLibraryIsShownWithItsLastWalk() async throws {
         let (model, silo) = try await changingModel(SiloState(head: 3))
         await model.loadLibraries(for: silo)
         #expect(model.libraries[silo.id]?.first?.available == false)
-        #expect(model.lastWalks[silo.id]?["films"]?.walkedAt == ISO8601DateFormatter().date(from: "2026-10-19T09:30:00Z"), "with when it was last walked")
+        #expect(
+            model.lastWalks[silo.id]?["films"]?.walkedAt == ISO8601DateFormatter().date(from: "2026-10-19T09:30:00Z"),
+            "with when it was last walked"
+        )
     }
 
     /// The Libraries section, like the Rulesets one, is read again at each refresh while it is open:
@@ -333,7 +463,10 @@ struct ConsoleModelTests {
         #expect(model.libraries[silo.id]?.first?.available == false)
         #expect(model.lastWalks[silo.id]?["films"] != nil, "the walks are read at the refresh")
         #expect(model.libraryRoots(of: silo) == ["/srv/media"], "and so are the settings the libraries are drawn from")
-        #expect(model.containerRoots[silo.id]?["films"]?.map(\.displayTitle) == ["Alien (1997)"], "and the containers at the top of each library")
+        #expect(
+            model.containerRoots[silo.id]?["films"]?.map(\.displayTitle) == ["Alien (1997)"],
+            "and the containers at the top of each library"
+        )
     }
 
     @Test func withTheRootsEmptiedTheConsoleSaysSoAndShowsTheRefusal() async throws {

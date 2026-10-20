@@ -3,6 +3,7 @@
 
 import Foundation
 import Testing
+
 @testable import SiloKit
 
 struct BindingTests {
@@ -38,7 +39,10 @@ struct BindingTests {
     }
 
     @Test func aFilmAcrossTwoDiscsIsBothWhole() throws {
-        let joined = try JoinedMedia([Self.segment("one"), Self.segment("two")], specs: ["one": Self.playAll, "two": Self.playAll])
+        let joined = try JoinedMedia(
+            [Self.segment("one"), Self.segment("two")],
+            specs: ["one": Self.playAll, "two": Self.playAll]
+        )
         #expect(joined.segments.map(\.source) == ["one", "two"])
         #expect(joined.segments.allSatisfy { $0.isWhole })
         #expect(joined.duration == 5990.4 * 2)
@@ -50,8 +54,10 @@ struct BindingTests {
         #expect(throws: BindingError.layoutDiffers(segment: 2, stream: 1, first: "audio ac3", other: "audio dts")) {
             try JoinedMedia([Self.segment("one"), Self.segment("two")], specs: ["one": Self.playAll, "two": dts])
         }
-        #expect(BindingError.layoutDiffers(segment: 2, stream: 1, first: "audio ac3", other: "audio dts").description
-            == "segments cannot be joined: segment 2's stream 1 is audio dts, where segment 1's is audio ac3")
+        #expect(
+            BindingError.layoutDiffers(segment: 2, stream: 1, first: "audio ac3", other: "audio dts").description
+                == "segments cannot be joined: segment 2's stream 1 is audio dts, where segment 1's is audio ac3"
+        )
         #expect(throws: BindingError.unknownChapter(source: "title", chapter: 5)) {
             try JoinedMedia([Self.segment("title", 3, 5)], specs: ["title": Self.playAll])
         }
@@ -67,18 +73,52 @@ struct BindingTests {
         let spec = InputSpec(
             medium: .bluray,
             streams: [
-                InputSpec.Stream(index: 0, kind: .video, codec: "hevc", width: 3840, height: 2160, frameRate: FrameRate(24000, 1001), transfer: "smpte2084", bitDepth: 10),
-                InputSpec.Stream(index: 1, kind: .audio, codec: "truehd", channels: 8, language: LanguageTag(canonicalizing: "es-419")),
+                InputSpec.Stream(
+                    index: 0,
+                    kind: .video,
+                    codec: "hevc",
+                    width: 3840,
+                    height: 2160,
+                    frameRate: FrameRate(24000, 1001),
+                    transfer: "smpte2084",
+                    bitDepth: 10
+                ),
+                InputSpec.Stream(
+                    index: 1,
+                    kind: .audio,
+                    codec: "truehd",
+                    channels: 8,
+                    language: LanguageTag(canonicalizing: "es-419")
+                ),
                 InputSpec.Stream(index: 2, kind: .audio, codec: "ac3", channels: 6, coreOf: 1),
-                InputSpec.Stream(index: 3, kind: .audio, codec: "ac3", channels: 2, title: "Commentary with the director"),
+                InputSpec.Stream(
+                    index: 3,
+                    kind: .audio,
+                    codec: "ac3",
+                    channels: 2,
+                    title: "Commentary with the director"
+                ),
                 InputSpec.Stream(index: 4, kind: .audio, codec: "aac", channels: 2, marks: [.descriptive]),
                 InputSpec.Stream(index: 5, kind: .audio, codec: "aac", channels: 2, marks: [.commentary]),
-                InputSpec.Stream(index: 6, kind: .subtitle, codec: "hdmv_pgs_subtitle", language: LanguageTag(canonicalizing: "zh-Hant"), marks: [.forced]),
+                InputSpec.Stream(
+                    index: 6,
+                    kind: .subtitle,
+                    codec: "hdmv_pgs_subtitle",
+                    language: LanguageTag(canonicalizing: "zh-Hant"),
+                    marks: [.forced]
+                ),
                 InputSpec.Stream(index: 7, kind: .other, codec: "ttf"),
             ],
             notes: [InputSpec.Note(stream: 2, text: "a core")]
         )
-        let facts = SourceFacts(input: spec, roles: [5: .isolatedMusic], kind: .movie, extra: true, profile: "mobile", duration: 100)
+        let facts = SourceFacts(
+            input: spec,
+            roles: [5: .isolatedMusic],
+            kind: .movie,
+            extra: true,
+            profile: "mobile",
+            duration: 100
+        )
         #expect(facts.kind == .movie)
         #expect(facts.value(.extra, for: .video) == .flag(true), "a file fact, visible to a rule of every scope")
         #expect(SourceFacts(input: spec).value(.extra, for: .video) == .absent, "absent when nothing says")
@@ -97,13 +137,24 @@ struct BindingTests {
         #expect(facts.audio[0].region == "419")
         #expect(facts.audio[0].script == nil)
         #expect(facts.audio.map(\.core) == [false, true, false, false, false])
-        #expect(facts.audio.map(\.role) == [.main, .main, .main, .descriptive, .isolatedMusic], "the feature map outranks the marks")
+        #expect(
+            facts.audio.map(\.role) == [.main, .main, .main, .descriptive, .isolatedMusic],
+            "the feature map outranks the marks"
+        )
         #expect(facts.subtitles[0].language == "zh")
         #expect(facts.subtitles[0].script == "Hant")
         #expect(facts.subtitles[0].region == nil)
         #expect(facts.subtitles[0].forced)
         #expect(facts.hints.contains(FactHint(stream: 2, text: "a core")), "the producer's notes join the hints")
-        #expect(facts.hints.contains(FactHint(stream: 3, text: "titled \"Commentary with the director\" but nothing marks it a commentary; assign it to a feature if it is one")))
+        #expect(
+            facts.hints.contains(
+                FactHint(
+                    stream: 3,
+                    text:
+                        "titled \"Commentary with the director\" but nothing marks it a commentary; assign it to a feature if it is one"
+                )
+            )
+        )
 
         var sdr = spec
         sdr.streams[0].transfer = "bt709"

@@ -18,7 +18,14 @@ public struct PlacementRequest: Sendable {
     public var source: URL
     public var fileExtension: String
 
-    public init(library: URL, lineage: [Container], item: String, presentation: Presentation, source: URL, fileExtension: String? = nil) {
+    public init(
+        library: URL,
+        lineage: [Container],
+        item: String,
+        presentation: Presentation,
+        source: URL,
+        fileExtension: String? = nil
+    ) {
         self.library = library
         self.lineage = lineage
         self.item = item
@@ -61,7 +68,9 @@ public struct Placement: Sendable {
         for folder in folders { lines.append("create   \(LibraryWalker.relativePath(of: folder, in: library))/") }
         lines.append("place    \(source.path) -> \(LibraryWalker.relativePath(of: destination, in: library))")
         for write in sidecars {
-            lines.append("\(write.creates ? "write   " : "update  ") \(LibraryWalker.relativePath(of: write.url, in: library))")
+            lines.append(
+                "\(write.creates ? "write   " : "update  ") \(LibraryWalker.relativePath(of: write.url, in: library))"
+            )
         }
         return lines
     }
@@ -83,6 +92,15 @@ public enum PlacementError: Error, LocalizedError {
     }
 }
 
+/// One container of a placement's lineage: its folder, the sidecar bytes already there if any, and
+/// the sidecar as the placement will leave it.
+private struct LineageSidecar {
+    var container: Container
+    var folder: URL
+    var existing: Data?
+    var sidecar: Sidecar
+}
+
 public enum Placer {
     /// Works out every write a placement would make, without making any.
     public static func compute(_ request: PlacementRequest) throws -> Placement {
@@ -100,34 +118,7 @@ public enum Placer {
         var findings: [Finding] = []
         var folders: [URL] = []
         var writes: [SidecarWrite] = []
-        var folder = request.library
-        var sidecars: [(container: Container, folder: URL, existing: Data?, sidecar: Sidecar)] = []
-
-        for container in request.lineage {
-            folder = folder.appendingPathComponent(LibraryLayout.folderName(for: container), isDirectory: true)
-            let sidecarURL = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
-            var existing: Data?
-            var sidecar = Sidecar(container: container)
-            if FileManager.default.fileExists(atPath: sidecarURL.path) {
-                do {
-                    let data = try Data(contentsOf: sidecarURL)
-                    let found = try SidecarFile.sidecar(from: data)
-                    if found.container.id != container.id {
-                        findings.append(Finding(.error, path: LibraryWalker.relativePath(of: sidecarURL, in: request.library), "the folder for \(container.displayTitle) already holds \(found.container.id)"))
-                    }
-                    // The container as the repository has it, with the library's facts as the
-                    // sidecar on disk has them: an update never rewrites the container's fields,
-                    // but the value carried through the placement is the current one.
-                    sidecar = Sidecar(container: container, children: found.children, presentations: found.presentations)
-                    existing = data
-                } catch {
-                    findings.append(Finding(.error, path: LibraryWalker.relativePath(of: sidecarURL, in: request.library), "unreadable: \(error.localizedDescription)"))
-                }
-            } else if !FileManager.default.fileExists(atPath: folder.path) {
-                folders.append(folder)
-            }
-            sidecars.append((container, folder, existing, sidecar))
-        }
+        var sidecars = lineageSidecars(for: request, findings: &findings, folders: &folders)
 
         // Ancestors learn where their child is, and are written only when that is news.
         for index in sidecars.indices.dropLast() {
@@ -143,20 +134,14 @@ public enum Placer {
         var last = sidecars[sidecars.count - 1]
         var presentation = request.presentation
         let displayName = last.sidecar.displayName(of: presentation)
-        presentation.file = LibraryLayout.relativePath(for: entry, isExtra: isExtra, displayName: displayName, fileExtension: request.fileExtension)
+        presentation.file = LibraryLayout.relativePath(
+            for: entry,
+            isExtra: isExtra,
+            displayName: displayName,
+            fileExtension: request.fileExtension
+        )
         let destination = last.folder.appendingPathComponent(presentation.file)
-        if let alternative = presentation.alternative, !target.alternatives.contains(where: { $0.id == alternative }) {
-            findings.append(Finding(.error, "\(target.displayTitle) has no alternative \(alternative)"))
-        }
-        for track in presentation.tracks where !target.features.contains(where: { $0.id == track.feature }) {
-            findings.append(Finding(.error, "\(target.displayTitle) has no feature \(track.feature)"))
-        }
-        if FileManager.default.fileExists(atPath: destination.path) {
-            findings.append(Finding(.error, path: LibraryWalker.relativePath(of: destination, in: request.library), "already exists; nothing is overwritten"))
-        }
-        if !FileManager.default.fileExists(atPath: request.source.path) {
-            findings.append(Finding(.error, "the source \(request.source.path) is not there"))
-        }
+        findings += presentationFindings(presentation, in: target, destination: destination, request: request)
         if isExtra {
             let extras = last.folder.appendingPathComponent(LibraryLayout.extrasFolder, isDirectory: true)
             if !FileManager.default.fileExists(atPath: extras.path) { folders.append(extras) }
@@ -166,13 +151,108 @@ public enum Placer {
         sidecars[sidecars.count - 1] = last
         writes.append(try write(last, parent: sidecars.count > 1 ? sidecars[sidecars.count - 2].container.id : nil))
 
-        return Placement(source: request.source, destination: destination, folders: folders, sidecars: writes, presentation: presentation, findings: findings)
+        return Placement(
+            source: request.source,
+            destination: destination,
+            folders: folders,
+            sidecars: writes,
+            presentation: presentation,
+            findings: findings
+        )
     }
 
-    private static func write(_ entry: (container: Container, folder: URL, existing: Data?, sidecar: Sidecar), parent: ContainerID?) throws -> SidecarWrite {
+    /// The sidecar each container of the lineage has or will have, root first, read from its folder
+    /// when there is one. Folders that do not exist yet are noted to be created.
+    private static func lineageSidecars(
+        for request: PlacementRequest,
+        findings: inout [Finding],
+        folders: inout [URL]
+    ) -> [LineageSidecar] {
+        var folder = request.library
+        var sidecars: [LineageSidecar] = []
+        for container in request.lineage {
+            folder = folder.appendingPathComponent(LibraryLayout.folderName(for: container), isDirectory: true)
+            let sidecarURL = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
+            var existing: Data?
+            var sidecar = Sidecar(container: container)
+            if FileManager.default.fileExists(atPath: sidecarURL.path) {
+                do {
+                    let data = try Data(contentsOf: sidecarURL)
+                    let found = try SidecarFile.sidecar(from: data)
+                    if found.container.id != container.id {
+                        findings.append(
+                            Finding(
+                                .error,
+                                path: LibraryWalker.relativePath(of: sidecarURL, in: request.library),
+                                "the folder for \(container.displayTitle) already holds \(found.container.id)"
+                            )
+                        )
+                    }
+                    // The container as the repository has it, with the library's facts as the
+                    // sidecar on disk has them: an update never rewrites the container's fields,
+                    // but the value carried through the placement is the current one.
+                    sidecar = Sidecar(
+                        container: container,
+                        children: found.children,
+                        presentations: found.presentations
+                    )
+                    existing = data
+                } catch {
+                    findings.append(
+                        Finding(
+                            .error,
+                            path: LibraryWalker.relativePath(of: sidecarURL, in: request.library),
+                            "unreadable: \(error.localizedDescription)"
+                        )
+                    )
+                }
+            } else if !FileManager.default.fileExists(atPath: folder.path) {
+                folders.append(folder)
+            }
+            sidecars.append(LineageSidecar(container: container, folder: folder, existing: existing, sidecar: sidecar))
+        }
+        return sidecars
+    }
+
+    /// What is wrong with the presentation itself: what it names that the container lacks, and the
+    /// files on either end of the move.
+    private static func presentationFindings(
+        _ presentation: Presentation,
+        in target: Container,
+        destination: URL,
+        request: PlacementRequest
+    ) -> [Finding] {
+        var findings: [Finding] = []
+        if let alternative = presentation.alternative, !target.alternatives.contains(where: { $0.id == alternative }) {
+            findings.append(Finding(.error, "\(target.displayTitle) has no alternative \(alternative)"))
+        }
+        for track in presentation.tracks where !target.features.contains(where: { $0.id == track.feature }) {
+            findings.append(Finding(.error, "\(target.displayTitle) has no feature \(track.feature)"))
+        }
+        if FileManager.default.fileExists(atPath: destination.path) {
+            findings.append(
+                Finding(
+                    .error,
+                    path: LibraryWalker.relativePath(of: destination, in: request.library),
+                    "already exists; nothing is overwritten"
+                )
+            )
+        }
+        if !FileManager.default.fileExists(atPath: request.source.path) {
+            findings.append(Finding(.error, "the source \(request.source.path) is not there"))
+        }
+        return findings
+    }
+
+    private static func write(_ entry: LineageSidecar, parent: ContainerID?) throws -> SidecarWrite {
         let url = entry.folder.appendingPathComponent(LibraryLayout.sidecarFileName)
         if let existing = entry.existing {
-            return SidecarWrite(url: url, data: try SidecarFile.data(for: entry.sidecar, updating: existing), creates: false, parent: parent)
+            return SidecarWrite(
+                url: url,
+                data: try SidecarFile.data(for: entry.sidecar, updating: existing),
+                creates: false,
+                parent: parent
+            )
         }
         return SidecarWrite(url: url, data: try SidecarFile.data(for: entry.sidecar), creates: true, parent: parent)
     }

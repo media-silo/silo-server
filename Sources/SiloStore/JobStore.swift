@@ -24,7 +24,12 @@ public final class JobStore: Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var loaded: [String: Job] = [:]
-        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        let files =
+            (try? FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
         for file in files where file.pathExtension == "json" {
             if let job = try? decoder.decode(Job.self, from: try Data(contentsOf: file)) {
                 loaded[job.id] = job
@@ -62,7 +67,11 @@ public final class JobStore: Sendable {
     }
 
     /// Finds and changes one job under the lock: the claim, which must pick and lease atomically.
-    public func updateFirst(where predicate: (Job) -> Bool, sortedBy order: (Job, Job) -> Bool, _ change: (inout Job) throws -> Void) throws -> Job? {
+    public func updateFirst(
+        where predicate: (Job) -> Bool,
+        sortedBy order: (Job, Job) -> Bool,
+        _ change: (inout Job) throws -> Void
+    ) throws -> Job? {
         try jobs.withLock { jobs -> Job? in
             guard var job = jobs.values.filter(predicate).sorted(by: order).first else { return nil }
             try change(&job)

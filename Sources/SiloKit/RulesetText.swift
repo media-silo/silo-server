@@ -100,11 +100,14 @@ public struct RulesetText: Sendable {
         let scoped = rules(of: scope)
         guard destination != position, destination != position + 1 else { return text }
         let moving = scoped[position].element
-        let target: Element? = if destination < scoped.count {
-            scoped[destination].element
-        } else {
-            elements.first { $0.range.lowerBound > scoped[scoped.count - 1].element.range.lowerBound && $0 != moving }
-        }
+        let target: Element? =
+            if destination < scoped.count {
+                scoped[destination].element
+            } else {
+                elements.first {
+                    $0.range.lowerBound > scoped[scoped.count - 1].element.range.lowerBound && $0 != moving
+                }
+            }
         let piece = bytes[moving.unit]
         var moved = bytes
         let at = target?.unit.lowerBound ?? end
@@ -179,7 +182,17 @@ public struct RulesetText: Sendable {
         mutating func scan() -> (elements: [Element], end: Int, endOpensLine: Bool) {
             // The prolog, then the root's start tag.
             while at < bytes.count {
-                if starts("<?") { skip(past: "?>") } else if starts("<!--") { skip(past: "-->") } else if starts("<!") { skip(past: ">") } else if bytes[at] == UInt8(ascii: "<") { break } else { at += 1 }
+                if starts("<?") {
+                    skip(past: "?>")
+                } else if starts("<!--") {
+                    skip(past: "-->")
+                } else if starts("<!") {
+                    skip(past: ">")
+                } else if bytes[at] == UInt8(ascii: "<") {
+                    break
+                } else {
+                    at += 1
+                }
             }
             let rootSelfCloses = tag()
             var elements: [Element] = []
@@ -208,15 +221,22 @@ public struct RulesetText: Sendable {
                     if let line = lineStart(unitStart) { unitStart = line }
                     var unitEnd = finish
                     var probe = finish
-                    while probe < bytes.count, bytes[probe] == UInt8(ascii: " ") || bytes[probe] == UInt8(ascii: "\t") { probe += 1 }
+                    while probe < bytes.count, bytes[probe] == UInt8(ascii: " ") || bytes[probe] == UInt8(ascii: "\t") {
+                        probe += 1
+                    }
                     if probe < bytes.count, bytes[probe] == UInt8(ascii: "\n") { unitEnd = probe + 1 }
                     let kind: Element.Kind = name == "output" ? .output : .rule(Scope(rawValue: name) ?? .video)
-                    elements.append(Element(kind: kind, range: start..<finish, unit: unitStart..<unitEnd, indentation: indentation))
+                    elements.append(
+                        Element(kind: kind, range: start..<finish, unit: unitStart..<unitEnd, indentation: indentation)
+                    )
                 } else {
                     // Whitespace, or text the reader ignores: a blank line parts a comment from what follows.
                     if bytes[at] == UInt8(ascii: "\n"), pending != nil {
                         var probe = at + 1
-                        while probe < bytes.count, bytes[probe] == UInt8(ascii: " ") || bytes[probe] == UInt8(ascii: "\t") || bytes[probe] == UInt8(ascii: "\r") { probe += 1 }
+                        while probe < bytes.count,
+                            bytes[probe] == UInt8(ascii: " ") || bytes[probe] == UInt8(ascii: "\t")
+                                || bytes[probe] == UInt8(ascii: "\r")
+                        { probe += 1 }
                         if probe < bytes.count, bytes[probe] == UInt8(ascii: "\n") { pending = nil }
                     } else if !isSpace(bytes[at]) {
                         pending = nil
@@ -240,7 +260,8 @@ public struct RulesetText: Sendable {
         }
 
         func isSpace(_ byte: UInt8) -> Bool {
-            byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t") || byte == UInt8(ascii: "\n") || byte == UInt8(ascii: "\r")
+            byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t") || byte == UInt8(ascii: "\n")
+                || byte == UInt8(ascii: "\r")
         }
 
         func starts(_ prefix: String) -> Bool {
@@ -261,7 +282,9 @@ public struct RulesetText: Sendable {
 
         func name(_ offset: Int) -> String {
             var probe = offset
-            while probe < bytes.count, !isSpace(bytes[probe]), bytes[probe] != UInt8(ascii: ">"), bytes[probe] != UInt8(ascii: "/") { probe += 1 }
+            while probe < bytes.count, !isSpace(bytes[probe]), bytes[probe] != UInt8(ascii: ">"),
+                bytes[probe] != UInt8(ascii: "/")
+            { probe += 1 }
             return String(decoding: bytes[offset..<probe], as: UTF8.self)
         }
 

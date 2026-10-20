@@ -43,7 +43,15 @@ package struct NodeService: Sendable {
                 stored.node.lastSeenAt = .now
             }!.node
         }
-        let node = Node(id: registration.id, name: registration.name, platform: registration.platform, capabilities: registration.capabilities, ffmpegVersion: registration.ffmpegVersion, cores: registration.cores, lastSeenAt: .now)
+        let node = Node(
+            id: registration.id,
+            name: registration.name,
+            platform: registration.platform,
+            capabilities: registration.capabilities,
+            ffmpegVersion: registration.ffmpegVersion,
+            cores: registration.cores,
+            lastSeenAt: .now
+        )
         try nodes.insert(NodeStore.Stored(node: node, secretHash: secretHash, tokenHash: nil, tokenDelivered: false))
         logger.info("node \(node.name) (\(node.id)) registered, pending approval")
         return node
@@ -96,7 +104,9 @@ package struct NodeService: Sendable {
     /// The approved node a bearer token belongs to, or nil. Seeing it is the node's heartbeat.
     package func authenticate(bearer token: String) -> Node? {
         let hash = NodeStore.hash(token)
-        guard let stored = nodes.first(where: { $0.node.state == .approved && $0.tokenHash == hash }) else { return nil }
+        guard let stored = nodes.first(where: { $0.node.state == .approved && $0.tokenHash == hash }) else {
+            return nil
+        }
         _ = try? nodes.update(stored.node.id) { $0.node.lastSeenAt = .now }
         return stored.node
     }

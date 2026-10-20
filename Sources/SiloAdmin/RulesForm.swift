@@ -16,7 +16,9 @@ struct DraftForm: View {
         if let text = try? RulesetText(draft.text) {
             RulesForm(text: text, apply: apply)
         } else if case .refused(let reason) = draft.reading {
-            RefusalView(reason: reason + "\n\nThe form edits a draft the reader can read: edit the text until it reads.")
+            RefusalView(
+                reason: reason + "\n\nThe form edits a draft the reader can read: edit the text until it reads."
+            )
         }
     }
 }
@@ -213,7 +215,10 @@ private struct FlowLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         for (subview, frame) in zip(subviews, arrange(subviews, within: bounds.width).frames) {
-            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                proposal: ProposedViewSize(frame.size)
+            )
         }
     }
 
@@ -221,21 +226,24 @@ private struct FlowLayout: Layout {
     /// width is given the whole width, to wrap within it.
     private func arrange(_ subviews: Subviews, within width: CGFloat) -> (frames: [CGRect], size: CGSize) {
         var frames: [CGRect] = []
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        var originX: CGFloat = 0
+        var originY: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var widest: CGFloat = 0
         for subview in subviews {
             var size = subview.sizeThatFits(.unspecified)
             if size.width > width { size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
-            if x > 0, x + size.width > width {
-                x = 0
-                y += rowHeight + lineSpacing
+            if originX > 0, originX + size.width > width {
+                originX = 0
+                originY += rowHeight + lineSpacing
                 rowHeight = 0
             }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            x += size.width + spacing
+            frames.append(CGRect(origin: CGPoint(x: originX, y: originY), size: size))
+            originX += size.width + spacing
             rowHeight = max(rowHeight, size.height)
-            widest = max(widest, x - spacing)
+            widest = max(widest, originX - spacing)
         }
-        return (frames, CGSize(width: widest, height: y + rowHeight))
+        return (frames, CGSize(width: widest, height: originY + rowHeight))
     }
 }
 
@@ -269,7 +277,9 @@ private struct RuleEditor: View {
 
         /// The value as the document writes it.
         var attributeValue: String {
-            test == "in" ? members.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: ",") : value
+            test == "in"
+                ? members.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: ",")
+                : value
         }
     }
 
@@ -282,7 +292,10 @@ private struct RuleEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(edit.position == nil ? "New \(edit.scope.rawValue.capitalized) Rule" : "Edit \(edit.scope.rawValue.capitalized) Rule").font(.headline)
+            Text(
+                edit.position == nil
+                    ? "New \(edit.scope.rawValue.capitalized) Rule" : "Edit \(edit.scope.rawValue.capitalized) Rule"
+            ).font(.headline)
             Form {
                 TextField("Id", text: $id, prompt: Text("none: named by its position"))
                 Section("Conditions") {
@@ -319,7 +332,12 @@ private struct RuleEditor: View {
                                 }
                                 .labelsHidden()
                             } else {
-                                SuggestedField(title: "Value", text: $row.value, prompt: row.fact.isNumeric ? "number" : "value", suggestions: row.fact.suggestedValues)
+                                SuggestedField(
+                                    title: "Value",
+                                    text: $row.value,
+                                    prompt: row.fact.isNumeric ? "number" : "value",
+                                    suggestions: row.fact.suggestedValues
+                                )
                             }
                             Button("Remove", systemImage: "minus.circle") { conditions.removeAll { $0.id == row.id } }
                                 .labelStyle(.iconOnly)
@@ -338,10 +356,18 @@ private struct RuleEditor: View {
                     }
                     .pickerStyle(.segmented)
                     if action == .encode {
-                        SuggestedField(title: "Codec", text: $codec, prompt: edit.scope.codecs[0].codec, suggestions: edit.scope.codecs.map(\.codec), labelled: true)
+                        SuggestedField(
+                            title: "Codec",
+                            text: $codec,
+                            prompt: edit.scope.codecs[0].codec,
+                            suggestions: edit.scope.codecs.map(\.codec),
+                            labelled: true
+                        )
                         if takes(.preset) { TextField("Preset", text: $preset) }
                         if takes(.crf) { TextField("CRF", text: $crf) }
-                        if takes(.bitrate) { TextField("Bitrate", text: $bitrate, prompt: Text(edit.scope == .video ? "8M" : "96k")) }
+                        if takes(.bitrate) {
+                            TextField("Bitrate", text: $bitrate, prompt: Text(edit.scope == .video ? "8M" : "96k"))
+                        }
                         if takes(.channels) { TextField("Channels", text: $channels) }
                         if takes(.pixelFormat) { TextField("Pixel format", text: $pixelFormat) }
                         if edit.scope.settings(forCodec: codec).isEmpty {
@@ -358,7 +384,10 @@ private struct RuleEditor: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                 Button(edit.position == nil ? "Add" : "Save") {
-                    if let rule { save(rule); dismiss() }
+                    if let rule {
+                        save(rule)
+                        dismiss()
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(rule == nil)
@@ -423,7 +452,11 @@ private struct RuleEditor: View {
         case .drop: made = .drop
         case .encode:
             var settings: EncodeSettings
-            if case .encode(let existing) = edit.rule.action { settings = existing } else { settings = EncodeSettings(codec: codec) }
+            if case .encode(let existing) = edit.rule.action {
+                settings = existing
+            } else {
+                settings = EncodeSettings(codec: codec)
+            }
             settings.codec = edit.scope.encoder(forCodec: codec.trimmingCharacters(in: .whitespaces))
             // A setting the codec does not take is not written, whatever its field held before the
             // codec changed.
@@ -438,7 +471,9 @@ private struct RuleEditor: View {
         return Rule(
             id: trimmed.isEmpty ? nil : trimmed,
             scope: edit.scope,
-            conditions: conditions.compactMap { row in Condition.Test(attribute: row.test, value: row.attributeValue).map { Condition(row.fact, $0) } },
+            conditions: conditions.compactMap { row in
+                Condition.Test(attribute: row.test, value: row.attributeValue).map { Condition(row.fact, $0) }
+            },
             action: made
         )
     }
@@ -454,10 +489,13 @@ private struct MembersField: View {
         if let values = fact.values {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(values, id: \.self) { value in
-                    Toggle(value, isOn: SwiftUI.Binding(
-                        get: { members.contains(value) },
-                        set: { on in members = values.filter { $0 == value ? on : members.contains($0) } }
-                    ))
+                    Toggle(
+                        value,
+                        isOn: SwiftUI.Binding(
+                            get: { members.contains(value) },
+                            set: { on in members = values.filter { $0 == value ? on : members.contains($0) } }
+                        )
+                    )
                     .toggleStyle(.checkbox)
                 }
             }
@@ -465,7 +503,12 @@ private struct MembersField: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(members.indices, id: \.self) { index in
                     HStack {
-                        SuggestedField(title: "Value", text: $members[index], prompt: fact.isNumeric ? "number" : "value", suggestions: fact.suggestedValues)
+                        SuggestedField(
+                            title: "Value",
+                            text: $members[index],
+                            prompt: fact.isNumeric ? "number" : "value",
+                            suggestions: fact.suggestedValues
+                        )
                         Button("Remove Value", systemImage: "minus") { members.remove(at: index) }
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)

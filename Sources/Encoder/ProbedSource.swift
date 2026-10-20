@@ -70,11 +70,22 @@ public struct ProbedStream: Hashable, Sendable, Codable {
     public var dispositions: Set<String>
 
     public init(
-        absoluteIndex: Int, kind: Kind, codec: String, profile: String? = nil, width: Int? = nil,
-        height: Int? = nil, frameRate: FrameRate? = nil, fieldOrder: String? = nil,
-        colorTransfer: String? = nil, pixelFormat: String? = nil, bitsPerRawSample: Int? = nil,
-        channels: Int? = nil, channelLayout: String? = nil, language: String? = nil,
-        title: String? = nil, dispositions: Set<String> = []
+        absoluteIndex: Int,
+        kind: Kind,
+        codec: String,
+        profile: String? = nil,
+        width: Int? = nil,
+        height: Int? = nil,
+        frameRate: FrameRate? = nil,
+        fieldOrder: String? = nil,
+        colorTransfer: String? = nil,
+        pixelFormat: String? = nil,
+        bitsPerRawSample: Int? = nil,
+        channels: Int? = nil,
+        channelLayout: String? = nil,
+        language: String? = nil,
+        title: String? = nil,
+        dispositions: Set<String> = []
     ) {
         self.absoluteIndex = absoluteIndex
         self.kind = kind

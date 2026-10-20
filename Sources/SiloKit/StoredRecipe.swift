@@ -22,7 +22,13 @@ public struct StoredRecipe: Hashable, Sendable, Codable {
     public var recipe: Recipe
     public var createdAt: Date
 
-    public init(id: String = UUID().uuidString.lowercased(), binding: String, facts: SourceFacts, recipe: Recipe, createdAt: Date = .now) {
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        binding: String,
+        facts: SourceFacts,
+        recipe: Recipe,
+        createdAt: Date = .now
+    ) {
         self.id = id
         self.binding = binding
         self.state = .resolved

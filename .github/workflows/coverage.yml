@@ -1,0 +1,57 @@
+name: coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  Coverage:
+    name: Coverage
+    runs-on: ubuntu-24.04
+    # The suite is the build job's, so the same limit holds for the same reason.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: swift-wire/setup-swift@v1
+      # The same tools as the build job, so that the tests which skip themselves without them run
+      # here too and their code is measured rather than reported as uncovered.
+      - name: Install ffmpeg, SQLite and Avahi
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libsqlite3-dev avahi-utils
+      - name: Run tests with coverage
+        run: swift test --enable-code-coverage --xunit-output test-results.xml
+      - name: Convert to LCOV
+        # 6.4's build system emits one `<Target>-test-runner` executable and a `<Target>.so` per test
+        # module rather than the single `.xctest` binary earlier toolchains linked. Every one of them
+        # carries instrumented code, so llvm-cov is handed all of them; the `.xctest` glob keeps the
+        # older layout working should the job ever run on one.
+        run: |
+          BIN_PATH=$(swift build --show-bin-path)
+          PROFDATA=$(find .build -name 'default.profdata' -path '*/codecov/*' | head -1)
+          objects=()
+          for f in "$BIN_PATH"/*-test-runner "$BIN_PATH"/*.so "$BIN_PATH"/*.xctest; do
+            [ -f "$f" ] && objects+=(-object "$f")
+          done
+          llvm-cov export \
+            -format=lcov \
+            -instr-profile="$PROFDATA" \
+            "${objects[@]}" \
+            -ignore-filename-regex=".build|Tests" \
+            > coverage.lcov
+      - name: Upload coverage
+        uses: codecov/codecov-action@v6
+        with:
+          files: coverage.lcov
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Upload test results
+        uses: codecov/codecov-action@v6
+        if: always()
+        with:
+          files: test-results.xml
+          report_type: test_results
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

@@ -26,22 +26,31 @@ struct Encode: AsyncParsableCommand {
     @Flag(help: "The item is an extra, held in its container's extras rather than a sequence.")
     var extra = false
 
-    @Option(help: "Which of the ruleset's outputs to make, by its profile: mobile…; the unqualified output when left out.")
+    @Option(
+        help: "Which of the ruleset's outputs to make, by its profile: mobile…; the unqualified output when left out."
+    )
     var profile: String?
 
     @Option(help: "The medium the file came from, which a plain file cannot say: dvd, bluray or uhd.")
     var format: SourceFormat?
 
-    @Option(name: .customLong("input"), help: "A JSON file holding the file's input spec; the plain-file producer describes it when left out.")
+    @Option(
+        name: .customLong("input"),
+        help: "A JSON file holding the file's input spec; the plain-file producer describes it when left out."
+    )
     var inputSpecPath: String?
 
-    @Option(help: "An audio stream, from one, that is a commentary. Repeatable; also maps it as feature \"commentary\".")
+    @Option(
+        help: "An audio stream, from one, that is a commentary. Repeatable; also maps it as feature \"commentary\"."
+    )
     var commentary: [Int] = []
 
     @Option(help: "An audio stream, from one, that is descriptive audio. Repeatable.")
     var descriptive: [Int] = []
 
-    @Option(help: "An audio stream, from one, that is an isolated music track. Repeatable; maps it as feature \"music\".")
+    @Option(
+        help: "An audio stream, from one, that is an isolated music track. Repeatable; maps it as feature \"music\"."
+    )
     var music: [Int] = []
 
     @Flag(name: .customLong("dry-run"), help: "Resolve and show the recipe; encode nothing.")
@@ -62,15 +71,8 @@ struct Encode: AsyncParsableCommand {
         }
     }
 
-    mutating func run() async throws {
-        let ruleset = try RulesetFile.ruleset(from: Data(contentsOf: URL(fileURLWithPath: rulesetPath)))
-        guard let made = ruleset.outputs.first(where: { $0.profile == profile }) else {
-            let names = ruleset.outputs.map { $0.profile ?? "the unqualified output" }.joined(separator: ", ")
-            throw ValidationError("\(ruleset.name) makes no output for \(profile.map { "the profile \($0)" } ?? "no profile"); it makes \(names)")
-        }
-
-        let inputURL = URL(fileURLWithPath: input)
-        let probe = try FFprobe()
+    /// The file's input spec: read from --input when given, probed otherwise, with --format over it.
+    private func inputSpec(of inputURL: URL, probe: FFprobe) async throws -> InputSpec {
         var spec: InputSpec
         if let inputSpecPath {
             do {
@@ -82,14 +84,41 @@ struct Encode: AsyncParsableCommand {
             spec = InputSpec(probe: try await probe.probe(inputURL))
         }
         if let format { spec.medium = format }
+        return spec
+    }
+
+    mutating func run() async throws {
+        let ruleset = try RulesetFile.ruleset(from: Data(contentsOf: URL(fileURLWithPath: rulesetPath)))
+        guard let made = ruleset.outputs.first(where: { $0.profile == profile }) else {
+            let names = ruleset.outputs.map { $0.profile ?? "the unqualified output" }.joined(separator: ", ")
+            throw ValidationError(
+                "\(ruleset.name) makes no output for \(profile.map { "the profile \($0)" } ?? "no profile"); it makes \(names)"
+            )
+        }
+
+        let inputURL = URL(fileURLWithPath: input)
+        let probe = try FFprobe()
+        let spec = try await inputSpec(of: inputURL, probe: probe)
 
         var roles: [Int: AudioRole] = [:]
         var mappings: [TrackMapping] = []
-        for index in commentary { roles[index] = .commentary; mappings.append(TrackMapping(feature: "commentary", audio: index)) }
+        for index in commentary {
+            roles[index] = .commentary
+            mappings.append(TrackMapping(feature: "commentary", audio: index))
+        }
         for index in descriptive { roles[index] = .descriptive }
-        for index in music { roles[index] = .isolatedMusic; mappings.append(TrackMapping(feature: "music", audio: index)) }
+        for index in music {
+            roles[index] = .isolatedMusic
+            mappings.append(TrackMapping(feature: "music", audio: index))
+        }
 
-        let facts = SourceFacts(input: spec, roles: roles, kind: kind.flatMap(EntryType.init(rawValue:)), extra: extra, profile: made.profile)
+        let facts = SourceFacts(
+            input: spec,
+            roles: roles,
+            kind: kind.flatMap(EntryType.init(rawValue:)),
+            extra: extra,
+            profile: made.profile
+        )
 
         let recipe: Recipe
         do {
@@ -140,31 +169,40 @@ struct Encode: AsyncParsableCommand {
     static func describe(_ recipe: Recipe, facts: SourceFacts, mappings: [TrackMapping]) -> String {
         var lines = ["ruleset \(recipe.ruleset)"]
         for decision in recipe.decisions {
-            let what: String = switch decision.kind {
-            case .video:
-                facts.video.map { "\($0.codec) \($0.width)x\($0.height)\($0.interlaced ? " interlaced" : "")\($0.hdr.map { " \($0.rawValue)" } ?? "")" } ?? "?"
-            case .audio:
-                facts.audio.first { $0.index == decision.sourceIndex }.map {
-                    "\($0.codec)\($0.profile.map { " \($0)" } ?? "") \($0.channels)ch \($0.language ?? "und") \($0.role.rawValue)\($0.lossless ? " lossless" : "")\($0.core ? " core" : "")"
-                } ?? "?"
-            case .subtitle:
-                facts.subtitles.first { $0.index == decision.sourceIndex }.map {
-                    "\($0.codec) \($0.language ?? "und")\($0.forced ? " forced" : "")"
-                } ?? "?"
-            }
-            let action: String = switch decision.action {
-            case .copy: "copy"
-            case .drop: "drop"
-            case .encode(let settings): "encode \(settings.codec)"
-            }
-            let placed = recipe.layout.outputIndex(of: decision.kind, sourceIndex: decision.sourceIndex).map { " => \(decision.kind.rawValue) \($0)" } ?? ""
-            lines.append("\(decision.kind.rawValue.padding(toLength: 8, withPad: " ", startingAt: 0)) \(decision.sourceIndex)  \(what) -> \(action) (\(decision.rule))\(placed)")
+            let what: String =
+                switch decision.kind {
+                case .video:
+                    facts.video.map {
+                        "\($0.codec) \($0.width)x\($0.height)\($0.interlaced ? " interlaced" : "")\($0.hdr.map { " \($0.rawValue)" } ?? "")"
+                    } ?? "?"
+                case .audio:
+                    facts.audio.first { $0.index == decision.sourceIndex }.map {
+                        "\($0.codec)\($0.profile.map { " \($0)" } ?? "") \($0.channels)ch \($0.language ?? "und") \($0.role.rawValue)\($0.lossless ? " lossless" : "")\($0.core ? " core" : "")"
+                    } ?? "?"
+                case .subtitle:
+                    facts.subtitles.first { $0.index == decision.sourceIndex }.map {
+                        "\($0.codec) \($0.language ?? "und")\($0.forced ? " forced" : "")"
+                    } ?? "?"
+                }
+            let action: String =
+                switch decision.action {
+                case .copy: "copy"
+                case .drop: "drop"
+                case .encode(let settings): "encode \(settings.codec)"
+                }
+            let placed =
+                recipe.layout.outputIndex(of: decision.kind, sourceIndex: decision.sourceIndex).map {
+                    " => \(decision.kind.rawValue) \($0)"
+                } ?? ""
+            lines.append(
+                "\(decision.kind.rawValue.padding(toLength: 8, withPad: " ", startingAt: 0)) \(decision.sourceIndex)  \(what) -> \(action) (\(decision.rule))\(placed)"
+            )
         }
         for track in recipe.tracks(for: mappings) {
-            var where_ = [String]()
-            if let audio = track.audio { where_.append("audio \(audio)") }
-            if let subtitle = track.subtitle { where_.append("subtitle \(subtitle)") }
-            lines.append("track \(track.feature) -> \(where_.joined(separator: ", "))")
+            var placements = [String]()
+            if let audio = track.audio { placements.append("audio \(audio)") }
+            if let subtitle = track.subtitle { placements.append("subtitle \(subtitle)") }
+            lines.append("track \(track.feature) -> \(placements.joined(separator: ", "))")
         }
         return lines.joined(separator: "\n")
     }

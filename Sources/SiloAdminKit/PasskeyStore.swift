@@ -55,7 +55,7 @@ public struct KeychainPasskeyStore: PasskeyStore {
         ]
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data
+            let data = item as? Data
         else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
@@ -67,7 +67,9 @@ public struct KeychainPasskeyStore: PasskeyStore {
             kSecAttrService: service,
             kSecAttrAccount: serverID,
         ]
-        if SecItemAdd((key.merging([kSecValueData: data]) { _, new in new }) as CFDictionary, nil) == errSecDuplicateItem {
+        if SecItemAdd((key.merging([kSecValueData: data]) { _, new in new }) as CFDictionary, nil)
+            == errSecDuplicateItem
+        {
             SecItemUpdate(key as CFDictionary, [kSecValueData: data] as CFDictionary)
         }
     }

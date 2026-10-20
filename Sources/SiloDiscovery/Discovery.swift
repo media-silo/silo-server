@@ -3,7 +3,6 @@
 
 import Encoder
 import Foundation
-import Logging
 
 /// A silo on the local network, as Bonjour describes it.
 public struct DiscoveredSilo: Hashable, Sendable, Codable {
@@ -96,7 +95,10 @@ public enum Discovery {
             let names = parseDNSSDBrowse(try await collect(url, ["-B", serviceType, "local."], for: timeout))
             var found: [DiscoveredSilo] = []
             for name in names {
-                if let silo = parseDNSSDLookup(try await collect(url, ["-L", name, serviceType, "local."], for: .seconds(2)), name: name) {
+                if let silo = parseDNSSDLookup(
+                    try await collect(url, ["-L", name, serviceType, "local."], for: .seconds(2)),
+                    name: name
+                ) {
                     found.append(silo)
                 }
             }
@@ -168,7 +170,8 @@ public enum Discovery {
         var found: [DiscoveredSilo] = []
         for line in lines where line.hasPrefix("=;") {
             let fields = line.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
-            guard fields.count >= 9, fields[2] == "IPv4" || !found.contains(where: { $0.name == unescape(fields[3]) }) else { continue }
+            guard fields.count >= 9, fields[2] == "IPv4" || !found.contains(where: { $0.name == unescape(fields[3]) })
+            else { continue }
             let name = unescape(fields[3])
             guard let port = Int(fields[8]) else { continue }
             let txt = fields.count > 9 ? parseTXT(fields[9]) : [:]

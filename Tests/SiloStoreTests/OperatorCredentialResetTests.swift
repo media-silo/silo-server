@@ -62,7 +62,12 @@ struct OperatorCredentialResetTests {
     @Test func noFileIsNoReset() throws {
         let folder = Self.folder()
         let credential = OperatorCredential()
-        #expect(try processOperatorCredentialReset(from: folder.appendingPathComponent("operator-credential.reset"), into: credential) == nil)
+        #expect(
+            try processOperatorCredentialReset(
+                from: folder.appendingPathComponent("operator-credential.reset"),
+                into: credential
+            ) == nil
+        )
         #expect(credential.current == nil)
     }
 }
