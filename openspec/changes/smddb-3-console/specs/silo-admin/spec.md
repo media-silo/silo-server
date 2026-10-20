@@ -82,8 +82,9 @@ The form and its drafts are pinned by nothing yet, as the rest of the shell is.
 SiloAdmin SHALL propose a library's container to smddb by contributing, through the clone, the
 container's own fields as that library's sidecar says them, as a repository document. Before it
 contributes, the console SHALL show the document's difference from the clone's record of the same
-id, or say the clone has none, and SHALL offer with it, chosen, the descendants the container
-names that the clone does not hold. After it contributes, the console SHALL say which files it
+id, or say the clone has none, and SHALL offer with it, chosen, the containers it names that the
+clone does not hold, as children beneath it or through a ref, from the library's sidecars; one the
+library does not hold either SHALL be shown as the reason the contribution would be refused. After it contributes, the console SHALL say which files it
 wrote in the clone. The library's sidecar SHALL NOT change, and the document SHALL carry none of
 the library's presentations, children's paths or rules.
 

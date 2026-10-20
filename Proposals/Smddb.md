@@ -79,7 +79,7 @@ an import uses.
 **Exporting to smddb.** On a container in a library, the operator proposes it to smddb. The console
 takes the container's own fields from that library's sidecar as a repository document, shows how it
 differs from the clone's record of the same id, if there is one, and contributes it, together with
-any descendants it names that smddb does not have. The library's sidecar does not change. Its
+the containers beneath it, or reached through a ref, that the library holds and smddb does not. The library's sidecar does not change. Its
 presentations, children's paths and rules are the library's, and the repository document has no
 place for them.
 
@@ -124,8 +124,9 @@ container and never the media. This proposal adds four.
   while the clone has a file named for it. 64 random bits make a second try a formality, and the check
   costs one `stat`.
 - `contribute(_ containers: [Container]) async throws -> Contribution`, which offers containers to
-  smddb. A contribution is refused whole when a container names a child that neither the database
-  nor the contribution holds. This is the referential check smddb's hosting proposal runs at submit,
+  smddb. A contribution is refused whole, and nothing written, when two of its containers share an id,
+  or when a container names a child, or refers to a container, that neither the database nor the
+  contribution holds. This is the referential check smddb's hosting proposal runs at submit,
   done here so that the clone is never left naming a container it lacks. `LocalRepository` writes
   each container as `save(_:)` does and answers `Contribution.written`, listing the files.
   Hosting.md's states, `pending`, `changes-requested`, `merged` and `rejected`, are the cases a service
@@ -220,8 +221,10 @@ A new container's draft is kept on the Mac as an edit draft is, until it is crea
 
 **Export.** On a library container, "Propose to smddb" shows the repository document the library's
 sidecar makes, and its difference from the clone's record of the same id, or says the clone does not
-have it. Any descendants the container names that the clone lacks are offered with it, and ticked,
-since a contribution that names a child smddb lacks is refused. On confirming, the console
+have it. The containers it names that the clone lacks, as children beneath it or through a ref, are
+offered with it from the library's sidecars, and ticked, since a contribution that names a container
+smddb lacks is refused. One the library does not hold either is shown as the reason the export would
+be refused. On confirming, the console
 contributes them and says which files it wrote in the clone, for the operator to commit there.
 
 **Standing against smddb.** Each container in the browser whose id the clone holds says whether the
