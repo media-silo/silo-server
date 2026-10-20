@@ -65,8 +65,31 @@ extension AdminConsole {
         public var ancestors: [Container]
         /// The picked container's descendants in smddb that the library does not hold, top down.
         public var descendants: [Container]
-        /// Its descendants the library holds already.
-        public var held: [ContainerID]
+        /// Its descendants the library holds already, as smddb has them.
+        public var held: [Container]
+
+        /// The containers the plan knows: the picked one, its descendants, and those held.
+        private var known: [Container] { [picked] + descendants + held }
+
+        /// A container's children in the plan that the library does not hold, in the order its
+        /// document names them: what the import can make beneath it.
+        public func children(of id: ContainerID) -> [Container] {
+            guard let container = known.first(where: { $0.id == id }) else { return [] }
+            return container.childContainerIDs.compactMap { child in descendants.first { $0.id == child } }
+        }
+
+        /// A container's children in the plan that the library holds already, in the order its
+        /// document names them: shown beneath it, and not chosen.
+        public func heldChildren(of id: ContainerID) -> [Container] {
+            guard let container = known.first(where: { $0.id == id }) else { return [] }
+            return container.childContainerIDs.compactMap { child in held.first { $0.id == child } }
+        }
+
+        /// Every container the import could make below one, children first and then theirs, depth
+        /// first: what an all-or-none choice for its children covers.
+        public func subtree(of id: ContainerID) -> [ContainerID] {
+            children(of: id).flatMap { [$0.id] + subtree(of: $0.id) }
+        }
 
         /// The documents an import makes when `chosen` are the descendants chosen: every ancestor, the
         /// picked container, and each chosen descendant whose parent in smddb is made too.
@@ -125,13 +148,13 @@ extension AdminConsole {
         }
 
         var descendants: [Container] = []
-        var held: [ContainerID] = []
+        var held: [Container] = []
         var queue = picked.childContainerIDs
         while !queue.isEmpty {
             let next = queue.removeFirst()
             guard let container = byID[next] else { continue }
             if try await holds(next, in: library, of: silo) {
-                held.append(next)
+                held.append(container)
                 continue
             }
             descendants.append(container)

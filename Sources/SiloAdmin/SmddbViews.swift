@@ -120,20 +120,9 @@ struct ImportSheet: View {
             ForEach(plan.ancestors, id: \.id) { ancestor in
                 Label("\(ancestor.displayTitle), made above it", systemImage: "arrow.up")
             }
-            Label(plan.picked.displayTitle, systemImage: "shippingbox").bold()
-            ForEach(plan.descendants, id: \.id) { descendant in
-                Toggle(
-                    descendant.displayTitle,
-                    isOn: Binding(
-                        get: { chosen.contains(descendant.id) },
-                        set: { if $0 { chosen.insert(descendant.id) } else { chosen.remove(descendant.id) } }
-                    )
-                )
-            }
-            ForEach(plan.held, id: \.self) { held in
-                Label("\(held), which the library holds", systemImage: "checkmark").foregroundStyle(.secondary)
-            }
+            ImportTreeNode(plan: plan, container: plan.picked, chosen: $chosen, depth: 0, included: true)
         }
+        .onChange(of: chosen) { outcome = nil }
         switch outcome {
         case .wouldMake(let result)?:
             Label(
@@ -183,6 +172,90 @@ struct ImportSheet: View {
     private var isWouldMake: Bool {
         if case .wouldMake? = outcome { return true }
         return false
+    }
+}
+
+/// One container of an import's tree, and the containers beneath it once disclosed. The picked
+/// container is always made; each one below has a box of its own, and one with children a second,
+/// three-state box for every container beneath it — all, none, or some — with how many of them are
+/// chosen. A container not made makes nothing beneath it, so its children are shown and not chosen.
+/// The containers the library holds already are shown in their place, and cannot be chosen.
+private struct ImportTreeNode: View {
+    let plan: AdminConsole.ImportPlan
+    let container: Container
+    @Binding var chosen: Set<ContainerID>
+    let depth: Int
+    /// Whether every container above this one is made, so that choosing this one means anything.
+    let included: Bool
+    @State private var expanded: Bool?
+
+    var body: some View {
+        let children = plan.children(of: container.id)
+        let held = plan.heldChildren(of: container.id)
+        if children.isEmpty && held.isEmpty {
+            row(children: children)
+        } else {
+            DisclosureGroup(
+                isExpanded: Binding(get: { expanded ?? (depth == 0) }, set: { expanded = $0 })
+            ) {
+                ForEach(children, id: \.id) { child in
+                    ImportTreeNode(
+                        plan: plan,
+                        container: child,
+                        chosen: $chosen,
+                        depth: depth + 1,
+                        included: makes
+                    )
+                }
+                ForEach(held, id: \.id) { child in
+                    Label("\(child.displayTitle), which the library holds", systemImage: "checkmark")
+                        .foregroundStyle(.secondary)
+                }
+            } label: {
+                row(children: children)
+            }
+        }
+    }
+
+    /// Whether this container is made: the picked one always, and one below when it and all above
+    /// it are chosen.
+    private var makes: Bool { depth == 0 || (included && chosen.contains(container.id)) }
+
+    private func row(children: [Container]) -> some View {
+        HStack {
+            if depth == 0 {
+                Label(container.displayTitle, systemImage: "shippingbox").bold()
+            } else {
+                Toggle(
+                    container.displayTitle,
+                    isOn: Binding(
+                        get: { chosen.contains(container.id) },
+                        set: { if $0 { chosen.insert(container.id) } else { chosen.remove(container.id) } }
+                    )
+                )
+                .toggleStyle(.checkbox)
+                .disabled(!included)
+            }
+            Spacer()
+            if !children.isEmpty {
+                let below = plan.subtree(of: container.id)
+                Toggle(
+                    sources: below.map { id in
+                        Binding(
+                            get: { chosen.contains(id) },
+                            set: { if $0 { chosen.insert(id) } else { chosen.remove(id) } }
+                        )
+                    },
+                    isOn: \.self
+                ) {
+                    Text("\(below.filter(chosen.contains).count) of \(below.count) below")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .toggleStyle(.checkbox)
+                .disabled(!makes)
+                .help("Choose every container beneath \(container.displayTitle), or none")
+            }
+        }
     }
 }
 

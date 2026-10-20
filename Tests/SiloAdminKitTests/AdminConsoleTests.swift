@@ -2056,6 +2056,9 @@ extension AdminConsoleTests {
         #expect(plan.ancestors.isEmpty)
         #expect(plan.descendants.map(\.id) == [Self.ark.id])
         #expect(plan.documents(choosing: []).count == 1, "the season alone, its serial not chosen")
+        #expect(plan.children(of: Self.season12.id).map(\.id) == [Self.ark.id], "the tree the sheet shows")
+        #expect(plan.subtree(of: Self.season12.id) == [Self.ark.id])
+        #expect(plan.children(of: Self.ark.id).isEmpty && plan.heldChildren(of: Self.season12.id).isEmpty)
 
         guard
             case .refused(let refused, let parentDraft?) = try await console.importContainers(
@@ -2111,6 +2114,19 @@ extension AdminConsoleTests {
         }
         #expect(whole.parent == nil)
         #expect(whole.ancestors.map(\.id) == [series.id, Self.season12.id])
+
+        // A library holding one season of the series: the plan's tree shows it beneath the series,
+        // held, beside the season it can make, and an all-or-none choice covers that season's serial.
+        let (partial, partialHome) = try await Self.smddbConsole(HeldLibrary([Self.season13]))
+        guard
+            case .plan(let tree) = try await partial.planImport(series.id, into: "tv", of: partialHome, from: database)
+        else {
+            Issue.record("the series is planned")
+            return
+        }
+        #expect(tree.children(of: series.id).map(\.id) == [Self.season12.id])
+        #expect(tree.heldChildren(of: series.id).map(\.id) == [Self.season13.id])
+        #expect(tree.subtree(of: series.id) == [Self.season12.id, Self.ark.id])
     }
 
     /// A new container takes its id from smddb's client, is a draft on this Mac until it is made, and is
