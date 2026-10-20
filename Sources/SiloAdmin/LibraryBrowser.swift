@@ -102,17 +102,29 @@ private struct LibraryNode: View {
                         "The last walk found \(findings.count == 1 ? "something" : "\(findings.count) things") to report"
                     )
                 }
+                Spacer()
+                Menu {
+                    Button("Import from smddb…") {
+                        model.importing = ConsoleModel.Importing(silo: silo, library: library)
+                    }
+                    Button("New Container…") {
+                        model.newContainer = ConsoleModel.NewContainer(silo: silo, library: library, sequences: [])
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .disabled(model.database == nil)
+                .help(
+                    model.database == nil
+                        ? "Choose a clone of smddb's data repository below to add containers to \(library)"
+                        : "Add containers to \(library)"
+                )
             }
         }
         .tag(ConsoleModel.Browsed.library(library))
-        .contextMenu {
-            Button("Import from smddb…") { model.importing = ConsoleModel.Importing(silo: silo, library: library) }
-                .disabled(model.database == nil)
-            Button("New Container…") {
-                model.newContainer = ConsoleModel.NewContainer(silo: silo, library: library, sequences: [])
-            }
-            .disabled(model.database == nil)
-        }
     }
 }
 
