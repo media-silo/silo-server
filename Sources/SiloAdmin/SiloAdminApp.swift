@@ -22,6 +22,7 @@ struct SiloAdminApp: App {
         let console = AdminConsole(
             registry: SiloRegistry(file: folder.appending(path: "registry.json", directoryHint: .notDirectory)),
             drafts: DraftStore(file: folder.appending(path: "drafts.json", directoryHint: .notDirectory)),
+            containerDrafts: ContainerDraftStore(file: folder.appending(path: "container-drafts.json", directoryHint: .notDirectory)),
             passkeys: KeychainPasskeyStore()
         )
         _model = State(initialValue: ConsoleModel(console: console))
@@ -99,6 +100,22 @@ final class ConsoleModel {
     private(set) var lastWalks: [AdminConsole.Silo.ID: [String: SiloClient.LastWalk]] = [:]
     /// A branch's version being tried, while its bindings are chosen.
     var trying: Trying?
+    /// The containers at the top of each library as last read for a silo, by its id, then the library.
+    private(set) var containerRoots: [AdminConsole.Silo.ID: [String: [SiloClient.ContainerSummary]]] = [:]
+    /// Each container as last read, by the silo, the library and its id: the browser's tree reads its
+    /// children from here, and the detail the container itself.
+    private(set) var containers: [ContainerKey: AdminConsole.OpenedContainer] = [:]
+    /// What the Libraries section shows for a silo, by its id: a library, or a container in one.
+    var browsed: [AdminConsole.Silo.ID: Browsed] = [:]
+    /// The container drafts this Mac keeps for a silo, with the open one's latest keystrokes.
+    private(set) var containerDrafts: [AdminConsole.Silo.ID: [ContainerDraft]] = [:]
+    /// The container draft open in the editor for a silo, by its id.
+    private(set) var editingContainer: [AdminConsole.Silo.ID: ContainerDraft.ID] = [:]
+    /// What the silo's dry run last made of each container draft.
+    private(set) var containerChecks: [ContainerDraft.ID: AdminConsole.ContainerCheck] = [:]
+    private var checkingContainer: [ContainerDraft.ID: Task<Void, Never>] = [:]
+    /// The review before a container draft is stored, when one is open.
+    var containerReview: ContainerReview?
     /// The trial jobs this console started for a silo, by its id, as the silo last had them.
     private(set) var trialJobs: [AdminConsole.Silo.ID: [AdminConsole.TrialJob]] = [:]
     /// What starting trials could not do, binding by binding, in the silo's words.
@@ -127,6 +144,30 @@ final class ConsoleModel {
         var impact: [SiloClient.OutOfDatePresentation]
         var branches: [SiloClient.Branch]
         var landed: SiloClient.RulesetDocument?
+    }
+
+    /// A container in one library of one silo: what the browser and its cache are keyed by.
+    struct ContainerKey: Hashable {
+        var silo: AdminConsole.Silo.ID
+        var library: String
+        var container: String
+    }
+
+    /// A library, or a container in one, as the Libraries section's browser chooses it.
+    enum Browsed: Hashable {
+        case library(String)
+        case container(ContainerKey)
+    }
+
+    /// A container draft's review: its difference from its base and the silo's findings before
+    /// anything is stored; when another edit landed first, that sidecar and how it differs from the
+    /// base, for the draft to be re-based on it or discarded.
+    struct ContainerReview: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var draft: ContainerDraft
+        var check: AdminConsole.ContainerCheck?
+        var landed: AdminConsole.OpenedContainer?
     }
 
     /// A branch's promotion: what it would put out of date, and, once refused, what it has not taken in.
@@ -228,10 +269,13 @@ final class ConsoleModel {
         switch section {
         case .settings: break
         // The walks move on by themselves, and a library added or removed elsewhere changes the
-        // settings, so both are read again.
+        // settings, so both are read again; and a container changed elsewhere, by an edit or a walk,
+        // arrives with its new digest, which is what marks a draft behind.
         case .libraries:
             await loadSettings(for: silo)
             await loadLibraries(for: silo)
+            await loadContainers(for: silo)
+            for key in containers.keys where key.silo == silo.id { await open(key) }
         case .rulesets:
             await loadRulesets(for: silo)
             if let current = opened[silo.id] { await open(ruleset: current.summary.name, version: current.document.version, of: silo) }
@@ -645,6 +689,14 @@ final class ConsoleModel {
             refusal = .unreachable
             return
         }
+        // Its containers go with it, and so does the browser's choice of it or of one of them.
+        containerRoots[silo.id]?[library] = nil
+        containers = containers.filter { $0.key.silo != silo.id || $0.key.library != library }
+        switch browsed[silo.id] {
+        case .library(library)?: browsed[silo.id] = nil
+        case .container(let key)? where key.library == library: browsed[silo.id] = nil
+        default: break
+        }
         await loadSettings(for: silo)
         await loadLibraries(for: silo)
     }
@@ -665,6 +717,227 @@ final class ConsoleModel {
         }
     }
 
+    // MARK: Containers
+
+    /// Reads the containers at the top of each library the silo lists, listed or not, and the drafts
+    /// kept for the silo. A library that fails to answer keeps its last reading.
+    func loadContainers(for silo: AdminConsole.Silo) async {
+        loadContainerDrafts(for: silo)
+        for library in libraries[silo.id] ?? [] {
+            if let roots = try? await console.containers(in: library.id, of: silo) {
+                containerRoots[silo.id, default: [:]][library.id] = roots
+            }
+        }
+    }
+
+    /// Reads one container as its library's sidecar says it, with the last walk's findings on it.
+    func open(_ key: ContainerKey) async {
+        guard let silo = silos.first(where: { $0.id == key.silo }) else { return }
+        if let opened = try? await console.open(container: key.container, in: key.library, of: silo) {
+            containers[key] = opened
+        }
+    }
+
+    /// Chooses a library or a container in the browser, and reads a container chosen.
+    func browse(_ chosen: Browsed?, on silo: AdminConsole.Silo) async {
+        browsed[silo.id] = chosen
+        if case .container(let key)? = chosen { await open(key) }
+    }
+
+    /// Chooses a container in the browser and reads it.
+    func select(_ key: ContainerKey) async {
+        browsed[key.silo] = .container(key)
+        await open(key)
+    }
+
+    /// The silo's container drafts as this Mac keeps them, the open one's unsaved keystrokes kept.
+    func loadContainerDrafts(for silo: AdminConsole.Silo) {
+        let open = containerDraft(of: silo)
+        containerDrafts[silo.id] = console.containerDrafts.drafts(of: silo.id).map { $0.id == open?.id ? open! : $0 }
+        if let id = editingContainer[silo.id], containerDrafts[silo.id]?.contains(where: { $0.id == id }) != true { editingContainer[silo.id] = nil }
+    }
+
+    /// The container draft open in the editor for a silo.
+    func containerDraft(of silo: AdminConsole.Silo) -> ContainerDraft? {
+        editingContainer[silo.id].flatMap { id in containerDrafts[silo.id]?.first { $0.id == id } }
+    }
+
+    /// The draft kept for a container, open or not.
+    func containerDraft(for key: ContainerKey) -> ContainerDraft? {
+        containerDrafts[key.silo]?.first { $0.library == key.library && $0.container == key.container }
+    }
+
+    /// What the silo's dry run last made of the open container draft.
+    func containerCheck(of silo: AdminConsole.Silo) -> AdminConsole.ContainerCheck? {
+        editingContainer[silo.id].flatMap { containerChecks[$0] }
+    }
+
+    /// Edits a container: its kept draft, or a new one based on the sidecar as last read, opened and
+    /// checked by the silo at once.
+    func editContainer(_ key: ContainerKey) {
+        guard let silo = silos.first(where: { $0.id == key.silo }) else { return }
+        if let kept = containerDraft(for: key) {
+            editingContainer[silo.id] = kept.id
+            if containerChecks[kept.id] == nil { scheduleContainerCheck(of: kept.id, for: silo, after: .zero) }
+            return
+        }
+        guard let opened = containers[key], let draft = try? ContainerDraft.change(opened.container, sidecar: opened.sidecar) else { return }
+        keepContainerDraft(draft, for: silo)
+        editingContainer[silo.id] = draft.id
+        scheduleContainerCheck(of: draft.id, for: silo, after: .zero)
+    }
+
+    /// Closes the container editor, keeping the draft.
+    func closeContainerDraft(for silo: AdminConsole.Silo) {
+        guard let id = editingContainer[silo.id] else { return }
+        if let draft = containerDraft(of: silo) { keepContainerDraft(draft, for: silo) }
+        editingContainer[silo.id] = nil
+        checkingContainer[id]?.cancel()
+    }
+
+    /// The operator's edit, from the form or the text: kept, then saved to this Mac and dry-run by the
+    /// silo a moment after they stop.
+    func editContainerDraft(_ text: String, for silo: AdminConsole.Silo) {
+        guard var draft = containerDraft(of: silo), draft.text != text,
+              let index = containerDrafts[silo.id]?.firstIndex(where: { $0.id == draft.id })
+        else { return }
+        draft.text = text
+        draft.edited = .now
+        containerDrafts[silo.id]?[index] = draft
+        scheduleContainerCheck(of: draft.id, for: silo, after: checkDelay)
+    }
+
+    /// Discards the open container draft: off this Mac, and out of the editor.
+    func discardContainerDraft(for silo: AdminConsole.Silo) {
+        guard let id = editingContainer[silo.id] else { return }
+        checkingContainer[id]?.cancel()
+        try? console.containerDrafts.remove(id, of: silo.id)
+        editingContainer[silo.id] = nil
+        containerChecks[id] = nil
+        loadContainerDrafts(for: silo)
+        if containerReview?.silo.id == silo.id { containerReview = nil }
+    }
+
+    /// Waits for the container draft's save and dry run in flight, if any.
+    func settleContainerCheck(for silo: AdminConsole.Silo) async {
+        guard let id = editingContainer[silo.id] else { return }
+        await checkingContainer[id]?.value
+    }
+
+    /// Whether the open container draft's library sidecar has moved on since its base, as last read.
+    func isBehind(_ draft: ContainerDraft, on silo: AdminConsole.Silo) -> Bool {
+        let key = ContainerKey(silo: silo.id, library: draft.library, container: draft.container)
+        if let digest = containers[key]?.container.digest, draft.isBehind(digest) { return true }
+        if case .behind? = containerChecks[draft.id] { return true }
+        return false
+    }
+
+    private func keepContainerDraft(_ draft: ContainerDraft, for silo: AdminConsole.Silo) {
+        try? console.containerDrafts.save(draft, for: silo.id)
+        loadContainerDrafts(for: silo)
+        if let index = containerDrafts[silo.id]?.firstIndex(where: { $0.id == draft.id }) { containerDrafts[silo.id]?[index] = draft }
+    }
+
+    /// As for a ruleset's draft: each keystroke cancels the save and dry run it supersedes, and a reply
+    /// for text that has since changed is dropped.
+    private func scheduleContainerCheck(of id: ContainerDraft.ID, for silo: AdminConsole.Silo, after delay: Duration) {
+        checkingContainer[id]?.cancel()
+        checkingContainer[id] = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled, let self, let draft = self.containerDrafts[silo.id]?.first(where: { $0.id == id }) else { return }
+            try? self.console.containerDrafts.save(draft, for: silo.id)
+            guard let outcome = try? await self.console.check(draft, of: silo), !Task.isCancelled,
+                  self.containerDrafts[silo.id]?.first(where: { $0.id == id })?.text == draft.text
+            else { return }
+            self.containerChecks[id] = outcome
+        }
+    }
+
+    /// Opens the review of the open container draft: its difference from its base, and the silo's
+    /// dry run as it stands. Nothing is stored.
+    func beginContainerReview(for silo: AdminConsole.Silo) async {
+        guard let draft = containerDraft(of: silo) else { return }
+        let check = try? await console.check(draft, of: silo)
+        if let check { containerChecks[draft.id] = check }
+        containerReview = ContainerReview(silo: silo, draft: draft, check: check)
+    }
+
+    /// Stores the reviewed container draft. A written sidecar ends the draft and shows the container
+    /// as the silo now reads it; findings that refuse it, or a sidecar that landed first, keep it.
+    func storeContainer() async {
+        guard let review = containerReview, let draft = containerDraft(of: review.silo) else { return }
+        let key = ContainerKey(silo: review.silo.id, library: draft.library, container: draft.container)
+        do {
+            switch try await console.store(draft, of: review.silo) {
+            case .stored:
+                containerReview = nil
+                discardContainerDraft(for: review.silo)
+                await open(key)
+            case .refused(let result):
+                containerChecks[draft.id] = .refused(result)
+                containerReview?.check = .refused(result)
+            case .landedFirst(let landed):
+                containers[key] = landed
+                containerReview?.landed = landed
+            }
+        } catch let refused as AdminConsole.StoreRefused {
+            refusal = .storeRefused(refused.reason)
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+        } catch {
+            refusal = .unreachable
+        }
+    }
+
+    /// Re-bases the open container draft on the sidecar that landed, its text as it was; the review
+    /// closes, so that the next one is read against the new base.
+    func rebaseContainerDraft(on landed: AdminConsole.OpenedContainer, for silo: AdminConsole.Silo) {
+        guard let draft = containerDraft(of: silo), let rebased = try? draft.rebased(on: landed.container, sidecar: landed.sidecar) else { return }
+        containerReview = nil
+        keepContainerDraft(rebased, for: silo)
+        containerChecks[rebased.id] = nil
+        scheduleContainerCheck(of: rebased.id, for: silo, after: .zero)
+    }
+
+    /// Re-bases the open container draft on the library's sidecar as the silo has it now.
+    func rebaseContainerDraftOnLatest(for silo: AdminConsole.Silo) async {
+        guard let draft = containerDraft(of: silo),
+              let landed = try? await console.open(container: draft.container, in: draft.library, of: silo)
+        else { refusal = .unreachable; return }
+        containers[ContainerKey(silo: silo.id, library: draft.library, container: draft.container)] = landed
+        rebaseContainerDraft(on: landed, for: silo)
+    }
+
+    /// Puts an image as a kind of a container's artwork, and reads the container again.
+    func putArtwork(_ image: Data, as kind: String, of key: ContainerKey) async {
+        guard let silo = silos.first(where: { $0.id == key.silo }) else { return }
+        await artwork(of: key) { try await self.console.putArtwork(image, as: kind, of: key.container, in: key.library, on: silo) }
+    }
+
+    /// Removes a kind of a container's artwork, and reads the container again.
+    func removeArtwork(_ kind: String, of key: ContainerKey) async {
+        guard let silo = silos.first(where: { $0.id == key.silo }) else { return }
+        await artwork(of: key) { try await self.console.removeArtwork(kind, of: key.container, in: key.library, on: silo) }
+    }
+
+    private func artwork(of key: ContainerKey, _ change: () async throws -> Void) async {
+        do {
+            try await change()
+        } catch let refused as AdminConsole.SettingsRefused {
+            refusal = .settingsRefused(refused.reason)
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+        } catch {
+            refusal = .unreachable
+        }
+        await open(key)
+    }
+
+    /// Where a kind of a container's artwork is served.
+    func artworkURL(_ kind: String, of key: ContainerKey) -> URL? {
+        silos.first { $0.id == key.silo }.map { console.artworkURL(kind, of: key.container, in: key.library, of: $0) }
+    }
+
     /// Forgetting is the engine's purge — passkey off this Mac, registry entry gone — so the
     /// row simply leaves on the next publish. Non-recoverable by design; the sheet said so.
     func forget(_ silo: AdminConsole.Silo) async {
@@ -673,6 +946,8 @@ final class ConsoleModel {
         silos = await console.silos
         drafts[silo.id] = nil
         editing[silo.id] = nil
+        containerDrafts[silo.id] = nil
+        editingContainer[silo.id] = nil
     }
 }
 
@@ -1299,7 +1574,7 @@ struct RefusalView: View {
 }
 
 /// Lines of two texts' difference: removed in red, added in green, the rest as they were.
-private struct DifferenceView: View {
+struct DifferenceView: View {
     let lines: [LineDifference.Line]
 
     var body: some View {
@@ -1706,47 +1981,60 @@ private struct SettingsPane: View {
     }
 }
 
-/// A with-access silo's libraries: each one's path, its standard, whether it is available and what
-/// its last walk found. They are added within the roots the silo's owner named, and removed. There is
-/// no rescan: the silo walks its libraries itself, and the section reads the walks again at the
-/// console's cadence while it is open.
+/// A with-access silo's libraries, and what each holds: a browser of every library with its tree of
+/// containers beneath it, and the library or container chosen. A library shows its path, its
+/// standard, whether it is available and what its last walk found, and is removed from here; libraries
+/// are added within the roots the silo's owner named. A container shows what its library's sidecar
+/// says, or the draft of an edit to it. There is no rescan: the silo walks its libraries itself, and
+/// the section reads the walks and the containers again at the console's cadence while it is open.
 private struct LibrariesPane: View {
     let silo: AdminConsole.Silo
-    let model: ConsoleModel
+    @Bindable var model: ConsoleModel
     @State private var addingLibrary = false
     @State private var removingLibrary: String?
 
     var body: some View {
         Group {
             if let report = model.settings[silo.id] {
-                Form {
-                    Section {
-                        if report.editable.libraries.isEmpty {
-                            Text("None").foregroundStyle(.secondary)
-                        }
-                        ForEach(report.editable.libraries, id: \.id) { library in
-                            LibraryRow(
-                                library: library,
-                                listed: model.libraries[silo.id]?.first { $0.id == library.id },
-                                walk: model.lastWalks[silo.id]?[library.id],
-                                onRemove: { removingLibrary = library.id }
-                            )
-                            Picker("Standard", selection: Binding(
-                                get: { model.libraries[silo.id]?.first { $0.id == library.id }?.ruleset ?? "" },
-                                set: { chosen in Task { await model.setStandard(chosen.isEmpty ? nil : chosen, of: library.id, on: silo) } }
-                            )) {
-                                Text("None").tag("")
-                                ForEach(model.rulesets[silo.id] ?? [], id: \.name) { Text($0.name).tag($0.name) }
+                HSplitView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        LibraryBrowser(silo: silo, libraries: report.editable.libraries, model: model)
+                        Button("Add Library…", systemImage: "plus") { addingLibrary = true }
+                            .buttonStyle(.borderless)
+                            .padding(.horizontal, 8)
+                    }
+                    .padding(.vertical, 8)
+                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 360)
+
+                    Group {
+                        if let draft = model.containerDraft(of: silo) {
+                            ContainerEditor(silo: silo, draft: draft, model: model)
+                        } else {
+                            switch model.browsed[silo.id] {
+                            case .library(let id)?:
+                                if let library = report.editable.libraries.first(where: { $0.id == id }) {
+                                    LibraryDetail(silo: silo, library: library, model: model) { removingLibrary = id }
+                                }
+                            case .container(let key)?:
+                                if let opened = model.containers[key] {
+                                    ContainerDetail(key: key, opened: opened, model: model)
+                                } else {
+                                    ProgressView()
+                                }
+                            case nil:
+                                ContentUnavailableView(
+                                    report.editable.libraries.isEmpty ? "No Libraries" : "Nothing Chosen",
+                                    systemImage: "externaldrive",
+                                    description: Text(report.editable.libraries.isEmpty
+                                        ? "Add a library within the roots the silo's owner named."
+                                        : "Choose a library to see its path and last walk, or a container in it to see what its sidecar says.")
+                                )
                             }
                         }
-                        Button("Add Library…", systemImage: "plus") { addingLibrary = true }
-                    } header: {
-                        Text("Libraries")
-                    } footer: {
-                        Text("A library's standard is the ruleset an application takes when it names none. The silo walks each library itself — at startup, when a missing folder returns, and every five minutes — so there is nothing to rescan.")
                     }
+                    .padding(8)
+                    .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .formStyle(.grouped)
                 .sectionPanel()
             } else {
                 ProgressView()
@@ -1755,6 +2043,7 @@ private struct LibrariesPane: View {
         .task(id: silo.id) {
             await model.loadSettings(for: silo)
             await model.loadLibraries(for: silo)
+            await model.loadContainers(for: silo)
         }
         .sheet(isPresented: $addingLibrary) {
             AddLibrarySheet(
@@ -1762,6 +2051,9 @@ private struct LibrariesPane: View {
                 onCheck: { id, folder, root, create in await model.checkLibrary(id: id, folder: folder, within: root, create: create, on: silo) },
                 onAdd: { id, folder, root, create in await model.addLibrary(id: id, folder: folder, within: root, create: create, on: silo) }
             )
+        }
+        .sheet(item: $model.containerReview) { review in
+            ContainerReviewSheet(review: review, model: model)
         }
         .alert("Remove \(removingLibrary ?? "the library")?", isPresented: Binding(
             get: { removingLibrary != nil },
@@ -1779,39 +2071,57 @@ private struct LibrariesPane: View {
     }
 }
 
-/// One library of a silo: where it is on the silo's machine, whether it is there, and what the silo's
-/// last walk of it found. Nothing here asks for a walk.
-private struct LibraryRow: View {
+/// A library chosen in the browser, which names it: where it is on the silo's machine, whether it is
+/// there, what the silo's last walk of it found, and its standard; and its removal, set apart at the
+/// top. Nothing here asks for a walk.
+private struct LibraryDetail: View {
+    let silo: AdminConsole.Silo
     let library: SiloClient.SettingsReport.Library
-    let listed: SiloClient.Library?
-    let walk: SiloClient.LastWalk?
+    let model: ConsoleModel
     let onRemove: () -> Void
 
+    private var listed: SiloClient.Library? { model.libraries[silo.id]?.first { $0.id == library.id } }
+    private var walk: SiloClient.LastWalk? { model.lastWalks[silo.id]?[library.id] }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                LabeledContent(library.id, value: library.path)
-                    .textSelection(.enabled)
-                Button("Remove \(library.id)…", systemImage: "minus.circle", role: .destructive, action: onRemove)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-            }
-            if listed?.available == false || walk?.available == false {
-                Label("Unavailable: its folder is missing, or holds nothing where the silo's index holds something. Its containers are kept, and it is walked again when the folder returns.", systemImage: "externaldrive.badge.exclamationmark")
-                    .foregroundStyle(.orange)
-                    .font(.caption)
-            }
-            if let walk {
-                Text("Last walked \(walk.walkedAt.formatted(.relative(presentation: .named)))" + (walk.available ? ": \(walk.report.read) read, \(walk.report.unchanged) unchanged, \(walk.report.removed) removed" : ""))
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-                ForEach(walk.report.findings, id: \.self) { finding in
-                    Label(finding.path.map { "\($0): \(finding.text)" } ?? finding.text, systemImage: finding.severity == .error ? "exclamationmark.octagon" : "exclamationmark.triangle")
-                        .foregroundStyle(finding.severity == .error ? .red : .orange)
-                        .font(.caption)
-                        .textSelection(.enabled)
+        VStack(alignment: .trailing, spacing: 0) {
+            Button("Remove Library…", systemImage: "trash", role: .destructive, action: onRemove)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .padding([.top, .horizontal], 12)
+            Form {
+                Section {
+                    LabeledContent("Location") {
+                        Text(library.path).textSelection(.enabled)
+                    }
+                    if listed?.available == false || walk?.available == false {
+                        Label("Unavailable: its folder is missing, or holds nothing where the silo's index holds something. Its containers are kept, and it is walked again when the folder returns.", systemImage: "externaldrive.badge.exclamationmark")
+                            .foregroundStyle(.orange)
+                    }
+                    LabeledContent("Last walk") {
+                        if let walk {
+                            Text(walk.walkedAt.formatted(.relative(presentation: .named)) + (walk.available ? ": \(walk.report.read) read, \(walk.report.unchanged) unchanged, \(walk.report.removed) removed" : ""))
+                        } else {
+                            Text("Not yet walked")
+                        }
+                    }
+                    ForEach(walk?.report.findings ?? [], id: \.self) { finding in
+                        Label(finding.path.map { "\($0): \(finding.text)" } ?? finding.text, systemImage: finding.severity == .error ? "exclamationmark.octagon" : "exclamationmark.triangle")
+                            .foregroundStyle(finding.severity == .error ? .red : .orange)
+                            .textSelection(.enabled)
+                    }
+                    Picker("Standard", selection: Binding(
+                        get: { listed?.ruleset ?? "" },
+                        set: { chosen in Task { await model.setStandard(chosen.isEmpty ? nil : chosen, of: library.id, on: silo) } }
+                    )) {
+                        Text("None").tag("")
+                        ForEach(model.rulesets[silo.id] ?? [], id: \.name) { Text($0.name).tag($0.name) }
+                    }
+                } footer: {
+                    Text("A library's standard is the ruleset an application takes when it names none. The silo walks each library itself — at startup, when a missing folder returns, and every five minutes — so there is nothing to rescan.")
                 }
             }
+            .formStyle(.grouped)
         }
     }
 }
@@ -1999,7 +2309,7 @@ extension View {
     /// A section of a silo's detail set apart from the silo's read above it: the window's own
     /// background is the section's too, so without a tone and an edge of its own nothing says where
     /// the section, and its scroll, begins.
-    fileprivate func sectionPanel() -> some View {
+    func sectionPanel() -> some View {
         scrollContentBackground(.hidden)
             .background(Color(nsColor: .underPageBackgroundColor))
             .clipShape(.rect(cornerRadius: 10))
