@@ -5,6 +5,7 @@
 import SwiftUI
 import SiloAdminKit
 import SiloClient
+import SmdKit
 
 extension ConsoleModel {
     struct Trying: Identifiable {
@@ -50,6 +51,35 @@ extension ConsoleModel {
         var draft: ContainerDraft
         var check: AdminConsole.ContainerCheck?
         var landed: AdminConsole.OpenedContainer?
+    }
+
+    /// An import from smddb into a library being chosen.
+    struct Importing: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var library: String
+    }
+
+    /// A new container being named: in a library, at its top or beneath a container it holds, whose
+    /// sequences it may be placed in.
+    struct NewContainer: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var library: String
+        var parent: String?
+        var parentTitle: String?
+        var sequences: [String]
+    }
+
+    /// A library's container being proposed to smddb: what would be offered, which of the containers
+    /// it names go with it, and, once offered, the files written or why smddb refused it.
+    struct Proposing: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var plan: AdminConsole.ExportPlan
+        var chosen: Set<ContainerID>
+        var written: [URL]?
+        var refusal: String?
     }
 
     /// A branch's promotion: what it would put out of date, and, once refused, what it has not taken in.

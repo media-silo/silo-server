@@ -1,0 +1,318 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 the media-silo project authors
+
+#if canImport(SwiftUI)
+import SiloAdminKit
+import SiloClient
+import SmdKit
+import SwiftUI
+
+/// The clone of smddb's data repository this Mac reads, named in its settings: where it is, why it
+/// cannot be read when it cannot, and the way to choose it or read it again. The console never clones,
+/// pulls, commits or pushes; that is the operator's, in the clone.
+struct SmddbCloneBar: View {
+    let model: ConsoleModel
+    @State private var choosing = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Label("smddb", systemImage: "books.vertical").font(.caption.bold())
+                Spacer()
+                Button("Choose…") { choosing = true }.buttonStyle(.borderless).font(.caption)
+                if model.smddbFolder != nil {
+                    Button("Read Again") { Task { await model.readClone() } }.buttonStyle(.borderless).font(.caption)
+                }
+            }
+            if let problem = model.smddbProblem {
+                Text(problem).font(.caption2).foregroundStyle(.orange).textSelection(.enabled)
+            } else if let folder = model.smddbFolder {
+                Text(folder.path).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    .help(folder.path)
+            }
+        }
+        .padding(.horizontal, 8)
+        .task { await model.readClone() }
+        .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
+            guard case .success(let folder) = result else { return }
+            Task { await model.chooseClone(folder) }
+        }
+    }
+}
+
+/// How a library's container stands against smddb's record of it.
+struct StandingLabel: View {
+    let standing: AdminConsole.Standing?
+
+    var body: some View {
+        switch standing {
+        case .matches?:
+            Label("As smddb has it", systemImage: "checkmark.seal").foregroundStyle(.green)
+        case .differs?:
+            Label("Differs from smddb", systemImage: "arrow.left.arrow.right").foregroundStyle(.orange)
+        case .absent?:
+            Label("Not in smddb", systemImage: "questionmark.square.dashed").foregroundStyle(.secondary)
+        case nil:
+            EmptyView()
+        }
+    }
+}
+
+/// Bringing a container from smddb into a library: searching the clone, choosing the container and the
+/// descendants to bring, the silo's dry run, and the import. A container the library holds opens as an
+/// edit from smddb's record instead; a parent older than smddb's record is offered as one first.
+struct ImportSheet: View {
+    let importing: ConsoleModel.Importing
+    let model: ConsoleModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var found: [Container] = []
+    @State private var picked: ContainerID?
+    @State private var plan: AdminConsole.ImportPlan?
+    @State private var chosen: Set<ContainerID> = []
+    @State private var outcome: AdminConsole.ImportOutcome?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Import from smddb into \(importing.library)").font(.title3.bold())
+            if let plan {
+                planView(plan)
+            } else {
+                TextField("Title, or a provider's id such as tvdb:76107", text: $query)
+                    .textFieldStyle(.roundedBorder)
+                    .task(id: query) {
+                        try? await Task.sleep(for: .milliseconds(200))
+                        found = await model.searchSmddb(query)
+                    }
+                List(found, id: \.id, selection: $picked) { container in
+                    VStack(alignment: .leading) {
+                        Text(container.displayTitle)
+                        Text("\(container.type.title), \(container.id)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .tag(container.id)
+                }
+                HStack {
+                    Spacer()
+                    Button("Cancel", role: .cancel) { dismiss() }
+                    Button("Continue") {
+                        guard let picked else { return }
+                        Task {
+                            plan = await model.planImport(picked, into: importing.library, on: importing.silo)
+                            chosen = Set(plan?.descendants.map(\.id) ?? [])
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(picked == nil)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 560, minHeight: 420)
+    }
+
+    @ViewBuilder
+    private func planView(_ plan: AdminConsole.ImportPlan) -> some View {
+        Text(
+            plan.parent.map { "Beneath \($0), which the library holds." } ?? "At the top of the library."
+        )
+        .foregroundStyle(.secondary)
+        List {
+            ForEach(plan.ancestors, id: \.id) { ancestor in
+                Label("\(ancestor.displayTitle), made above it", systemImage: "arrow.up")
+            }
+            Label(plan.picked.displayTitle, systemImage: "shippingbox").bold()
+            ForEach(plan.descendants, id: \.id) { descendant in
+                Toggle(
+                    descendant.displayTitle,
+                    isOn: Binding(
+                        get: { chosen.contains(descendant.id) },
+                        set: { if $0 { chosen.insert(descendant.id) } else { chosen.remove(descendant.id) } }
+                    )
+                )
+            }
+            ForEach(plan.held, id: \.self) { held in
+                Label("\(held), which the library holds", systemImage: "checkmark").foregroundStyle(.secondary)
+            }
+        }
+        switch outcome {
+        case .wouldMake(let result)?:
+            Label(
+                "The silo would make \(result.writes.filter(\.creates).count) sidecars",
+                systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(.green).font(.caption)
+            FindingsList(findings: result.findings)
+        case .made(let result)?:
+            Label("Made \(result.writes.filter(\.creates).count) sidecars", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green).font(.caption)
+        case .refused(let result, let parentDraft)?:
+            Label("The silo refuses it", systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
+            FindingsList(findings: result.findings)
+            if let parentDraft {
+                Button("Bring \(parentDraft.title)'s Fields from smddb First…") {
+                    model.open(parentDraft, for: importing.silo)
+                    dismiss()
+                }
+            }
+        case nil:
+            EmptyView()
+        }
+        HStack {
+            Button("Back") {
+                self.plan = nil
+                outcome = nil
+            }
+            Spacer()
+            Button("Cancel", role: .cancel) { dismiss() }
+            if case .made? = outcome {
+                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+            } else {
+                Button("Check") {
+                    Task { outcome = await model.runImport(plan, choosing: chosen, dryRun: true, on: importing.silo) }
+                }
+                Button("Import") {
+                    Task { outcome = await model.runImport(plan, choosing: chosen, dryRun: false, on: importing.silo) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isWouldMake)
+            }
+        }
+    }
+
+    /// An import is made once the silo's dry run of the same choice would make it.
+    private var isWouldMake: Bool {
+        if case .wouldMake? = outcome { return true }
+        return false
+    }
+}
+
+/// Naming a new container: its type and title, and, beneath a parent, which of the parent's sequences
+/// it joins and where. Its id comes from smddb's client; it then opens in the editor as a draft.
+struct NewContainerSheet: View {
+    let request: ConsoleModel.NewContainer
+    let model: ConsoleModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var type: ContainerType = .movie
+    @State private var title = ""
+    @State private var sequence = ""
+    @State private var position = ""
+
+    var body: some View {
+        Form {
+            Text(
+                request.parentTitle.map { "A new container beneath \($0), in \(request.library)" }
+                    ?? "A new container at the top of \(request.library)"
+            )
+            .font(.title3.bold())
+            Picker("Type", selection: $type) {
+                ForEach(ContainerType.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            TextField("Title", text: $title)
+            if request.parent != nil {
+                Picker("Sequence", selection: $sequence) {
+                    ForEach(request.sequences, id: \.self) { Text($0).tag($0) }
+                    if request.sequences.isEmpty { Text("A new sequence").tag("") }
+                }
+                TextField("Position, from 0; empty for the end", text: $position)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Create Draft") {
+                    let creating = ContainerDraft.Creating(
+                        parent: request.parent,
+                        sequence: sequence.isEmpty ? nil : sequence,
+                        position: Int(position)
+                    )
+                    Task {
+                        await model.makeNewContainer(
+                            type,
+                            titled: title,
+                            at: creating,
+                            in: request.library,
+                            on: request.silo
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(Title(title) == nil)
+            }
+        }
+        .padding()
+        .frame(minWidth: 420)
+        .onAppear {
+            sequence = request.sequences.first ?? ""
+            if request.parent != nil { type = .season }
+        }
+    }
+}
+
+/// Proposing a library's container to smddb: its document's difference from smddb's record, the
+/// containers it names that smddb lacks, offered with it, those neither has, and, once offered, the
+/// files written in the clone for the operator to commit there.
+struct ProposeSheet: View {
+    let proposal: ConsoleModel.Proposing
+    let model: ConsoleModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Propose \(proposal.plan.container.displayTitle) to smddb").font(.title3.bold())
+            Text(
+                proposal.plan.record == nil
+                    ? "smddb has no record of this container: every line is new."
+                    : "How \(proposal.plan.library)'s sidecar differs from smddb's record. Only its own fields are offered; its presentations, children's paths and rules stay the library's."
+            )
+            .foregroundStyle(.secondary)
+            DifferenceView(lines: proposal.plan.difference)
+            if !proposal.plan.offered.isEmpty {
+                GroupBox("Containers it names that smddb does not have") {
+                    ForEach(proposal.plan.offered, id: \.id) { offered in
+                        Toggle(
+                            offered.displayTitle,
+                            isOn: Binding(
+                                get: { model.proposing?.chosen.contains(offered.id) ?? false },
+                                set: { on in
+                                    if on {
+                                        model.proposing?.chosen.insert(offered.id)
+                                    } else {
+                                        model.proposing?.chosen.remove(offered.id)
+                                    }
+                                }
+                            )
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            if !proposal.plan.unavailable.isEmpty {
+                Label(
+                    "It names \(proposal.plan.unavailable.map(\.value).joined(separator: ", ")), which neither smddb nor this library has, so smddb would refuse it.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .foregroundStyle(.orange).font(.caption)
+            }
+            if let refusal = proposal.refusal {
+                Label(refusal, systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
+                    .textSelection(.enabled)
+            }
+            if let written = proposal.written {
+                Label("Written in the clone; commit them there:", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green).font(.caption)
+                ForEach(written, id: \.self) { Text($0.path).font(.caption.monospaced()).textSelection(.enabled) }
+            }
+            HStack {
+                Spacer()
+                if proposal.written == nil {
+                    Button("Cancel", role: .cancel) { dismiss() }
+                    Button("Propose") { Task { await model.propose() } }.buttonStyle(.borderedProminent)
+                } else {
+                    Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 560, minHeight: 420)
+    }
+}
+#endif

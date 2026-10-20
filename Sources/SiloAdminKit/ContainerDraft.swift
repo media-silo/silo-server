@@ -26,6 +26,26 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
     public var text: String
     /// When the text last changed.
     public var edited: Date
+    /// Where a container the library does not hold yet is to be made, for a draft of a new one; nil
+    /// for a draft of a change to a container the library holds. A new container has no base: its
+    /// `base` and `baseText` are empty.
+    public var creating: Creating?
+
+    /// Where a new container is filed: beneath `parent`, a container the library holds, as the item
+    /// `item` at `position` in its sequence `sequence`; or, with no parent, at the top of the library.
+    public struct Creating: Hashable, Sendable, Codable {
+        public var parent: String?
+        public var sequence: String?
+        public var item: String?
+        public var position: Int?
+
+        public init(parent: String? = nil, sequence: String? = nil, item: String? = nil, position: Int? = nil) {
+            self.parent = parent
+            self.sequence = sequence
+            self.item = item
+            self.position = position
+        }
+    }
 
     public init(
         library: String,
@@ -59,6 +79,24 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
         )
     }
 
+    /// A new container, with the id `id` — the one smddb's client issued — at the top of a library or
+    /// beneath a container it holds. Its text is the container's document; it has no base.
+    public static func new(_ container: Container, in library: String, at creating: Creating) -> ContainerDraft {
+        var draft = ContainerDraft(
+            library: library,
+            container: container.id.value,
+            title: container.displayTitle,
+            base: "",
+            baseText: "",
+            text: String(decoding: ContainerFile.data(for: container), as: UTF8.self)
+        )
+        draft.creating = creating
+        return draft
+    }
+
+    /// Whether the draft is of a container the library does not hold yet.
+    public var isNew: Bool { creating != nil }
+
     /// The draft re-based on the sidecar that landed since: its text as it is, read against the new base.
     public func rebased(on landed: SiloClient.LibraryContainer, sidecar: Data) throws -> ContainerDraft {
         var rebased = self
@@ -83,12 +121,12 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
         edited = .now
     }
 
-    /// Whether the text says anything other than its base.
-    public var isChanged: Bool { text != baseText }
+    /// Whether the text says anything other than its base. A new container always does.
+    public var isChanged: Bool { isNew || text != baseText }
 
     /// Whether the library's sidecar is no longer the one the draft was made from: a store would be
-    /// refused, so it is to be re-based first.
-    public func isBehind(_ digest: String) -> Bool { digest != base }
+    /// refused, so it is to be re-based first. A new container has no sidecar to fall behind.
+    public func isBehind(_ digest: String) -> Bool { !isNew && digest != base }
 
     /// The text's difference from its base, line by line.
     public var difference: [LineDifference.Line] { LineDifference.lines(from: baseText, to: text) }

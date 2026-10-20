@@ -123,6 +123,20 @@ extension SiloClient {
             findings = try container.decode([LastWalk.Finding].self, forKey: .findings)
             moves = try container.decodeIfPresent([FolderMove].self, forKey: .moves) ?? []
         }
+
+        public init(
+            applied: Bool,
+            sidecar: String,
+            digest: String,
+            findings: [LastWalk.Finding],
+            moves: [FolderMove] = []
+        ) {
+            self.applied = applied
+            self.sidecar = sidecar
+            self.digest = digest
+            self.findings = findings
+            self.moves = moves
+        }
     }
 
     /// A folder renamed, or to be renamed, by its path in the library before and after.
@@ -200,6 +214,44 @@ extension SiloClient {
             "PUT",
             "/v1/libraries/\(library)/containers/\(id)",
             body: ContainerEdit(document: document, basedOn: basedOn, dryRun: dryRun ? true : nil)
+        )
+    }
+
+    /// A sidecar a create wrote, or would write: its path relative to the library, and whether it is
+    /// new rather than an update of one there.
+    public struct SidecarWrite: Hashable, Sendable, Codable {
+        public var path: String
+        public var creates: Bool
+    }
+
+    /// What making containers in a library wrote, or would write, and what the silo found.
+    public struct ContainerCreateResult: Hashable, Sendable, Codable {
+        public var applied: Bool
+        public var writes: [SidecarWrite]
+        public var findings: [LastWalk.Finding]
+    }
+
+    private struct ContainerCreate: Codable {
+        var documents: [String]
+        var parent: String?
+        var dryRun: Bool?
+    }
+
+    /// Makes a tree of containers in a library with no file, from their repository documents, beneath
+    /// `parent`, a container the library holds, or at its top. Refused with `status(422, _)` carrying
+    /// the result and its findings when they refuse it, `status(400, _)` when the documents cannot be
+    /// read or are not one tree, and `status(404, _)` for a parent the library does not hold. Operator
+    /// only.
+    public func create(
+        containers documents: [String],
+        parent: String?,
+        in library: String,
+        dryRun: Bool = false
+    ) async throws -> ContainerCreateResult {
+        try await send(
+            "POST",
+            "/v1/libraries/\(library)/containers",
+            body: ContainerCreate(documents: documents, parent: parent, dryRun: dryRun ? true : nil)
         )
     }
 

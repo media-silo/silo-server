@@ -105,6 +105,14 @@ private struct LibraryNode: View {
             }
         }
         .tag(ConsoleModel.Browsed.library(library))
+        .contextMenu {
+            Button("Import from smddb…") { model.importing = ConsoleModel.Importing(silo: silo, library: library) }
+                .disabled(model.database == nil)
+            Button("New Container…") {
+                model.newContainer = ConsoleModel.NewContainer(silo: silo, library: library, sequences: [])
+            }
+            .disabled(model.database == nil)
+        }
     }
 }
 
@@ -182,6 +190,27 @@ struct ContainerDetail: View {
                     Spacer()
                     Button(model.containerDraft(for: key) == nil ? "Edit…" : "Open Draft") { model.editContainer(key) }
                         .buttonStyle(.borderedProminent)
+                }
+
+                HStack {
+                    StandingLabel(standing: model.standings[key]).font(.caption)
+                    Spacer()
+                    if case .differs? = model.standings[key] {
+                        Button("Take smddb's Record…") { Task { await model.takeSmddbRecord(of: key) } }
+                    }
+                    Button("New Child Container…") {
+                        guard let silo = model.silos.first(where: { $0.id == key.silo }) else { return }
+                        model.newContainer = ConsoleModel.NewContainer(
+                            silo: silo,
+                            library: key.library,
+                            parent: key.container,
+                            parentTitle: container.displayTitle,
+                            sequences: container.sequences.compactMap(\.id)
+                        )
+                    }
+                    .disabled(model.database == nil)
+                    Button("Propose to smddb…") { Task { await model.beginProposal(of: key) } }
+                        .disabled(model.database == nil)
                 }
 
                 if !opened.findings.isEmpty {
@@ -452,9 +481,14 @@ struct ContainerEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Editing \(draft.title)").font(.title3.bold())
-                    Text("In \(draft.library), from the sidecar \(draft.base.prefix(12))…").font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(draft.isNew ? "New: \(draft.title)" : "Editing \(draft.title)").font(.title3.bold())
+                    Text(
+                        draft.isNew
+                            ? "To be made in \(draft.library)\(draft.creating?.parent.map { ", beneath \($0)" } ?? ", at its top"), as \(draft.container)"
+                            : "In \(draft.library), from the sidecar \(draft.base.prefix(12))…"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Picker("View", selection: $asText) {
@@ -569,9 +603,12 @@ struct ContainerReviewSheet: View {
                         .buttonStyle(.borderedProminent)
                 }
             } else {
-                Text("Store the Edit to \(review.draft.title)").font(.title3.bold())
+                Text(review.draft.isNew ? "Make \(review.draft.title)" : "Store the Edit to \(review.draft.title)")
+                    .font(.title3.bold())
                 Text(
-                    "The difference from the sidecar it was based on, in \(review.draft.library). Only the container's own fields change; its presentations, children and rules stay as they are, and no folder is renamed."
+                    review.draft.isNew
+                        ? "A new container in \(review.draft.library), with no presentations\(review.draft.creating?.parent == nil ? "" : ". Its parent's own fields are edited to name it first")."
+                        : "The difference from the sidecar it was based on, in \(review.draft.library). Only the container's own fields change; its presentations, children and rules stay as they are, and no folder is renamed."
                 )
                 .foregroundStyle(.secondary)
                 DifferenceView(lines: LineDifference.changes(from: review.draft.baseText, to: review.draft.text))

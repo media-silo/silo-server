@@ -93,6 +93,7 @@ struct LibrariesPane: View {
                         Button("Add Library…", systemImage: "plus") { addingLibrary = true }
                             .buttonStyle(.borderless)
                             .padding(.horizontal, 8)
+                        SmddbCloneBar(model: model)
                     }
                     .padding(.vertical, 8)
                     .frame(minWidth: 220, idealWidth: 260, maxWidth: 360)
@@ -151,6 +152,15 @@ struct LibrariesPane: View {
         }
         .sheet(item: $model.containerReview) { review in
             ContainerReviewSheet(review: review, model: model)
+        }
+        .sheet(item: $model.importing) { importing in
+            ImportSheet(importing: importing, model: model)
+        }
+        .sheet(item: $model.newContainer) { request in
+            NewContainerSheet(request: request, model: model)
+        }
+        .sheet(item: $model.proposing) { proposal in
+            ProposeSheet(proposal: proposal, model: model)
         }
         .alert(
             "Remove \(removingLibrary ?? "the library")?",

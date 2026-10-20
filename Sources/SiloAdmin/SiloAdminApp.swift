@@ -59,7 +59,7 @@ extension AdminConsole.PreparedSetup: Identifiable {
 /// console suspends into the actor and comes back with rows to publish.
 @MainActor @Observable
 final class ConsoleModel {
-    private let console: AdminConsole
+    let console: AdminConsole
 
     private(set) var silos: [AdminConsole.Silo] = []
     var addedAddresses: [String] = []
@@ -117,6 +117,18 @@ final class ConsoleModel {
     private var checkingContainer: [ContainerDraft.ID: Task<Void, Never>] = [:]
     /// The review before a container draft is stored, when one is open.
     var containerReview: ContainerReview?
+    /// The folder on this Mac named as the clone of smddb's data repository, kept between launches.
+    var smddbFolder: URL?
+    /// Why the clone cannot be read, in words, when it cannot; nil when it can.
+    var smddbProblem: String?
+    /// How each container opened stands against smddb's record, as last compared.
+    var standings: [ContainerKey: AdminConsole.Standing] = [:]
+    /// An import from smddb being chosen, when one is.
+    var importing: Importing?
+    /// A new container being named, when one is.
+    var newContainer: NewContainer?
+    /// A container being proposed to smddb, when one is.
+    var proposing: Proposing?
     /// The trial jobs this console started for a silo, by its id, as the silo last had them.
     private(set) var trialJobs: [AdminConsole.Silo.ID: [AdminConsole.TrialJob]] = [:]
     /// What starting trials could not do, binding by binding, in the silo's words.
@@ -129,6 +141,7 @@ final class ConsoleModel {
     init(console: AdminConsole, checkDelay: Duration = .milliseconds(400)) {
         self.console = console
         self.checkDelay = checkDelay
+        smddbFolder = UserDefaults.standard.url(forKey: Self.smddbFolderKey)
     }
 
     /// Browses, resolves every added address, and republishes the rows. An added address that
@@ -157,6 +170,7 @@ final class ConsoleModel {
         // settings, so both are read again; and a container changed elsewhere, by an edit or a walk,
         // arrives with its new digest, which is what marks a draft behind.
         case .libraries:
+            await readClone()
             await loadSettings(for: silo)
             await loadLibraries(for: silo)
             await loadContainers(for: silo)
@@ -700,13 +714,20 @@ extension ConsoleModel {
         guard let silo = silos.first(where: { $0.id == key.silo }) else { return }
         if let opened = try? await console.open(container: key.container, in: key.library, of: silo) {
             containers[key] = opened
+            await compareWithSmddb(key)
         }
     }
 
     /// Chooses a library or a container in the browser, and reads a container chosen.
     func browse(_ chosen: Browsed?, on silo: AdminConsole.Silo) async {
         browsed[silo.id] = chosen
-        if case .container(let key)? = chosen { await open(key) }
+        guard case .container(let key)? = chosen else { return }
+        // A new container's draft has nothing in the library to read yet: it opens in the editor.
+        if containerDraft(for: key)?.isNew == true {
+            editContainer(key)
+        } else {
+            await open(key)
+        }
     }
 
     /// Chooses a container in the browser and reads it.
@@ -818,7 +839,7 @@ extension ConsoleModel {
             guard !Task.isCancelled, let self, let draft = self.containerDrafts[silo.id]?.first(where: { $0.id == id })
             else { return }
             try? self.console.containerDrafts.save(draft, for: silo.id)
-            guard let outcome = try? await self.console.check(draft, of: silo), !Task.isCancelled,
+            guard let outcome = try? await self.check(draft, of: silo), !Task.isCancelled,
                 self.containerDrafts[silo.id]?.first(where: { $0.id == id })?.text == draft.text
             else { return }
             self.containerChecks[id] = outcome
@@ -829,7 +850,7 @@ extension ConsoleModel {
     /// dry run as it stands. Nothing is stored.
     func beginContainerReview(for silo: AdminConsole.Silo) async {
         guard let draft = containerDraft(of: silo) else { return }
-        let check = try? await console.check(draft, of: silo)
+        let check = try? await self.check(draft, of: silo)
         if let check { containerChecks[draft.id] = check }
         containerReview = ContainerReview(silo: silo, draft: draft, check: check)
     }
@@ -839,6 +860,10 @@ extension ConsoleModel {
     func storeContainer() async {
         guard let review = containerReview, let draft = containerDraft(of: review.silo) else { return }
         let key = ContainerKey(silo: review.silo.id, library: draft.library, container: draft.container)
+        if draft.isNew {
+            await make(draft, on: review.silo)
+            return
+        }
         do {
             switch try await console.store(draft, of: review.silo) {
             case .stored:
@@ -929,6 +954,30 @@ extension ConsoleModel {
         editing[silo.id] = nil
         containerDrafts[silo.id] = nil
         editingContainer[silo.id] = nil
+    }
+}
+
+// MARK: - Drafts from elsewhere
+
+extension ConsoleModel {
+    /// Opens a container draft made outside the editor — from smddb, or new — in the editor, kept on
+    /// this Mac, and checked by the silo at once.
+    func open(_ draft: ContainerDraft, for silo: AdminConsole.Silo) {
+        keepContainerDraft(draft, for: silo)
+        editingContainer[silo.id] = draft.id
+        browsed[silo.id] = .container(ContainerKey(silo: silo.id, library: draft.library, container: draft.container))
+        scheduleContainerCheck(of: draft.id, for: silo, after: .zero)
+    }
+
+    /// Records what the silo made of a draft, in the editor and in its review if one is open.
+    func settle(_ check: AdminConsole.ContainerCheck, of draft: ContainerDraft.ID) {
+        containerChecks[draft] = check
+        if containerReview?.draft.id == draft { containerReview?.check = check }
+    }
+
+    /// A draft's check: the dry run of making it, for a new container, or of the edit, for a held one.
+    func check(_ draft: ContainerDraft, of silo: AdminConsole.Silo) async throws -> AdminConsole.ContainerCheck {
+        draft.isNew ? try await console.check(new: draft, of: silo) : try await console.check(draft, of: silo)
     }
 }
 #endif
