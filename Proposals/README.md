@@ -67,3 +67,8 @@ deltas in `openspec/changes/`, as that README describes.
   container's own fields there, onto the sidecar they read and leaving every library fact as it
   stands; one container may be filed in several libraries, each with its own sidecar; and a
   container's artwork is files beside its sidecar, found by name.
+- [smddb in the console](Smddb.md) — the operator brings containers into a library from smddb,
+  creates ones smddb lacks with an id SmdKit's client issues provisionally, and proposes a library's
+  container back to smddb from its sidecar; the client's first implementation is a clone of the data
+  repository on the Mac, shaped like the service it will become; and the silo makes containers in a
+  library with no file, taking them as documents whoever wrote them.
