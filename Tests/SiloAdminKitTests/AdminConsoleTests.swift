@@ -2191,10 +2191,11 @@ extension AdminConsoleTests {
         #expect(correction.difference.filter { $0.kind != .same }.allSatisfy { $0.text.contains("year") })
         #expect(correction.offered.isEmpty && correction.unavailable.isEmpty)
         let written = try await console.export(correction, choosing: [], to: database)
-        #expect(written == .written([database.fileURL(for: corrected.id)]))
+        let file = try #require(try database.url(of: corrected.id))
+        #expect(written == .written([file]))
+        #expect(file.deletingLastPathComponent().lastPathComponent == "Alien [\(corrected.id)]", "in the clone's tree")
         #expect(try await database.container(corrected.id) == corrected, "the year, and none of the presentations")
-        let file = try String(contentsOf: database.fileURL(for: corrected.id), encoding: .utf8)
-        #expect(!file.contains("Alien.mkv"))
+        #expect(!(try String(contentsOf: file, encoding: .utf8)).contains("Alien.mkv"))
 
         // A series smddb lacks offers the season it names, which smddb lacks too, and names the ref's
         // container neither has as the reason it would be refused.
