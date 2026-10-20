@@ -1,0 +1,6 @@
+# The unused-import analyzer's configuration: the lint configuration, less the macOS-only admin
+# app. The analyzer runs on Linux, where the app compiles to nothing, and SourceKit reports every
+# import inside its inactive `#if` blocks as a missing module, burying any real finding.
+parent_config: .swiftlint.yml
+excluded:
+  - Sources/SiloAdmin

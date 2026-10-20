@@ -45,7 +45,13 @@ jobs:
           unzip -o swiftlint.zip -d /usr/local/bin
           chmod +x /usr/local/bin/swiftlint
       # On Linux, so that an import only Darwin's Foundation needs is reported here rather than
-      # kept because macOS happens to build with it. The admin app is macOS-only and is not built
-      # here, so its imports go unchecked.
+      # kept because macOS happens to build with it. The admin app is macOS-only and compiles to
+      # nothing here, so `.swiftlint-analyze.yml` leaves it out and its imports go unchecked.
+      #
+      # 6.4's build system writes each macro plugin's path into the log with its `#` escaped, and
+      # SwiftLint takes the backslash literally, so without the sed it finds no plugin, expands
+      # no macro, and judges every controller's imports without the code the macros generate.
       - name: SwiftLint unused imports
-        run: swiftlint analyze --strict --quiet --compiler-log-path build.log
+        run: |
+          sed -i 's/\\#/#/g' build.log
+          swiftlint analyze --strict --quiet --config .swiftlint-analyze.yml --compiler-log-path build.log
