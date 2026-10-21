@@ -504,6 +504,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContainerCreateResult"
 
+  /libraries/{library}/layout:
+    post:
+      operationId: layOutLibrary
+      summary: Lay a library out again
+      description: >
+        Renames every container folder in the library whose name is not the one the layout gives
+        its container — its display title, after its position among its parent's children for a
+        container held as a child — from the top of the library down, recording each new path in
+        the sidecar of the container that holds it, and walks the library again. A rename that
+        fails leaves that folder where it is and is a warning; the rest go on. A dry run answers
+        the moves it would make and moves nothing. A presentation keeps its id. Operator only.
+      tags: [Libraries]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LayoutRequest"
+      responses:
+        "200":
+          description: The moves, made unless it was a dry run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LayoutResult"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library.
+        "503":
+          description: The library is unavailable.
+
   /libraries/{library}/containers/{id}:
     get:
       operationId: getLibraryContainer
@@ -529,14 +565,17 @@ paths:
       summary: Set a container's own fields in this library's sidecar
       description: >
         Writes the document's own fields — what the container says of itself and its structure —
-        into this library's sidecar, and changes none of the library's facts: its presentations,
-        its children's paths and its rules stay as they stand. Made only onto the sidecar the
+        into this library's sidecar, and changes none of the library's facts but the paths of the
+        folders it moves: its presentations and its rules stay as they stand. A folder follows its
+        container, so when the edit changes the name the layout gives the container's folder, or
+        the order of its children, the folders are renamed and their new paths recorded; a
+        presentation keeps its id. A rename that fails is a warning, and the rest stands. Made only onto the sidecar the
         editor read, named by basedOn, the digest the library's container route answers; decided
         under the lock the write is made under. Refused with its findings, and nothing written,
         when the result has an error — among them an item the document no longer declares that
         the library holds presentations of, or a sidecar for. A dry run answers what would be
-        written and writes nothing. Otherwise the sidecar is written and read back into the index
-        before the answer. Operator only.
+        written, and the moves it would make, and writes nothing. Otherwise the sidecar is written,
+        the folders moved, and what changed read back into the index before the answer. Operator only.
       tags: [Containers]
       security:
         - operator: []
@@ -2974,7 +3013,7 @@ components:
 
     ContainerEditResult:
       type: object
-      required: [applied, sidecar, digest, findings]
+      required: [applied, sidecar, digest, findings, moves]
       properties:
         applied:
           type: boolean
@@ -2986,6 +3025,45 @@ components:
           description: The digest of those bytes.
         findings:
           type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+        moves:
+          type: array
+          description: The folders the edit moved, or would move.
+          items:
+            $ref: "#/components/schemas/FolderMove"
+
+    FolderMove:
+      type: object
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          description: The folder's path in the library before, relative to its root.
+        to:
+          type: string
+          description: The folder's path in the library after, relative to its root.
+
+    LayoutRequest:
+      type: object
+      properties:
+        dryRun:
+          type: boolean
+          description: Answer the moves that would be made, and move nothing.
+
+    LayoutResult:
+      type: object
+      required: [applied, moves, findings]
+      properties:
+        applied:
+          type: boolean
+        moves:
+          type: array
+          items:
+            $ref: "#/components/schemas/FolderMove"
+        findings:
+          type: array
+          description: A rename that failed, as a warning; the folder is where it was.
           items:
             $ref: "#/components/schemas/Finding"
 

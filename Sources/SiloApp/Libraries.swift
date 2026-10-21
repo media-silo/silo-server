@@ -298,10 +298,12 @@ package final class Libraries: Sendable {
     }
 
     /// Re-reads one container's sidecar, as the media route does when it finds one of the container's
-    /// files gone, so a deletion is noticed the first time anyone trips over it.
+    /// files gone, so a deletion is noticed the first time anyone trips over it. Where the container is
+    /// is read once the library is its own: a layout that moved it, and walked, has the index say
+    /// where it went, so a request that arrived mid-move finds it rather than forgets it.
     package func refresh(_ container: ContainerID, in library: LibraryConfig) async throws {
-        guard let row = try index.container(container, in: library.id) else { return }
         try await lane(of: library.id).exclusively { [self] in
+            guard let row = try index.container(container, in: library.id) else { return }
             _ = try Indexer.refresh(
                 folder: row.folder,
                 parent: row.parent.flatMap(ContainerID.init),
@@ -316,6 +318,28 @@ package final class Libraries: Sendable {
     package func exclusively<T: Sendable>(_ library: LibraryConfig, _ body: @Sendable () throws -> T) async throws -> T
     {
         try await lane(of: library.id).exclusively(body)
+    }
+
+    /// Runs `body` with the library to itself, as `exclusively` does, and when `moved` says the body
+    /// moved folders, walks the library in the same turn: nothing reads the index between the move and
+    /// the walk, and every moved container is read back at its new path before anyone else is let in.
+    /// A walk that fails after the moves is logged, and the next tick's walk reads what moved.
+    package func exclusively<T: Sendable>(
+        _ library: LibraryConfig,
+        walkingAfter moved: @escaping @Sendable (T) -> Bool,
+        doing body: @Sendable () throws -> T
+    ) async throws -> T {
+        try await lane(of: library.id).exclusively { [self] in
+            let result = try body()
+            if moved(result) {
+                do {
+                    _ = try walkNow(library, logging: false)
+                } catch {
+                    logger.error("the walk of \(library.id) after its folders moved stopped: \(error)")
+                }
+            }
+            return result
+        }
     }
 
     /// The walk itself, run by the lane or by the boot: applied, or refused with the library reported

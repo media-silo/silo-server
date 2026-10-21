@@ -29,8 +29,9 @@ folder's path relative to the library `from` and `to`, made or as they would be 
   the layout gives it is no longer the folder's, recording the new path in its parent's sidecar;
   SHALL rename the folder of each child the container holds whose position among its children the
   edit changed, recording each new path in the container's sidecar; SHALL re-read each sidecar it
-  wrote, and each container it moved with the containers beneath it, into the index; and SHALL
-  answer 200 with `applied` true, so that the next read of the container shows the edit. A rename
+  wrote, and each container it moved with the containers beneath it, into the index, under the same
+  lock as the moves, so that no request finds a moved container at its old path; and SHALL answer
+  200 with `applied` true, so that the next read of the container shows the edit. A rename
   that fails SHALL leave that folder where it is and SHALL be a warning-severity finding,
   `folder "<from>" could not be renamed "<to>": <reason>`; the rest of the edit stands.
 - A presentation's id SHALL be the same after a move as before it.
@@ -69,10 +70,11 @@ wrong bearer SHALL be 401.
 - **WHEN** an edit is put with no `Authorization` header
 - **THEN** the answer is 401
 
-#### Scenario: a season inserted before another
-- **WHEN** a series holding Season 13 in `01 - Season 13` is edited to name Season 12 before it
-- **THEN** Season 13's folder is renamed `02 - Season 13`, the series' sidecar records
-  `02 - Season 13/container.smd`, and the presentations beneath keep their ids
+#### Scenario: a child inserted before another
+- **WHEN** a series holding a serial in `01 - Pyramids of Mars` is edited to name another child
+  before it
+- **THEN** the serial's folder is renamed `02 - Pyramids of Mars`, the series' sidecar records
+  `02 - Pyramids of Mars/container.smd`, and the presentations beneath keep their ids
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersOwnFieldsAreEditedOntoTheSidecarRead`,
 `anEditMovesTheFoldersItRenames`).
@@ -83,7 +85,8 @@ Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersOwnFieldsAreEditedOn
 `POST /v1/libraries/{library}/layout` with a JSON body of `dryRun` SHALL rename every container
 folder in the library whose name is not the one the layout gives its container, from the top of
 the library down, recording each new path in the sidecar of the container that holds it, and SHALL
-re-read the library into the index. It SHALL answer a `LayoutResult`: `applied`, the `moves`, each a
+re-read the library into the index under the same lock as the moves, so that a request asked for
+while folders move waits for the turn and finds each moved container where it went. It SHALL answer a `LayoutResult`: `applied`, the `moves`, each a
 folder's path relative to the library `from` and `to`, and the `findings`. A rename that fails SHALL
 leave that folder where it is, SHALL be a warning-severity finding,
 `folder "<from>" could not be renamed "<to>": <reason>`, and SHALL NOT stop the rest. A dry run SHALL
@@ -102,4 +105,6 @@ it. The route SHALL require the operator's bearer; a missing or wrong bearer SHA
 - **WHEN** the operator asks for the layout of a library with `dryRun` true
 - **THEN** the answer lists the moves and the library is unchanged
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibraryIsLaidOutAgain`).
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibraryIsLaidOutAgain`),
+`Tests/SiloLibraryTests/RelayoutTests.swift` (`aLibraryRenamedByHandIsLaidOutFromTheTopDown`),
+`Tests/SiloTests/LibrariesTests.swift` (`aRefreshAskedForWhileFoldersMoveFindsWhereTheyWent`).

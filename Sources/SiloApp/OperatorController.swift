@@ -169,6 +169,32 @@ package struct OperatorController {
         }
     }
 
+    /// Renames every folder in the library not named as the layout names its container, from the
+    /// top down, and walks the library in the same turn.
+    @Operation
+    @ErrorResponse(NoSuchLibrary.self, .notFound)
+    @ErrorResponse(LibraryIsUnavailable.self, .serviceUnavailable)
+    package func layOutLibrary(
+        @Path library: String,
+        @JSONBody body: Components.Schemas.LayoutRequest
+    ) async throws -> Components.Schemas.LayoutResult {
+        guard let library = libraries.library(library) else { throw NoSuchLibrary() }
+        guard try await libraries.reach(library) else { throw LibraryIsUnavailable() }
+        let dryRun = body.dryRun ?? false
+        let outcome = try await libraries.exclusively(
+            library,
+            walkingAfter: { !dryRun && !$0.moves.isEmpty },
+            doing: {
+                Relayout.layOut(LibraryWalker.walk(library.root), dryRun: dryRun)
+            }
+        )
+        return Components.Schemas.LayoutResult(
+            applied: !dryRun,
+            moves: outcome.moves.map(Mapping.move),
+            findings: outcome.findings.map(Mapping.finding)
+        )
+    }
+
     /// Sets a container's own fields in one library's sidecar, onto the sidecar the editor read.
     @Operation
     @ErrorResponse(NoSuchLibrary.self, .notFound)

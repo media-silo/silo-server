@@ -35,6 +35,8 @@ package struct PlacementRefused: Error {
 package struct EditRefusedResult: Error {
     package var result: Components.Schemas.ContainerEditResult
 }
+/// A library whose folder is not there now, or holds nothing where the index holds containers.
+package struct LibraryIsUnavailable: Error {}
 package struct CreateRefusedResult: Error {
     package var result: Components.Schemas.ContainerCreateResult
 }
@@ -259,8 +261,13 @@ enum Mapping {
             applied: outcome.applied,
             sidecar: String(decoding: outcome.sidecar, as: UTF8.self),
             digest: outcome.digest,
-            findings: outcome.findings.map(finding)
+            findings: outcome.findings.map(finding),
+            moves: outcome.moves.map(move)
         )
+    }
+
+    static func move(_ move: FolderMove) -> Components.Schemas.FolderMove {
+        Components.Schemas.FolderMove(from: move.from, to: move.to)
     }
 
     static func createResult(

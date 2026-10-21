@@ -156,6 +156,54 @@ struct LibrariesTests {
         #expect(order.withLock { $0 } == ["walk 1", "re-read", "re-read", "walk 2"])
     }
 
+    /// Blocks on a semaphore, off the async context that may not wait on one itself.
+    private static func wait(for semaphore: DispatchSemaphore) { semaphore.wait() }
+
+    /// Folders moved under the library's lock are walked in the same turn: a refresh asked for while
+    /// they move, as the media route asks when a file is not where the index said, waits for the turn
+    /// and finds the container where it went, with the ids it had, rather than forgetting it.
+    @Test func aRefreshAskedForWhileFoldersMoveFindsWhereTheyWent() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let library = bench.present
+        try FileManager.default.moveItem(
+            at: library.root.appendingPathComponent("The Third Man (1949)"),
+            to: library.root.appendingPathComponent("Third Man")
+        )
+        try bench.libraries.walkAtBoot()
+        let before = try bench.index.presentations(of: Fixture.thirdMan.id, in: library.id)
+        #expect(before.map(\.path) == ["Third Man/The Third Man.mkv"])
+
+        let moved = DispatchSemaphore(value: 0)
+        let go = DispatchSemaphore(value: 0)
+        async let layout = bench.libraries.exclusively(
+            library,
+            walkingAfter: { !$0.moves.isEmpty },
+            doing: {
+                let outcome = Relayout.layOut(LibraryWalker.walk(library.root), dryRun: false)
+                moved.signal()
+                Self.wait(for: go)
+                return outcome
+            }
+        )
+        await Task.detached { Self.wait(for: moved) }.value
+        #expect(
+            try bench.index.container(Fixture.thirdMan.id, in: library.id)?.folder == "Third Man",
+            "the index has not yet been told"
+        )
+        async let refresh: Void = bench.libraries.refresh(Fixture.thirdMan.id, in: library)
+        try await Task.sleep(for: .milliseconds(100))
+        go.signal()
+        let (outcome, _) = try await (layout, refresh)
+
+        #expect(outcome.moves == [FolderMove(from: "Third Man", to: "The Third Man (1949)")])
+        #expect(try bench.index.container(Fixture.thirdMan.id, in: library.id)?.folder == "The Third Man (1949)")
+        let after = try bench.index.presentations(of: Fixture.thirdMan.id, in: library.id)
+        #expect(after.map(\.path) == ["The Third Man (1949)/The Third Man.mkv"])
+        #expect(after.map(\.id) == before.map(\.id))
+        #expect(bench.libraries.lastWalk(of: library.id)?.available == true, "the turn's walk is the last walk")
+    }
+
     @Test func aFirstPlacementIndexesEveryContainerItMadeUnderItsParent() async throws {
         let bench = try Bench()
         defer { bench.remove() }
