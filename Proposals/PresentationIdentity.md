@@ -80,13 +80,9 @@ a presentation's file missing. When the sidecar now records the presentation at 
 by hand and the sidecar edited, or moved by the silo — the id is the same, and the route serves the file
 from its new path instead of answering 404.
 
-**The ids change once.** The index is derived state, so it is rebuilt under the new ids with a new
-schema, as the move to keying containers by library was. Job records keep the ids they stored, and
-those are carried over once: after the first walk under the new ids, each job whose placement
-summary's id is not one the index holds has it replaced with the id of the presentation the index
-holds at the summary's destination in the job's library, and the record is written again. A job whose
-destination the index no longer holds keeps what it has. A player's saved ids, which the silo cannot
-see, are lost this once. That is the cost of making the change while the silos running are few.
+**Nothing is migrated.** No silo yet holds a container or a presentation, so no index, job record or
+player holds an id in the old form. The change is made now, before any does, and the new form is the
+only one there has been.
 
 ## What this looks like to the operator
 
@@ -101,17 +97,16 @@ season is inserted before it, the same is true of every episode in them.
 One step, one pull request, carrying the change in
 [`openspec/changes/presentation-identity`](../openspec/changes/presentation-identity).
 
-`IndexedPresentation.id` takes the library, container, item, alternative and profile; the index's
-schema version moves; the walk reports and skips a presentation sharing an id or a file with another
-in its sidecar; the media route serves a file found again by a refresh; the boot carries job records'
-ids over once, after the first walk; and every caller of the id — the index entry, the placement route,
-the job service — passes what the presentation is.
+`IndexedPresentation.id` takes the library, container, item, alternative and profile; the walk reports
+and skips a presentation sharing an id or a file with another in its sidecar; the media route serves a
+file found again by a refresh; and every caller of the id — the index entry, the placement route, the
+job service — passes what the presentation is.
 
 Tests: a presentation's id is the same after its container's folder is renamed and the library walked
 again; the media route serves a presentation by its old id after its file was moved and its sidecar
 edited; two presentations of one shape in a sidecar index the first and report the second, and so do
-two naming one file; a job record holding an id in the old form is carried over to the new one after
-the first walk, and the out-of-date report describes its presentation.
+two naming one file; a job's placed presentation keeps its id after its folder is renamed, so it is not
+reported as placed without a job.
 
 ## What comes next
 
@@ -122,8 +117,7 @@ title or an order.
 ## Non-goals
 
 - **Moving files.** This proposal moves nothing; it makes moving safe.
-- **A redirect from old ids.** The ids change once, while few silos exist, and a client asks again.
-  Keeping a table of every id a presentation has had would be state the index is meant not to have.
+- **A migration.** No silo holds a presentation yet, so there is no id in the old form to carry over.
 - **Ids that survive a container being re-keyed,** which nothing does. smddb's provisional ids, if a
   service ever declines one, would need it, and that is 0013's first open question.
 

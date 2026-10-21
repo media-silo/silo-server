@@ -14,4 +14,4 @@ alternative and profile — so a move changes no id. Proposal:
 - A presentation's id is the 64-bit FNV-1a hash of its library, container, item, alternative and profile, joined by `|`, rather than of its library and path.
 - The walk reports a presentation sharing an id or a file with another in its sidecar as an error and does not index it, where today a shared file stops the walk.
 - The media route serves a presentation whose file it found missing from the file a re-read of its sidecar now records, by the same id.
-- The index is rebuilt under the new ids, and each job record's placed presentation id is carried over once, after the first walk.
+- Nothing is migrated: no silo yet holds a container or a presentation, so no id in the old form is held anywhere.

@@ -75,4 +75,4 @@ deltas in `openspec/changes/`, as that README describes.
 - [A presentation is named for what it is](PresentationIdentity.md) — a presentation's id is the hash
   of its library, container, item, alternative and profile rather than of its file's path, so a file or
   folder can move without a player, a job or the media route losing it; the walk refuses two
-  presentations that would share an id, and the ids change once.
+  presentations that would share an id. No silo yet holds a presentation, so nothing is migrated.
