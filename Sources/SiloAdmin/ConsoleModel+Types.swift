@@ -51,6 +51,8 @@ extension ConsoleModel {
         var draft: ContainerDraft
         var check: AdminConsole.ContainerCheck?
         var landed: AdminConsole.OpenedContainer?
+        /// Why storing it failed, said in the review, since an alert cannot show over a sheet.
+        var failure: String?
     }
 
     /// An import from smddb into a library being chosen.

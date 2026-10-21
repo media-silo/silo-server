@@ -86,6 +86,8 @@ struct ImportSheet: View {
     @State private var plan: AdminConsole.ImportPlan?
     @State private var chosen: Set<ContainerID> = []
     @State private var outcome: AdminConsole.ImportOutcome?
+    /// Why the last thing asked of the silo failed, said here since an alert cannot show over a sheet.
+    @State private var failure: String?
     @State private var working = false
 
     var body: some View {
@@ -150,6 +152,16 @@ struct ImportSheet: View {
                 }
                 .tag(container.id)
             }
+            failed
+        }
+    }
+
+    @ViewBuilder
+    private var failed: some View {
+        if let failure {
+            Label(failure, systemImage: "exclamationmark.octagon")
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
         }
     }
 
@@ -201,7 +213,16 @@ struct ImportSheet: View {
                         }
                     }
                 case nil:
-                    Label("Checking with the silo…", systemImage: "clock").foregroundStyle(.secondary)
+                    if failure == nil {
+                        Label("Checking with the silo…", systemImage: "clock").foregroundStyle(.secondary)
+                    } else {
+                        failed
+                        Text("What was made before it failed is in the library; checking again shows what is left.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("Check Again") { Task { await run(dryRun: true) } }
+                            .disabled(working)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,6 +252,7 @@ struct ImportSheet: View {
         case .check:
             step = .choose
             outcome = nil
+            failure = nil
         }
     }
 
@@ -240,7 +262,16 @@ struct ImportSheet: View {
         guard let picked else { return }
         working = true
         defer { working = false }
-        guard let planned = await model.planImport(picked, into: importing.library, on: importing.silo) else { return }
+        failure = nil
+        let planned: AdminConsole.ImportPlan
+        do {
+            guard let answered = try await model.planImport(picked, into: importing.library, on: importing.silo)
+            else { return }
+            planned = answered
+        } catch {
+            failure = model.describe(error)
+            return
+        }
         plan = planned
         chosen = Set(planned.descendants.map(\.id))
         step = .choose
@@ -250,7 +281,13 @@ struct ImportSheet: View {
         guard let plan else { return }
         working = true
         defer { working = false }
-        outcome = await model.runImport(plan, choosing: chosen, dryRun: dryRun, on: importing.silo)
+        failure = nil
+        do {
+            outcome = try await model.runImport(plan, choosing: chosen, dryRun: dryRun, on: importing.silo)
+        } catch {
+            outcome = nil
+            failure = model.describe(error)
+        }
     }
 
     private var isWouldMake: Bool {
@@ -358,6 +395,7 @@ struct NewContainerSheet: View {
     @State private var title = ""
     @State private var sequence = ""
     @State private var position = ""
+    @State private var failure: String?
 
     var body: some View {
         Form {
@@ -377,6 +415,11 @@ struct NewContainerSheet: View {
                 }
                 TextField("Position, from 0; empty for the end", text: $position)
             }
+            if let failure {
+                Label(failure, systemImage: "exclamationmark.octagon")
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -387,13 +430,18 @@ struct NewContainerSheet: View {
                         position: Int(position)
                     )
                     Task {
-                        await model.makeNewContainer(
-                            type,
-                            titled: title,
-                            at: creating,
-                            in: request.library,
-                            on: request.silo
-                        )
+                        failure = nil
+                        do {
+                            try await model.makeNewContainer(
+                                type,
+                                titled: title,
+                                at: creating,
+                                in: request.library,
+                                on: request.silo
+                            )
+                        } catch {
+                            failure = model.describe(error)
+                        }
                     }
                 }
                 .buttonStyle(.borderedProminent)

@@ -860,6 +860,7 @@ extension ConsoleModel {
     func storeContainer() async {
         guard let review = containerReview, let draft = containerDraft(of: review.silo) else { return }
         let key = ContainerKey(silo: review.silo.id, library: draft.library, container: draft.container)
+        containerReview?.failure = nil
         if draft.isNew {
             await make(draft, on: review.silo)
             return
@@ -877,12 +878,8 @@ extension ConsoleModel {
                 containers[key] = landed
                 containerReview?.landed = landed
             }
-        } catch let refused as AdminConsole.StoreRefused {
-            refusal = .storeRefused(refused.reason)
-        } catch is AdminConsole.NoAccess {
-            refusal = .noAccess
         } catch {
-            refusal = .unreachable
+            containerReview?.failure = describe(error)
         }
     }
 

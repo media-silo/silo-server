@@ -620,11 +620,16 @@ struct ContainerReviewSheet: View {
                 Text(
                     review.draft.isNew
                         ? "A new container in \(review.draft.library), with no presentations\(review.draft.creating?.parent == nil ? "" : ". Its parent's own fields are edited to name it first")."
-                        : "The difference from the sidecar it was based on, in \(review.draft.library). Only the container's own fields change; its presentations, children and rules stay as they are, and no folder is renamed."
+                        : "The difference from the sidecar it was based on, in \(review.draft.library). Only the container's own fields change, and its presentations and rules stay as they are; a folder whose name changes with them is moved, as listed below."
                 )
                 .foregroundStyle(.secondary)
                 DifferenceView(lines: LineDifference.changes(from: review.draft.baseText, to: review.draft.text))
                 ContainerVerdict(check: review.check)
+                if let failure = review.failure {
+                    Label(failure, systemImage: "exclamationmark.octagon")
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
                 HStack {
                     Spacer()
                     Button("Cancel", role: .cancel) { dismiss() }
