@@ -423,6 +423,29 @@ struct IndexTests {
         #expect(Artwork.file(of: "poster", in: folder)?.format == .jpg, "the .jpg counts")
     }
 
+    /// An attributed kind of artwork the folder holds no file for is a warning, whether the walk reads
+    /// the sidecar or finds it unchanged.
+    @Test func anAttributedKindWithNoFileIsAWarning() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        try sandbox.place([Self.unlisted], item: "ep1")
+        let folder = sandbox.library.root.appendingPathComponent("Behind the Sofa")
+        let url = folder.appendingPathComponent("container.smd")
+        let poster = Attribution(subject: .artwork("poster"), provider: .tmdb, value: "348")
+        try SidecarFile.data(settingAttributions: [poster], in: Data(contentsOf: url)).write(to: url)
+
+        let index = try Index(at: nil)
+        let warning =
+            "warning: Behind the Sofa/container.smd: artwork poster is attributed to tmdb but the folder has none"
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning])
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning], "unchanged")
+        #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == [warning])
+
+        try Data([0xFF, 0xD8, 0xFF]).write(to: folder.appendingPathComponent("poster.jpg"))
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.isEmpty)
+        #expect(LibraryWalker.walk(sandbox.library.root).findings.isEmpty)
+    }
+
     /// An unmounted mount point is an empty folder, not a missing one: a walk of it would forget
     /// the whole library, so it is not applied, and neither is a walk of a folder that has gone.
     @Test func anEmptyMountPointForgetsNothing() throws {

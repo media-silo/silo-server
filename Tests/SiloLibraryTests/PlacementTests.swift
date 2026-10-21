@@ -663,6 +663,104 @@ struct PlacementTests {
         return value
     }
 
+    /// Places part one, gives the serial an outline, and returns the serial's sidecar.
+    private func placedSerial(in sandbox: Sandbox) throws -> URL {
+        try Placer.apply(
+            try Placer.compute(
+                PlacementRequest(
+                    library: sandbox.library,
+                    lineage: Self.lineage,
+                    item: "part1",
+                    presentation: Presentation(file: ""),
+                    source: try sandbox.source("a.mkv")
+                )
+            )
+        )
+        return sandbox.library.appendingPathComponent(
+            "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd"
+        )
+    }
+
+    private func placePartTwo(in sandbox: Sandbox, lineage: [Container] = lineage) throws {
+        try Placer.apply(
+            try Placer.compute(
+                PlacementRequest(
+                    library: sandbox.library,
+                    lineage: lineage,
+                    item: "part2",
+                    presentation: Presentation(file: ""),
+                    source: try sandbox.source("b.mkv")
+                )
+            )
+        )
+    }
+
+    @Test func attributionsAreLibraryFacts() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let url = try placedSerial(in: sandbox)
+        var serial = Self.serial
+        serial.outline = "Sutekh is imprisoned beneath a pyramid."
+        let outline = Attribution(subject: .outline, provider: .tmdb, value: "1012")
+        let edited = try SidecarFile.data(
+            settingAttributions: [outline],
+            in: SidecarFile.data(settingContainer: serial, in: Data(contentsOf: url))
+        )
+        try edited.write(to: url)
+
+        try placePartTwo(in: sandbox, lineage: [Self.series, Self.season, serial])
+        let placed = try SidecarFile.sidecar(from: Data(contentsOf: url))
+        #expect(placed.attributions == [outline], "a placement keeps them")
+        #expect(placed.presentations["part2"]?.count == 1)
+        #expect(Validator.check(placed).isEmpty)
+
+        var unattributed = placed
+        unattributed.container.outline = nil
+        #expect(
+            Validator.check(unattributed).map(\.text) == ["outline is attributed to tmdb but the container has none"]
+        )
+        var odd = placed
+        odd.attributions = [
+            outline,
+            outline,
+            Attribution(subject: .outline(ofAlternative: "se"), provider: .tmdb, value: "1012"),
+            Attribution(subject: Attribution.Subject(rawValue: "tagline"), provider: .tmdb, value: "1012"),
+            Attribution(subject: .artwork("poster"), provider: .tmdb, value: "1012"),
+        ]
+        #expect(
+            Validator.check(odd).map(\.text) == [
+                "outline is attributed twice",
+                "alternative/se/outline is attributed to tmdb but the container has none",
+                "tagline is not a field or an artwork kind to attribute",
+            ]
+        )
+    }
+
+    @Test func declinedRefsAreLibraryFacts() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let url = try placedSerial(in: sandbox)
+        let trailer = ExternalRef(provider: .tmdb, value: "99")
+        try SidecarFile.data(settingDeclined: [trailer], in: Data(contentsOf: url)).write(to: url)
+
+        try placePartTwo(in: sandbox)
+        let placed = try SidecarFile.sidecar(from: Data(contentsOf: url))
+        #expect(placed.declined == [trailer], "a placement keeps them")
+        #expect(Validator.check(placed).isEmpty)
+
+        var held = placed
+        held.declined = [trailer, trailer]
+        held.container.sequences[0].items[0] = .leaf(
+            Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One", externalRefs: [trailer])
+        )
+        #expect(
+            Validator.check(held).map(\.text) == [
+                "tmdb 99 is declined but item part1 carries it",
+                "tmdb 99 is declined twice",
+            ]
+        )
+    }
+
     @Test func pathsAreCheckedForStayingInside() {
         #expect(LibraryLayout.isInside("Part One.mkv"))
         #expect(LibraryLayout.isInside("extras/Now.mkv"))

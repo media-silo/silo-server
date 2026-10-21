@@ -36,7 +36,8 @@ package struct EditRefused: Error {
 }
 
 /// Edits a container's own fields in one library's sidecar, onto the sidecar the editor read, and
-/// changes no library fact but the paths of the folders it moves: the write is SmdKit's, which keeps
+/// changes no library fact but the paths of the folders it moves, and, when the edit carries them,
+/// the attributions of its fields and the references it declines: the write is SmdKit's, which keeps
 /// every presentation and rule. A folder follows its container, so an edit that changes its title,
 /// or the order of its children, renames the folders it names. `Containers.md`, *The edit*;
 /// `FolderOrder.md`.
@@ -46,17 +47,13 @@ enum ContainerEditor {
         in library: LibraryConfig,
         document: String,
         basedOn: String,
+        attributions: [Attribution]? = nil,
+        declined: [ExternalRef]? = nil,
         dryRun: Bool,
         libraries: Libraries,
         index: Index
     ) async throws -> ContainerEditOutcome {
-        let container: Container
-        do {
-            container = try ContainerFile.container(from: Data(document.utf8))
-        } catch {
-            throw BadEdit(reason: "the container document cannot be read: \(error.localizedDescription)")
-        }
-        guard container.id == id else { throw BadEdit(reason: "the document describes \(container.id), not \(id)") }
+        let container = try reading(document, as: id, attributions: attributions)
         guard try index.container(id, in: library.id) != nil else { throw NoSuchContainer() }
 
         // What moved is walked in the same turn, so it is read back with everything beneath it before
@@ -92,7 +89,7 @@ enum ContainerEditor {
                 let written: Data
                 let sidecar: Sidecar
                 do {
-                    written = try SidecarFile.data(settingContainer: container, in: held)
+                    written = try setting(container, attributions: attributions, declined: declined, in: held)
                     sidecar = try SidecarFile.sidecar(from: written)
                 } catch {
                     throw BadEdit(reason: "the edit cannot be written: \(error.localizedDescription)")
@@ -132,6 +129,46 @@ enum ContainerEditor {
                 return outcome
             }
         )
+    }
+
+    /// The edit's document as a container, refused when it cannot be read, names another container
+    /// than the route's, or comes with an artwork kind's attribution, which is the artwork route's.
+    private static func reading(
+        _ document: String,
+        as id: ContainerID,
+        attributions: [Attribution]?
+    ) throws -> Container {
+        let container: Container
+        do {
+            container = try ContainerFile.container(from: Data(document.utf8))
+        } catch {
+            throw BadEdit(reason: "the container document cannot be read: \(error.localizedDescription)")
+        }
+        guard container.id == id else { throw BadEdit(reason: "the document describes \(container.id), not \(id)") }
+        if let artwork = attributions?.first(where: { $0.subject.artworkKind != nil }) {
+            throw BadEdit(reason: "\(artwork.subject) is artwork, whose attribution is the artwork route's")
+        }
+        return container
+    }
+
+    /// The sidecar with the container's own fields set, and, when the edit carries them, the
+    /// attributions of those fields and the references it declines. The artwork's attributions stay as
+    /// the artwork route left them.
+    private static func setting(
+        _ container: Container,
+        attributions: [Attribution]?,
+        declined: [ExternalRef]?,
+        in held: Data
+    ) throws -> Data {
+        var setting = try SidecarFile.data(settingContainer: container, in: held)
+        if let attributions {
+            let artwork = try SidecarFile.sidecar(from: held).attributions.filter { $0.subject.artworkKind != nil }
+            setting = try SidecarFile.data(settingAttributions: attributions + artwork, in: setting)
+        }
+        if let declined {
+            setting = try SidecarFile.data(settingDeclined: declined, in: setting)
+        }
+        return setting
     }
 
     private static func located(_ finding: Finding, at path: String) -> Finding {

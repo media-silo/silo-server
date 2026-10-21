@@ -157,10 +157,12 @@ public enum Indexer {
         var size: Int?
     }
 
-    /// The container a visited sidecar describes, and the paths of its children's sidecars.
+    /// The container a visited sidecar describes, the paths of its children's sidecars, and its
+    /// attributions, which say which artwork kinds the folder should hold.
     private struct VisitedSidecar {
         var id: ContainerID
         var children: [ContainerID: String]
+        var attributions: [Attribution] = []
     }
 
     private static func visit(
@@ -196,7 +198,8 @@ public enum Indexer {
 
         walk.report.findings += Artwork.findings(
             in: walk.library.root.appendingPathComponent(folder, isDirectory: true),
-            sidecar: path
+            sidecar: path,
+            attributions: visited.attributions
         )
 
         guard walk.descend else { return }
@@ -238,7 +241,12 @@ public enum Indexer {
         ) {
             walk.report.findings.append(finding)
         }
-        return VisitedSidecar(id: id, children: children)
+        // An unchanged sidecar is not parsed again, unless it attributes something whose file the
+        // walk has to look for.
+        let attributions =
+            container.document.range(of: Data("<attribution".utf8)) == nil
+            ? [] : (try? SidecarFile.sidecar(from: container.document).attributions) ?? []
+        return VisitedSidecar(id: id, children: children, attributions: attributions)
     }
 
     /// Reads the sidecar and stores what it holds, or nil having reported why it was not: it is
@@ -305,7 +313,7 @@ public enum Indexer {
         walk.report.findings += entry.findings.map { Finding($0.severity, path: path, $0.text) }
         try index.store(entry)
         walk.report.read += 1
-        return VisitedSidecar(id: id, children: sidecar.children)
+        return VisitedSidecar(id: id, children: sidecar.children, attributions: sidecar.attributions)
     }
 
     /// Visits each child the sidecar points at, in the order of their paths, reporting any that is

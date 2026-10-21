@@ -27,11 +27,20 @@ public struct MakingRequest: Sendable {
     /// The tree, in any order: one container named as a child by none of the others, and every
     /// other named as a child by one of them.
     public var containers: [Container]
+    /// The attributions of each container's own fields, by the container's id, written into its new
+    /// sidecar so that it is never in the library with an outline that does not say whose it is.
+    public var attributions: [ContainerID: [Attribution]]
 
-    public init(library: URL, holder: Holder?, containers: [Container]) {
+    public init(
+        library: URL,
+        holder: Holder?,
+        containers: [Container],
+        attributions: [ContainerID: [Attribution]] = [:]
+    ) {
         self.library = library
         self.holder = holder
         self.containers = containers
+        self.attributions = attributions
     }
 }
 
@@ -105,7 +114,7 @@ public enum Maker {
                 folders.append(folder)
             }
 
-            var sidecar = Sidecar(container: container)
+            var sidecar = Sidecar(container: container, attributions: request.attributions[container.id] ?? [])
             for child in container.childContainerIDs {
                 guard let made = request.containers.first(where: { $0.id == child }) else { continue }
                 sidecar.children[child] = LibraryLayout.childPath(for: made, in: container)

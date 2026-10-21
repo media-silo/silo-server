@@ -51,8 +51,9 @@ One model, per principle 2: the document's schemas SHALL be the sidecar's
 elements as JSON, never a separate API vocabulary. A `Container` SHALL carry
 the sidecar's `type`, `title`, `displayTitle`, `year`, `typeLabel`, `outline`,
 `listed`, `defaultAlternative`, `alternatives`, `features` with their
-`participants`, `sequences`, `extrasAnchor`, `extras`, `externalRefs`, and its
-child containers as summaries; an `Item` SHALL carry its `optional`, `ref`,
+`participants`, `sequences`, `extrasAnchor`, `extras`, `externalRefs`, its
+`attributions` — each a `subject`, `provider` and `value` — and its child containers as
+summaries; an `Item` SHALL carry its `optional`, `ref`,
 `externalRefs` and `presentations`; a `Presentation` SHALL carry `id`,
 `alternative`, `profile`, `displayName`, `file`, `source` — its binding and
 segments — `transform` — its ruleset, version and layers — `tracks` and
@@ -66,7 +67,14 @@ projection of the model, never a place the model is edited.
   `"parent":"0000000000000001"`, and in its presentations
   `"displayName":"mobile"`, `"file":"Part One.mkv"` and a track's `"audio":3`
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`theLibraryIsBrowsable`).
+#### Scenario: an attributed outline reads with its attribution
+- **WHEN** a container's sidecar attributes its outline to provider `tmdb` with value `348`, and a
+  client asks for the container
+- **THEN** the 200 answer carries the outline, and in its `attributions` the subject `outline`,
+  provider `tmdb` and value `348`
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`theLibraryIsBrowsable`,
+`attributionsAreServedWithTheContainer`).
 
 ### Requirement: The libraries are listed, with what they hold
 `GET /v1/libraries` SHALL answer 200 with one object per configured library —
@@ -500,9 +508,10 @@ Pinned by: `Tests/SiloTests/LibrariesTests.swift` (`theLastWalkIsKeptWithItsFind
 `ContainerSummary` for each container at the top of the library, listed or not.
 `GET /v1/libraries/{library}/containers/{id}` SHALL answer 200 with a
 `LibraryContainer`: the `library`; the `path` of its sidecar relative to the
-library root, as a walk's findings on the sidecar name it; and the `container` as
+library root, as a walk's findings on the sidecar name it; the `container` as
 the library's own sidecar says it, with that library's presentations, in the form
-`GET /v1/containers/{id}` answers. `GET /v1/libraries/{library}/containers/{id}/smd`
+`GET /v1/containers/{id}` answers; and `declined`, the refs the sidecar declines, each a
+`provider` and `value`, which `GET /v1/containers/{id}` does not carry. `GET /v1/libraries/{library}/containers/{id}/smd`
 SHALL answer the library's sidecar bytes as `GET /v1/containers/{id}/smd` answers
 a sidecar. Each SHALL be 404 for a library the silo does not serve and for a
 container the library does not hold, whether or not another library holds it.
@@ -523,14 +532,26 @@ These are read routes, and SHALL answer without a token.
 - **WHEN** a client asks `films` for a container only `films-4k` holds
 - **THEN** the answer is 404
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibrarysContainersAreReadWithinIt`).
+#### Scenario: a library's declined refs
+- **WHEN** a library's sidecar for a series declines a ref of provider `tmdb`, and a client asks
+  the library for the series, and then asks `GET /v1/containers/{id}` for it
+- **THEN** the library's answer carries the declined ref in `declined`, and the global answer
+  carries none
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibrarysContainersAreReadWithinIt`,
+`aLibrarysDeclinedRefsAreReadWithinIt`).
 
 ### Requirement: A container's own fields are edited in one library, on the sidecar the editor read
 `PUT /v1/libraries/{library}/containers/{id}` with a JSON `ContainerEdit` — `document`, the
-container as its repository XML; `basedOn`, the digest of the sidecar it was made from; and
-`dryRun` — SHALL set the container's own fields in that library's sidecar to the document's,
-and SHALL change none of the library's facts but the paths of the folders it moves: its
-presentations and its rules stay as they stand. A sidecar's digest is the SHA-256 of its bytes as the index read
+container as its repository XML; `basedOn`, the digest of the sidecar it was made from;
+`dryRun`; `attributions`, optional, each a `subject`, `provider` and `value`; and `declined`,
+optional, each a `provider` and `value` — SHALL set the container's own fields in that library's sidecar to the document's,
+and SHALL change none of the library's facts but the paths of the folders it moves, the attributions of the
+container's own fields and its declined refs: its presentations, its rules and its artwork's attributions stay as they
+stand. With `attributions` absent, the sidecar's attributions of the container's own fields SHALL
+stand as they are; present, they SHALL replace them, and one whose subject is an artwork kind SHALL
+be 400. With `declined` absent, the sidecar's declined refs SHALL stand as they are; present,
+they SHALL replace them. A sidecar's digest is the SHA-256 of its bytes as the index read
 them, in lowercase hexadecimal, and the `LibraryContainer` a library's container route answers
 SHALL carry it as `digest`. The answer SHALL be a `ContainerEditResult`: `applied`, the
 sidecar's bytes as written or as they would be, their `digest`, the `findings`, and `moves`, each a
@@ -545,7 +566,10 @@ folder's path relative to the library `from` and `to`, made or as they would be 
   result with its findings, and nothing SHALL be written. Besides the validator's checks, an
   item the document no longer declares SHALL be an error when the library holds presentations
   of it (`item <id> has presentations in this library`) or a sidecar for the container it names
-  (`item <id> is a container this library holds`).
+  (`item <id> is a container this library holds`). An attribution, carried or left standing, of a
+  field the document does not have is the validator's error
+  (`<subject> is attributed to <provider> but the container has none`), so an outline is not
+  removed while its attribution stands.
 - An edit with `dryRun` true SHALL be answered 200 with `applied` false and write nothing.
 - Otherwise the silo SHALL write the sidecar; SHALL rename the container's folder when the name
   the layout gives it is no longer the folder's, recording the new path in its parent's sidecar;
@@ -598,8 +622,32 @@ wrong bearer SHALL be 401.
 - **THEN** the serial's folder is renamed `02 - Pyramids of Mars`, the series' sidecar records
   `02 - Pyramids of Mars/container.smd`, and the presentations beneath keep their ids
 
+#### Scenario: an outline taken with its attribution
+- **WHEN** the operator puts a document with a new outline, carrying an attribution of `outline` to
+  provider `tmdb`
+- **THEN** the answer is 200 with `applied` true, and the library's container reads the outline with
+  that attribution
+
+#### Scenario: an edit that carries no attributions
+- **WHEN** a container's outline is attributed to a provider, and an edit changing only its year
+  carries no `attributions`
+- **THEN** the outline's attribution stands
+
+#### Scenario: an attributed outline removed alone
+- **WHEN** an edit removes a container's outline and carries no `attributions`, and the sidecar
+  attributes the outline to `tmdb`
+- **THEN** the answer is 422 with the finding
+  `outline is attributed to tmdb but the container has none`, and the sidecar is unchanged
+
+#### Scenario: a ref declined
+- **WHEN** the operator puts a container's document unchanged, carrying `declined` with provider
+  `tmdb` and one value
+- **THEN** the answer is 200 with `applied` true, the library's container reads that declined ref,
+  and its own fields are as they were
+
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersOwnFieldsAreEditedOntoTheSidecarRead`,
-`anEditMovesTheFoldersItRenames`).
+`anEditMovesTheFoldersItRenames`, `anEditCarriesTheAttributionsOfItsFields`,
+`anEditCarriesTheRefsItDeclines`).
 
 ### Requirement: A container's artwork is read, put and removed by kind
 The `LibraryContainer` a library's container route answers SHALL carry `artwork`, the kinds the
@@ -610,8 +658,15 @@ answer without a token. `PUT` on the same path SHALL take the image's bytes and 
 JPEG or a PNG, told by the bytes' signature rather than the declared type: anything else SHALL be
 415, and an image over 25 MB SHALL be 413. It SHALL write the file as `<kind>.jpg` or
 `<kind>.png` by writing beside it and renaming, SHALL remove the kind's file in the other format
-if there is one, and SHALL answer 200 with the kind and its format. `DELETE` on the same path
-SHALL remove the kind's file and answer 204, or 404 when there is none. A kind that is not one of
+if there is one, and SHALL answer 200 with the kind and its format. A `PUT` MAY carry the query parameters `provider` and `value`, both or
+neither, one alone being 400: with them, the silo SHALL record in the container's sidecar the
+attribution of `artwork/<kind>` to that provider and value, and without them SHALL remove any
+attribution the kind had. When a put records an attribution, the sidecar SHALL be written before
+the image, and when it removes one, the image before the sidecar, so that an interrupted put
+credits the provider for too much rather than leaving its image uncredited. A sidecar a put or a
+delete writes SHALL be re-read into the index, and its digest changes as after an edit. `DELETE`
+on the same path SHALL remove the kind's file, and the kind's attribution if it has one, and
+answer 204, or 404 when there is none. A kind that is not one of
 the artwork kinds, a library the silo does not serve, and a container it does not hold SHALL be
 404. `PUT` and `DELETE` SHALL require the operator's bearer; a missing or wrong bearer SHALL be
 401.
@@ -634,21 +689,40 @@ the artwork kinds, a library the silo does not serve, and a container it does no
 - **WHEN** the operator deletes a container's `poster`
 - **THEN** the answer is 204, the folder holds no poster, and getting the poster is 404
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersArtworkIsPutServedAndRemoved`).
+#### Scenario: a poster put with its attribution
+- **WHEN** the operator puts a JPEG as a container's `poster` with `provider` `tmdb` and `value`
+  `348`
+- **THEN** the answer is 200, and the container carries an attribution of `artwork/poster` to
+  `tmdb` with value `348`
+
+#### Scenario: an attributed poster replaced with the operator's own
+- **WHEN** a container's `poster` is attributed to a provider, and the operator puts a PNG as its
+  `poster` with no provider
+- **THEN** the poster is the PNG, and the container carries no attribution of it
+
+#### Scenario: a provider with no value
+- **WHEN** the operator puts a poster with a `provider` and no `value`
+- **THEN** the answer is 400, and the folder and the sidecar are unchanged
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersArtworkIsPutServedAndRemoved`,
+`aContainersArtworkIsPutWithItsAttribution`).
 
 ### Requirement: Containers are made in a library without a file
 `POST /v1/libraries/{library}/containers` with a JSON `ContainerCreate` — `documents`, one or more
-containers as repository XML; `parent`, the id of a container the library holds, or absent; and
-`dryRun` — SHALL make each container in that library as a placement would make it, and SHALL place
+containers as repository XML; `parent`, the id of a container the library holds, or absent;
+`dryRun`; and `attributions`, optional, each naming the `container` in the request it belongs to,
+with its `subject`, `provider` and `value` — SHALL make each container in that library as a placement would make it, and SHALL place
 no file. The documents SHALL form one tree: exactly one of them, the top, is named as a child by
 none of the others, and every other is named as a child by a document in the request. With a
 `parent`, the top SHALL be filed beneath the parent's folder; without one, at the top of the
-library. Each container's sidecar SHALL hold the document's own fields and no presentations, and
+library. Each container's sidecar SHALL hold the document's own fields, the request's attributions of
+them, and no presentations, and
 each parent's sidecar SHALL record its child's path. The answer SHALL be a `ContainerCreateResult`:
 `applied`, the `writes`, each a sidecar's path relative to the library and whether it is new, and
 the `findings`.
 
-- A document that cannot be read, or documents that do not form one tree, SHALL be 400, and a
+- A document that cannot be read, documents that do not form one tree, and an attribution naming a
+  container the request does not carry or an artwork kind SHALL be 400, and a
   library the silo does not serve or a `parent` it does not hold SHALL be 404.
 - A request with an error-severity finding SHALL be 422, carrying the result with its findings, and
   nothing SHALL be written. Besides the validator's checks on each sidecar, it SHALL be an error
@@ -701,7 +775,14 @@ bearer SHALL be 401.
 - **WHEN** a create is posted with no `Authorization` header
 - **THEN** the answer is 401
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`containersAreMadeInALibraryWithoutAFile`).
+#### Scenario: a film made with an attributed outline
+- **WHEN** the operator creates a film with an outline, and the request attributes the film's
+  outline to provider `tmdb`
+- **THEN** the film's new sidecar holds the outline and its attribution, and the library's container
+  reads both
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`containersAreMadeInALibraryWithoutAFile`,
+`aCreateCarriesItsAttributions`).
 
 ### Requirement: A library is laid out again on request
 `POST /v1/libraries/{library}/layout` with a JSON body of `dryRun` SHALL rename every container

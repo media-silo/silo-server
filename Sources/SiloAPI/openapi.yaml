@@ -17,8 +17,11 @@ info:
     /v1/libraries/{library}/containers/{id}/artwork/{kind}, for the kinds poster, fanart, banner,
     logo and thumb: GET answers the image with its content type, or 404, openly; PUT takes a JPEG or
     a PNG, told by its signature, answers 200 with {"kind", "format"}, 415 for anything else and 413
-    for an image over 25 MB, and removes the kind's file in the other format; DELETE answers 204, or
-    404 for a kind the folder does not hold. PUT and DELETE are the operator's.
+    for an image over 25 MB, and removes the kind's file in the other format; with the query
+    parameters provider and value, both or neither (400 for one alone), it records the kind's
+    attribution in the sidecar, and without them removes any; DELETE answers 204, removing the
+    kind's attribution with its file, or 404 for a kind the folder does not hold. PUT and DELETE
+    are the operator's.
 
 servers:
   - url: /v1
@@ -2920,7 +2923,7 @@ components:
 
     Container:
       type: object
-      required: [id, library, type, title, displayTitle, listed, alternatives, features, sequences, extras, children, externalRefs]
+      required: [id, library, type, title, displayTitle, listed, alternatives, features, sequences, extras, children, externalRefs, attributions]
       properties:
         id:
           type: string
@@ -2970,10 +2973,32 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExternalRef"
+        attributions:
+          type: array
+          description: >
+            Whose each attributed field or artwork kind is, as the library's sidecar records it, so that
+            a client showing an outline or an image can credit it.
+          items:
+            $ref: "#/components/schemas/Attribution"
+
+    Attribution:
+      type: object
+      required: [subject, provider, value]
+      properties:
+        subject:
+          type: string
+          description: >
+            What is attributed: outline, an alternative's outline as alternative/<id>/outline, or an
+            artwork kind as artwork/<kind>.
+        provider:
+          type: string
+        value:
+          type: string
+          description: The reference at the provider the subject came from.
 
     LibraryContainer:
       type: object
-      required: [library, path, digest, artwork, container]
+      required: [library, path, digest, artwork, container, declined]
       properties:
         library:
           type: string
@@ -2997,6 +3022,13 @@ components:
             enum: [poster, fanart, banner, logo, thumb]
         container:
           $ref: "#/components/schemas/Container"
+        declined:
+          type: array
+          description: >
+            The references a provider lists for the container that this library's sidecar declines.
+            A library's own choice, which the global container read does not carry.
+          items:
+            $ref: "#/components/schemas/ExternalRef"
 
     ContainerEdit:
       type: object
@@ -3010,6 +3042,21 @@ components:
           description: The digest of the sidecar the edit was made from.
         dryRun:
           type: boolean
+        attributions:
+          type: array
+          description: >
+            The attributions of the container's own fields, replacing the sidecar's when present and
+            leaving them as they stand when absent. An artwork kind's attribution is the artwork
+            route's, and is refused here.
+          items:
+            $ref: "#/components/schemas/Attribution"
+        declined:
+          type: array
+          description: >
+            The references the sidecar declines, replacing its own when present and leaving them as
+            they stand when absent.
+          items:
+            $ref: "#/components/schemas/ExternalRef"
 
     ContainerEditResult:
       type: object
@@ -3082,6 +3129,25 @@ components:
           description: The container the library holds that the top is filed beneath; absent for the top of the library.
         dryRun:
           type: boolean
+        attributions:
+          type: array
+          description: Attributions of the new containers' own fields, each naming the container in the request it belongs to.
+          items:
+            $ref: "#/components/schemas/CreateAttribution"
+
+    CreateAttribution:
+      type: object
+      required: [container, subject, provider, value]
+      properties:
+        container:
+          type: string
+          description: The id of a container in the request.
+        subject:
+          type: string
+        provider:
+          type: string
+        value:
+          type: string
 
     ContainerCreateResult:
       type: object
