@@ -323,10 +323,15 @@ struct ServerTests {
                 var path: String?
                 var text: String
             }
+            struct Move: Decodable, Equatable {
+                var from: String
+                var to: String
+            }
             var applied: Bool
             var sidecar: String
             var digest: String
             var findings: [Finding]
+            var moves: [Move]
         }
         struct Problem: Decodable { var detail: String }
         struct Read: Decodable {
@@ -344,6 +349,11 @@ struct ServerTests {
         let path = "/v1/libraries/main/containers/\(Fixture.alien.id)"
         let folder = Fixture.root.appendingPathComponent("Library/Alien (1997)")
         let sidecar = folder.appendingPathComponent("container.smd")
+        let moved = Fixture.root.appendingPathComponent("Library/Alien (1979)/container.smd")
+        let move = Result.Move(from: "Alien (1997)", to: "Alien (1979)")
+        func ids(_ read: Read) -> [String] {
+            read.container.sequences.flatMap(\.items).flatMap(\.presentations).map(\.id)
+        }
         func document(_ change: (inout Container) -> Void) -> String {
             var container = Fixture.alien
             change(&container)
@@ -381,12 +391,9 @@ struct ServerTests {
             let dryResult = try dry.json(Result.self)
             #expect(!dryResult.applied)
             #expect(dryResult.sidecar.contains("1979"))
-            #expect(
-                dryResult.findings.map(\.text) == [
-                    "folder \"Alien (1997)\" is not the name the layout would give it, \"Alien (1979)\""
-                ]
-            )
-            #expect(try Data(contentsOf: sidecar) == onDisk, "a dry run writes nothing")
+            #expect(dryResult.findings.isEmpty)
+            #expect(dryResult.moves == [move], "the folder it would move")
+            #expect(try Data(contentsOf: sidecar) == onDisk, "a dry run writes nothing, and moves nothing")
 
             let stored = try await client.send(
                 "PUT",
@@ -397,11 +404,14 @@ struct ServerTests {
             #expect(stored.status == 200)
             let result = try stored.json(Result.self)
             #expect(result.applied)
+            #expect(result.moves == [move])
             let after = try await client.get(path).json(Read.self)
             #expect(after.container.year == 1979, "read back at once")
             #expect(after.digest == result.digest)
             #expect(files(after) == files(before), "its presentations are as they were")
-            #expect(FileManager.default.fileExists(atPath: sidecar.path), "and its folder is where it was")
+            #expect(ids(after) == ids(before), "keeping their ids")
+            #expect(FileManager.default.fileExists(atPath: moved.path), "in the folder the layout gives it")
+            #expect(!FileManager.default.fileExists(atPath: folder.path))
 
             let stale = try await client.send(
                 "PUT",
@@ -411,7 +421,7 @@ struct ServerTests {
             )
             #expect(stale.status == 409)
             #expect(try stale.json(Problem.self).detail.contains(result.digest), "naming the digest it holds")
-            let held = try Data(contentsOf: sidecar)
+            let held = try Data(contentsOf: moved)
 
             let noTheatrical = document {
                 $0.year = 1979
@@ -449,7 +459,7 @@ struct ServerTests {
                     "item feature has presentations in this library"
                 )
             )
-            #expect(try Data(contentsOf: sidecar) == held, "a refusal writes nothing")
+            #expect(try Data(contentsOf: moved) == held, "a refusal writes nothing")
 
             let other = String(decoding: ContainerFile.data(for: Fixture.brief), as: UTF8.self)
             #expect(
@@ -501,6 +511,162 @@ struct ServerTests {
                 reread.container.children.map(\.id) == series.container.children.map(\.id),
                 "its children are as they were"
             )
+        }
+    }
+
+    /// A folder follows its container: an edit naming a child before the serial renumbers the serial's
+    /// folder and records its new path, and an edit taking it away numbers it back; the serial's
+    /// presentations keep their ids.
+    @Test func anEditMovesTheFoldersItRenames() async throws {
+        struct Edit: Encodable {
+            var document: String
+            var basedOn: String
+            var dryRun: Bool?
+        }
+        struct Move: Decodable, Equatable {
+            var from: String
+            var to: String
+        }
+        struct Result: Decodable { var moves: [Move] }
+        struct Read: Decodable { var digest: String }
+        let seriesPath = "/v1/libraries/main/containers/\(Fixture.series.id)"
+        let library = Fixture.root.appendingPathComponent("Library")
+        let seriesSidecar = library.appendingPathComponent("Doctor Who (1963)/container.smd")
+        func put(_ series: Container, dryRun: Bool? = nil) async throws -> Result {
+            try await withClient { client in
+                let digest = try await client.get(seriesPath).json(Read.self).digest
+                let answer = try await client.send(
+                    "PUT",
+                    seriesPath,
+                    body: try JSONEncoder().encode(
+                        Edit(
+                            document: String(decoding: ContainerFile.data(for: series), as: UTF8.self),
+                            basedOn: digest,
+                            dryRun: dryRun
+                        )
+                    ),
+                    headers: Self.operatorHeaders
+                )
+                #expect(answer.status == 200)
+                return try answer.json(Result.self)
+            }
+        }
+        func ids() async throws -> [String] {
+            try await withClient { client in
+                let serial = try await client.get("/v1/containers/\(Fixture.serial.id)")
+                return try serial.json(ContainerJSON.self).sequences.flatMap(\.items).flatMap(\.presentations).map(\.id)
+            }
+        }
+        let before = try await ids()
+        var inserted = Fixture.series
+        inserted.sequences[0].items.insert(
+            .child(Entry.Child(id: ItemID("s12")!, container: ContainerID("00000000000000a0")!)),
+            at: 0
+        )
+        let renumbered = Move(
+            from: "Doctor Who (1963)/01 - Pyramids of Mars",
+            to: "Doctor Who (1963)/02 - Pyramids of Mars"
+        )
+        #expect(try await put(inserted, dryRun: true).moves == [renumbered])
+        #expect(FileManager.default.fileExists(atPath: library.appendingPathComponent(renumbered.from).path))
+
+        #expect(try await put(inserted).moves == [renumbered])
+        #expect(FileManager.default.fileExists(atPath: library.appendingPathComponent(renumbered.to).path))
+        #expect(
+            try SidecarFile.sidecar(from: Data(contentsOf: seriesSidecar)).children[Fixture.serial.id]
+                == "02 - Pyramids of Mars/container.smd"
+        )
+        #expect(try await ids() == before, "the presentations beneath keep their ids")
+
+        #expect(try await put(Fixture.series).moves == [Move(from: renumbered.to, to: renumbered.from)])
+        #expect(
+            try SidecarFile.sidecar(from: Data(contentsOf: seriesSidecar)).children[Fixture.serial.id]
+                == "01 - Pyramids of Mars/container.smd"
+        )
+        #expect(try await ids() == before)
+    }
+
+    /// A library whose folders were renamed by hand is laid out again on request: a dry run moves
+    /// nothing, a folder whose new name is taken is a warning, and the layout renames the rest and
+    /// records their paths, the ids as they were.
+    @Test func aLibraryIsLaidOutAgain() async throws {
+        struct Request: Encodable { var dryRun: Bool? }
+        struct Move: Decodable, Equatable {
+            var from: String
+            var to: String
+        }
+        struct Finding: Decodable { var text: String }
+        struct Result: Decodable {
+            var applied: Bool
+            var moves: [Move]
+            var findings: [Finding]
+        }
+        let library = Fixture.root.appendingPathComponent("Library")
+        let series = library.appendingPathComponent("Doctor Who (1963)")
+        let seriesSidecar = series.appendingPathComponent("container.smd")
+        let existing = try Data(contentsOf: seriesSidecar)
+        var held = try SidecarFile.sidecar(from: existing)
+        held.children[Fixture.serial.id] = "Pyramids of Mars/container.smd"
+        try FileManager.default.moveItem(
+            at: series.appendingPathComponent("01 - Pyramids of Mars"),
+            to: series.appendingPathComponent("Pyramids of Mars")
+        )
+        try SidecarFile.data(for: held, updating: existing).write(to: seriesSidecar)
+        let move = Move(from: "Doctor Who (1963)/Pyramids of Mars", to: "Doctor Who (1963)/01 - Pyramids of Mars")
+
+        try await withClient { client in
+            func ids() async throws -> [String] {
+                let serial = try await client.get("/v1/containers/\(Fixture.serial.id)")
+                return try serial.json(ContainerJSON.self).sequences.flatMap(\.items).flatMap(\.presentations).map(\.id)
+            }
+            func layOut(_ request: Request, headers: [String: String] = Self.operatorHeaders) async throws -> Result {
+                let answer = try await client.post("/v1/libraries/main/layout", json: request, headers: headers)
+                #expect(answer.status == 200)
+                return try answer.json(Result.self)
+            }
+            let before = try await ids()
+            #expect(
+                try await client.post(
+                    "/v1/libraries/main/layout",
+                    json: Request(),
+                    headers: ["Content-Type": "application/json"]
+                ).status == 401
+            )
+            #expect(
+                try await client.post("/v1/libraries/nowhere/layout", json: Request(), headers: Self.operatorHeaders)
+                    .status == 404
+            )
+
+            let dry = try await layOut(Request(dryRun: true))
+            #expect(!dry.applied)
+            #expect(dry.moves.contains(move))
+            #expect(FileManager.default.fileExists(atPath: library.appendingPathComponent(move.from).path))
+
+            let blocker = library.appendingPathComponent(move.to)
+            try FileManager.default.createDirectory(at: blocker, withIntermediateDirectories: true)
+            let blocked = try await layOut(Request())
+            #expect(!blocked.moves.contains(move))
+            #expect(
+                blocked.findings.map(\.text).contains(
+                    "folder \"\(move.from)\" could not be renamed \"\(move.to)\": something is already there"
+                )
+            )
+            try FileManager.default.removeItem(at: blocker)
+
+            let laid = try await layOut(Request())
+            #expect(laid.applied)
+            #expect(laid.moves == [move])
+            #expect(laid.findings.isEmpty)
+            #expect(
+                try SidecarFile.sidecar(from: Data(contentsOf: seriesSidecar)).children[Fixture.serial.id]
+                    == "01 - Pyramids of Mars/container.smd"
+            )
+            #expect(
+                !LibraryWalker.walk(library).findings.contains { $0.text.contains("is not the name the layout") },
+                "the walk warns of nothing"
+            )
+            #expect(try await ids() == before, "each presentation has the id it had")
+            #expect(try await layOut(Request()).moves.isEmpty, "and a library laid out has nothing to move")
         }
     }
 
@@ -2772,7 +2938,7 @@ extension ServerTests {
                 SiloClient.LibraryContainer.self,
                 from: try await client.get("/v1/libraries/main/containers/\(Fixture.alien.id)").body
             )
-            #expect(opened.path == "Alien (1997)/container.smd")
+            #expect(opened.path == "Alien (1979)/container.smd", "where the edit moved it")
             #expect(opened.container.extras.first?.presentations.first?.displayName == "Theatrical")
             let sidecar = try await client.get("/v1/libraries/main/containers/\(Fixture.alien.id)/smd").body
             struct Edit: Encodable {
