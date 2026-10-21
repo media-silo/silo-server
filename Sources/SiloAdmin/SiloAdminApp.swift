@@ -643,6 +643,26 @@ extension ConsoleModel {
         await loadLibraries(for: silo)
     }
 
+    /// Lays a library out again, or with `dryRun` asks what that would move; nil when it was refused,
+    /// the refusal said. After moves, the library's walk and containers are read again.
+    func layOut(_ library: String, on silo: AdminConsole.Silo, dryRun: Bool) async -> SiloClient.LayoutResult? {
+        do {
+            let result = try await console.layOut(library, on: silo, dryRun: dryRun)
+            if !dryRun, !result.moves.isEmpty {
+                await loadLibraries(for: silo)
+                await loadContainers(for: silo)
+            }
+            return result
+        } catch let refused as AdminConsole.SettingsRefused {
+            refusal = .settingsRefused(refused.reason)
+        } catch is AdminConsole.NoAccess {
+            refusal = .noAccess
+        } catch {
+            refusal = .unreachable
+        }
+        return nil
+    }
+
     /// Names a library's standard, or clears it; the library shows what the silo answered with.
     func setStandard(_ ruleset: String?, of library: String, on silo: AdminConsole.Silo) async {
         do {

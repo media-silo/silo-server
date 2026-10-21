@@ -333,6 +333,19 @@ struct FindingsList: View {
     }
 }
 
+/// Folders the silo moves, or would move: each from its path in the library to its new one.
+struct FolderMovesList: View {
+    let moves: [SiloClient.FolderMove]
+
+    var body: some View {
+        ForEach(moves, id: \.self) { move in
+            Label("\(move.from) → \(move.to)", systemImage: "folder")
+                .font(.caption)
+                .textSelection(.enabled)
+        }
+    }
+}
+
 /// Each artwork kind of a container: the image the silo serves for it, or a place to drop one. An
 /// image dropped onto a kind, or chosen, is put; a kind held can be removed.
 private struct ArtworkStrip: View {
@@ -502,6 +515,11 @@ private struct ContainerVerdict: View {
             )
             .foregroundStyle(.green).font(.caption)
             FindingsList(findings: result.findings)
+            if !result.moves.isEmpty {
+                Label("Stored, it moves its folders as their names change", systemImage: "folder.badge.gearshape")
+                    .foregroundStyle(.secondary).font(.caption)
+                FolderMovesList(moves: result.moves)
+            }
         case .refused(let result)?:
             Label("The silo refuses it", systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
             FindingsList(findings: result.findings)

@@ -72,6 +72,21 @@ extension AdminConsole {
         }
     }
 
+    /// Lays a library out again: with `dryRun`, the moves it would make; otherwise the moves made, and
+    /// any rename that failed as a finding. A library the silo does not serve, or cannot reach now,
+    /// comes back as `SettingsRefused`.
+    public func layOut(_ library: String, on silo: Silo, dryRun: Bool) async throws -> SiloClient.LayoutResult {
+        do {
+            return try await withOperator(silo) { try await $0.layOut(library, dryRun: dryRun) }
+        } catch SiloClientError.status(let status, _) where status == 404 || status == 503 {
+            throw SettingsRefused(
+                reason: status == 404
+                    ? "the silo has no library \(library)"
+                    : "\(library) is unavailable: its folder is missing, or holds nothing where the silo's index holds something"
+            )
+        }
+    }
+
     /// The path a library added within `root` is at: the folder named inside it, or the root itself.
     public static func path(_ folder: String, within root: String) -> String {
         let inside = folder.trimmingCharacters(in: CharacterSet(charactersIn: "/").union(.whitespaces))
