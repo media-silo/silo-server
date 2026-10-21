@@ -7,7 +7,7 @@ import SmdKit
 import SmdSidecar
 
 /// Where things go in a library. `Silo.md`, *Layout*: every container has a folder named from
-/// its display title, nested as the tree nests, with `container.smd` inside; a presentation is
+/// its display title, after its position among its parent's children for a child, nested as the tree nests, with `container.smd` inside; a presentation is
 /// `{item} - {display name}.mkv` beside it, or under `extras/` for an extra; a path in a sidecar
 /// is relative to the folder holding it and never leaves the container's folder.
 public enum LibraryLayout {
@@ -28,20 +28,68 @@ public enum LibraryLayout {
         return text.trimmingCharacters(in: .whitespaces)
     }
 
+    /// A child's place among its parent's children: counted from one, in the order the parent's
+    /// sequences and then its extras name its distinct children, and how many there are.
+    public struct Position: Hashable, Sendable {
+        public var number: Int
+        public var count: Int
+
+        public init(number: Int, count: Int) {
+            self.number = number
+            self.count = count
+        }
+
+        /// Where the child is among the parent's children, or nil when the parent does not hold it.
+        public init?(of child: ContainerID, among children: [ContainerID]) {
+            var seen: Set<ContainerID> = []
+            let distinct = children.filter { seen.insert($0).inserted }
+            guard let index = distinct.firstIndex(of: child) else { return nil }
+            self.init(number: index + 1, count: distinct.count)
+        }
+
+        public init?(of child: ContainerID, in parent: Container) {
+            self.init(of: child, among: parent.childContainerIDs)
+        }
+
+        /// The number padded with zeros to two digits, or to as many as the count needs.
+        public var prefix: String {
+            let width = max(2, String(count).count)
+            let digits = String(number)
+            return String(repeating: "0", count: max(0, width - digits.count)) + digits + " - "
+        }
+    }
+
+    /// A root's folder: its display title.
     public static func folderName(for container: Container) -> String {
         folderName(displayTitle: container.displayTitle, id: container.id)
     }
 
-    public static func folderName(displayTitle: String, id: ContainerID) -> String {
-        let name = sanitise(displayTitle)
-        return name.isEmpty ? id.value : name
+    /// A child's folder: its position among its parent's children, then its display title. A
+    /// container the parent does not hold is named as a root is.
+    public static func folderName(for container: Container, in parent: Container?) -> String {
+        folderName(
+            displayTitle: container.displayTitle,
+            id: container.id,
+            position: parent.flatMap { Position(of: container.id, in: $0) }
+        )
     }
 
-    /// The warning for a container's folder that is not named as the layout would name it now. A
-    /// folder is named when it is made, and nothing renames it: a title edited since shows up here.
-    public static func folderFinding(folder relativeFolder: String, displayTitle: String, id: ContainerID) -> Finding? {
+    public static func folderName(displayTitle: String, id: ContainerID, position: Position? = nil) -> String {
+        let sanitised = sanitise(displayTitle)
+        let name = sanitised.isEmpty ? id.value : sanitised
+        return (position?.prefix ?? "") + name
+    }
+
+    /// The warning for a container's folder that is not named as the layout would name it now: its
+    /// display title, after its position for a container held as a child.
+    public static func folderFinding(
+        folder relativeFolder: String,
+        displayTitle: String,
+        id: ContainerID,
+        position: Position? = nil
+    ) -> Finding? {
         let name = (relativeFolder as NSString).lastPathComponent
-        let expected = folderName(displayTitle: displayTitle, id: id)
+        let expected = folderName(displayTitle: displayTitle, id: id, position: position)
         guard !name.isEmpty, name != expected else { return nil }
         return Finding(
             .warning,
@@ -52,8 +100,21 @@ public enum LibraryLayout {
 
     /// The `smd` path a parent's sidecar records for a child: the child's folder, inside the
     /// parent's, and the sidecar in it.
-    public static func childPath(for child: Container) -> String {
-        "\(folderName(for: child))/\(sidecarFileName)"
+    public static func childPath(for child: Container, in parent: Container) -> String {
+        childPath(folder: folderName(for: child, in: parent))
+    }
+
+    public static func childPath(folder: String) -> String {
+        "\(folder)/\(sidecarFileName)"
+    }
+
+    /// The child's folder a parent's sidecar records, relative to the parent's folder, when it
+    /// records one that is a sidecar inside it.
+    public static func recordedFolder(of child: ContainerID, in sidecar: Sidecar) -> String? {
+        guard let path = sidecar.children[child], isInside(path), path.hasSuffix("/\(sidecarFileName)") else {
+            return nil
+        }
+        return String(path.dropLast(sidecarFileName.count + 1))
     }
 
     /// `{item} - {display name}.ext`, or `{item}.ext` for the unqualified presentation of the

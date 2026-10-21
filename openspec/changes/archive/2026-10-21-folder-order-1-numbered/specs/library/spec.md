@@ -61,7 +61,7 @@ platform, and nothing the walk finds SHALL be resolved by the walk.
 
 #### Scenario: sidecars nothing references are warnings
 - **WHEN** the season's sidecar is gone and a `Draft` folder holds its own `container.smd` that no root names
-- **THEN** the walk reports `warning: Doctor Who (1963)/Draft/container.smd: a sidecar nothing references` and `warning: Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd: a sidecar nothing references`, in that order
+- **THEN** the walk reports `warning: Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd: a sidecar nothing references` and `warning: Doctor Who (1963)/Draft/container.smd: a sidecar nothing references`, in that order
 
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`theFirstPlacementMakesTheTree`,
 `theWalkReportsWhatIsBrokenOrAbandoned`). The recorded modification time and size, and the

@@ -125,7 +125,7 @@ struct IndexTests {
         #expect(try index.roots(listedOnly: false).map(\.displayTitle) == ["Behind the Sofa", "Doctor Who (1963)"])
         let serial = try #require(try index.container(Self.serial.id, in: "main"))
         #expect(serial.parent == Self.season.id.value)
-        #expect(serial.folder == "Doctor Who (1963)/Season 13/Pyramids of Mars")
+        #expect(serial.folder == "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars")
         #expect(serial.typeLabel == "Story")
         #expect(try index.sidecar(Self.serial.id, in: "main")?.container == Self.serial)
         #expect(try index.children(of: Self.series.id, in: "main").map(\.id) == [Self.season.id.value])
@@ -135,9 +135,9 @@ struct IndexTests {
         let presentations = try index.presentations(of: Self.serial.id, in: "main")
         #expect(
             presentations.map(\.path).sorted() == [
-                "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One - mobile.mkv",
-                "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One.mkv",
-                "Doctor Who (1963)/Season 13/Pyramids of Mars/extras/Now and Then.mkv",
+                "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/Part One - mobile.mkv",
+                "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/Part One.mkv",
+                "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/extras/Now and Then.mkv",
             ]
         )
         let mobile = try #require(presentations.first { $0.profile == "mobile" })
@@ -188,7 +188,7 @@ struct IndexTests {
         // Or the placement tells the index directly.
         try sandbox.place([Self.series, Self.season, Self.serial], item: "now-and-then")
         let refreshed = try Indexer.refresh(
-            folder: "Doctor Who (1963)/Season 13/Pyramids of Mars",
+            folder: "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars",
             parent: Self.season.id,
             in: sandbox.library,
             index: index
@@ -197,14 +197,14 @@ struct IndexTests {
         #expect(try index.presentations(of: Self.serial.id, in: "main").count == 3)
 
         // A container that disappears is forgotten, and an abandoned sidecar is reported.
-        let seasonFolder = sandbox.library.root.appendingPathComponent("Doctor Who (1963)/Season 13")
+        let seasonFolder = sandbox.library.root.appendingPathComponent("Doctor Who (1963)/01 - Season 13")
         try FileManager.default.removeItem(at: seasonFolder.appendingPathComponent("container.smd"))
         let gone = try Indexer.scan(sandbox.library, into: index)
         #expect(gone.removed == 2)
         #expect(
             gone.findings.map(\.description) == [
-                "error: Doctor Who (1963)/container.smd: child 0000000000000002 is at \"Season 13/container.smd\", which does not exist",
-                "warning: Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd: a sidecar nothing references",
+                "error: Doctor Who (1963)/container.smd: child 0000000000000002 is at \"01 - Season 13/container.smd\", which does not exist",
+                "warning: Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd: a sidecar nothing references",
             ]
         )
         #expect(try index.count() == (containers: 1, presentations: 0))
@@ -320,6 +320,24 @@ struct IndexTests {
         )
         #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == [warning])
         #expect(try index.containers(film.id).map(\.folder) == ["Alien (1997)"], "the folder is where it was")
+
+        // A child's folder is named for its position too: a season renamed by hand without it.
+        try sandbox.place([Self.series, Self.season, Self.serial], item: "part1")
+        let series = sandbox.library.root.appendingPathComponent("Doctor Who (1963)")
+        try FileManager.default.moveItem(
+            at: series.appendingPathComponent("01 - Season 13"),
+            to: series.appendingPathComponent("Season 13")
+        )
+        let seriesURL = series.appendingPathComponent("container.smd")
+        let existing = try Data(contentsOf: seriesURL)
+        var held = try SidecarFile.sidecar(from: existing)
+        held.children[Self.season.id] = "Season 13/container.smd"
+        try SidecarFile.data(for: held, updating: existing).write(to: seriesURL)
+        let season =
+            "warning: Doctor Who (1963)/Season 13/container.smd: folder \"Season 13\" is not the name the layout would give it, \"01 - Season 13\""
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning, season])
+        #expect(try Indexer.scan(sandbox.library, into: index).findings.map(\.description) == [warning, season])
+        #expect(try index.container(Self.season.id, in: "main")?.folder == "Doctor Who (1963)/Season 13")
     }
 
     /// A presentation's id is what it is, so a folder renamed by hand keeps it; and what would share an

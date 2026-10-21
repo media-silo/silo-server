@@ -102,6 +102,8 @@ private struct LineageSidecar {
     var folder: URL
     var existing: Data?
     var sidecar: Sidecar
+    /// The folder's name within its parent's, which the parent's sidecar records: nil for the root.
+    var name: String?
 }
 
 public enum Placer {
@@ -126,7 +128,7 @@ public enum Placer {
         // Ancestors learn where their child is, and are written only when that is news.
         for index in sidecars.indices.dropLast() {
             let child = sidecars[index + 1].container
-            let path = LibraryLayout.childPath(for: child)
+            let path = LibraryLayout.childPath(folder: sidecars[index + 1].name ?? "")
             if sidecars[index].sidecar.children[child.id] != path {
                 sidecars[index].sidecar.children[child.id] = path
                 writes.append(try write(sidecars[index], parent: index > 0 ? sidecars[index - 1].container.id : nil))
@@ -167,7 +169,9 @@ public enum Placer {
     }
 
     /// The sidecar each container of the lineage has or will have, root first, read from its folder
-    /// when there is one. Folders that do not exist yet are noted to be created.
+    /// when there is one. Below the root, a container is where its parent's sidecar records it, and
+    /// is named by the layout only where its parent records nothing. Folders that do not exist yet are
+    /// noted to be created.
     private static func lineageSidecars(
         for request: PlacementRequest,
         findings: inout [Finding],
@@ -176,7 +180,18 @@ public enum Placer {
         var folder = request.library
         var sidecars: [LineageSidecar] = []
         for container in request.lineage {
-            folder = folder.appendingPathComponent(LibraryLayout.folderName(for: container), isDirectory: true)
+            let name: String?
+            if let parent = sidecars.last {
+                name =
+                    LibraryLayout.recordedFolder(of: container.id, in: parent.sidecar)
+                    ?? LibraryLayout.folderName(for: container, in: parent.container)
+            } else {
+                name = nil
+            }
+            folder = folder.appendingPathComponent(
+                name ?? LibraryLayout.folderName(for: container),
+                isDirectory: true
+            )
             let sidecarURL = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
             var existing: Data?
             var sidecar = Sidecar(container: container)
@@ -214,7 +229,9 @@ public enum Placer {
             } else if !FileManager.default.fileExists(atPath: folder.path) {
                 folders.append(folder)
             }
-            sidecars.append(LineageSidecar(container: container, folder: folder, existing: existing, sidecar: sidecar))
+            sidecars.append(
+                LineageSidecar(container: container, folder: folder, existing: existing, sidecar: sidecar, name: name)
+            )
         }
         return sidecars
     }

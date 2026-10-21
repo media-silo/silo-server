@@ -31,7 +31,7 @@ struct StackTests {
             )
         )
         _ = try Indexer.scan(library, into: bench.index)
-        return library.root.appendingPathComponent("Doctor Who (1963)/Pyramids of Mars")
+        return library.root.appendingPathComponent("Doctor Who (1963)/01 - Pyramids of Mars")
     }
 
     /// Gives the serial rules at `version`, and tells the index.

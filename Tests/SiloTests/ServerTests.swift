@@ -239,7 +239,7 @@ struct ServerTests {
             #expect(response.head?.headerFields[.contentType]?.hasPrefix("application/xml") == true)
             let onDisk = try Data(
                 contentsOf: Fixture.root.appendingPathComponent(
-                    "Library/Doctor Who (1963)/Pyramids of Mars/container.smd"
+                    "Library/Doctor Who (1963)/01 - Pyramids of Mars/container.smd"
                 )
             )
             #expect(response.body == onDisk)
@@ -494,7 +494,7 @@ struct ServerTests {
                 headers: operatorHeaders
             )
             #expect(edited.status == 200)
-            #expect(try edited.json(Result.self).sidecar.contains("smd=\"Pyramids of Mars/container.smd\""))
+            #expect(try edited.json(Result.self).sidecar.contains("smd=\"01 - Pyramids of Mars/container.smd\""))
             let reread = try await client.get(seriesPath).json(Read.self)
             #expect(reread.container.outline == "A time traveller and companions.")
             #expect(
@@ -605,8 +605,8 @@ struct ServerTests {
         #expect(
             dryResult.writes == [
                 Result.Write(path: "Doctor Who/container.smd", creates: true),
-                Result.Write(path: "Doctor Who/Season 12/container.smd", creates: true),
-                Result.Write(path: "Doctor Who/Season 12/The Ark in Space/container.smd", creates: true),
+                Result.Write(path: "Doctor Who/01 - Season 12/container.smd", creates: true),
+                Result.Write(path: "Doctor Who/01 - Season 12/01 - The Ark in Space/container.smd", creates: true),
             ],
             "the documents in any order, written from the top down"
         )
@@ -640,13 +640,13 @@ struct ServerTests {
         #expect(beneath.status == 200)
         #expect(
             try beneath.json(Result.self).writes == [
-                Result.Write(path: "Doctor Who/Season 14/container.smd", creates: true),
+                Result.Write(path: "Doctor Who/02 - Season 14/container.smd", creates: true),
                 Result.Write(path: "Doctor Who/container.smd", creates: false),
             ]
         )
         let seriesAfter = try SidecarFile.sidecar(from: Data(contentsOf: seriesSidecar))
         #expect(seriesAfter.container == seriesBefore.container)
-        #expect(seriesAfter.children[season14.id] == "Season 14/container.smd")
+        #expect(seriesAfter.children[season14.id] == "02 - Season 14/container.smd")
 
         // One the series does not name is refused, and writes nothing.
         let season15 = Container(id: ContainerID("0000000000000055")!, type: .season, title: Title("Season 15")!)
@@ -1295,8 +1295,8 @@ extension ServerTests {
             let dry = try shown.json(PlacementResultBody.self)
             #expect(dry.applied == false)
             #expect(dry.presentation == nil)
-            #expect(dry.destination == "Doctor Who (1963)/Pyramids of Mars/Part Two.mkv")
-            #expect(dry.writes.last == "update   Doctor Who (1963)/Pyramids of Mars/container.smd")
+            #expect(dry.destination == "Doctor Who (1963)/01 - Pyramids of Mars/Part Two.mkv")
+            #expect(dry.writes.last == "update   Doctor Who (1963)/01 - Pyramids of Mars/container.smd")
             #expect(FileManager.default.fileExists(atPath: file.path), "a dry run moves nothing")
 
             body.dryRun = false
@@ -1512,7 +1512,7 @@ extension ServerTests {
             #expect(placed.status == 200)
             let done = try SiloClient.decoder.decode(Job.self, from: placed.body)
             #expect(done.state == .placed)
-            #expect(done.placement?.destination == "Doctor Who (1963)/Pyramids of Mars/Part Three - mobile.mkv")
+            #expect(done.placement?.destination == "Doctor Who (1963)/01 - Pyramids of Mars/Part Three - mobile.mkv")
             let id = try #require(done.placement?.presentation)
             #expect(try await client.get("/v1/media/\(id)", headers: ["Range": "bytes=0-9"]).status == 206)
             #expect(
