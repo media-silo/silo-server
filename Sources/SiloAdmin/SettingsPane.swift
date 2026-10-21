@@ -174,23 +174,29 @@ struct LibrariesPane: View {
 }
 
 /// A library chosen in the browser, which names it: where it is on the silo's machine, whether it is
-/// there, what the silo's last walk of it found, and its standard; and its removal, set apart at the
-/// top. Nothing here asks for a walk.
+/// there, what the silo's last walk of it found, and its standard; laying it out again, and its
+/// removal, set apart at the top. Nothing here asks for a walk.
 private struct LibraryDetail: View {
     let silo: AdminConsole.Silo
     let library: SiloClient.SettingsReport.Library
     let model: ConsoleModel
     let onRemove: () -> Void
 
+    @State private var layingOut = false
+
     private var listed: SiloClient.Library? { model.libraries[silo.id]?.first { $0.id == library.id } }
     private var walk: SiloClient.LastWalk? { model.lastWalks[silo.id]?[library.id] }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 0) {
-            Button("Remove Library…", systemImage: "trash", role: .destructive, action: onRemove)
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .padding([.top, .horizontal], 12)
+            HStack {
+                Button("Lay Out Again…", systemImage: "folder.badge.gearshape") { layingOut = true }
+                    .help("Rename the folders not named as their containers are, in their order")
+                Button("Remove Library…", systemImage: "trash", role: .destructive, action: onRemove)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+            }
+            .padding([.top, .horizontal], 12)
             Form {
                 Section {
                     LabeledContent("Location") {
@@ -245,6 +251,72 @@ private struct LibraryDetail: View {
                 }
             }
             .formStyle(.grouped)
+        }
+        .sheet(isPresented: $layingOut) {
+            LayOutSheet(silo: silo, library: library.id, model: model)
+        }
+    }
+}
+
+/// Laying a library out again: the silo's dry run of the moves, shown before anything moves, and
+/// applied when the operator confirms. A rename that failed is said in the silo's words.
+private struct LayOutSheet: View {
+    let silo: AdminConsole.Silo
+    let library: String
+    let model: ConsoleModel
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var planned: SiloClient.LayoutResult?
+    @State private var applied: SiloClient.LayoutResult?
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Lay Out \(library) Again").font(.headline)
+            if let result = applied ?? planned {
+                if result.moves.isEmpty && result.findings.isEmpty {
+                    Text("Every folder is named as its container is, in its order. There is nothing to move.")
+                } else {
+                    Text(
+                        applied == nil
+                            ? "These folders would be renamed. Everything in a folder moves with it, and every presentation keeps its id."
+                            : "These folders were renamed."
+                    )
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            FolderMovesList(moves: result.moves)
+                            FindingsList(findings: result.findings)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 120, maxHeight: 320)
+                }
+            } else {
+                ProgressView("Asking the silo…")
+            }
+            HStack {
+                Spacer()
+                Button(applied == nil ? "Cancel" : "Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                if applied == nil, let planned, !planned.moves.isEmpty {
+                    Button("Lay Out") {
+                        working = true
+                        Task {
+                            applied = await model.layOut(library, on: silo, dryRun: false)
+                            working = false
+                            if applied == nil { dismiss() }
+                        }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(working)
+                }
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 480)
+        .task {
+            planned = await model.layOut(library, on: silo, dryRun: true)
+            if planned == nil { dismiss() }
         }
     }
 }

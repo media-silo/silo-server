@@ -1336,7 +1336,14 @@ struct AdminConsoleTests {
                         )
                     )
                 }
-                guard edit.dryRun != true else { return (200, result(applied: false, "")) }
+                guard edit.dryRun != true else {
+                    // A silo that moves folders says which; the rest of these answers come from one
+                    // that says nothing of them.
+                    let moved = #"{"from":"Alien (1997)","to":"Alien (1979)"}"#
+                    var answer = String(decoding: result(applied: false, ""), as: UTF8.self)
+                    answer.removeLast()
+                    return (200, Data((answer + #","moves":[\#(moved)]}"#).utf8))
+                }
                 sidecar.bytes.withLock { $0 = Data(edit.document.utf8) + Data(" ".utf8) }
                 return (200, result(applied: true, ""))
             case ("PUT", "/v1/libraries/films/containers/\(film)/artwork/poster"):
@@ -1418,6 +1425,10 @@ struct AdminConsoleTests {
             return
         }
         #expect(!dry.applied)
+        #expect(
+            dry.moves == [SiloClient.FolderMove(from: "Alien (1997)", to: "Alien (1979)")],
+            "the folder it would move"
+        )
         #expect(sidecar.bytes.withLock { $0 } == opened.sidecar, "a check writes nothing")
 
         var refused = draft
@@ -1564,6 +1575,62 @@ struct AdminConsoleTests {
         #expect(asked.withLock { $0 }.last?.body == #"{"ruleset":"household"}"#)
         await #expect(throws: AdminConsole.SettingsRefused.self) {
             try await console.setStandard("nothing", of: "films", on: home)
+        }
+    }
+
+    /// A library whose folders were renamed by hand is laid out from the console: the dry run's moves
+    /// are listed before anything moves, the layout applies them, and the library's walk then warns of
+    /// none of them; a library the silo cannot reach is refused in words.
+    @Test func aLibraryIsLaidOutFromTheConsole() async throws {
+        let asked = Mutex<[Asked]>([])
+        let laid = Mutex(false)
+        let (console, home) = try await Self.homeWithAccess(head: 3)
+        let base = Self.changingSilo(head: 3) { _ in }
+        let move = #"{"from":"Doctor Who (1963)/Season 13","to":"Doctor Who (1963)/01 - Season 13"}"#
+        let warning =
+            #"{"severity":"warning","path":"Doctor Who (1963)/Season 13/container.smd","text":"folder \"Season 13\" is not the name the layout would give it, \"01 - Season 13\""}"#
+        Self.answer { request in
+            guard let url = request.url else { return nil }
+            let method = request.httpMethod ?? "GET"
+            let body = String(decoding: Self.body(of: request) ?? Data(), as: UTF8.self)
+            switch (method, url.path) {
+            case ("POST", "/v1/libraries/films/layout"):
+                asked.withLock { $0.append(Asked(method: method, path: url.path, body: body)) }
+                let dryRun = body.contains(#""dryRun":true"#)
+                if !dryRun { laid.withLock { $0 = true } }
+                return (200, Data(#"{"applied":\#(!dryRun),"moves":[\#(move)],"findings":[]}"#.utf8))
+            case ("POST", "/v1/libraries/shows/layout"): return (503, Data())
+            case ("GET", "/v1/libraries/films/scan"):
+                let findings = laid.withLock { $0 } ? "" : warning
+                return (
+                    200,
+                    Data(
+                        #"{"walkedAt":"2026-10-21T09:30:00Z","available":true,"report":{"read":2,"unchanged":0,"removed":0,"findings":[\#(findings)]}}"#
+                            .utf8
+                    )
+                )
+            default: return try base(request)
+            }
+        }
+        #expect(try await console.lastWalks(of: home)["films"]?.report.findings.count == 1)
+
+        let planned = try await console.layOut("films", on: home, dryRun: true)
+        #expect(!planned.applied)
+        #expect(
+            planned.moves == [
+                SiloClient.FolderMove(from: "Doctor Who (1963)/Season 13", to: "Doctor Who (1963)/01 - Season 13")
+            ]
+        )
+        #expect(!laid.withLock { $0 }, "nothing moves before the operator confirms")
+
+        let applied = try await console.layOut("films", on: home, dryRun: false)
+        #expect(applied.applied)
+        #expect(applied.moves == planned.moves)
+        #expect(asked.withLock { $0 }.map(\.body) == [#"{"dryRun":true}"#, "{}"])
+        #expect(try await console.lastWalks(of: home)["films"]?.report.findings.isEmpty == true)
+
+        await #expect(throws: AdminConsole.SettingsRefused.self) {
+            try await console.layOut("shows", on: home, dryRun: true)
         }
     }
 

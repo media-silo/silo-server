@@ -112,6 +112,45 @@ extension SiloClient {
         public var sidecar: String
         public var digest: String
         public var findings: [LastWalk.Finding]
+        /// The folders the edit moved, or would move; none from a silo that moves none.
+        public var moves: [FolderMove]
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            applied = try container.decode(Bool.self, forKey: .applied)
+            sidecar = try container.decode(String.self, forKey: .sidecar)
+            digest = try container.decode(String.self, forKey: .digest)
+            findings = try container.decode([LastWalk.Finding].self, forKey: .findings)
+            moves = try container.decodeIfPresent([FolderMove].self, forKey: .moves) ?? []
+        }
+    }
+
+    /// A folder renamed, or to be renamed, by its path in the library before and after.
+    public struct FolderMove: Hashable, Sendable, Codable {
+        public var from: String
+        public var to: String
+
+        public init(from: String, to: String) {
+            self.from = from
+            self.to = to
+        }
+    }
+
+    /// What laying a library out again did, or would do: the moves, and any rename that failed.
+    public struct LayoutResult: Hashable, Sendable, Codable {
+        public var applied: Bool
+        public var moves: [FolderMove]
+        public var findings: [LastWalk.Finding]
+    }
+
+    private struct LayoutRequest: Codable {
+        var dryRun: Bool?
+    }
+
+    /// Renames every folder in the library not named as the layout names its container, or with
+    /// `dryRun` answers the moves it would make and moves nothing.
+    public func layOut(_ library: String, dryRun: Bool) async throws -> LayoutResult {
+        try await send("POST", "/v1/libraries/\(library)/layout", body: LayoutRequest(dryRun: dryRun ? true : nil))
     }
 
     /// The artwork kinds a container's folder may hold, in the order the silo lists them.
