@@ -17,6 +17,9 @@ proposes to smddb. Proposal: [TMDb in the console](../../../Proposals/Tmdb.md).
   attributions.
 - A record smddb holds is imported from smddb rather than drafted, and one the library holds is not
   drafted.
+- A series' season 0 is its unassigned specials, not a season. Each is placed as an entry, an extra, a
+  child, a duplicate of another TMDb record carrying both ids, an entry in a breakout, or declined, with
+  a suggestion and its reason. An unassigned special holds nothing up.
 - The form shows an attributed outline with its attribution and keeps it through an edit.
 - A contribution to smddb takes smddb's value, or none, for each attributed field, and says which it
   left out.

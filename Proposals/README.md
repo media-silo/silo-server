@@ -84,4 +84,6 @@ deltas in `openspec/changes/`, as that README describes.
 - [TMDb in the console](Tmdb.md) — the console reads a container's shape from TMDb as a draft the
   operator shapes before creating it, and lists how a held container differs from TMDb's record for the
   operator to take or leave; only facts are taken plainly, while an outline or an image is attributed
-  to TMDb in the sidecar, left out of what is proposed to smddb, and, for artwork, never contributed.
+  to TMDb in the sidecar, left out of what is proposed to smddb, and, for artwork, never contributed;
+  and a provider's season 0 is a pool of unassigned specials, each placed, filed as a duplicate of
+  another record or in a series of the operator's own, or declined.

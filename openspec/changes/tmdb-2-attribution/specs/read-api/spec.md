@@ -33,15 +33,55 @@ projection of the model, never a place the model is edited.
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`theLibraryIsBrowsable`,
 `attributionsAreServedWithTheContainer`).
 
+### Requirement: A library's containers are read within the library
+`GET /v1/libraries/{library}/containers` SHALL answer 200 with a
+`ContainerSummary` for each container at the top of the library, listed or not.
+`GET /v1/libraries/{library}/containers/{id}` SHALL answer 200 with a
+`LibraryContainer`: the `library`; the `path` of its sidecar relative to the
+library root, as a walk's findings on the sidecar name it; the `container` as
+the library's own sidecar says it, with that library's presentations, in the form
+`GET /v1/containers/{id}` answers; and `declined`, the refs the sidecar declines, each a
+`provider` and `value`, which `GET /v1/containers/{id}` does not carry. `GET /v1/libraries/{library}/containers/{id}/smd`
+SHALL answer the library's sidecar bytes as `GET /v1/containers/{id}/smd` answers
+a sidecar. Each SHALL be 404 for a library the silo does not serve and for a
+container the library does not hold, whether or not another library holds it.
+These are read routes, and SHALL answer without a token.
+
+#### Scenario: an unlisted container at the top of a library
+- **WHEN** a library's top-level folders hold a listed series and an unlisted one, and a
+  client asks for the library's containers
+- **THEN** the 200 answer carries both, where `GET /v1/containers` carries the listed one
+  alone
+
+#### Scenario: each library's own view
+- **WHEN** `films` and `films-4k` each hold a sidecar for one container, and a client asks
+  each library for it
+- **THEN** each answer names its own library and carries that library's presentations
+
+#### Scenario: a container another library holds
+- **WHEN** a client asks `films` for a container only `films-4k` holds
+- **THEN** the answer is 404
+
+#### Scenario: a library's declined refs
+- **WHEN** a library's sidecar for a series declines a ref of provider `tmdb`, and a client asks
+  the library for the series, and then asks `GET /v1/containers/{id}` for it
+- **THEN** the library's answer carries the declined ref in `declined`, and the global answer
+  carries none
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibrarysContainersAreReadWithinIt`,
+`aLibrarysDeclinedRefsAreReadWithinIt`).
+
 ### Requirement: A container's own fields are edited in one library, on the sidecar the editor read
 `PUT /v1/libraries/{library}/containers/{id}` with a JSON `ContainerEdit` — `document`, the
 container as its repository XML; `basedOn`, the digest of the sidecar it was made from;
-`dryRun`; and `attributions`, optional, each a `subject`, `provider` and `value` — SHALL set the container's own fields in that library's sidecar to the document's,
-and SHALL change none of the library's facts but the paths of the folders it moves and the attributions of the
-container's own fields: its presentations, its rules and its artwork's attributions stay as they
+`dryRun`; `attributions`, optional, each a `subject`, `provider` and `value`; and `declined`,
+optional, each a `provider` and `value` — SHALL set the container's own fields in that library's sidecar to the document's,
+and SHALL change none of the library's facts but the paths of the folders it moves, the attributions of the
+container's own fields and its declined refs: its presentations, its rules and its artwork's attributions stay as they
 stand. With `attributions` absent, the sidecar's attributions of the container's own fields SHALL
 stand as they are; present, they SHALL replace them, and one whose subject is an artwork kind SHALL
-be 400. A sidecar's digest is the SHA-256 of its bytes as the index read
+be 400. With `declined` absent, the sidecar's declined refs SHALL stand as they are; present,
+they SHALL replace them. A sidecar's digest is the SHA-256 of its bytes as the index read
 them, in lowercase hexadecimal, and the `LibraryContainer` a library's container route answers
 SHALL carry it as `digest`. The answer SHALL be a `ContainerEditResult`: `applied`, the
 sidecar's bytes as written or as they would be, their `digest`, the `findings`, and `moves`, each a
@@ -129,8 +169,15 @@ wrong bearer SHALL be 401.
 - **THEN** the answer is 422 with the finding
   `outline is attributed to tmdb but the container has none`, and the sidecar is unchanged
 
+#### Scenario: a ref declined
+- **WHEN** the operator puts a container's document unchanged, carrying `declined` with provider
+  `tmdb` and one value
+- **THEN** the answer is 200 with `applied` true, the library's container reads that declined ref,
+  and its own fields are as they were
+
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersOwnFieldsAreEditedOntoTheSidecarRead`,
-`anEditMovesTheFoldersItRenames`, `anEditCarriesTheAttributionsOfItsFields`).
+`anEditMovesTheFoldersItRenames`, `anEditCarriesTheAttributionsOfItsFields`,
+`anEditCarriesTheRefsItDeclines`).
 
 ### Requirement: A container's artwork is read, put and removed by kind
 The `LibraryContainer` a library's container route answers SHALL carry `artwork`, the kinds the

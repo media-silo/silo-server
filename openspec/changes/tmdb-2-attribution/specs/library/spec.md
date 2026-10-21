@@ -35,6 +35,29 @@ kind the container's folder holds no file for SHALL be a warning the walk report
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`attributionsAreLibraryFacts`),
 `Tests/SiloStoreTests/IndexTests.swift` (`anAttributedKindWithNoFileIsAWarning`).
 
+### Requirement: A sidecar may record the refs the operator declined
+A library sidecar's `<container>` MAY hold `<declined>` elements, each with a `provider` and a
+`value`: a reference a provider lists for the container that the operator chose not to hold, such as a
+trailer among a series' specials. A declined ref SHALL be a library fact, as an attribution is: it is
+not one of the container's own fields, another library holding the same container may decline
+differently, and the container read from a sidecar with declined refs SHALL be the container read from
+the same sidecar without them. A placement SHALL keep a sidecar's declined refs. The same ref declined
+twice SHALL be an error-severity finding, and so SHALL a declined ref that an entry of the container
+carries (`<provider> <value> is declined but item <id> carries it`), since one thing cannot be both
+held and declined.
+
+#### Scenario: a declined ref kept through a placement
+- **WHEN** a series' sidecar declines a ref of provider `tmdb`, and a presentation is then placed into
+  the series
+- **THEN** the sidecar holds the presentation, and the declined ref as it was
+
+#### Scenario: a ref both held and declined
+- **WHEN** a sidecar declines a ref of provider `tmdb`, and an entry of its container carries the same
+  ref
+- **THEN** the validator reports an error naming the ref and the entry
+
+Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`declinedRefsAreLibraryFacts`).
+
 ## MODIFIED Requirements
 
 ### Requirement: A container's artwork is found beside its sidecar by name
