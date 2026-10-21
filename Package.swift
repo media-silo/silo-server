@@ -295,7 +295,10 @@ let package = Package(
         .testTarget(name: "SiloAdminTests", dependencies: ["SiloAdmin", "SiloAdminKit", "SiloDiscovery"]),
         .testTarget(name: "EncoderTests", dependencies: ["Encoder", "SiloKit"]),
         .testTarget(name: "SiloLibraryTests", dependencies: ["SiloLibrary", "SiloKit"]),
-        .testTarget(name: "SiloStoreTests", dependencies: ["SiloStore", "SiloLibrary", "SiloKit"]),
+        .testTarget(
+            name: "SiloStoreTests",
+            dependencies: ["SiloStore", "SiloLibrary", "SiloKit", .product(name: "GRDB", package: "GRDB.swift")]
+        ),
         // Depends on the executable, because the composition root lives there and is what the suite
         // trait stands up; applies the same three plugins because a contributor proxy is generated per
         // target.

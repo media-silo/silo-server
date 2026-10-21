@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import GRDB
 import SiloLibrary
 import SmdKit
 import SmdSidecar
@@ -461,5 +462,28 @@ struct IndexTests {
         let rebuilt = try Index(at: file)
         #expect(try rebuilt.count() == (containers: 0, presentations: 0))
         #expect(try Indexer.scan(sandbox.library, into: rebuilt).read == 1)
+    }
+
+    /// A file an earlier version of the index made — here one whose items are not keyed by library,
+    /// its migration recorded as done — is emptied on opening and filled by the next scan, rather
+    /// than refusing every write.
+    @Test func anIndexAnotherVersionMadeIsRebuilt() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        try sandbox.place([Self.unlisted], item: "ep1")
+        let file = sandbox.root.appendingPathComponent("index.sqlite")
+        do {
+            let earlier = try DatabaseQueue(path: file.path)
+            try earlier.write { db in
+                try db.execute(sql: "CREATE TABLE item (container TEXT NOT NULL, id TEXT NOT NULL)")
+                try db.execute(sql: "CREATE TABLE grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)")
+                try db.execute(sql: "INSERT INTO grdb_migrations VALUES ('v1')")
+            }
+        }
+        let index = try Index(at: file)
+        #expect(try index.count() == (containers: 0, presentations: 0))
+        #expect(try Indexer.scan(sandbox.library, into: index).read == 1)
+        #expect(try index.items(of: Self.unlisted.id, in: "main").map(\.id) == ["ep1"])
+        #expect(try Index(at: file).count() == (containers: 1, presentations: 1), "this version's file is kept")
     }
 }

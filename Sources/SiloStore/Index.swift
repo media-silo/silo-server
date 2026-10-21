@@ -22,6 +22,13 @@ import SmdSidecar
 public struct Index: Sendable {
     private let queue: DatabaseQueue
 
+    /// What this index's tables are, and what is derived into them, as a number SQLite keeps in the
+    /// file's `user_version`. Raised whenever either changes — a table's columns or keys, or how a
+    /// presentation's id is formed — so a file another version made is emptied on opening and the
+    /// boot's walk fills it again from the sidecars, rather than every write to it failing. 2 is the
+    /// index keyed by library, with presentations named for what they are.
+    static let version = 2
+
     /// Opens or creates the index at `url`; `nil` keeps it in memory, for tests.
     public init(at url: URL?) throws {
         // Wait on a lock rather than fail: the operator's command line and the silo may open one
@@ -31,7 +38,25 @@ public struct Index: Sendable {
         queue =
             try url.map { try DatabaseQueue(path: $0.path, configuration: configuration) }
             ?? DatabaseQueue(configuration: configuration)
+        try Self.discardAnotherVersion(in: queue)
         try Self.migrator.migrate(queue)
+    }
+
+    /// Empties a file another version of the index made — its tables, and the record of the
+    /// migrations that made them — and stamps it with this version. The index is a cache: what it
+    /// loses, the next walk reads again.
+    private static func discardAnotherVersion(in queue: DatabaseQueue) throws {
+        try queue.writeWithoutTransaction { db in
+            guard try Int.fetchOne(db, sql: "PRAGMA user_version") != version else { return }
+            let tables = try String.fetchAll(
+                db,
+                sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+            try db.execute(sql: "PRAGMA foreign_keys = OFF")
+            for table in tables { try db.execute(sql: "DROP TABLE \(table.quotedDatabaseIdentifier)") }
+            try db.execute(sql: "PRAGMA foreign_keys = ON")
+            try db.execute(sql: "PRAGMA user_version = \(version)")
+        }
     }
 
     private static var migrator: DatabaseMigrator {
