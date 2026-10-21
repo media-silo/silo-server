@@ -72,3 +72,7 @@ deltas in `openspec/changes/`, as that README describes.
   container back to smddb from its sidecar; the client's first implementation is a clone of the data
   repository on the Mac, shaped like the service it will become; and the silo makes containers in a
   library with no file, taking them as documents whoever wrote them.
+- [A presentation is named for what it is](PresentationIdentity.md) — a presentation's id is the hash
+  of its library, container, item, alternative and profile rather than of its file's path, so a file or
+  folder can move without a player, a job or the media route losing it; the walk refuses two
+  presentations that would share an id. No silo yet holds a presentation, so nothing is migrated.
