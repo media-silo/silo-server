@@ -76,3 +76,8 @@ deltas in `openspec/changes/`, as that README describes.
   of its library, container, item, alternative and profile rather than of its file's path, so a file or
   folder can move without a player, a job or the media route losing it; the walk refuses two
   presentations that would share an id. No silo yet holds a presentation, so nothing is migrated.
+- [Folders in their order](FolderOrder.md) — a child's folder in a library begins with its position
+  among its parent's children, so a season lists its serials in their order; resting on 0015, the
+  silo keeps folders named and numbered as their containers are, moving them when an edit changes a
+  title or an order and laying a library out again on request, and placement finds an existing child
+  by the path its parent records.
