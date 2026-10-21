@@ -308,7 +308,7 @@ settings.
   are the operator's, in the clone. The client writes files and stops.
 - **Fetching containers from providers.** Building a container from a TMDb or TVDB record is authoring,
   which smddb's ingestion flow calls the one genuinely human step. The console's form is where it is
-  done, by hand.
+  done, by hand. [0017-tmdb](Tmdb.md) revisits this, with TMDb's record as a draft the operator shapes.
 - **Removing a container from a library,** or moving one. A container made in error with nothing
   placed in it is a folder the operator can remove, and the walk forgets it. A route for it waits for
   someone to ask.
