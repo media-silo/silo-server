@@ -1829,3 +1829,515 @@ struct AdminConsoleTests {
         #expect(merged.lastKnownAccess == nil, "a rediscovery restarts history")
     }
 }
+
+// MARK: - smddb
+
+extension AdminConsoleTests {
+    /// The sidecars a fake library holds, by container id, as a silo would keep them.
+    private final class HeldLibrary: Sendable {
+        let sidecars: Mutex<[String: Data]>
+        init(_ containers: [Container] = []) {
+            sidecars = Mutex(
+                Dictionary(
+                    uniqueKeysWithValues: containers.map {
+                        ($0.id.value, try! SidecarFile.data(for: Sidecar(container: $0)))
+                    }
+                )
+            )
+        }
+        func container(_ id: ContainerID) -> Container? {
+            sidecars.withLock { $0[id.value] }.flatMap { try? SidecarFile.sidecar(from: $0).container }
+        }
+    }
+
+    private static func digest(_ data: Data) -> String {
+        "\(data.count)-\(data.reduce(0) { $0 &* 31 &+ Int($1) })"
+    }
+
+    /// A silo with access whose library `tv` holds `held`'s sidecars and nothing else: it answers each
+    /// one's library route and bytes, edits them onto their digest, and makes containers beneath one it
+    /// holds, refusing one held already and a parent that does not name the top, as the silo would. A
+    /// container titled `Refused` stands for one the silo's validator refuses, made or edited.
+    private static func smddbSilo(_ held: HeldLibrary) -> @Sendable (URLRequest) throws -> (Int, Data)? {
+        { request in
+            guard let url = request.url else { return nil }
+            let method = request.httpMethod ?? "GET"
+            let body = Self.body(of: request) ?? Data()
+            let prefix = "/v1/libraries/tv/containers"
+            func finding(_ text: String) -> String { #"{"severity":"error","text":"\#(text)"}"# }
+            switch (method, url.path) {
+            case (_, "/v1/server"): return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
+            case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
+            case ("POST", prefix):
+                struct Create: Decodable {
+                    var documents: [String]
+                    var parent: String?
+                    var dryRun: Bool?
+                }
+                let create = try JSONDecoder().decode(Create.self, from: body)
+                let containers = try create.documents.map { try ContainerFile.container(from: Data($0.utf8)) }
+                let named = Set(containers.flatMap(\.childContainerIDs))
+                guard let top = containers.first(where: { !named.contains($0.id) }) else { return (400, Data()) }
+                var findings: [String] = []
+                if let parent = create.parent {
+                    guard let holder = held.container(ContainerID(parent)!) else { return (404, Data()) }
+                    if !holder.childContainerIDs.contains(top.id) {
+                        findings.append(finding("\(parent) does not name \(top.id) as a child"))
+                    }
+                }
+                for container in containers where held.container(container.id) != nil {
+                    findings.append(finding("container \(container.id) is already at \\\"\(container.id)\\\""))
+                }
+                for container in containers where container.title.rawValue == "Refused" {
+                    findings.append(finding("\(container.id): the validator refuses it"))
+                }
+                let writes = containers.map { #"{"path":"\#($0.id)/container.smd","creates":true}"# }
+                func result(_ applied: Bool) -> Data {
+                    Data(
+                        #"{"applied":\#(applied),"writes":[\#(writes.joined(separator: ","))],"findings":[\#(findings.joined(separator: ","))]}"#
+                            .utf8
+                    )
+                }
+                guard findings.isEmpty else { return (422, result(false)) }
+                guard create.dryRun != true else { return (200, result(false)) }
+                held.sidecars.withLock { sidecars in
+                    for container in containers {
+                        sidecars[container.id.value] = try! SidecarFile.data(for: Sidecar(container: container))
+                    }
+                }
+                return (200, result(true))
+            case (let method, let path) where path.hasPrefix(prefix + "/"):
+                let rest = path.dropFirst(prefix.count + 1).split(separator: "/").map(String.init)
+                guard let bytes = held.sidecars.withLock({ $0[rest[0]] }),
+                    let container = try? SidecarFile.sidecar(from: bytes).container
+                else { return (404, Data()) }
+                let digest = Self.digest(bytes)
+                if rest.count == 2, rest[1] == "smd" { return (200, bytes) }
+                if method == "PUT" {
+                    struct Edit: Decodable {
+                        var document: String
+                        var basedOn: String
+                        var dryRun: Bool?
+                    }
+                    let edit = try JSONDecoder().decode(Edit.self, from: body)
+                    guard edit.basedOn == digest else { return (409, Data(#"{"detail":"moved"}"#.utf8)) }
+                    let value = try ContainerFile.container(from: Data(edit.document.utf8))
+                    if value.title.rawValue == "Refused" {
+                        return (
+                            422,
+                            Data(
+                                #"{"applied":false,"sidecar":"","digest":"","findings":[\#(finding("the validator refuses it"))]}"#
+                                    .utf8
+                            )
+                        )
+                    }
+                    let written = try SidecarFile.data(settingContainer: value, in: bytes)
+                    if edit.dryRun != true { held.sidecars.withLock { $0[rest[0]] = written } }
+                    return (
+                        200,
+                        Data(
+                            #"{"applied":\#(edit.dryRun != true),"sidecar":"","digest":"\#(Self.digest(written))","findings":[]}"#
+                                .utf8
+                        )
+                    )
+                }
+                let json =
+                    #"{"id":"\#(container.id)","library":"tv","type":"series","title":"\#(container.title.rawValue)","displayTitle":"\#(container.displayTitle)","listed":true,"alternatives":[],"features":[],"sequences":[],"extras":[],"children":[],"externalRefs":[]}"#
+                return (
+                    200,
+                    Data(
+                        #"{"library":"tv","path":"\#(container.id)/container.smd","digest":"\#(digest)","artwork":[],"container":\#(json)}"#
+                            .utf8
+                    )
+                )
+            default: return (404, Data())
+            }
+        }
+    }
+
+    private static func clone() -> (LocalRepository, URL) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("smddb-clone-\(UUID().uuidString)")
+        return (LocalRepository(root: folder), folder)
+    }
+
+    private static func smddbConsole(_ held: HeldLibrary) async throws -> (AdminConsole, AdminConsole.Silo) {
+        let passkeys = InMemoryPasskeyStore()
+        passkeys.store("held", for: "home")
+        let console = Self.console(
+            passkeys: passkeys,
+            discovered: [DiscoveredSilo(name: "Home Silo", host: "home.local", port: 8742)],
+            answering: Self.smddbSilo(held)
+        )
+        let home = try #require(await console.refresh().first { $0.id == "home" })
+        return (console, home)
+    }
+
+    /// A season, a serial of it, and a series naming the season, as smddb and a library each say them.
+    private static let ark = Container(
+        id: ContainerID("0000000000000063")!,
+        type: .serial,
+        title: Title("The Ark in Space")!
+    )
+    private static let season12: Container = {
+        var season = Container(id: ContainerID("0000000000000062")!, type: .season, title: Title("Season 12")!)
+        season.sequences = [
+            Sequence(id: "stories", items: [.child(Entry.Child(id: ItemID("ark")!, container: ark.id))])
+        ]
+        return season
+    }()
+    private static let season13 = Container(
+        id: ContainerID("0000000000000064")!,
+        type: .season,
+        title: Title("Season 13")!
+    )
+    private static func series(naming seasons: [Container]) -> Container {
+        var series = Container(
+            id: ContainerID("0000000000000061")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tvdb, value: "76107")]
+        )
+        series.sequences = [
+            Sequence(
+                id: "seasons",
+                items: seasons.map {
+                    .child(Entry.Child(id: ItemID(Slug.make(from: $0.title.rawValue))!, container: $0.id))
+                }
+            )
+        ]
+        return series
+    }
+
+    /// Each container of a library says whether its own fields are smddb's, differ from them, or are in
+    /// no record of smddb's; the clone is searched by title and by a provider's id.
+    @Test func aLibrarysContainersStandAgainstSmddb() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var alien = Container(type: .movie, title: Title("Alien")!, year: 1979, yearInTitle: true)
+        try await database.save(alien)
+        let matching = try SidecarFile.data(for: Sidecar(container: alien))
+        #expect(try await AdminConsole.standing(of: matching, in: database) == .matches)
+
+        var corrected = alien
+        corrected.year = 1997
+        let differing = try SidecarFile.data(for: Sidecar(container: corrected))
+        #expect(try await AdminConsole.standing(of: differing, in: database) == .differs(alien))
+        let unknown = try SidecarFile.data(for: Sidecar(container: Self.ark))
+        #expect(try await AdminConsole.standing(of: unknown, in: database) == .absent)
+
+        alien.externalRefs = [ExternalRef(provider: .tmdb, value: "348")]
+        try await database.save(alien)
+        try await database.save(Self.series(naming: []))
+        #expect(try await AdminConsole.search("alien", in: database).map(\.id) == [alien.id])
+        #expect(try await AdminConsole.search("348", in: database).map(\.id) == [alien.id])
+        #expect(try await AdminConsole.search("tvdb:76107", in: database).map(\.title.rawValue) == ["Doctor Who"])
+        #expect(Set(try await AdminConsole.search("", in: database).map(\.id)).count == 2, "every root")
+    }
+
+    /// An import goes beneath the nearest of smddb's ancestors the library holds, with the descendants
+    /// chosen; a parent whose sidecar is older than smddb's record is offered as an edit draft from
+    /// smddb first; and a container the library holds is offered as an edit, never imported.
+    @Test func aContainerIsImportedFromSmddbBeneathTheNearestHeldAncestor() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let series = Self.series(naming: [Self.season12, Self.season13])
+        for container in [series, Self.season12, Self.ark, Self.season13] { try await database.save(container) }
+        // The library's series was filed before smddb's gained Season 12.
+        let held = HeldLibrary([Self.series(naming: [Self.season13]), Self.season13])
+        let (console, home) = try await Self.smddbConsole(held)
+
+        guard
+            case .plan(let plan) = try await console.planImport(Self.season12.id, into: "tv", of: home, from: database)
+        else {
+            Issue.record("Season 12 is not held, and is planned")
+            return
+        }
+        #expect(plan.parent == series.id)
+        #expect(plan.ancestors.isEmpty)
+        #expect(plan.descendants.map(\.id) == [Self.ark.id])
+        #expect(plan.documents(choosing: []).count == 1, "the season alone, its serial not chosen")
+        #expect(plan.children(of: Self.season12.id).map(\.id) == [Self.ark.id], "the tree the sheet shows")
+        #expect(plan.subtree(of: Self.season12.id) == [Self.ark.id])
+        #expect(plan.children(of: Self.ark.id).isEmpty && plan.heldChildren(of: Self.season12.id).isEmpty)
+
+        guard
+            case .refused(let refused, let parentDraft?) = try await console.importContainers(
+                plan,
+                choosing: [Self.ark.id],
+                dryRun: true,
+                of: home,
+                from: database
+            )
+        else {
+            Issue.record("the dry run is refused, with the series offered from smddb")
+            return
+        }
+        #expect(refused.findings.map(\.text) == ["\(series.id) does not name \(Self.season12.id) as a child"])
+        #expect(parentDraft.value == series, "the draft's document is smddb's record")
+        guard case .stored = try await console.store(parentDraft, of: home) else {
+            Issue.record("the series' edit is stored")
+            return
+        }
+
+        let made = try await console.importContainers(
+            plan,
+            choosing: [Self.ark.id],
+            dryRun: false,
+            of: home,
+            from: database
+        )
+        guard case .made(let result) = made else {
+            Issue.record("the import is made once the series names the season")
+            return
+        }
+        #expect(result.writes.count == 2)
+        #expect(held.container(Self.ark.id) == Self.ark)
+
+        // A container the library holds is an edit from smddb's record, based on its sidecar.
+        guard
+            case .held(let draft) = try await console.planImport(Self.season13.id, into: "tv", of: home, from: database)
+        else {
+            Issue.record("Season 13 is held")
+            return
+        }
+        #expect(draft.container == Self.season13.id.value)
+        #expect(!draft.isNew)
+
+        // Into a library holding none of the lineage, the ancestors are made too. The fake silo is the
+        // file's one stub, so this console's library answers from here on.
+        let empty = HeldLibrary()
+        let (other, otherHome) = try await Self.smddbConsole(empty)
+        guard case .plan(let whole) = try await other.planImport(Self.ark.id, into: "tv", of: otherHome, from: database)
+        else {
+            Issue.record("a serial nothing holds is planned")
+            return
+        }
+        #expect(whole.parent == nil)
+        #expect(whole.ancestors.map(\.id) == [series.id, Self.season12.id])
+
+        // A library holding one season of the series: the plan's tree shows it beneath the series,
+        // held, beside the season it can make, and an all-or-none choice covers that season's serial.
+        let (partial, partialHome) = try await Self.smddbConsole(HeldLibrary([Self.season13]))
+        guard
+            case .plan(let tree) = try await partial.planImport(series.id, into: "tv", of: partialHome, from: database)
+        else {
+            Issue.record("the series is planned")
+            return
+        }
+        #expect(tree.children(of: series.id).map(\.id) == [Self.season12.id])
+        #expect(tree.heldChildren(of: series.id).map(\.id) == [Self.season13.id])
+        #expect(tree.subtree(of: series.id) == [Self.season12.id, Self.ark.id])
+    }
+
+    /// A new container takes its id from smddb's client, is a draft on this Mac until it is made, and is
+    /// made at the top of a library or, after an edit of its parent names it, beneath that parent.
+    @Test func aContainerIsCreatedWithAProvisionalID() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await database.save(Self.ark)
+        let held = HeldLibrary([Self.series(naming: [Self.season13]), Self.season13])
+        let (console, home) = try await Self.smddbConsole(held)
+
+        let film = try await console.newContainer(
+            .movie,
+            titled: Title("The Five Doctors")!,
+            in: "tv",
+            at: ContainerDraft.Creating(),
+            of: home,
+            from: database
+        )
+        let id = try #require(ContainerID(film.container))
+        #expect(try await database.container(id) == nil, "an id the clone has no file for")
+        #expect(console.containerDrafts.draft(of: film.container, in: "tv", of: home.id) != nil, "kept on this Mac")
+        #expect(film.isNew && film.isChanged && !film.isBehind("anything"))
+        guard case .wouldWrite = try await console.check(new: film, of: home) else {
+            Issue.record("the silo's dry run would make it")
+            return
+        }
+        guard case .created = try await console.create(film, of: home) else {
+            Issue.record("the film is made")
+            return
+        }
+        #expect(held.container(id)?.title == Title("The Five Doctors")!)
+        #expect(console.containerDrafts.draft(of: film.container, in: "tv", of: home.id) == nil, "made, the draft ends")
+
+        let seasonDraft = try await console.newContainer(
+            .season,
+            titled: Title("Season 14")!,
+            in: "tv",
+            at: ContainerDraft.Creating(parent: Self.series(naming: []).id.value, sequence: "seasons", position: 1),
+            of: home,
+            from: database
+        )
+        guard case .wouldWrite = try await console.check(new: seasonDraft, of: home) else {
+            Issue.record("the parent's edit would be written")
+            return
+        }
+        guard case .created = try await console.create(seasonDraft, of: home) else {
+            Issue.record("the season is made beneath the series")
+            return
+        }
+        let seasonID = try #require(ContainerID(seasonDraft.container))
+        #expect(held.container(Self.series(naming: []).id)?.childContainerIDs == [Self.season13.id, seasonID])
+        #expect(held.container(seasonID) != nil)
+    }
+
+    /// A library's container is offered to smddb as its sidecar's own fields, with the difference from
+    /// smddb's record shown first and the containers it names that smddb lacks offered with it.
+    @Test func aLibrarysContainerIsProposedToSmddb() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var alien = Container(id: ContainerID("0000000000000071")!, type: .movie, title: Title("Alien")!, year: 1997)
+        alien.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie))])]
+        try await database.save(alien)
+        var corrected = alien
+        corrected.year = 1979
+        var nowhere = Self.series(naming: [Self.season13])
+        nowhere.extras = [.ref(EntryRef(container: ContainerID("00000000000000ee")!, item: ItemID("elsewhere")!))]
+        let held = HeldLibrary([Self.season13, nowhere])
+        held.sidecars.withLock {
+            $0[corrected.id.value] = try! SidecarFile.data(
+                for: Sidecar(container: corrected, presentations: ["feature": [Presentation(file: "Alien.mkv")]])
+            )
+        }
+        let (console, home) = try await Self.smddbConsole(held)
+
+        let correction = try await console.planExport(corrected.id.value, in: "tv", of: home, to: database)
+        #expect(correction.record == alien)
+        #expect(correction.difference.filter { $0.kind != .same }.allSatisfy { $0.text.contains("year") })
+        #expect(correction.offered.isEmpty && correction.unavailable.isEmpty)
+        let written = try await console.export(correction, choosing: [], to: database)
+        let file = try #require(try database.url(of: corrected.id))
+        #expect(written == .written([file]))
+        #expect(file.deletingLastPathComponent().lastPathComponent == "Alien [\(corrected.id)]", "in the clone's tree")
+        #expect(try await database.container(corrected.id) == corrected, "the year, and none of the presentations")
+        #expect(!(try String(contentsOf: file, encoding: .utf8)).contains("Alien.mkv"))
+
+        // A series smddb lacks offers the season it names, which smddb lacks too, and names the ref's
+        // container neither has as the reason it would be refused.
+        let series = try await console.planExport(nowhere.id.value, in: "tv", of: home, to: database)
+        #expect(series.record == nil)
+        #expect(series.offered.map(\.id) == [Self.season13.id])
+        #expect(series.unavailable == [ContainerID("00000000000000ee")!])
+        await #expect(throws: ContributionError.self) {
+            try await console.export(series, choosing: [Self.season13.id], to: database)
+        }
+    }
+
+    /// What the silo refuses, and what cannot be asked of it, comes back in its words: an id smddb does
+    /// not have, a container held since the plan was made, a parent gone, a new container or a parent's
+    /// edit the validator refuses; a container already named by its parent is made without an edit.
+    @Test func smddbRefusalsAreSaidInTheSilosWords() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let series = Self.series(naming: [Self.season12, Self.season13])
+        for container in [series, Self.season12, Self.ark, Self.season13] { try await database.save(container) }
+        let refusing = Container(id: ContainerID("0000000000000069")!, type: .series, title: Title("Refused")!)
+        let held = HeldLibrary([series, Self.season13, refusing])
+        let (console, home) = try await Self.smddbConsole(held)
+
+        await #expect(throws: AdminConsole.SettingsRefused.self) {
+            try await console.planImport(ContainerID("00000000000000dd")!, into: "tv", of: home, from: database)
+        }
+
+        guard
+            case .plan(let plan) = try await console.planImport(Self.season12.id, into: "tv", of: home, from: database)
+        else {
+            Issue.record("Season 12 is planned")
+            return
+        }
+        guard
+            case .wouldMake(let dry) = try await console.importContainers(
+                plan,
+                choosing: [],
+                dryRun: true,
+                of: home,
+                from: database
+            )
+        else {
+            Issue.record("the series names Season 12, so the dry run would make it")
+            return
+        }
+        #expect(dry.writes.count == 1 && !dry.applied)
+
+        // Held since the plan was made: refused with no parent to bring from smddb.
+        held.sidecars.withLock {
+            $0[Self.season12.id.value] = try! SidecarFile.data(for: Sidecar(container: Self.season12))
+        }
+        guard
+            case .refused(let refused, nil) = try await console.importContainers(
+                plan,
+                choosing: [],
+                dryRun: true,
+                of: home,
+                from: database
+            )
+        else {
+            Issue.record("a container held since is refused, with nothing to bring first")
+            return
+        }
+        #expect(refused.findings.count == 1)
+
+        // The parent gone: the silo cannot be asked, and says why.
+        held.sidecars.withLock { $0[series.id.value] = nil }
+        await #expect(throws: AdminConsole.StoreRefused.self) {
+            try await console.importContainers(plan, choosing: [], dryRun: true, of: home, from: database)
+        }
+        held.sidecars.withLock { $0[series.id.value] = try! SidecarFile.data(for: Sidecar(container: series)) }
+
+        // A new container the validator refuses, checked and made at the top of the library.
+        var refused2 = try await console.newContainer(
+            .movie,
+            titled: Title("Refused")!,
+            in: "tv",
+            at: ContainerDraft.Creating(),
+            of: home,
+            from: database
+        )
+        guard case .refused = try await console.check(new: refused2, of: home) else {
+            Issue.record("the dry run of making it is refused")
+            return
+        }
+        guard case .refused(let made) = try await console.create(refused2, of: home) else {
+            Issue.record("making it is refused, and the draft kept")
+            return
+        }
+        #expect(!made.applied)
+        #expect(console.containerDrafts.draft(of: refused2.container, in: "tv", of: home.id) != nil)
+        refused2.text = "<nope/>"
+        guard case .unreadable = try await console.check(new: refused2, of: home) else {
+            Issue.record("a document that is not a container is unreadable")
+            return
+        }
+        await #expect(throws: AdminConsole.StoreRefused.self) { try await console.create(refused2, of: home) }
+
+        // Beneath a parent whose edit the validator refuses: the parent's refusal, nothing made.
+        let child = try await console.newContainer(
+            .season,
+            titled: Title("Season 1")!,
+            in: "tv",
+            at: ContainerDraft.Creating(parent: refusing.id.value),
+            of: home,
+            from: database
+        )
+        guard case .parentRefused = try await console.create(child, of: home) else {
+            Issue.record("the parent's edit is refused")
+            return
+        }
+        #expect(held.container(ContainerID(child.container)!) == nil)
+
+        // A container its parent already names is made with no edit of the parent.
+        let named = ContainerDraft.new(Self.season12, in: "tv", at: ContainerDraft.Creating(parent: series.id.value))
+        held.sidecars.withLock { $0[Self.season12.id.value] = nil }
+        let before = held.sidecars.withLock { $0[series.id.value] }
+        guard case .created = try await console.create(named, of: home) else {
+            Issue.record("Season 12 is made beneath the series that names it")
+            return
+        }
+        #expect(held.sidecars.withLock { $0[series.id.value] } == before, "the series is not edited")
+        #expect(
+            AdminConsole.naming(Self.season12, in: series, at: ContainerDraft.Creating()) == series,
+            "naming a child already named changes nothing"
+        )
+    }
+}

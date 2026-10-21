@@ -3,7 +3,7 @@
 
 # Proposals: 0013-smddb
 
-Modified: 2026-10-20
+Modified: 2026-10-21
 
 # smddb in the console
 
@@ -251,8 +251,8 @@ and its five serials then goes through, and the browser shows them with no prese
 A fan documentary they own is in no smddb record. They create it at the top of the library, with an id
 the client issued, add its two parts, and store it. Later, having added its TMDb id and a director's
 commentary as a feature, they propose it to smddb. The console shows the new file it will write, writes
-`containers/<id>.xml` into the clone, and the operator commits it and opens a pull request against the
-data repository. *Alien*'s corrected outline, meanwhile, shows as differing from smddb, and they propose
+it into the clone as `container.xml` in a folder of its own at the top of `containers/`, named for its
+title and id, and the operator commits it and opens a pull request against the data repository. *Alien*'s corrected outline, meanwhile, shows as differing from smddb, and they propose
 that too.
 
 ## What this asks of an implementation
