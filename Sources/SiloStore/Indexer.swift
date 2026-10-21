@@ -287,17 +287,17 @@ public enum Indexer {
         ) {
             walk.report.findings.append(finding)
         }
-        try index.store(
-            IndexEntry(
-                sidecar: sidecar,
-                document: document,
-                library: library.id,
-                folder: folder,
-                parent: parent,
-                modified: stamp.modified,
-                size: stamp.size
-            )
+        let entry = IndexEntry(
+            sidecar: sidecar,
+            document: document,
+            library: library.id,
+            folder: folder,
+            parent: parent,
+            modified: stamp.modified,
+            size: stamp.size
         )
+        walk.report.findings += entry.findings.map { Finding($0.severity, path: path, $0.text) }
+        try index.store(entry)
         walk.report.read += 1
         return VisitedSidecar(id: id, children: sidecar.children)
     }

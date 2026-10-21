@@ -4,6 +4,7 @@
 import Crypto
 import Foundation
 import GRDB
+import SiloLibrary
 import SmdKit
 import SmdSidecar
 
@@ -323,7 +324,8 @@ public struct IndexedItem: Codable, Hashable, Sendable, FetchableRecord, Persist
 public struct IndexedPresentation: Codable, Hashable, Sendable, FetchableRecord, PersistableRecord {
     public static let databaseTableName = "presentation"
 
-    /// Stable across rescans: a hash of the library and the file's path in it.
+    /// What the presentation is, hashed: its library, container, item, alternative and profile. Where
+    /// its file is plays no part, so a move changes no id.
     public var id: String
     public var library: String
     public var container: String
@@ -335,14 +337,31 @@ public struct IndexedPresentation: Codable, Hashable, Sendable, FetchableRecord,
     /// Relative to the library root.
     public var path: String
 
-    public static func id(library: String, path: String) -> String {
+    public static func id(
+        library: String,
+        container: String,
+        item: String,
+        alternative: String?,
+        profile: String?
+    ) -> String {
         // FNV-1a, 64 bits: stable, dependency-free, and not asked to resist anything.
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
-        for byte in "\(library)|\(path)".utf8 {
+        for byte in "\(library)|\(container)|\(item)|\(alternative ?? "")|\(profile ?? "")".utf8 {
             hash ^= UInt64(byte)
             hash = hash &* 0x100_0000_01b3
         }
         return String(format: "%016llx", hash)
+    }
+
+    /// The id of the presentation a placement records.
+    public static func id(library: String, placed placement: Placement) -> String {
+        id(
+            library: library,
+            container: placement.container.value,
+            item: placement.item,
+            alternative: placement.presentation.alternative,
+            profile: placement.presentation.profile
+        )
     }
 }
 
@@ -380,6 +399,9 @@ struct IndexEntry {
     var presentations: [IndexedPresentation]
     var externalRefs: [IndexedExternalRef]
     var sidecar: IndexedSidecar
+    /// Presentations not indexed, because another before them in the sidecar has their id or names
+    /// their file.
+    var findings: [Finding] = []
 
     init(
         sidecar: Sidecar,
@@ -406,21 +428,47 @@ struct IndexEntry {
             document: document
         )
         self.items = Self.items(of: container, library: library)
-        self.presentations = sidecar.presentations.sorted(by: { $0.key < $1.key }).flatMap { item, presentations in
-            presentations.map { presentation in
-                let path = folder.isEmpty ? presentation.file : "\(folder)/\(presentation.file)"
-                return IndexedPresentation(
-                    id: IndexedPresentation.id(library: library, path: path),
+        // The walk does not trust a sidecar to have been validated: the first of two presentations
+        // sharing an id or a file is indexed, and the second reported.
+        var presentations: [IndexedPresentation] = []
+        var ids: Set<String> = []
+        var files: Set<String> = []
+        for (item, itemPresentations) in sidecar.presentations.sorted(by: { $0.key < $1.key }) {
+            for presentation in itemPresentations {
+                let id = IndexedPresentation.id(
                     library: library,
                     container: container.id.value,
                     item: item,
                     alternative: presentation.alternative,
-                    profile: presentation.profile,
-                    file: presentation.file,
-                    path: path
+                    profile: presentation.profile
+                )
+                guard ids.insert(id).inserted else {
+                    findings.append(
+                        Finding(.error, "item \(item) has two presentations for the same alternative and profile")
+                    )
+                    continue
+                }
+                guard files.insert(presentation.file).inserted else {
+                    findings.append(
+                        Finding(.error, "item \(item): \"\(presentation.file)\" is named by another presentation")
+                    )
+                    continue
+                }
+                presentations.append(
+                    IndexedPresentation(
+                        id: id,
+                        library: library,
+                        container: container.id.value,
+                        item: item,
+                        alternative: presentation.alternative,
+                        profile: presentation.profile,
+                        file: presentation.file,
+                        path: folder.isEmpty ? presentation.file : "\(folder)/\(presentation.file)"
+                    )
                 )
             }
         }
+        self.presentations = presentations
         self.externalRefs = Self.externalRefs(of: container, library: library)
         self.sidecar = IndexedSidecar(
             library: library,

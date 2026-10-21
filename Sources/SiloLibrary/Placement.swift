@@ -55,6 +55,9 @@ public struct Placement: Sendable {
     /// Sidecars to write, root first and the item's container last, so that a crash between two
     /// leaves a file nothing references rather than a reference to nothing.
     public var sidecars: [SidecarWrite]
+    /// The container the item is in.
+    public var container: ContainerID
+    public var item: String
     /// The presentation as it will be recorded, with the file the layout gave it.
     public var presentation: Presentation
     public var findings: [Finding]
@@ -156,6 +159,8 @@ public enum Placer {
             destination: destination,
             folders: folders,
             sidecars: writes,
+            container: target.id,
+            item: request.item,
             presentation: presentation,
             findings: findings
         )

@@ -419,7 +419,7 @@ extension JobService {
                 job.state = .placed
                 job.placement = PlacementSummary(
                     destination: destination,
-                    presentation: IndexedPresentation.id(library: library.id, path: destination),
+                    presentation: IndexedPresentation.id(library: library.id, placed: placement),
                     writes: placement.describe(relativeTo: library.root)
                 )
             }!

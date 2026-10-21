@@ -46,13 +46,21 @@ package struct MediaController {
             try await responseSender.sendAndFinish(HTTPResponse(status: .serviceUnavailable))
             return
         }
-        let url = library.root.appendingPathComponent(presentation.path)
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        var url = library.root.appendingPathComponent(presentation.path)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            // The file may have moved and its sidecar been edited to say so: the id names what the
+            // presentation is, so a re-read finds it at its new path by the same id.
             if let container = ContainerID(presentation.container) {
                 try await libraries.refresh(container, in: library)
             }
-            try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
-            return
+            guard let moved = try index.presentation(id), moved.path != presentation.path,
+                case let movedURL = library.root.appendingPathComponent(moved.path),
+                FileManager.default.fileExists(atPath: movedURL.path)
+            else {
+                try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
+                return
+            }
+            url = movedURL
         }
         try await FileResponse.send(
             file: url,
