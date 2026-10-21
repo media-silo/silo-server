@@ -28,7 +28,10 @@ rows SHALL be keyed by its library and its id, since one container may be filed 
 libraries, each with a sidecar of its own: a library's walk SHALL write and remove only that
 library's rows, and a container in two libraries SHALL be held twice, each as its own library's
 sidecar says. Deleting the file SHALL lose nothing the sidecars do not say: an index opened at
-the same path starts empty and a scan fills it again.
+the same path starts empty and a scan fills it again. The file SHALL carry the version of the
+index that made it, raised whenever the tables or what is derived into them change; a file of
+another version SHALL be emptied when it is opened, so the boot's walk fills it again rather than
+every write to it failing.
 
 #### Scenario: the file can be thrown away
 - **WHEN** a library is scanned into an index at a file, the file is deleted, and a fresh
@@ -48,8 +51,14 @@ the same path starts empty and a scan fills it again.
   its own library's presentation, and after it holds the container for the second library
   alone, with that library's presentation
 
+#### Scenario: a file an earlier version made
+- **WHEN** an index is opened at a file an earlier version of the index made, whose items are not
+  keyed by library
+- **THEN** the index holds nothing, and a scan of the library reads the sidecar and stores its
+  items
+
 Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`theIndexIsAFileThatCanBeThrownAway`,
-`aContainerInTwoLibrariesIsHeldForEach`).
+`aContainerInTwoLibrariesIsHeldForEach`, `anIndexAnotherVersionMadeIsRebuilt`).
 
 ### Requirement: Boot and scans re-parse only the sidecars that changed
 A scan SHALL walk a library from its top-level folders — skipping hidden files and any
