@@ -978,6 +978,35 @@ struct ServerTests {
         }
     }
 
+    /// A presentation's id is what it is: a file moved within its container's folder, its sidecar
+    /// edited to name it there, is served by the id it had.
+    @Test func aMovedFileIsServedByTheIdItHad() async throws {
+        let folder = Fixture.root.appendingPathComponent("Library/Notorious (1946)")
+        let sidecar = folder.appendingPathComponent("container.smd")
+        let original = try Data(contentsOf: sidecar)
+        let (from, to) = ("Notorious - mobile.mkv", "Notorious (moved) - mobile.mkv")
+        try await withClient { client in
+            let film = try await client.get("/v1/containers/\(Fixture.notorious.id)")
+            let id = try #require(Self.presentationID(in: film.bodyText, file: from), "main's, listed first")
+            try FileManager.default.moveItem(
+                at: folder.appendingPathComponent(from),
+                to: folder.appendingPathComponent(to)
+            )
+            try Data(String(decoding: original, as: UTF8.self).replacingOccurrences(of: from, with: to).utf8)
+                .write(to: sidecar)
+            let moved = try await client.get("/v1/media/\(id)")
+            #expect(moved.status == 200)
+            #expect(moved.body == Fixture.mediaBytes)
+
+            try FileManager.default.moveItem(
+                at: folder.appendingPathComponent(to),
+                to: folder.appendingPathComponent(from)
+            )
+            try original.write(to: sidecar)
+            #expect(try await client.get("/v1/media/\(id)").status == 200, "and back again")
+        }
+    }
+
     /// A library whose folder goes is unavailable, not forgotten: its containers stay browsable, its
     /// media answer 503 rather than 404, and when the folder comes back the next request that
     /// reaches for it walks it and is served.

@@ -78,7 +78,8 @@ for a presentation whose file it finds missing, before answering.
 - **THEN** the report reads 4 and leaves 0 unchanged, and the index holds the containers in
   order, the unlisted series out of the listed roots, the serial's parent and folder as
   `0000000000000002` and `Doctor Who (1963)/Season 13/Pyramids of Mars`, and each
-  presentation's id as the stable hash of its library and path
+  presentation's id as the hash of its library, container, item, alternative and
+  profile
 
 #### Scenario: a second scan reads nothing
 - **WHEN** the same library is scanned again unchanged
@@ -150,3 +151,28 @@ finish, and a walk asked for while a re-read runs SHALL wait for it.
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAndRefusedTheSecondTime`),
 `Tests/SiloTests/LibrariesTests.swift` (`aFirstPlacementIndexesEveryContainerItMadeUnderItsParent`,
 `aPlacementWalksNothing`, `walksAskedForTogetherWalkOnce`).
+
+### Requirement: A presentation's id is the hash of what it is
+A presentation's id SHALL be the 64-bit FNV-1a hash, written as sixteen lowercase hexadecimal
+characters, of its library's id, its container's id, its item's id, its alternative and its profile,
+joined by `|`, an absent alternative or profile written as the empty string. Nothing else SHALL
+contribute to it: not the presentation's file, display name, tracks, chapters, source or transform.
+A walk SHALL NOT index two presentations of one container with one id, nor two that name one file: the
+second SHALL be reported as an error on the container's sidecar —
+`item <id> has two presentations for the same alternative and profile`, or
+`item <id>: "<file>" is named by another presentation` — and SHALL NOT be indexed, and the walk SHALL
+go on.
+
+#### Scenario: a folder renamed by hand
+- **WHEN** a film's folder is renamed by hand, nothing else is changed, and the library is walked
+- **THEN** each of the film's presentations has the id it had before the rename
+
+#### Scenario: one shape twice in a sidecar
+- **WHEN** a sidecar edited by hand holds two presentations of item `feature` with no alternative and no profile, naming different files
+- **THEN** the walk indexes the first, reports `item feature has two presentations for the same alternative and profile` on the sidecar, and indexes the rest of the library
+
+#### Scenario: one file named twice
+- **WHEN** a sidecar edited by hand holds two presentations of item `feature`, one with profile `mobile`, both naming `Alien.mkv`
+- **THEN** the walk indexes the first, reports that `Alien.mkv` is named by another presentation, and indexes the rest of the library
+
+Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`aPresentationIsNamedForWhatItIs`).

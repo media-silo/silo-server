@@ -247,7 +247,7 @@ package struct OperatorController {
         // without the server is the walk's to find.
         try await libraries.reread(placement.sidecars, in: library)
         result.applied = true
-        result.presentation = IndexedPresentation.id(library: library.id, path: destination)
+        result.presentation = IndexedPresentation.id(library: library.id, placed: placement)
         return result
     }
 

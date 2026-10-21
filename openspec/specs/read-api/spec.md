@@ -190,7 +190,10 @@ the file cannot satisfy SHALL be 416 with `Content-Range: bytes */<size>`.
 HEAD SHALL be answered as the GET's head alone, and the file SHALL go to the
 writer a chunk at a time rather than buffered whole. A presentation placed
 during the server's run SHALL be served by its new id at once, without a scan
-being asked for.
+being asked for. A presentation whose file the route finds missing SHALL be
+served from the file its container's sidecar records once the route has re-read
+it, when that is another file that is there, by the same id; only when the
+re-read leaves no file for the id SHALL the answer be 404.
 
 #### Scenario: the whole file
 - **WHEN** a client asks `GET /v1/media/{presentation}` for a 3000-byte
@@ -211,8 +214,14 @@ being asked for.
 - **THEN** the answer is 416 with `Content-Range: bytes */3000`, and
   `GET /v1/media/0000000000000000` is 404
 
+#### Scenario: a file moved
+- **WHEN** a presentation's file is moved within its container's folder and its
+  sidecar edited to name it there, and a client asks for the presentation by the
+  id it had before
+- **THEN** the answer is 200 with the file from its new path
+
 Pinned by: `Tests/SiloTests/ServerTests.swift`
-(`mediaIsServedWholeAndByRange`, `rangesAreParsedAsTheSpecificationSays`,
+(`aMovedFileIsServedByTheIdItHad`, `mediaIsServedWholeAndByRange`, `rangesAreParsedAsTheSpecificationSays`,
 `zPlacementIsShownThenAppliedAndRefusedTheSecondTime`).
 
 ### Requirement: The stored rulesets are read at their latest version, or the one asked for

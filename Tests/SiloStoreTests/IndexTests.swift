@@ -134,15 +134,24 @@ struct IndexTests {
 
         let presentations = try index.presentations(of: Self.serial.id, in: "main")
         #expect(
-            presentations.map(\.path) == [
-                "Doctor Who (1963)/Season 13/Pyramids of Mars/extras/Now and Then.mkv",
-                "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One.mkv",
+            presentations.map(\.path).sorted() == [
                 "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One - mobile.mkv",
+                "Doctor Who (1963)/Season 13/Pyramids of Mars/Part One.mkv",
+                "Doctor Who (1963)/Season 13/Pyramids of Mars/extras/Now and Then.mkv",
             ]
         )
         let mobile = try #require(presentations.first { $0.profile == "mobile" })
         #expect(try index.presentation(mobile.id) == mobile)
-        #expect(mobile.id == IndexedPresentation.id(library: "main", path: mobile.path))
+        #expect(
+            mobile.id
+                == IndexedPresentation.id(
+                    library: "main",
+                    container: Self.serial.id.value,
+                    item: "part1",
+                    alternative: nil,
+                    profile: "mobile"
+                )
+        )
 
         #expect(try index.lookup(provider: .tvdb, value: "76107").map(\.id) == [Self.series.id.value])
         #expect(
@@ -311,6 +320,68 @@ struct IndexTests {
         )
         #expect(LibraryWalker.walk(sandbox.library.root).findings.map(\.description) == [warning])
         #expect(try index.containers(film.id).map(\.folder) == ["Alien (1997)"], "the folder is where it was")
+    }
+
+    /// A presentation's id is what it is, so a folder renamed by hand keeps it; and what would share an
+    /// id or a file with another presentation of its sidecar is reported, not indexed.
+    @Test func aPresentationIsNamedForWhatItIs() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        var film = Container(
+            id: ContainerID("0000000000000005")!,
+            type: .movie,
+            title: Title("Alien")!,
+            year: 1979,
+            yearInTitle: true
+        )
+        film.sequences = [
+            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, title: "Alien"))])
+        ]
+        try sandbox.place([film], item: "feature")
+        try sandbox.place([film], item: "feature", profile: "mobile")
+        try sandbox.place([Self.series, Self.season, Self.serial], item: "part1")
+        let index = try Index(at: nil)
+        _ = try Indexer.scan(sandbox.library, into: index)
+        let before = try index.presentations(of: film.id, in: "main")
+        #expect(before.count == 2)
+
+        let library = sandbox.library.root
+        try FileManager.default.moveItem(
+            at: library.appendingPathComponent("Alien (1979)"),
+            to: library.appendingPathComponent("Alien")
+        )
+        _ = try Indexer.scan(sandbox.library, into: index)
+        let after = try index.presentations(of: film.id, in: "main")
+        #expect(after.map(\.id) == before.map(\.id), "the ids it had")
+        #expect(after.map(\.path).sorted() == ["Alien/Alien - mobile.mkv", "Alien/Alien.mkv"])
+
+        let url = library.appendingPathComponent("Alien/container.smd")
+        var sidecar = try SidecarFile.sidecar(from: Data(contentsOf: url))
+        sidecar.presentations["feature"] = [
+            Presentation(file: "Alien.mkv"), Presentation(file: "Alien (again).mkv"),
+        ]
+        try SidecarFile.data(for: sidecar).write(to: url)
+        var report = try Indexer.scan(sandbox.library, into: index)
+        #expect(
+            report.findings.filter { $0.severity == .error }.map(\.description) == [
+                "error: Alien/container.smd: item feature has two presentations for the same alternative and profile"
+            ]
+        )
+        #expect(try index.presentations(of: film.id, in: "main").map(\.file) == ["Alien.mkv"], "the first")
+        #expect(try index.presentations(of: Self.serial.id, in: "main").count == 1, "and the rest of the library")
+
+        sidecar.presentations["feature"] = [
+            Presentation(file: "Alien.mkv"), Presentation(profile: "mobile", file: "Alien.mkv"),
+        ]
+        try SidecarFile.data(for: sidecar).write(to: url)
+        report = try Indexer.scan(sandbox.library, into: index)
+        #expect(
+            report.findings.filter { $0.severity == .error }.map(\.description) == [
+                "error: Alien/container.smd: item feature: \"Alien.mkv\" is named by another presentation"
+            ]
+        )
+        #expect(try index.presentations(of: film.id, in: "main").map(\.profile) == [nil])
+        #expect(try index.presentations(of: Self.serial.id, in: "main").count == 1)
     }
 
     /// A kind of artwork held in both formats is a warning on the sidecar, and the `.jpg` is the one
