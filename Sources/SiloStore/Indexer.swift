@@ -230,7 +230,12 @@ public enum Indexer {
             }
         )
         if container.parent != parent?.value { try index.setParent(parent, of: id, in: library.id) }
-        if let finding = LibraryLayout.folderFinding(folder: folder, displayTitle: container.displayTitle, id: id) {
+        if let finding = LibraryLayout.folderFinding(
+            folder: folder,
+            displayTitle: container.displayTitle,
+            id: id,
+            position: try position(of: id, under: parent, in: library.id, index: index)
+        ) {
             walk.report.findings.append(finding)
         }
         return VisitedSidecar(id: id, children: children)
@@ -283,7 +288,8 @@ public enum Indexer {
         if let finding = LibraryLayout.folderFinding(
             folder: folder,
             displayTitle: sidecar.container.displayTitle,
-            id: id
+            id: id,
+            position: try position(of: id, under: parent, in: library.id, index: index)
         ) {
             walk.report.findings.append(finding)
         }
@@ -346,6 +352,21 @@ public enum Indexer {
             )
         else { return nil }
         return row.folder
+    }
+
+    /// The container's place among its parent's children, as the index holds the parent: nil for a
+    /// root, or for a parent the index does not hold or that does not name it.
+    public static func position(
+        of id: ContainerID,
+        under parent: ContainerID?,
+        in library: String,
+        index: Index
+    ) throws -> LibraryLayout.Position? {
+        guard let parent else { return nil }
+        let children = try index.items(of: parent, in: library).compactMap {
+            $0.childContainer.flatMap(ContainerID.init)
+        }
+        return LibraryLayout.Position(of: id, among: children)
     }
 
     private static func relativePath(of url: URL, in root: URL) -> String {

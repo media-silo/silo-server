@@ -196,7 +196,7 @@ writes made. Any failure along the way SHALL return the job to `encoded` with th
 #### Scenario: an encoded job is placed
 - **WHEN** the operator places an encoded job whose binding is part three of the serial *Pyramids of
   Mars*, in the series *Doctor Who (1963)* in library `main`, made by the unqualified output
-- **THEN** the job is `placed` at `Doctor Who (1963)/Pyramids of Mars/Part Three.mkv`, the index
+- **THEN** the job is `placed` at `Doctor Who (1963)/01 - Pyramids of Mars/Part Three.mkv`, the index
   answers its presentation id (and the media route serves it by range), the serial's sidecar names
   the binding and the recipe's ruleset version on the presentation, and a second place is 409
 

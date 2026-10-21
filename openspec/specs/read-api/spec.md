@@ -154,7 +154,7 @@ container the index does not hold SHALL be 404.
 #### Scenario: the bytes as they are on disk
 - **WHEN** a client asks `GET /v1/containers/0000000000000003/smd`
 - **THEN** the 200 answer's body equals, byte for byte, the library's
-  `Doctor Who (1963)/Pyramids of Mars/container.smd`, and
+  `Doctor Who (1963)/01 - Pyramids of Mars/container.smd`, and
   `GET /v1/containers/00000000000000ff/smd` is 404
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`theSidecarIsServedAsItIs`).

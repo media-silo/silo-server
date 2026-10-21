@@ -87,8 +87,15 @@ public enum Maker {
 
         for container in tree.order {
             let parent = tree.parents[container.id]
-            let folder = (parent.flatMap { folderOf[$0] } ?? base)
-                .appendingPathComponent(LibraryLayout.folderName(for: container), isDirectory: true)
+            let name =
+                if let parent, let parentContainer = request.containers.first(where: { $0.id == parent }) {
+                    LibraryLayout.folderName(for: container, in: parentContainer)
+                } else if let holder {
+                    holder.folder ?? LibraryLayout.folderName(for: container)
+                } else {
+                    LibraryLayout.folderName(for: container)
+                }
+            let folder = (parent.flatMap { folderOf[$0] } ?? base).appendingPathComponent(name, isDirectory: true)
             folderOf[container.id] = folder
             let url = folder.appendingPathComponent(LibraryLayout.sidecarFileName)
             let path = LibraryWalker.relativePath(of: url, in: request.library)
@@ -101,7 +108,7 @@ public enum Maker {
             var sidecar = Sidecar(container: container)
             for child in container.childContainerIDs {
                 guard let made = request.containers.first(where: { $0.id == child }) else { continue }
-                sidecar.children[child] = LibraryLayout.childPath(for: made)
+                sidecar.children[child] = LibraryLayout.childPath(for: made, in: container)
             }
             findings += Validator.check(sidecar).filter { $0.severity == .error }.map {
                 var located = $0
@@ -125,6 +132,9 @@ public enum Maker {
     /// path when that is news, and its refusal when it does not name the top or cannot be read.
     private struct HolderReading {
         var id: ContainerID?
+        /// The top's folder within the holder's: where the holder records it, or else numbered among
+        /// the holder's children.
+        var folder: String?
         var write: SidecarWrite?
         var findings: [Finding] = []
     }
@@ -149,7 +159,11 @@ public enum Maker {
                 Finding(.error, path: path, "\(sidecar.container.id) does not name \(top.id) as a child")
             )
         }
-        let childPath = LibraryLayout.childPath(for: top)
+        let folder =
+            LibraryLayout.recordedFolder(of: top.id, in: sidecar)
+            ?? LibraryLayout.folderName(for: top, in: sidecar.container)
+        reading.folder = folder
+        let childPath = LibraryLayout.childPath(folder: folder)
         if sidecar.children[top.id] != childPath {
             sidecar.children[top.id] = childPath
             reading.write = SidecarWrite(

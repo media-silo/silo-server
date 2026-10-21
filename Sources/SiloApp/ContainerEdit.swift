@@ -88,21 +88,14 @@ enum ContainerEditor {
             } catch {
                 throw BadEdit(reason: "the edit cannot be written: \(error.localizedDescription)")
             }
-            var findings = Validator.check(sidecar).map { finding -> Finding in
-                var located = finding
-                located.path = path
-                return located
-            }
-            findings += try taken(from: SidecarFile.sidecar(from: held), by: container, in: library, index: index).map {
-                Finding(.error, path: path, $0)
-            }
-            if let folder = LibraryLayout.folderFinding(
-                folder: row.folder,
-                displayTitle: container.displayTitle,
-                id: id
-            ) {
-                findings.append(folder)
-            }
+            let findings = try findings(
+                of: sidecar,
+                editing: held,
+                to: container,
+                at: row,
+                in: library,
+                index: index
+            )
             var outcome = ContainerEditOutcome(
                 applied: false,
                 sidecar: written,
@@ -122,6 +115,41 @@ enum ContainerEditor {
             outcome.applied = true
             return outcome
         }
+    }
+
+    /// What the silo finds in an edit: the validator's findings, what it would take away that the
+    /// library still names, and a folder no longer named as the layout would name it.
+    private static func findings(
+        of sidecar: Sidecar,
+        editing held: Data,
+        to container: Container,
+        at row: IndexedContainer,
+        in library: LibraryConfig,
+        index: Index
+    ) throws -> [Finding] {
+        let path = "\(row.folder)/\(SidecarFile.fileName)"
+        var findings = Validator.check(sidecar).map { finding -> Finding in
+            var located = finding
+            located.path = path
+            return located
+        }
+        findings += try taken(from: SidecarFile.sidecar(from: held), by: container, in: library, index: index).map {
+            Finding(.error, path: path, $0)
+        }
+        if let folder = LibraryLayout.folderFinding(
+            folder: row.folder,
+            displayTitle: container.displayTitle,
+            id: container.id,
+            position: try Indexer.position(
+                of: container.id,
+                under: row.parent.flatMap(ContainerID.init),
+                in: library.id,
+                index: index
+            )
+        ) {
+            findings.append(folder)
+        }
+        return findings
     }
 
     /// What an edit would take away that the library still names: an item the document no longer

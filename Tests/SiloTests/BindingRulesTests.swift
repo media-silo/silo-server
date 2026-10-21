@@ -125,7 +125,7 @@ struct BindingRulesTests {
         #expect(try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 2)
         #expect(bench.stagedRules.versions(of: binding.id) == [1, 2], "kept in the silo while nothing is placed")
         let library = bench.library.root
-        let folder = library.appendingPathComponent("Doctor Who (1963)/Pyramids of Mars")
+        let folder = library.appendingPathComponent("Doctor Who (1963)/01 - Pyramids of Mars")
         #expect(!FileManager.default.fileExists(atPath: folder.path), "and nothing written to the library")
         #expect(try bench.bindingService.rules(of: binding.id).versions == [1, 2])
 
@@ -186,7 +186,9 @@ struct BindingRulesTests {
         _ = try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id)
         try await Self.place(binding, in: bench)
         let library = bench.library.root
-        let sidecarURL = library.appendingPathComponent("Doctor Who (1963)/Pyramids of Mars/\(SidecarFile.fileName)")
+        let sidecarURL = library.appendingPathComponent(
+            "Doctor Who (1963)/01 - Pyramids of Mars/\(SidecarFile.fileName)"
+        )
 
         let other = "9d3f0b6e-1c2a-4f7d-8e5b-a2b4c6d8e0f1"
         try SidecarFile.data(
@@ -197,8 +199,8 @@ struct BindingRulesTests {
         ).write(to: sidecarURL)
         #expect(
             LibraryWalker.walk(library).findings.map(\.description) == [
-                "error: Doctor Who (1963)/Pyramids of Mars/container.smd: binding \(other): rules version 1 is not there",
-                "warning: Doctor Who (1963)/Pyramids of Mars/container.smd: rules for binding \(other), which no presentation of part3 names",
+                "error: Doctor Who (1963)/01 - Pyramids of Mars/container.smd: binding \(other): rules version 1 is not there",
+                "warning: Doctor Who (1963)/01 - Pyramids of Mars/container.smd: rules for binding \(other), which no presentation of part3 names",
             ]
         )
     }

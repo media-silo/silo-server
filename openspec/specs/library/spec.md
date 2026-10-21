@@ -19,10 +19,14 @@ Documentation: [README](../../../README.md).
 ## Requirements
 
 ### Requirement: A container that owns files is a folder named from its display title
-Every container that owns files SHALL live in a folder inside its parent's folder, named for the
-container's display title, and a library's roots SHALL be its top-level folders. Every such folder
-SHALL hold one file named `container.smd`, and a parent's sidecar SHALL record each child as the
-child's folder followed by `/container.smd` (for example `Season 13/container.smd`) on the child's
+Every container that owns files SHALL live in a folder inside its parent's folder, and a library's
+roots SHALL be its top-level folders. A root's folder SHALL be named for its display title. A
+container held as a child SHALL be named for its position among its parent's distinct children,
+counted from one in the order the parent's `childContainerIDs` give them, written in decimal and
+padded with zeros to two digits or to as many as the parent's count of children needs, followed by
+` - ` and its display title (for example `13 - Season 13`). Every such folder SHALL hold one file
+named `container.smd`, and a parent's sidecar SHALL record each child as the child's folder followed
+by `/container.smd` (for example `13 - Season 13/container.smd`) on the child's
 `<item type="container">`. A title becomes a folder or file name sanitised: `/` and `:` replaced by
 `-`, NUL dropped, runs of whitespace collapsed to one space, leading dots removed and the result
 trimmed. A display title that sanitises to nothing SHALL fall back to the container id's raw value.
@@ -35,9 +39,17 @@ trimmed. A display title that sanitises to nothing SHALL fall back to the contai
 - **WHEN** a container's title is `///`
 - **THEN** its folder name is `---` — each solidus replaced — not the container id
 
+#### Scenario: a season's serials in their order
+- **WHEN** a season whose stories sequence names Terror of the Zygons, Planet of Evil and Pyramids of Mars in that order has each placed into a library
+- **THEN** their folders inside the season's are `01 - Terror of the Zygons`, `02 - Planet of Evil` and `03 - Pyramids of Mars`
+
+#### Scenario: a parent with a hundred children
+- **WHEN** a series holding 120 episodes as children has its first and last placed
+- **THEN** their folders begin `001 - ` and `120 - `
+
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`namesAreSanitised`,
-`pathsAreCheckedForStayingInside`). The fall-back to the container id after sanitising to nothing
-is pinned by nothing yet.
+`pathsAreCheckedForStayingInside`, `childFoldersAreNumberedInTheirOrder`). The fall-back to the
+container id after sanitising to nothing is pinned by nothing yet.
 
 ### Requirement: A presentation's file is `{item} - {display name}.mkv` beside its sidecar
 The file for a presentation of an item SHALL sit in the item's container's folder, beside
@@ -142,16 +154,16 @@ changing what a client renders. Findings SHALL be sorted so a report reads the s
 platform, and nothing the walk finds SHALL be resolved by the walk.
 
 #### Scenario: a placed library walks to one tree
-- **WHEN** `Doctor Who (1963)/Season 13/Pyramids of Mars` was placed with one presentation
-- **THEN** the walk yields one root, finds the serial at the relative folder `Doctor Who (1963)/Season 13/Pyramids of Mars`, and reports no findings
+- **WHEN** `Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars` was placed with one presentation
+- **THEN** the walk yields one root, finds the serial at the relative folder `Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars`, and reports no findings
 
 #### Scenario: a child sidecar that does not exist is an error
-- **WHEN** `Doctor Who (1963)/Season 13/container.smd` was deleted
-- **THEN** the walk reports `error: Doctor Who (1963)/container.smd: child 0000000000000002 is at "Season 13/container.smd", which does not exist`
+- **WHEN** `Doctor Who (1963)/01 - Season 13/container.smd` was deleted
+- **THEN** the walk reports `error: Doctor Who (1963)/container.smd: child 0000000000000002 is at "01 - Season 13/container.smd", which does not exist`
 
 #### Scenario: sidecars nothing references are warnings
 - **WHEN** the season's sidecar is gone and a `Draft` folder holds its own `container.smd` that no root names
-- **THEN** the walk reports `warning: Doctor Who (1963)/Draft/container.smd: a sidecar nothing references` and `warning: Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd: a sidecar nothing references`, in that order
+- **THEN** the walk reports `warning: Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd: a sidecar nothing references` and `warning: Doctor Who (1963)/Draft/container.smd: a sidecar nothing references`, in that order
 
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`theFirstPlacementMakesTheTree`,
 `theWalkReportsWhatIsBrokenOrAbandoned`). The recorded modification time and size, and the
@@ -177,8 +189,8 @@ is not there (`item <id>: "<file>" is not there`) and every child path that is n
 - **THEN** the value checks yield exactly `item part1: "../Part One.mkv" leaves the container's folder`, `item part1: "../Part One.mkv" is not the name the layout would give it, "Part One.mkv"` and `item part1 has two presentations for the same alternative and profile`
 
 #### Scenario: the disk checks
-- **WHEN** `Season 13/container.smd` was deleted under a walked tree
-- **THEN** checking the tree appends to the walk's findings `error: Doctor Who (1963)/container.smd: child 0000000000000002 at "Season 13/container.smd" is not there`
+- **WHEN** `01 - Season 13/container.smd` was deleted under a walked tree
+- **THEN** checking the tree appends to the walk's findings `error: Doctor Who (1963)/container.smd: child 0000000000000002 at "01 - Season 13/container.smd" is not there`
 
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`theWalkReportsWhatIsBrokenOrAbandoned`,
 `whatCannotBePlacedIsRefusedWithReasons`, `theFirstPlacementMakesTheTree`). The duplicate-id,
@@ -250,15 +262,19 @@ Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`aContainerFiledTwiceInALibr
 
 ### Requirement: A folder not named as the layout would name it is a warning
 The walk SHALL warn of a container's folder whose name is not the one the layout would give the
-container from its sidecar now — its display title, sanitised — as
+container from its sidecar now — its display title, sanitised, after its position among its parent's
+children for a container held as a child — as
 `folder "<name>" is not the name the layout would give it, "<expected>"`, on the container's
-sidecar. A folder is named when it is made, and nothing the walk or an edit does SHALL rename
-it.
+sidecar. The walk SHALL NOT rename it.
 
 #### Scenario: a year corrected after the folder was made
 - **WHEN** a film's folder is `Alien (1997)` and its sidecar's year is 1979
 - **THEN** the walk warns on `Alien (1997)/container.smd` that the folder is not the name the
   layout would give it, `Alien (1979)`, and the folder is where it was
+
+#### Scenario: a season's folder renamed by hand
+- **WHEN** a series' folder holds its only season as `Season 13`
+- **THEN** the walk warns that the folder is not the name the layout would give it, `01 - Season 13`, and the folder is where it was
 
 Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`aFolderNotNamedAsTheLayoutWouldNameItIsAWarning`).
 

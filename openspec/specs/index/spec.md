@@ -77,7 +77,7 @@ for a presentation whose file it finds missing, before answering.
 - **WHEN** a library of four placed containers is scanned
 - **THEN** the report reads 4 and leaves 0 unchanged, and the index holds the containers in
   order, the unlisted series out of the listed roots, the serial's parent and folder as
-  `0000000000000002` and `Doctor Who (1963)/Season 13/Pyramids of Mars`, and each
+  `0000000000000002` and `Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars`, and each
   presentation's id as the hash of its library, container, item, alternative and
   profile
 
@@ -90,14 +90,14 @@ for a presentation whose file it finds missing, before answering.
 - **THEN** the report reads 1 and leaves 2 unchanged
 
 #### Scenario: one container is refreshed
-- **WHEN** `Indexer.refresh` is called on `Doctor Who (1963)/Season 13/Pyramids of Mars`
+- **WHEN** `Indexer.refresh` is called on `Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars`
   after a placement wrote its sidecar
 - **THEN** the report reads 1 and the index holds the container's three presentations
 
 #### Scenario: a sidecar that disappears
-- **WHEN** the `Season 13` sidecar is deleted and a scan runs
+- **WHEN** the `01 - Season 13` sidecar is deleted and a scan runs
 - **THEN** the report's `removed` is 2 and its findings are the error
-  `child 0000000000000002 is at "Season 13/container.smd", which does not exist` on the
+  `child 0000000000000002 is at "01 - Season 13/container.smd", which does not exist` on the
   series and the warning `a sidecar nothing references` on the now-orphaned serial, and the
   index forgets both containers
 

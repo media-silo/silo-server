@@ -135,6 +135,7 @@ public enum LibraryWalker {
         folder: URL,
         relativeFolder: String,
         expecting: ContainerID?,
+        position: LibraryLayout.Position? = nil,
         reached: inout Set<String>,
         found: inout [ContainerID: String],
         findings: inout [Finding]
@@ -155,7 +156,8 @@ public enum LibraryWalker {
         if let finding = LibraryLayout.folderFinding(
             folder: relativeFolder,
             displayTitle: sidecar.container.displayTitle,
-            id: sidecar.container.id
+            id: sidecar.container.id,
+            position: position
         ) {
             findings.append(finding)
         }
@@ -198,6 +200,7 @@ public enum LibraryWalker {
                 folder: childFolder,
                 relativeFolder: childRelative,
                 expecting: child,
+                position: LibraryLayout.Position(of: child, in: sidecar.container),
                 reached: &reached,
                 found: &found,
                 findings: &findings

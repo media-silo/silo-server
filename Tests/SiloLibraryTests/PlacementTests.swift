@@ -98,12 +98,12 @@ struct PlacementTests {
         #expect(
             placement.describe(relativeTo: sandbox.library) == [
                 "create   Doctor Who (1963)/",
-                "create   Doctor Who (1963)/Season 13/",
-                "create   Doctor Who (1963)/Season 13/Pyramids of Mars/",
-                "place    \(source.path) -> Doctor Who (1963)/Season 13/Pyramids of Mars/Part One.mkv",
+                "create   Doctor Who (1963)/01 - Season 13/",
+                "create   Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/",
+                "place    \(source.path) -> Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/Part One.mkv",
                 "write    Doctor Who (1963)/container.smd",
-                "write    Doctor Who (1963)/Season 13/container.smd",
-                "write    Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd",
+                "write    Doctor Who (1963)/01 - Season 13/container.smd",
+                "write    Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd",
             ]
         )
         #expect(placement.presentation.file == "Part One.mkv")
@@ -114,11 +114,133 @@ struct PlacementTests {
         #expect(tree.findings.isEmpty)
         #expect(tree.roots.count == 1)
         #expect(tree.roots[0].sidecar.container == Self.series)
-        #expect(tree.roots[0].sidecar.children == [Self.season.id: "Season 13/container.smd"])
-        #expect(tree.roots[0].children[0].children[0].relativeFolder == "Doctor Who (1963)/Season 13/Pyramids of Mars")
+        #expect(tree.roots[0].sidecar.children == [Self.season.id: "01 - Season 13/container.smd"])
+        #expect(
+            tree.roots[0].children[0].children[0].relativeFolder
+                == "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars"
+        )
         let serial = try #require(tree.node(for: Self.serial.id))
         #expect(serial.sidecar.presentations == ["part1": [placement.presentation]])
         #expect(Validator.check(tree).isEmpty)
+    }
+
+    /// A serial with one part, as a child of whatever holds it.
+    static func story(_ id: String, _ title: String) -> Container {
+        var story = Container(id: ContainerID(id)!, type: .serial, title: Title(title)!)
+        story.sequences = [
+            Sequence(id: "parts", items: [.leaf(Entry.Leaf(id: ItemID("part1")!, type: .episode, title: "Part One"))])
+        ]
+        return story
+    }
+
+    /// A child's folder begins with its position among its parent's children, padded to two digits
+    /// or as many as the count needs; a root keeps its title alone.
+    @Test func childFoldersAreNumberedInTheirOrder() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        let stories = [
+            Self.story("0000000000000011", "Terror of the Zygons"),
+            Self.story("0000000000000012", "Planet of Evil"),
+            Self.story("0000000000000013", "Pyramids of Mars"),
+        ]
+        var season = Self.season
+        season.sequences = [
+            Sequence(
+                id: "stories",
+                items: stories.enumerated().map { index, story in
+                    .child(Entry.Child(id: ItemID("s\(index)")!, container: story.id))
+                }
+            )
+        ]
+        func place(_ lineage: [Container]) throws -> String {
+            let placement = try Placer.compute(
+                PlacementRequest(
+                    library: sandbox.library,
+                    lineage: lineage,
+                    item: "part1",
+                    presentation: Presentation(file: ""),
+                    source: try sandbox.source("\(UUID().uuidString).mkv")
+                )
+            )
+            try Placer.apply(placement)
+            return LibraryWalker.relativePath(
+                of: placement.destination.deletingLastPathComponent(),
+                in: sandbox.library
+            )
+        }
+        // Placed out of order, each is numbered by where its parent names it.
+        #expect(
+            try place([Self.series, season, stories[2]]) == "Doctor Who (1963)/01 - Season 13/03 - Pyramids of Mars"
+        )
+        #expect(
+            try place([Self.series, season, stories[0]]) == "Doctor Who (1963)/01 - Season 13/01 - Terror of the Zygons"
+        )
+        #expect(try place([Self.series, season, stories[1]]) == "Doctor Who (1963)/01 - Season 13/02 - Planet of Evil")
+        #expect(LibraryWalker.walk(sandbox.library).findings.isEmpty)
+
+        let episodes = (1...120).map { Self.story(String(format: "%016x", 0x100 + $0), "Episode \($0)") }
+        var long = Container(id: ContainerID("0000000000000099")!, type: .series, title: Title("Neighbours")!)
+        long.sequences = [
+            Sequence(
+                id: "episodes",
+                items: episodes.enumerated().map { index, episode in
+                    .child(Entry.Child(id: ItemID("e\(index)")!, container: episode.id))
+                }
+            )
+        ]
+        #expect(try place([long, episodes[0]]) == "Neighbours/001 - Episode 1")
+        #expect(try place([long, episodes[119]]) == "Neighbours/120 - Episode 120")
+        #expect(
+            LibraryLayout.Position(of: episodes[0].id, among: [episodes[0].id, episodes[0].id])
+                == .init(number: 1, count: 1)
+        )
+    }
+
+    /// A container already in the library is where its parent's sidecar records it: a folder renamed
+    /// by hand, or a title corrected in the library, is filed into rather than beside.
+    @Test func aPlacementFollowsThePathItsParentRecords() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        func compute(_ item: String, lineage: [Container] = Self.lineage, profile: String? = nil) throws -> Placement {
+            try Placer.compute(
+                PlacementRequest(
+                    library: sandbox.library,
+                    lineage: lineage,
+                    item: item,
+                    presentation: Presentation(profile: profile, file: ""),
+                    source: try sandbox.source("\(UUID().uuidString).mkv")
+                )
+            )
+        }
+        try Placer.apply(try compute("part1"))
+        let series = sandbox.library.appendingPathComponent("Doctor Who (1963)")
+        try FileManager.default.moveItem(
+            at: series.appendingPathComponent("01 - Season 13"),
+            to: series.appendingPathComponent("Season 13")
+        )
+        let seriesURL = series.appendingPathComponent("container.smd")
+        let existing = try Data(contentsOf: seriesURL)
+        var sidecar = try SidecarFile.sidecar(from: existing)
+        sidecar.children[Self.season.id] = "Season 13/container.smd"
+        try SidecarFile.data(for: sidecar, updating: existing).write(to: seriesURL)
+
+        let part2 = try compute("part2")
+        #expect(part2.folders.isEmpty, "no 01 - Season 13 is made")
+        #expect(
+            LibraryWalker.relativePath(of: part2.destination, in: sandbox.library)
+                == "Doctor Who (1963)/Season 13/01 - Pyramids of Mars/Part Two.mkv"
+        )
+        #expect(!part2.sidecars.contains { $0.url == seriesURL }, "the series' sidecar is not rewritten")
+        try Placer.apply(part2)
+
+        var retitled = Self.serial
+        retitled.title = Title("The Pyramids of Mars")!
+        let mobile = try compute("part1", lineage: [Self.series, Self.season, retitled], profile: "mobile")
+        #expect(mobile.folders.isEmpty)
+        #expect(
+            LibraryWalker.relativePath(of: mobile.destination, in: sandbox.library)
+                == "Doctor Who (1963)/Season 13/01 - Pyramids of Mars/Part One - mobile.mkv"
+        )
     }
 
     @Test func aSecondPlacementUpdatesOnlyWhatChanged() throws {
@@ -138,7 +260,7 @@ struct PlacementTests {
 
         // A person edits the serial's sidecar by hand; the next placement must leave the edit.
         let serialSidecar = sandbox.library.appendingPathComponent(
-            "Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd"
+            "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd"
         )
         var text = String(decoding: try Data(contentsOf: serialSidecar), as: UTF8.self)
         text = text.replacingOccurrences(
@@ -163,7 +285,7 @@ struct PlacementTests {
         #expect(mobile.folders.isEmpty)
         #expect(
             mobile.sidecars.map { LibraryWalker.relativePath(of: $0.url, in: sandbox.library) } == [
-                "Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd"
+                "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd"
             ],
             "the ancestors already know their children"
         )
@@ -313,11 +435,11 @@ struct PlacementTests {
         #expect(
             making.describe(relativeTo: sandbox.library) == [
                 "create   Doctor Who (1963)/",
-                "create   Doctor Who (1963)/Season 13/",
-                "create   Doctor Who (1963)/Season 13/Pyramids of Mars/",
+                "create   Doctor Who (1963)/01 - Season 13/",
+                "create   Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/",
                 "write    Doctor Who (1963)/container.smd",
-                "write    Doctor Who (1963)/Season 13/container.smd",
-                "write    Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd",
+                "write    Doctor Who (1963)/01 - Season 13/container.smd",
+                "write    Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd",
             ]
         )
         #expect(making.sidecars.map(\.parent) == [nil, Self.series.id, Self.season.id])
@@ -325,11 +447,11 @@ struct PlacementTests {
         let seriesURL = sandbox.library.appendingPathComponent("Doctor Who (1963)/container.smd")
         let made = try SidecarFile.sidecar(from: Data(contentsOf: seriesURL))
         #expect(made.container == Self.series)
-        #expect(made.children == [Self.season.id: "Season 13/container.smd"])
+        #expect(made.children == [Self.season.id: "01 - Season 13/container.smd"])
         let serial = try SidecarFile.sidecar(
             from: Data(
                 contentsOf: sandbox.library.appendingPathComponent(
-                    "Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd"
+                    "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd"
                 )
             )
         )
@@ -364,8 +486,8 @@ struct PlacementTests {
         )
         #expect(
             beneath.describe(relativeTo: sandbox.library) == [
-                "create   Doctor Who (1963)/Season 14/",
-                "write    Doctor Who (1963)/Season 14/container.smd",
+                "create   Doctor Who (1963)/02 - Season 14/",
+                "write    Doctor Who (1963)/02 - Season 14/container.smd",
                 "update   Doctor Who (1963)/container.smd",
             ]
         )
@@ -373,8 +495,8 @@ struct PlacementTests {
         try Maker.apply(beneath)
         let updated = try SidecarFile.sidecar(from: Data(contentsOf: seriesURL))
         #expect(updated.container == series)
-        #expect(updated.children[season14.id] == "Season 14/container.smd")
-        #expect(updated.children[Self.season.id] == "Season 13/container.smd")
+        #expect(updated.children[season14.id] == "02 - Season 14/container.smd")
+        #expect(updated.children[Self.season.id] == "01 - Season 13/container.smd")
 
         // A folder holding another container, and the same container already there, are refused and
         // make nothing; so is a holder that does not name the top.
@@ -428,7 +550,9 @@ struct PlacementTests {
             )
         )
 
-        let serialFolder = sandbox.library.appendingPathComponent("Doctor Who (1963)/Season 13/Pyramids of Mars")
+        let serialFolder = sandbox.library.appendingPathComponent(
+            "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars"
+        )
         try FileManager.default.removeItem(at: serialFolder.appendingPathComponent("Part One.mkv"))
         let orphan = sandbox.library.appendingPathComponent("Doctor Who (1963)/Draft")
         try FileManager.default.createDirectory(at: orphan, withIntermediateDirectories: true)
@@ -436,20 +560,20 @@ struct PlacementTests {
             for: Sidecar(container: Container(id: ContainerID.mint(), type: .serial, title: Title("Draft")!))
         ).write(to: orphan.appendingPathComponent("container.smd"))
         try FileManager.default.removeItem(
-            at: sandbox.library.appendingPathComponent("Doctor Who (1963)/Season 13/container.smd")
+            at: sandbox.library.appendingPathComponent("Doctor Who (1963)/01 - Season 13/container.smd")
         )
 
         let tree = LibraryWalker.walk(sandbox.library)
         #expect(
             tree.findings.map(\.description) == [
-                "error: Doctor Who (1963)/container.smd: child 0000000000000002 is at \"Season 13/container.smd\", which does not exist",
+                "error: Doctor Who (1963)/container.smd: child 0000000000000002 is at \"01 - Season 13/container.smd\", which does not exist",
+                "warning: Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd: a sidecar nothing references",
                 "warning: Doctor Who (1963)/Draft/container.smd: a sidecar nothing references",
-                "warning: Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd: a sidecar nothing references",
             ]
         )
         #expect(
             Validator.check(tree).map(\.description) == tree.findings.map(\.description) + [
-                "error: Doctor Who (1963)/container.smd: child 0000000000000002 at \"Season 13/container.smd\" is not there"
+                "error: Doctor Who (1963)/container.smd: child 0000000000000002 at \"01 - Season 13/container.smd\" is not there"
             ]
         )
 
@@ -491,7 +615,9 @@ struct PlacementTests {
                 )
             )
         )
-        let serialFolder = sandbox.library.appendingPathComponent("Doctor Who (1963)/Season 13/Pyramids of Mars")
+        let serialFolder = sandbox.library.appendingPathComponent(
+            "Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars"
+        )
         let sidecar = serialFolder.appendingPathComponent("container.smd")
         let rules = serialFolder.appendingPathComponent("rules")
         try FileManager.default.createDirectory(at: rules, withIntermediateDirectories: true)
@@ -507,7 +633,7 @@ struct PlacementTests {
         try point(at: 5)
         #expect(
             LibraryWalker.walk(sandbox.library).findings.map(\.description) == [
-                "error: Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd: rules version 5 is not there"
+                "error: Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd: rules version 5 is not there"
             ]
         )
 

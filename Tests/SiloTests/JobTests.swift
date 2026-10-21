@@ -224,7 +224,7 @@ struct JobServiceTests {
 
         let placed = try await service.place(encoded.id)
         #expect(placed.state == .placed)
-        #expect(placed.placement?.destination == "Doctor Who (1963)/Pyramids of Mars/Part Three.mkv")
+        #expect(placed.placement?.destination == "Doctor Who (1963)/01 - Pyramids of Mars/Part Three.mkv")
         #expect(placed.placement?.presentation != nil)
         #expect(!FileManager.default.fileExists(atPath: output.path), "moved into the library")
         let tree = LibraryWalker.walk(bench.library.root)
@@ -453,7 +453,7 @@ struct WorkerTests {
 
         let placed = try await bench.service.place(job.id)
         #expect(placed.state == .placed)
-        #expect(placed.placement?.destination == "Doctor Who (1963)/Pyramids of Mars/Part Three - mobile.mkv")
+        #expect(placed.placement?.destination == "Doctor Who (1963)/01 - Pyramids of Mars/Part Three - mobile.mkv")
         let probedInPlace = try await ffprobe.probe(
             bench.library.root.appendingPathComponent(placed.placement!.destination)
         )

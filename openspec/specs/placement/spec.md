@@ -35,7 +35,7 @@ destination, `write` a new sidecar, `update` an existing one.
 
 #### Scenario: the first placement declares the whole tree
 - **WHEN** part1 of Pyramids of Mars is computed into an empty library through the lineage Doctor Who (1963), Season 13, Pyramids of Mars, with `<track feature="commentary1" audio="3"/>` and chapter `1=Opening`
-- **THEN** the declared writes are `create   Doctor Who (1963)/`, `create   Doctor Who (1963)/Season 13/`, `create   Doctor Who (1963)/Season 13/Pyramids of Mars/`, `place    <source> -> Doctor Who (1963)/Season 13/Pyramids of Mars/Part One.mkv`, `write    Doctor Who (1963)/container.smd`, `write    Doctor Who (1963)/Season 13/container.smd` and `write    Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd`, and the recorded presentation's `file=` is `Part One.mkv`
+- **THEN** the declared writes are `create   Doctor Who (1963)/`, `create   Doctor Who (1963)/01 - Season 13/`, `create   Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/`, `place    <source> -> Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/Part One.mkv`, `write    Doctor Who (1963)/container.smd`, `write    Doctor Who (1963)/01 - Season 13/container.smd` and `write    Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd`, and the recorded presentation's `file=` is `Part One.mkv`
 
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`theFirstPlacementMakesTheTree`).
 
@@ -53,10 +53,13 @@ caller, not findings a client would read.
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`whatCannotBePlacedIsRefusedWithReasons`).
 
 ### Requirement: Folders and sidecars are made only as news
-A placement SHALL create each lineage folder that has no sidecar yet, and SHALL leave the rest. An
-ancestor's sidecar SHALL record the child's `<folder>/container.smd` path and SHALL be written only
-when that is news — an ancestor that already knows its child is not rewritten. A placement of an
-extra SHALL add the container's `extras/` folder when it is not there.
+A placement SHALL take, for each container of its lineage below the top, the folder its parent's
+sidecar records for it when the parent's sidecar is there and records one, and SHALL name a folder
+only for a container its parent does not record, as the layout names it. It SHALL create each lineage
+folder that has no sidecar yet, and SHALL leave the rest. An ancestor's sidecar SHALL record the
+child's `<folder>/container.smd` path and SHALL be written only when that is news — an ancestor that
+already knows its child is not rewritten. A placement of an extra SHALL add the container's
+`extras/` folder when it is not there.
 
 #### Scenario: the first placement makes the tree
 - **WHEN** the library is empty
@@ -64,10 +67,18 @@ extra SHALL add the container's `extras/` folder when it is not there.
 
 #### Scenario: a second placement updates only what changed
 - **WHEN** part1 is placed again as `Part One - mobile.mkv` with the tree already there
-- **THEN** the placement creates no folders, writes only `Doctor Who (1963)/Season 13/Pyramids of Mars/container.smd`, and placing the extra creates exactly one folder: `extras`
+- **THEN** the placement creates no folders, writes only `Doctor Who (1963)/01 - Season 13/01 - Pyramids of Mars/container.smd`, and placing the extra creates exactly one folder: `extras`
+
+#### Scenario: a placement into a folder renamed by hand
+- **WHEN** a series' sidecar records its season at `Season 13/container.smd`, and a part of a serial of that season is placed
+- **THEN** the placement files into `Doctor Who (1963)/Season 13/`, creates no `01 - Season 13` folder, and the series' sidecar is not rewritten
+
+#### Scenario: a placement after a title was corrected in the library
+- **WHEN** a series' sidecar records a serial at `01 - Pyramids of Mars/container.smd`, and a part is placed with a lineage whose serial is titled `The Pyramids of Mars`
+- **THEN** the placement files into `01 - Pyramids of Mars/` and creates no folder
 
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`theFirstPlacementMakesTheTree`,
-`aSecondPlacementUpdatesOnlyWhatChanged`).
+`aSecondPlacementUpdatesOnlyWhatChanged`, `aPlacementFollowsThePathItsParentRecords`).
 
 ### Requirement: Existing sidecars are updated, not regenerated
 When a lineage folder's `container.smd` already exists, the placement SHALL read it and write back
@@ -187,8 +198,8 @@ and SHALL move and copy nothing; the file stays where it was.
 - **WHEN** `POST /v1/libraries/main/place` names item `part2` of Pyramids of Mars with a track
   mapping `commentary1` to audio 2, a chapter titled `Opening`, and `dryRun: true`
 - **THEN** the answer is 200 with `applied` false and no `presentation`, `destination` is
-  `Doctor Who (1963)/Pyramids of Mars/Part Two.mkv`, the last of the `writes` is
-  `update   Doctor Who (1963)/Pyramids of Mars/container.smd`, and the named file still exists
+  `Doctor Who (1963)/01 - Pyramids of Mars/Part Two.mkv`, the last of the `writes` is
+  `update   Doctor Who (1963)/01 - Pyramids of Mars/container.smd`, and the named file still exists
   where it was
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAndRefusedTheSecondTime`).
