@@ -6,6 +6,7 @@ import AppKit
 import SwiftUI
 import SiloAdminKit
 import SiloClient
+import SmdSidecar
 
 /// The operator's console: a window over `AdminConsole`, and thin on purpose — the kit owns the
 /// registry, the passkeys and the flows; the shell renders what the engine handed back and asks
@@ -24,6 +25,7 @@ struct SiloAdminApp: App {
             containerDrafts: ContainerDraftStore(
                 file: folder.appending(path: "container-drafts.json", directoryHint: .notDirectory)
             ),
+            tmdbDrafts: TMDbDraftStore(file: folder.appending(path: "tmdb-drafts.json", directoryHint: .notDirectory)),
             passkeys: KeychainPasskeyStore()
         )
         _model = State(initialValue: ConsoleModel(console: console))
@@ -129,6 +131,12 @@ final class ConsoleModel {
     var newContainer: NewContainer?
     /// A container being proposed to smddb, when one is.
     var proposing: Proposing?
+    /// TMDb's token keeper and language, why it cannot be asked, a record found there, a draft shaped.
+    let tokens: any PasskeyStore = ConsoleModel.keychain()
+    var tmdbLanguage: String
+    var tmdbProblem: String?
+    var findingInTMDb: FindingInTMDb?
+    var shapingTree: ShapingTree?
     /// The trial jobs this console started for a silo, by its id, as the silo last had them.
     private(set) var trialJobs: [AdminConsole.Silo.ID: [AdminConsole.TrialJob]] = [:]
     /// What starting trials could not do, binding by binding, in the silo's words.
@@ -142,6 +150,7 @@ final class ConsoleModel {
         self.console = console
         self.checkDelay = checkDelay
         smddbFolder = UserDefaults.standard.url(forKey: Self.smddbFolderKey)
+        tmdbLanguage = UserDefaults.standard.string(forKey: Self.tmdbLanguageKey) ?? Self.macLanguage
     }
 
     /// Browses, resolves every added address, and republishes the rows. An added address that
@@ -792,7 +801,18 @@ extension ConsoleModel {
             let index = containerDrafts[silo.id]?.firstIndex(where: { $0.id == draft.id })
         else { return }
         draft.text = text
+        if let value = draft.value { draft.attributions = ContainerDraft.pruned(draft.attributions, for: value) }
         draft.edited = .now
+        containerDrafts[silo.id]?[index] = draft
+        scheduleContainerCheck(of: draft.id, for: silo, after: checkDelay)
+    }
+
+    /// Removes an attribution alone from the open draft, saved and checked as a keystroke is.
+    func removeAttribution(of subject: Attribution.Subject, for silo: AdminConsole.Silo) {
+        guard var draft = containerDraft(of: silo),
+            let index = containerDrafts[silo.id]?.firstIndex(where: { $0.id == draft.id })
+        else { return }
+        draft.removeAttribution(of: subject)
         containerDrafts[silo.id]?[index] = draft
         scheduleContainerCheck(of: draft.id, for: silo, after: checkDelay)
     }

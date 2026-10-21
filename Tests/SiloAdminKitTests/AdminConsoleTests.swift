@@ -1836,6 +1836,8 @@ extension AdminConsoleTests {
     /// The sidecars a fake library holds, by container id, as a silo would keep them.
     private final class HeldLibrary: Sendable {
         let sidecars: Mutex<[String: Data]>
+        /// The library each container is in, `tv` unless filed elsewhere.
+        let libraries: Mutex<[String: String]>
         init(_ containers: [Container] = []) {
             sidecars = Mutex(
                 Dictionary(
@@ -1844,9 +1846,19 @@ extension AdminConsoleTests {
                     }
                 )
             )
+            libraries = Mutex([:])
         }
         func container(_ id: ContainerID) -> Container? {
             sidecars.withLock { $0[id.value] }.flatMap { try? SidecarFile.sidecar(from: $0).container }
+        }
+        func sidecar(_ id: ContainerID) -> Sidecar? {
+            sidecars.withLock { $0[id.value] }.flatMap { try? SidecarFile.sidecar(from: $0) }
+        }
+        func library(of id: String) -> String { libraries.withLock { $0[id] } ?? "tv" }
+        /// Files a sidecar in a library other than `tv`.
+        func file(_ sidecar: Sidecar, in library: String) {
+            sidecars.withLock { $0[sidecar.container.id.value] = try! SidecarFile.data(for: sidecar) }
+            libraries.withLock { $0[sidecar.container.id.value] = library }
         }
     }
 
@@ -1863,16 +1875,47 @@ extension AdminConsoleTests {
             guard let url = request.url else { return nil }
             let method = request.httpMethod ?? "GET"
             let body = Self.body(of: request) ?? Data()
-            let prefix = "/v1/libraries/tv/containers"
+            let parts = url.path.split(separator: "/").map(String.init)
+            let library = parts.count > 3 && parts[1] == "libraries" ? parts[2] : "tv"
+            let prefix = "/v1/libraries/\(library)/containers"
             func finding(_ text: String) -> String { #"{"severity":"error","text":"\#(text)"}"# }
+            func summary(_ container: Container) -> String {
+                #"{"id":"\#(container.id)","library":"\#(held.library(of: container.id.value))","type":"\#(container.type.rawValue)","title":"\#(container.title.rawValue)","displayTitle":"\#(container.displayTitle)","listed":\#(container.listed)}"#
+            }
+            func json<Value: Encodable>(_ value: Value) -> String {
+                String(decoding: try! JSONEncoder().encode(value), as: UTF8.self)
+            }
             switch (method, url.path) {
+            case ("GET", "/v1/lookup"):
+                let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                let ref = ExternalRef(
+                    provider: Provider(rawValue: query.first { $0.name == "provider" }?.value ?? ""),
+                    value: query.first { $0.name == "value" }?.value ?? ""
+                )
+                let carrying = held.sidecars.withLock { $0.values }.compactMap {
+                    try? SidecarFile.sidecar(from: $0).container
+                }
+                .filter { container in
+                    container.externalRefs.contains(ref)
+                        || (container.sequences.flatMap(\.items) + container.extras).contains {
+                            $0.externalRefs.contains(ref)
+                        }
+                }
+                return (200, Data("[\(carrying.map(summary).joined(separator: ","))]".utf8))
             case (_, "/v1/server"): return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
             case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
             case ("POST", prefix):
                 struct Create: Decodable {
+                    struct Attributed: Decodable {
+                        var container: String
+                        var subject: String
+                        var provider: String
+                        var value: String
+                    }
                     var documents: [String]
                     var parent: String?
                     var dryRun: Bool?
+                    var attributions: [Attributed]?
                 }
                 let create = try JSONDecoder().decode(Create.self, from: body)
                 let containers = try create.documents.map { try ContainerFile.container(from: Data($0.utf8)) }
@@ -1900,17 +1943,23 @@ extension AdminConsoleTests {
                 }
                 guard findings.isEmpty else { return (422, result(false)) }
                 guard create.dryRun != true else { return (200, result(false)) }
-                held.sidecars.withLock { sidecars in
-                    for container in containers {
-                        sidecars[container.id.value] = try! SidecarFile.data(for: Sidecar(container: container))
+                for container in containers {
+                    let attributions = (create.attributions ?? []).filter { $0.container == container.id.value }.map {
+                        Attribution(
+                            subject: Attribution.Subject(rawValue: $0.subject),
+                            provider: Provider(rawValue: $0.provider),
+                            value: $0.value
+                        )
                     }
+                    held.file(Sidecar(container: container, attributions: attributions), in: library)
                 }
                 return (200, result(true))
             case (let method, let path) where path.hasPrefix(prefix + "/"):
                 let rest = path.dropFirst(prefix.count + 1).split(separator: "/").map(String.init)
-                guard let bytes = held.sidecars.withLock({ $0[rest[0]] }),
-                    let container = try? SidecarFile.sidecar(from: bytes).container
+                guard let bytes = held.sidecars.withLock({ $0[rest[0]] }), held.library(of: rest[0]) == library,
+                    let sidecar = try? SidecarFile.sidecar(from: bytes)
                 else { return (404, Data()) }
+                let container = sidecar.container
                 let digest = Self.digest(bytes)
                 if rest.count == 2, rest[1] == "smd" { return (200, bytes) }
                 if method == "PUT" {
@@ -1918,6 +1967,8 @@ extension AdminConsoleTests {
                         var document: String
                         var basedOn: String
                         var dryRun: Bool?
+                        var attributions: [SiloClient.Container.Attribution]?
+                        var declined: [SiloClient.Container.ExternalRef]?
                     }
                     let edit = try JSONDecoder().decode(Edit.self, from: body)
                     guard edit.basedOn == digest else { return (409, Data(#"{"detail":"moved"}"#.utf8)) }
@@ -1931,7 +1982,27 @@ extension AdminConsoleTests {
                             )
                         )
                     }
-                    let written = try SidecarFile.data(settingContainer: value, in: bytes)
+                    var written = try SidecarFile.data(settingContainer: value, in: bytes)
+                    if let attributions = edit.attributions {
+                        written = try SidecarFile.data(
+                            settingAttributions: attributions.map {
+                                Attribution(
+                                    subject: Attribution.Subject(rawValue: $0.subject),
+                                    provider: Provider(rawValue: $0.provider),
+                                    value: $0.value
+                                )
+                            } + sidecar.attributions.filter { $0.subject.artworkKind != nil },
+                            in: written
+                        )
+                    }
+                    if let declined = edit.declined {
+                        written = try SidecarFile.data(
+                            settingDeclined: declined.map {
+                                ExternalRef(provider: Provider(rawValue: $0.provider), value: $0.value)
+                            },
+                            in: written
+                        )
+                    }
                     if edit.dryRun != true { held.sidecars.withLock { $0[rest[0]] = written } }
                     return (
                         200,
@@ -1941,18 +2012,32 @@ extension AdminConsoleTests {
                         )
                     )
                 }
+                let attributions = json(sidecar.attributions.map(AdminConsoleTests.wire))
+                let declined = json(
+                    sidecar.declined.map {
+                        SiloClient.Container.ExternalRef(provider: $0.provider.rawValue, value: $0.value)
+                    }
+                )
                 let json =
-                    #"{"id":"\#(container.id)","library":"tv","type":"series","title":"\#(container.title.rawValue)","displayTitle":"\#(container.displayTitle)","listed":true,"alternatives":[],"features":[],"sequences":[],"extras":[],"children":[],"externalRefs":[]}"#
+                    #"{"id":"\#(container.id)","library":"\#(library)","type":"\#(container.type.rawValue)","title":"\#(container.title.rawValue)","displayTitle":"\#(container.displayTitle)","listed":true,"alternatives":[],"features":[],"sequences":[],"extras":[],"children":[],"externalRefs":[],"attributions":\#(attributions)}"#
                 return (
                     200,
                     Data(
-                        #"{"library":"tv","path":"\#(container.id)/container.smd","digest":"\#(digest)","artwork":[],"container":\#(json)}"#
+                        #"{"library":"\#(library)","path":"\#(container.id)/container.smd","digest":"\#(digest)","artwork":[],"container":\#(json),"declined":\#(declined)}"#
                             .utf8
                     )
                 )
             default: return (404, Data())
             }
         }
+    }
+
+    fileprivate static func wire(_ attribution: Attribution) -> SiloClient.Container.Attribution {
+        SiloClient.Container.Attribution(
+            subject: attribution.subject.rawValue,
+            provider: attribution.provider.rawValue,
+            value: attribution.value
+        )
     }
 
     private static func clone() -> (LocalRepository, URL) {
@@ -2339,5 +2424,1004 @@ extension AdminConsoleTests {
             AdminConsole.naming(Self.season12, in: series, at: ContainerDraft.Creating()) == series,
             "naming a child already named changes nothing"
         )
+    }
+}
+
+// MARK: - TMDb
+
+extension AdminConsoleTests {
+    /// TMDb's answers as the tests give them: each record by its number, nothing else.
+    private struct FakeTMDb: TMDbSource {
+        var movies: [Int: TMDb.Movie] = [:]
+        var series: [Int: TMDb.Series] = [:]
+        /// By `series/number`.
+        var seasons: [String: TMDb.Season] = [:]
+        var collections: [Int: TMDb.Collection] = [:]
+        var groups: [String: TMDb.EpisodeGroup] = [:]
+        /// By episode id.
+        var episodeIDs: [Int: TMDb.ExternalIDs] = [:]
+        /// By `provider:value`.
+        var found: [String: TMDb.Found] = [:]
+        var refusesToken = false
+        /// Fails as no answer of TMDb's says, as a dropped connection does.
+        var unreachable = false
+
+        struct Missing: Error {}
+
+        func authenticate() async throws {
+            if refusesToken { throw TMDb.Unavailable.refused }
+            if unreachable { throw Missing() }
+        }
+        func search(_ query: String) async throws -> [TMDb.SearchResult] { [] }
+        func movie(_ id: Int) async throws -> TMDb.Movie { try movies[id] ?? { throw Missing() }() }
+        func series(_ id: Int) async throws -> TMDb.Series { try series[id] ?? { throw Missing() }() }
+        func season(_ number: Int, of series: Int) async throws -> TMDb.Season {
+            try seasons["\(series)/\(number)"] ?? { throw Missing() }()
+        }
+        func episodeGroup(_ id: String) async throws -> TMDb.EpisodeGroup { try groups[id] ?? { throw Missing() }() }
+        func collection(_ id: Int) async throws -> TMDb.Collection { try collections[id] ?? { throw Missing() }() }
+        func externalIDs(of episode: TMDb.Episode, in series: Int) async throws -> TMDb.ExternalIDs {
+            episodeIDs[episode.id] ?? .init()
+        }
+        func find(_ ref: ExternalRef) async throws -> TMDb.Found { found["\(ref.provider):\(ref.value)"] ?? .init() }
+    }
+
+    private static let alienRecord = TMDb.Movie(
+        id: 348,
+        title: "Alien",
+        year: 1979,
+        overview: "In space no one can hear you scream.",
+        externalIDs: TMDb.ExternalIDs(imdb: "tt0078748", wikidata: "Q103569")
+    )
+
+    private static func episode(
+        _ id: Int,
+        _ season: Int,
+        _ number: Int,
+        _ title: String,
+        aired: String? = nil,
+        runtime: Int? = nil
+    )
+        -> TMDb.Episode
+    {
+        TMDb.Episode(id: id, season: season, number: number, title: title, airDate: aired, runtime: runtime)
+    }
+
+    /// The token is asked of TMDb: none given, or one TMDb refuses, leaves its actions unavailable, and
+    /// says which.
+    @Test func tmdbIsUnavailableWithoutAToken() async throws {
+        #expect(await AdminConsole.tmdbStanding(token: nil) { _ in FakeTMDb() } == .noToken)
+        #expect(await AdminConsole.tmdbStanding(token: "") { _ in FakeTMDb() } == .noToken)
+        #expect(TMDb.Unavailable.noToken.reason == "No TMDb token is given in this Mac's settings.")
+        #expect(await AdminConsole.tmdbStanding(token: "stale") { _ in FakeTMDb(refusesToken: true) } == .refused)
+        #expect(TMDb.Unavailable.refused.reason == "TMDb refused the token in this Mac's settings.")
+        #expect(await AdminConsole.tmdbStanding(token: "good") { _ in FakeTMDb() } == nil)
+        #expect(await AdminConsole.tmdbStanding(token: "good") { _ in FakeTMDb(unreachable: true) } == .answered(0))
+    }
+
+    /// A film, a season beneath a series the library holds, and a season regrouped into serials, each
+    /// drafted from TMDb's record with facts taken plainly and the outline attributed, kept on this Mac,
+    /// and made through the create route.
+    @Test func aContainerIsDraftedFromTMDb() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var doctorWho = Self.series(naming: [Self.season13])
+        doctorWho.externalRefs.append(ExternalRef(provider: .tmdb, value: "121"))
+        let held = HeldLibrary([doctorWho, Self.season13])
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb(movies: [348: Self.alienRecord])
+        let parts = [
+            Self.episode(1001, 14, 1, "The Robots of Death: Part One"),
+            Self.episode(1002, 14, 2, "The Robots of Death: Part Two"),
+            Self.episode(1003, 14, 3, "The Talons of Weng-Chiang: Part One"),
+        ]
+        tmdb.seasons["121/14"] = TMDb.Season(id: 3644, number: 14, name: "Season 14", year: 1976, episodes: parts)
+
+        guard
+            case .draft(let film) = try await console.startDraft(
+                of: TMDb.Record(.movie, 348),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("a film neither smddb nor the library holds is drafted")
+            return
+        }
+        let alien = try #require(film.container(film.top))
+        #expect(alien.type == .movie && alien.title == Title("Alien")! && alien.year == 1979)
+        #expect(
+            alien.externalRefs == [
+                ExternalRef(provider: .tmdb, value: "348"), ExternalRef(provider: .imdb, value: "tt0078748"),
+                ExternalRef(provider: .wikidata, value: "Q103569"),
+            ]
+        )
+        #expect(alien.outline == "In space no one can hear you scream.")
+        let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "348")]
+        #expect(film.attributions[film.top] == attributed)
+        #expect(try await database.container(alien.id) == nil, "an id the clone has no file for")
+        #expect(console.tmdbDrafts.drafts(of: home.id).map(\.id) == [film.id], "kept on this Mac")
+        guard case .created = try await console.create(film, of: home) else {
+            Issue.record("the film is made")
+            return
+        }
+        #expect(held.sidecar(alien.id)?.attributions == attributed, "made with its outline's attribution")
+        #expect(console.tmdbDrafts.drafts(of: home.id).isEmpty, "made, the draft ends")
+
+        // A season of a series the library holds, filed beneath it.
+        let season = try await console.startDraft(
+            ofSeason: 14,
+            of: 121,
+            beneath: doctorWho.id.value,
+            into: "tv",
+            of: home,
+            from: database,
+            tmdb: tmdb
+        )
+        let fourteen = try #require(season.container(season.top))
+        let entries = fourteen.sequences.flatMap(\.items)
+        #expect(entries.map(\.externalRefs) == parts.map { [$0.ref] })
+        #expect(entries.allSatisfy { $0.title == nil }, "TMDb has a title for each, so none is stored")
+        #expect(season.episodeTitles["1001"] == "The Robots of Death: Part One", "but each is shown")
+        guard case .wouldWrite = try await console.check(season, of: home) else {
+            Issue.record("the parent's edit naming the season would be written")
+            return
+        }
+        guard case .created = try await console.create(season, of: home) else {
+            Issue.record("the season is made beneath the series")
+            return
+        }
+        #expect(held.container(doctorWho.id)?.childContainerIDs.contains(fourteen.id) == true)
+        #expect(held.container(fourteen.id)?.sequences.flatMap(\.items).count == 3)
+
+        // The same season regrouped into two serials before it is made.
+        held.sidecars.withLock { $0[fourteen.id.value] = nil }
+        var regrouped = try await console.startDraft(
+            ofSeason: 14,
+            of: 121,
+            beneath: doctorWho.id.value,
+            into: "tv",
+            of: home,
+            from: database,
+            tmdb: tmdb
+        )
+        let items = try #require(regrouped.container(regrouped.top)).sequences[0].items.compactMap(\.id)
+        let robots = try await database.provisionalID()
+        let talons = try await database.provisionalID()
+        regrouped.regroup(
+            Array(items[0...1]),
+            in: regrouped.top,
+            into: robots,
+            type: .serial,
+            typeLabel: "Story",
+            title: Title("The Robots of Death")!
+        )
+        regrouped.regroup(
+            [items[2]],
+            in: regrouped.top,
+            into: talons,
+            type: .serial,
+            title: Title("The Talons of Weng-Chiang")!
+        )
+        guard case .created = try await console.create(regrouped, of: home) else {
+            Issue.record("the regrouped season is made")
+            return
+        }
+        #expect(held.container(ContainerID(regrouped.top)!)?.childContainerIDs == [robots, talons])
+        #expect(
+            held.container(robots)?.sequences.flatMap(\.items).map(\.externalRefs) == [[parts[0].ref], [parts[1].ref]],
+            "in TMDb's order"
+        )
+
+        // A series the library holds by its reference is not drafted.
+        tmdb.series[121] = TMDb.Series(id: 121, name: "Doctor Who", seasons: [])
+        guard
+            case .held(let summary) = try await console.startDraft(
+                of: TMDb.Record(.series, 121),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the series the library holds is said to be held")
+            return
+        }
+        #expect(summary.id == doctorWho.id.value)
+    }
+
+    /// A record smddb holds, by its reference on a container of the record's kind, is imported from
+    /// smddb; the same number on a film is another record, and does not stop a series being drafted.
+    @Test func aRecordSmddbHoldsIsImportedRatherThanDrafted() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (console, home) = try await Self.smddbConsole(HeldLibrary())
+        let tmdb = FakeTMDb(series: [121: TMDb.Series(id: 121, name: "Doctor Who", year: 1963, seasons: [])])
+        let film = Container(
+            type: .movie,
+            title: Title("The Two Towers")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        try await database.save(film)
+        guard
+            case .draft = try await console.startDraft(
+                of: TMDb.Record(.series, 121),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("a film carrying the same number does not hold the series")
+            return
+        }
+
+        var series = Self.series(naming: [])
+        series.externalRefs.append(ExternalRef(provider: .tmdb, value: "121"))
+        try await database.save(series)
+        #expect(
+            try await console.startDraft(
+                of: TMDb.Record(.series, 121),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+                == .importFromSmddb(series)
+        )
+    }
+
+    /// A series' season 0 is its specials, unassigned: placed by where they aired, into a breakout, or
+    /// declined, with what each suggestion says; one left unassigned is not made.
+    @Test func aSeriesSpecialsArePlacedFromThePool() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let held = HeldLibrary()
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb()
+        tmdb.series[900] = TMDb.Series(
+            id: 900,
+            name: "Doctor Who",
+            year: 2005,
+            seasons: [.init(id: 50, number: 0, name: "Specials"), .init(id: 51, number: 1, name: "Series 1")]
+        )
+        let first = Self.episode(2001, 1, 1, "Rose", aired: "2005-03-26")
+        let second = Self.episode(2002, 1, 2, "The End of the World", aired: "2005-04-09")
+        tmdb.seasons["900/1"] = TMDb.Season(id: 51, number: 1, name: "Series 1", year: 2005, episodes: [first, second])
+        let christmas = Self.episode(3001, 0, 1, "Children in Need", aired: "2005-04-02", runtime: 7)
+        let sofaOne = Self.episode(3002, 0, 2, "Behind the Sofa: Rose", runtime: 40)
+        let unplaced = Self.episode(3003, 0, 3, "A Night Out", runtime: 40)
+        let sofaTwo = Self.episode(3004, 0, 4, "Behind the Sofa: The End of the World", runtime: 40)
+        let trailer = Self.episode(3005, 0, 5, "Series 1 Trailer", runtime: 2)
+        tmdb.seasons["900/0"] = TMDb.Season(
+            id: 50,
+            number: 0,
+            name: "Specials",
+            episodes: [christmas, sofaOne, unplaced, sofaTwo, trailer]
+        )
+
+        guard
+            case .draft(var tree) = try await console.startDraft(
+                of: TMDb.Record(.series, 900),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the series is drafted")
+            return
+        }
+        #expect(tree.containers.map(\.type) == [.series, .season], "season 0 is not a season")
+        #expect(tree.specials.map(\.id) == [3001, 3002, 3003, 3004, 3005])
+        #expect(tree.unassigned.count == 5)
+        let season = try #require(tree.containers.last).id.value
+
+        var (suggested, suggestions) = try await console.suggest(for: tree, of: home, from: database, tmdb: tmdb)
+        tree = suggested
+        #expect(suggestions[3001]?.placement == .entry(in: season, sequence: "episodes", position: 1))
+        #expect(suggestions[3001]?.reason == "it aired between Rose and The End of the World")
+        #expect(
+            suggestions[3005]
+                == AdminConsole.SpecialSuggestion(placement: .declined, reason: "its title says it is a trailer")
+        )
+        #expect(suggestions[3002] == nil && suggestions[3003] == nil)
+
+        tree.place(3001, suggestions[3001]?.placement)
+        var sofa = Container(
+            id: try await database.provisionalID(),
+            type: .series,
+            title: Title("Behind the Sofa")!,
+            listed: false
+        )
+        sofa.sequences = [Sequence(id: "episodes", items: [])]
+        tree.place(3002, .breakout(sofa.id.value, from: season, asExtra: true), breakout: sofa)
+        tree.place(3004, .breakout(sofa.id.value, from: season, asExtra: true))
+        tree.place(3005, .declined)
+        (suggested, suggestions) = try await console.suggest(for: tree, of: home, from: database, tmdb: tmdb)
+        tree = suggested
+        #expect(suggestions[3003]?.placement == .breakout(sofa.id.value, from: season, asExtra: true))
+        #expect(suggestions[3003]?.reason == "the specials either side of it are in Behind the Sofa")
+        #expect(tree.making.described.first == "make Behind the Sofa, a series of its own, at the top of the library")
+
+        guard case .created = try await console.create(tree, of: home) else {
+            Issue.record("the series is made with its placed specials")
+            return
+        }
+        let madeSofa = try #require(held.container(sofa.id))
+        #expect(!madeSofa.listed)
+        #expect(madeSofa.sequences.flatMap(\.items).map(\.externalRefs) == [[sofaOne.ref], [sofaTwo.ref]])
+        let madeSeason = try #require(held.container(ContainerID(season)!))
+        #expect(
+            madeSeason.sequences.flatMap(\.items).map(\.externalRefs) == [[first.ref], [christmas.ref], [second.ref]]
+        )
+        #expect(madeSeason.extras.compactMap(\.reference).map(\.container) == [sofa.id, sofa.id])
+        let series = try #require(held.sidecar(ContainerID(tree.top)!))
+        #expect(series.declined == [trailer.ref])
+        let everything = held.sidecars.withLock { Array($0.values) }.map { String(decoding: $0, as: UTF8.self) }
+        #expect(!everything.contains { $0.contains(#"value="3003""#) }, "the unassigned special is not made")
+    }
+
+    /// A special whose IMDb id is a TMDb movie's, which another library holds, is suggested as the
+    /// movie's duplicate; taken, the film's item carries the special's id and the series refers to it.
+    @Test func aSpecialIsSuggestedAsAMoviesDuplicate() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let held = HeldLibrary()
+        var day = Container(
+            id: ContainerID("0000000000000081")!,
+            type: .movie,
+            title: Title("The Day of the Doctor")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "1000")]
+        )
+        day.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie))])]
+        held.file(Sidecar(container: day), in: "films")
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb()
+        tmdb.series[901] = TMDb.Series(
+            id: 901,
+            name: "Doctor Who",
+            seasons: [.init(id: 60, number: 0, name: "Specials")]
+        )
+        let special = Self.episode(5000, 0, 1, "The Day of the Doctor", aired: "2013-11-23", runtime: 77)
+        tmdb.seasons["901/0"] = TMDb.Season(id: 60, number: 0, name: "Specials", episodes: [special])
+        tmdb.episodeIDs[5000] = TMDb.ExternalIDs(imdb: "tt2779318")
+        tmdb.found["imdb:tt2779318"] = TMDb.Found(movies: [TMDb.Movie(id: 1000, title: "The Day of the Doctor")])
+
+        guard
+            case .draft(let drafted) = try await console.startDraft(
+                of: TMDb.Record(.series, 901),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the series is drafted")
+            return
+        }
+        var (tree, suggestions) = try await console.suggest(for: drafted, of: home, from: database, tmdb: tmdb)
+        let suggestion = try #require(suggestions[5000])
+        #expect(
+            suggestion.placement
+                == .duplicate(home: day.id.value, item: "feature", library: "films", from: tree.top, asExtra: false)
+        )
+        #expect(suggestion.reason == "its IMDb id is The Day of the Doctor's, TMDb's movie 1000, which films holds")
+        #expect(tree.specials[0].refs.contains(ExternalRef(provider: .imdb, value: "tt2779318")), "asked of TMDb")
+        tree.place(5000, suggestion.placement)
+        #expect(tree.making.described.last == "add TMDb's id to feature of \(day.id) in films")
+        guard case .created = try await console.create(tree, of: home) else {
+            Issue.record("the series is made")
+            return
+        }
+        let film = try #require(held.container(day.id))
+        #expect(film.sequences[0].items[0].externalRefs.contains(special.ref), "the home carries both ids")
+        let series = try #require(held.container(ContainerID(tree.top)!))
+        #expect(
+            series.sequences.flatMap(\.items).compactMap(\.reference) == [
+                EntryRef(container: day.id, item: ItemID("feature")!)
+            ]
+        )
+    }
+
+    /// An attributed outline keeps its attribution through a rewording, loses it with the outline, and
+    /// loses it alone when the operator says the text is their own; smddb's record taken in is smddb's.
+    @Test func anAttributedOutlineIsKeptThroughAnEdit() async throws {
+        let outlined = Container(
+            id: ContainerID("0000000000000091")!,
+            type: .movie,
+            title: Title("Alien")!,
+            outline: "In space no one can hear you scream."
+        )
+        let attribution = Attribution(subject: .outline, provider: .tmdb, value: "348")
+        let held = HeldLibrary()
+        held.file(Sidecar(container: outlined, attributions: [attribution]), in: "tv")
+        let (console, home) = try await Self.smddbConsole(held)
+
+        let opened = try await console.open(container: outlined.id.value, in: "tv", of: home)
+        var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
+        #expect(draft.attributions == [attribution] && !draft.isChanged)
+        var reworded = outlined
+        reworded.outline = "No one can hear you scream in space."
+        draft.set(reworded)
+        #expect(draft.attributions == [attribution], "a rewording is still derived from it")
+        guard case .stored = try await console.store(draft, of: home) else {
+            Issue.record("the rewording is stored")
+            return
+        }
+        #expect(held.sidecar(outlined.id)?.container.outline == reworded.outline)
+        #expect(held.sidecar(outlined.id)?.attributions == [attribution])
+
+        let again = try await console.open(container: outlined.id.value, in: "tv", of: home)
+        var own = try ContainerDraft.change(again.container, sidecar: again.sidecar)
+        own.removeAttribution(of: .outline)
+        #expect(own.isChanged, "an attribution removed is a change")
+        guard case .stored = try await console.store(own, of: home) else {
+            Issue.record("the attribution's removal is stored")
+            return
+        }
+        #expect(held.sidecar(outlined.id)?.attributions.isEmpty == true)
+        #expect(held.sidecar(outlined.id)?.container.outline == reworded.outline)
+
+        var gone = draft
+        var bare = reworded
+        bare.outline = nil
+        gone.set(bare)
+        #expect(gone.attributions.isEmpty, "the outline gone takes its attribution")
+        var fromSmddb = draft
+        var record = reworded
+        record.outline = "smddb's own words"
+        fromSmddb.take(record)
+        #expect(fromSmddb.attributions.isEmpty, "smddb's text is not TMDb's")
+        var sameText = draft
+        sameText.take(reworded)
+        #expect(sameText.attributions == [attribution])
+    }
+
+    /// A contribution takes smddb's value, or none, for each field the library attributes, and says which.
+    @Test func anAttributedFieldIsLeftOutOfAContribution() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let attribution = Attribution(subject: .outline, provider: .tmdb, value: "348")
+        let alien = Container(
+            id: ContainerID("0000000000000092")!,
+            type: .movie,
+            title: Title("Alien")!,
+            outline: "In space no one can hear you scream."
+        )
+        let held = HeldLibrary()
+        held.file(Sidecar(container: alien, attributions: [attribution]), in: "tv")
+        let (console, home) = try await Self.smddbConsole(held)
+
+        let plan = try await console.planExport(alien.id.value, in: "tv", of: home, to: database)
+        #expect(plan.leftOut == [alien.id: [attribution]])
+        #expect(plan.container.outline == nil)
+        _ = try await console.export(plan, choosing: [], to: database)
+        #expect(try await database.container(alien.id)?.outline == nil, "the clone's file has no outline")
+
+        var record = alien
+        record.outline = "smddb's own words"
+        try await database.save(record)
+        let over = try await console.planExport(alien.id.value, in: "tv", of: home, to: database)
+        #expect(over.container.outline == "smddb's own words")
+        #expect(
+            !over.difference.contains { $0.kind != .same && $0.text.contains("outline") },
+            "no change to the outline"
+        )
+    }
+
+    /// A collection is drafted with a container for each of its films; a film in a collection the
+    /// library holds is filed beneath it.
+    @Test func aCollectionIsDraftedAndAFilmFiledBeneathTheOneHeld() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let alienCollection = Container(
+            id: ContainerID("00000000000000a1")!,
+            type: .collection,
+            title: Title("Alien Collection")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "8091")]
+        )
+        let held = HeldLibrary([alienCollection])
+        let (console, home) = try await Self.smddbConsole(held)
+        var alien = Self.alienRecord
+        alien.collection = 8091
+        var tmdb = FakeTMDb(movies: [348: alien, 679: TMDb.Movie(id: 679, title: "Aliens", year: 1986)])
+        tmdb.collections[9000] = TMDb.Collection(
+            id: 9000,
+            name: "Quadrilogy",
+            overview: "Ripley, four times.",
+            parts: [TMDb.Movie(id: 348, title: "Alien"), TMDb.Movie(id: 679, title: "Aliens")]
+        )
+
+        guard
+            case .draft(let quadrilogy) = try await console.startDraft(
+                of: TMDb.Record(.collection, 9000),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("a collection no library holds is drafted")
+            return
+        }
+        #expect(quadrilogy.containers.map(\.type) == [.collection, .movie, .movie])
+        let top = try #require(quadrilogy.container(quadrilogy.top))
+        #expect(top.childContainerIDs == quadrilogy.containers.dropFirst().map(\.id), "each film in its order")
+        #expect(
+            quadrilogy.attributions[quadrilogy.top] == [Attribution(subject: .outline, provider: .tmdb, value: "9000")]
+        )
+        #expect(quadrilogy.making.described == ["make Quadrilogy and the 2 beneath it"])
+
+        guard
+            case .draft(let film) = try await console.startDraft(
+                of: TMDb.Record(.movie, 348),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the film is drafted")
+            return
+        }
+        #expect(film.creating.parent == alienCollection.id.value, "beneath the collection the library holds")
+        guard case .created = try await console.create(film, of: home) else {
+            Issue.record("the film is made beneath the collection")
+            return
+        }
+        #expect(held.container(alienCollection.id)?.childContainerIDs == [ContainerID(film.top)!])
+    }
+
+    /// A series read through one of its episode groups is a child of the type given for each group, its
+    /// episodes in the group's order and the specials the group places out of the pool. Read by its
+    /// seasons, a special takes the place the series' first episode group gives it, or, short and named
+    /// for what it is, is an extra of that type.
+    @Test func aSeriesIsReadThroughAnEpisodeGroup() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (console, home) = try await Self.smddbConsole(HeldLibrary())
+        var tmdb = FakeTMDb()
+        tmdb.series[902] = TMDb.Series(
+            id: 902,
+            name: "Torchwood",
+            seasons: [.init(id: 70, number: 0, name: "Specials"), .init(id: 71, number: 1, name: "Series 1")],
+            episodeGroups: [.init(id: "g1", name: "Story arcs")]
+        )
+        let first = Self.episode(4101, 1, 1, "Everything Changes")
+        let second = Self.episode(4102, 1, 2, "Day One")
+        let third = Self.episode(4103, 1, 3, "Ghost Machine")
+        let interlude = Self.episode(4001, 0, 1, "Interlude", runtime: 45)
+        let makingOf = Self.episode(4002, 0, 2, "The Making of Torchwood", runtime: 12)
+        tmdb.seasons["902/1"] = TMDb.Season(id: 71, number: 1, name: "Series 1", episodes: [first, second, third])
+        tmdb.seasons["902/0"] = TMDb.Season(id: 70, number: 0, name: "Specials", episodes: [interlude, makingOf])
+        tmdb.groups["g1"] = TMDb.EpisodeGroup(
+            id: "g1",
+            name: "Story arcs",
+            groups: [
+                .init(name: "Arc One", episodes: [first, interlude, second]),
+                .init(name: "Arc Two", episodes: [third]),
+            ]
+        )
+
+        guard
+            case .draft(let arcs) = try await console.startDraft(
+                of: TMDb.Record(.series, 902),
+                shape: AdminConsole.TMDbShape(group: "g1", groupType: .arc, groupTypeLabel: "Arc"),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the series is drafted through its group")
+            return
+        }
+        #expect(arcs.containers.map(\.type) == [.series, .arc, .arc])
+        #expect(arcs.containers.dropFirst().map(\.typeLabel) == ["Arc", "Arc"])
+        #expect(
+            arcs.containers[1].sequences.flatMap(\.items).map(\.externalRefs)
+                == [[first.ref], [interlude.ref], [second.ref]]
+        )
+        #expect(arcs.specials.map(\.id) == [makingOf.id], "the group placed the other")
+
+        guard
+            case .draft(let seasons) = try await console.startDraft(
+                of: TMDb.Record(.series, 902),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the series is drafted by its seasons")
+            return
+        }
+        let season = try #require(seasons.containers.last).id.value
+        let (_, suggestions) = try await console.suggest(for: seasons, of: home, from: database, tmdb: tmdb)
+        #expect(
+            suggestions[interlude.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .entry(in: season, sequence: "episodes", position: 1),
+                    reason: "Story arcs places it after Everything Changes"
+                )
+        )
+        #expect(
+            suggestions[makingOf.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .extra(of: seasons.top, type: EntryType.behindTheScenes.rawValue),
+                    reason: "its title says it is a making-of"
+                )
+        )
+    }
+
+    /// Where smddb's record of the series files a special, by the references its containers share with
+    /// the tree's; and a special whose other id is another series' episode, or a film no library holds,
+    /// is that one's duplicate, or advice to draft that first.
+    @Test func aSpecialIsSuggestedWhereSmddbFilesItOrAsAnotherRecordsDuplicate() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let filed = Self.episode(4201, 0, 1, "Attack of the Graske", runtime: 40)
+        let interviewed = Self.episode(4202, 0, 2, "Meeting the Doctor", runtime: 40)
+        let shared = Self.episode(4203, 0, 3, "Rose: Extended", runtime: 40)
+        let film = Self.episode(4204, 0, 4, "The Movie", runtime: 40)
+        let unheld = Self.episode(4205, 0, 5, "Dalek: Extended", runtime: 40)
+        var record = Container(
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tvdb, value: "78804")]
+        )
+        record.extras = [.leaf(Entry.Leaf(id: ItemID("meeting")!, type: .interview, externalRefs: [interviewed.ref]))]
+        var recordSeason = Container(
+            type: .season,
+            title: Title("Series 1")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "81")]
+        )
+        recordSeason.sequences = [
+            Sequence(
+                id: "episodes",
+                items: [.leaf(Entry.Leaf(id: ItemID("graske")!, type: .episode, externalRefs: [filed.ref]))]
+            )
+        ]
+        try await database.save(record)
+        try await database.save(recordSeason)
+        let rose = Self.episode(8000, 1, 1, "Rose")
+        var other = Container(id: ContainerID("00000000000000b1")!, type: .series, title: Title("Doctor Who")!)
+        other.sequences = [
+            Sequence(
+                id: "episodes",
+                items: [.leaf(Entry.Leaf(id: ItemID("rose")!, type: .episode, externalRefs: [rose.ref]))]
+            )
+        ]
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([other]))
+        var tmdb = FakeTMDb()
+        tmdb.series[903] = TMDb.Series(
+            id: 903,
+            name: "Doctor Who",
+            seasons: [.init(id: 80, number: 0, name: "Specials"), .init(id: 81, number: 1, name: "Series 1")],
+            externalIDs: TMDb.ExternalIDs(tvdb: "78804")
+        )
+        tmdb.seasons["903/1"] = TMDb.Season(id: 81, number: 1, name: "Series 1", episodes: [])
+        tmdb.seasons["903/0"] = TMDb.Season(
+            id: 80,
+            number: 0,
+            name: "Specials",
+            episodes: [filed, interviewed, shared, film, unheld]
+        )
+        tmdb.episodeIDs[shared.id] = TMDb.ExternalIDs(imdb: "tt0001")
+        tmdb.episodeIDs[film.id] = TMDb.ExternalIDs(tvdb: "55")
+        tmdb.episodeIDs[unheld.id] = TMDb.ExternalIDs(imdb: "tt0002")
+        tmdb.found["imdb:tt0001"] = TMDb.Found(episodes: [(series: 777, episode: rose)])
+        tmdb.found["tvdb:55"] = TMDb.Found(movies: [TMDb.Movie(id: 1234, title: "Doctor Who")])
+        tmdb.found["imdb:tt0002"] = TMDb.Found(episodes: [(series: 778, episode: Self.episode(8001, 1, 6, "Dalek"))])
+
+        guard
+            case .draft(let tree) = try await console.startDraft(
+                of: TMDb.Record(.series, 903),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("a series smddb holds by another provider's id alone is drafted")
+            return
+        }
+        let season = try #require(tree.containers.last).id.value
+        let (_, suggestions) = try await console.suggest(for: tree, of: home, from: database, tmdb: tmdb)
+        #expect(
+            suggestions[filed.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .entry(in: season),
+                    reason: "smddb files it in \(recordSeason.displayTitle)"
+                )
+        )
+        #expect(
+            suggestions[interviewed.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .extra(of: tree.top, type: EntryType.interview.rawValue),
+                    reason: "smddb files it among \(record.displayTitle)'s extras"
+                )
+        )
+        #expect(
+            suggestions[shared.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .duplicate(
+                        home: other.id.value,
+                        item: "rose",
+                        library: "tv",
+                        from: tree.top,
+                        asExtra: true
+                    ),
+                    reason: "its IMDb id is Rose's, an episode of TMDb's series 777, which tv holds"
+                )
+        )
+        #expect(
+            suggestions[film.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: nil,
+                    reason: "its TVDB id is Doctor Who's, TMDb's movie 1234, which no library holds: draft it first"
+                )
+        )
+        #expect(
+            suggestions[unheld.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: nil,
+                    reason:
+                        "its IMDb id is Dalek's, an episode of TMDb's series 778, which no library holds: draft it first"
+                )
+        )
+    }
+
+    /// A special placed in a breakout the library holds already adds an entry to it, one in a container
+    /// of its own is a child, and one as an extra is an extra; all made with the tree.
+    @Test func specialsArePlacedInAHeldBreakoutAContainerOfTheirOwnAndTheExtras() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var sofa = Container(id: ContainerID("00000000000000c1")!, type: .series, title: Title("Behind the Sofa")!)
+        sofa.sequences = [Sequence(id: "episodes", items: [])]
+        let held = HeldLibrary([sofa])
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb()
+        tmdb.series[904] = TMDb.Series(
+            id: 904,
+            name: "Doctor Who",
+            seasons: [.init(id: 90, number: 0, name: "Specials"), .init(id: 91, number: 1, name: "Series 2")]
+        )
+        let pilot = Self.episode(4301, 1, 1, "New Earth")
+        let onTheSofa = Self.episode(4401, 0, 1, "Behind the Sofa: New Earth", runtime: 40)
+        let invasion = Self.episode(4402, 0, 2, "The Christmas Invasion", runtime: 60)
+        let bloopers = Self.episode(4403, 0, 3, "Bloopers", runtime: 40)
+        tmdb.seasons["904/1"] = TMDb.Season(id: 91, number: 1, name: "Series 2", episodes: [pilot])
+        tmdb.seasons["904/0"] = TMDb.Season(
+            id: 90,
+            number: 0,
+            name: "Specials",
+            episodes: [onTheSofa, invasion, bloopers]
+        )
+        guard
+            case .draft(var tree) = try await console.startDraft(
+                of: TMDb.Record(.series, 904),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the series is drafted")
+            return
+        }
+        let season = try #require(tree.containers.last).id.value
+        let ownID = try await database.provisionalID()
+        tree.place(onTheSofa.id, .breakout(sofa.id.value, from: season, asExtra: false))
+        tree.place(invasion.id, .child(of: tree.top, id: ownID.value, type: ContainerType.episode.rawValue))
+        tree.place(bloopers.id, .extra(of: season, type: EntryType.featurette.rawValue))
+        #expect(tree.making.described.last == "add an entry to \(sofa.id) in tv")
+
+        guard case .created = try await console.create(tree, of: home) else {
+            Issue.record("the series is made with its placed specials")
+            return
+        }
+        let entryID = ItemID("\(Slug.make(from: onTheSofa.title))-\(onTheSofa.id)")!
+        let madeSofa = try #require(held.container(sofa.id))
+        #expect(madeSofa.sequences.flatMap(\.items).map(\.id) == [entryID])
+        #expect(madeSofa.sequences.flatMap(\.items).map(\.externalRefs) == [[onTheSofa.ref]])
+        let madeSeason = try #require(held.container(ContainerID(season)!))
+        #expect(
+            madeSeason.sequences.flatMap(\.items).compactMap(\.reference) == [
+                EntryRef(container: sofa.id, item: entryID)
+            ]
+        )
+        #expect(madeSeason.extras.map(\.externalRefs) == [[bloopers.ref]])
+        #expect(held.container(ContainerID(tree.top)!)?.childContainerIDs.contains(ownID) == true)
+        let own = try #require(held.container(ownID))
+        #expect(own.type == .episode && own.title == Title("The Christmas Invasion")!)
+        #expect(own.sequences.flatMap(\.items).map(\.externalRefs) == [[invasion.ref]])
+    }
+
+    /// The silo's dry run says what it makes of a tree with no parent, and a refusal keeps the draft.
+    @Test func aTreeTheSiloRefusesIsKept() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (console, home) = try await Self.smddbConsole(HeldLibrary())
+        let tmdb = FakeTMDb(movies: [348: Self.alienRecord, 349: TMDb.Movie(id: 349, title: "Refused")])
+        guard
+            case .draft(let alien) = try await console.startDraft(
+                of: TMDb.Record(.movie, 348),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            ),
+            case .draft(let refused) = try await console.startDraft(
+                of: TMDb.Record(.movie, 349),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("both films are drafted")
+            return
+        }
+        guard case .wouldWrite = try await console.check(alien, of: home) else {
+            Issue.record("the silo would make the film")
+            return
+        }
+        guard case .refused(let findings) = try await console.check(refused, of: home) else {
+            Issue.record("the silo's validator refuses the other")
+            return
+        }
+        #expect(findings.findings.map(\.text).contains { $0.contains("the validator refuses it") })
+        guard case .refused = try await console.create(refused, of: home) else {
+            Issue.record("the making is refused")
+            return
+        }
+        #expect(console.tmdbDrafts.drafts(of: home.id).map(\.id).contains(refused.id), "a refusal keeps the draft")
+    }
+
+    /// A tree's containers are edited, their attributions pruned with the outline or removed alone, and
+    /// one dropped with everything beneath it; the top is not dropped.
+    @Test func aTreesContainersAreEditedAndDropped() throws {
+        var season = Container(
+            id: ContainerID("00000000000000d2")!,
+            type: .season,
+            title: Title("Season 1")!,
+            outline: "The first."
+        )
+        season.sequences = [Sequence(id: "episodes", items: [])]
+        var series = Container(id: ContainerID("00000000000000d1")!, type: .series, title: Title("Doctor Who")!)
+        series.outline = "A time traveller."
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("one")!, container: season.id))])
+        ]
+        let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "1")]
+        var tree = TMDbTree(
+            library: "tv",
+            record: TMDb.Record(.series, 1),
+            creating: ContainerDraft.Creating(),
+            containers: [series, season],
+            top: series.id,
+            attributions: [series.id: attributed, season.id: attributed]
+        )
+
+        var renamed = series
+        renamed.title = Title("Doctor Who (Classic)")!
+        tree.set(renamed)
+        #expect(tree.title == renamed.displayTitle && tree.attributions[series.id.value] == attributed)
+        var bare = season
+        bare.outline = nil
+        tree.set(bare)
+        #expect(tree.attributions[season.id.value] == [], "the outline gone takes its attribution")
+        tree.removeAttribution(of: .outline, from: series.id.value)
+        #expect(tree.attributions[series.id.value] == [])
+
+        let documents = tree.documents
+        tree.set(Container(id: ContainerID("00000000000000d9")!, type: .season, title: Title("Elsewhere")!))
+        #expect(tree.documents == documents, "a container the tree does not hold is not set")
+        let breakout = Container(id: ContainerID("00000000000000d3")!, type: .series, title: Title("Confidential")!)
+        tree.place(1, .breakout(breakout.id.value, from: season.id.value, asExtra: true), breakout: breakout)
+        var retitled = breakout
+        retitled.title = Title("Doctor Who Confidential")!
+        tree.set(retitled)
+        #expect(tree.container(breakout.id.value)?.title == retitled.title)
+
+        tree.drop(series.id.value)
+        #expect(tree.containers.count == 2, "the top stays")
+        tree.drop(season.id.value)
+        #expect(tree.containers.map(\.id) == [series.id])
+        #expect(tree.container(series.id.value)?.childContainerIDs == [])
+        #expect(tree.attributions[season.id.value] == nil)
+    }
+
+    /// The drafts from TMDb are kept in a file, read again by the next store, and removed one by one or
+    /// all of a silo's at once.
+    @Test func draftsFromTMDbAreKeptInAFile() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tmdb-drafts-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("drafts.json")
+        let film = Container(id: ContainerID("00000000000000e1")!, type: .movie, title: Title("Alien")!)
+        let tree = TMDbTree(
+            library: "tv",
+            record: TMDb.Record(.movie, 348),
+            creating: ContainerDraft.Creating(),
+            containers: [film],
+            top: film.id
+        )
+        let store = TMDbDraftStore(file: file)
+        try store.save(tree, for: "home")
+        let read = TMDbDraftStore(file: file).drafts(of: "home")
+        #expect(read.map(\.id) == [tree.id] && read.map(\.documents) == [tree.documents], "to the second it was edited")
+        try store.remove(tree.id, of: "home")
+        #expect(TMDbDraftStore(file: file).drafts(of: "home").isEmpty)
+        try store.save(tree, for: "home")
+        try store.removeAll(of: "home")
+        try store.removeAll(of: "home")
+        #expect(TMDbDraftStore(file: file).drafts(of: "home").isEmpty)
+    }
+
+    /// An alternative's outline is attributed as the container's is: pruned with it, lost when smddb's
+    /// differs, and given smddb's value in a contribution; a draft kept before attributions reads with
+    /// none; and a new container's attributions are made with it.
+    @Test func anAlternativesOutlineIsAttributedAsTheContainersIs() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let held = HeldLibrary()
+        let (console, home) = try await Self.smddbConsole(held)
+        let subject = Attribution.Subject.outline(ofAlternative: "uk")
+        let attribution = Attribution(subject: subject, provider: .tmdb, value: "348")
+        let artwork = Attribution(
+            subject: Attribution.Subject(rawValue: "artwork:poster"),
+            provider: .tmdb,
+            value: "/a.jpg"
+        )
+        var alien = Container(id: ContainerID("00000000000000f1")!, type: .movie, title: Title("Alien")!)
+        alien.alternatives = [Alternative(id: "uk", sequence: "main", outline: "TMDb's words")]
+        #expect(ContainerDraft.pruned([attribution, artwork], for: alien) == [attribution, artwork])
+        var unoutlined = alien
+        unoutlined.alternatives[0].outline = nil
+        #expect(ContainerDraft.pruned([attribution, artwork], for: unoutlined) == [artwork])
+
+        var record = alien
+        record.alternatives[0].outline = "smddb's words"
+        let (contributed, leftOut) = AdminConsole.contributable(
+            Sidecar(container: alien, attributions: [attribution]),
+            record: record
+        )
+        #expect(contributed.alternatives[0].outline == "smddb's words" && leftOut == [attribution])
+
+        var draft = try await console.newContainer(
+            .movie,
+            titled: Title("Alien")!,
+            in: "tv",
+            at: ContainerDraft.Creating(),
+            of: home,
+            from: database
+        )
+        var made = try #require(draft.value)
+        made.alternatives = alien.alternatives
+        draft.set(made)
+        draft.attributions = [attribution]
+        var same = draft
+        var differing = draft
+        same.take(made)
+        #expect(same.attributions == [attribution], "smddb's reads the same")
+        var smddbs = made
+        smddbs.alternatives[0].outline = "smddb's words"
+        differing.take(smddbs)
+        #expect(differing.attributions.isEmpty)
+
+        var kept = try JSONSerialization.jsonObject(with: JSONEncoder().encode(draft)) as! [String: Any]
+        kept["attributions"] = nil
+        kept["baseAttributions"] = nil
+        let old = try JSONDecoder().decode(ContainerDraft.self, from: JSONSerialization.data(withJSONObject: kept))
+        #expect(old.id == draft.id && old.text == draft.text && old.attributions.isEmpty)
+
+        guard case .created = try await console.create(draft, of: home) else {
+            Issue.record("the film is made")
+            return
+        }
+        #expect(held.sidecar(ContainerID(draft.container)!)?.attributions == [attribution])
     }
 }

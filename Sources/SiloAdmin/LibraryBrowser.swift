@@ -110,6 +110,9 @@ private struct LibraryNode: View {
                     Button("New Container…") {
                         model.newContainer = ConsoleModel.NewContainer(silo: silo, library: library, sequences: [])
                     }
+                    Button("Draft from TMDb…") {
+                        model.findingInTMDb = ConsoleModel.FindingInTMDb(silo: silo, library: library)
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -223,6 +226,21 @@ struct ContainerDetail: View {
                     .disabled(model.database == nil)
                     Button("Propose to smddb…") { Task { await model.beginProposal(of: key) } }
                         .disabled(model.database == nil)
+                    if container.type == "series",
+                        let tmdb = container.externalRefs.first(where: { $0.provider == "tmdb" }).flatMap({
+                            Int($0.value)
+                        }),
+                        let silo = model.silos.first(where: { $0.id == key.silo })
+                    {
+                        Button("Add a Season from TMDb…") {
+                            model.findingInTMDb = ConsoleModel.FindingInTMDb(
+                                silo: silo,
+                                library: key.library,
+                                series: (key.container, container.displayTitle, tmdb)
+                            )
+                        }
+                        .disabled(model.database == nil || model.tmdbProblem != nil)
+                    }
                 }
 
                 if !opened.findings.isEmpty {
@@ -530,6 +548,9 @@ struct ContainerEditor: View {
                 .font(.system(.callout, design: .monospaced))
                 .autocorrectionDisabled()
             } else if let value = draft.value {
+                AttributionsLine(attributions: draft.attributions) { subject in
+                    model.removeAttribution(of: subject, for: silo)
+                }
                 ContainerForm(container: value) { changed in
                     var edited = draft
                     edited.set(changed)
