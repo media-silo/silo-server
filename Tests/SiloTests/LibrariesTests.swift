@@ -122,13 +122,17 @@ struct LibrariesTests {
     }
 
     /// Walks of one library never overlap: one asked for while another runs joins it and shares its
-    /// report; a re-read waits for the walk, and a walk asked for during a re-read waits for that.
+    /// report; a re-read waits for the walk, and a walk asked for during a re-read waits for that. Each
+    /// turn says when it has the library, so the next is asked for behind it however late the turn runs.
     @Test func walksAskedForTogetherWalkOnce() async throws {
         let lane = LibraryLane()
         let walks = Atomic<Int>(0)
         let order = Mutex<[String]>([])
+        let (turns, turn) = AsyncStream.makeStream(of: Void.self)
+        var taken = turns.makeAsyncIterator()
         let walk: @Sendable () throws -> LastWalk = {
             let count = walks.add(1, ordering: .relaxed).newValue
+            turn.yield()
             Thread.sleep(forTimeInterval: 0.2)
             order.withLock { $0.append("walk \(count)") }
             var report = ScanReport()
@@ -136,7 +140,7 @@ struct LibrariesTests {
             return LastWalk(walkedAt: .now, available: true, report: report)
         }
         async let first = lane.walk(walk)
-        try await Task.sleep(for: .milliseconds(50))
+        await taken.next()
         async let second = lane.walk(walk)
         async let reread: Void = lane.exclusively { order.withLock { $0.append("re-read") } }
         let (one, two, _) = try await (first, second, reread)
@@ -146,10 +150,11 @@ struct LibrariesTests {
 
         // Over, a walk is new; asked for during a re-read, it waits for it.
         async let holding: Void = lane.exclusively {
+            turn.yield()
             Thread.sleep(forTimeInterval: 0.2)
             order.withLock { $0.append("re-read") }
         }
-        try await Task.sleep(for: .milliseconds(50))
+        await taken.next()
         let third = try await lane.walk(walk)
         try await holding
         #expect(third.report.read == 2)
