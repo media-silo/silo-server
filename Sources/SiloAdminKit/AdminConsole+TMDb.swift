@@ -332,6 +332,18 @@ extension AdminConsole {
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
     ) async throws -> (TMDbTree, [Int: SpecialSuggestion]) {
+        let (suggested, suggestions) = try await suggestions(for: tree, of: silo, from: database, tmdb: tmdb)
+        try tmdbDrafts.save(suggested, for: silo.id)
+        return (suggested, suggestions)
+    }
+
+    /// The suggestions `suggest(for:of:from:tmdb:)` makes, keeping nothing.
+    func suggestions(
+        for tree: TMDbTree,
+        of silo: Silo,
+        from database: any ContainerDatabase,
+        tmdb: any TMDbSource
+    ) async throws -> (TMDbTree, [Int: SpecialSuggestion]) {
         var tree = tree
         var suggestions: [Int: SpecialSuggestion] = [:]
         let clone = try await database.containers()
@@ -354,7 +366,6 @@ extension AdminConsole {
                 suggestions[special.id] = named
             }
         }
-        try tmdbDrafts.save(tree, for: silo.id)
         return (tree, suggestions)
     }
 
@@ -677,7 +688,7 @@ extension AdminConsole {
     }
 
     /// One edit of a container a library holds that a placement makes, onto its sidecar as it is now.
-    private func apply(_ edit: TMDbTree.Making.HeldEdit, on silo: Silo) async throws {
+    func apply(_ edit: TMDbTree.Making.HeldEdit, on silo: Silo) async throws {
         let opened = try await open(container: edit.container, in: edit.library, of: silo)
         var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
         guard var container = draft.value else { return }
@@ -690,13 +701,19 @@ extension AdminConsole {
             container.extras = container.extras.map { Self.adding(ref, to: $0, if: item) }
         }
         if let special = edit.entry, let entryID = edit.entryID.flatMap(ItemID.init) {
-            TMDbTree.insert(
-                .leaf(Entry.Leaf(id: entryID, type: .episode, externalRefs: special.refs)),
-                into: &container,
-                sequence: nil,
-                at: nil
-            )
+            // An extra's type named makes it one of the container's extras; otherwise it is an episode.
+            if let type = edit.entryType {
+                container.extras.append(.leaf(Entry.Leaf(id: entryID, type: type, externalRefs: special.refs)))
+            } else {
+                TMDbTree.insert(
+                    .leaf(Entry.Leaf(id: entryID, type: .episode, externalRefs: special.refs)),
+                    into: &container,
+                    sequence: nil,
+                    at: nil
+                )
+            }
         }
+        if let refer = edit.refer { TMDbTree.refer(to: refer, from: &container, asExtra: edit.asExtra) }
         draft.set(container)
         switch try await store(draft, of: silo) {
         case .stored: break

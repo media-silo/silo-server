@@ -55,6 +55,30 @@ extension ConsoleModel {
         var failure: String?
     }
 
+    /// What the console holds of TMDb between reads: the language it answers in, why it cannot be
+    /// asked when it cannot, and the sheets open over it.
+    struct TMDbState {
+        var language = "en-US"
+        var problem: String?
+        var finding: FindingInTMDb?
+        var shaping: ShapingTree?
+        var comparing: Comparing?
+    }
+
+    /// A held container's differences from TMDb being chosen: as last read, which are chosen, where
+    /// each special goes, what taking them gathered, and why the last thing asked failed.
+    struct Comparing: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var key: ContainerKey
+        var comparison: AdminConsole.TMDbComparison?
+        var chosen: Set<String> = []
+        var placements: [Int: SpecialPlacement] = [:]
+        var taking: AdminConsole.TMDbTaking?
+        var stored = false
+        var failure: String?
+    }
+
     /// A record being found at TMDb: for a library, to draft from; or, for a series the library holds by
     /// its TMDb reference, one of its seasons to draft beneath it.
     struct FindingInTMDb: Identifiable {

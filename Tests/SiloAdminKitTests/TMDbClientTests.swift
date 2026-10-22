@@ -193,4 +193,27 @@ struct TMDbClientTests {
         _ = try await client.find(ExternalRef(provider: .tvdb, value: "183204"))
         #expect(Self.query(of: Stub.asked.withLock { $0[1] })["external_source"] == "tvdb_id")
     }
+
+    @Test func aRecordsImagesAreListedInTheLanguageOrNoneAndFetchedWhole() async throws {
+        let images = #"{"posters":[{"file_path":"/poster.jpg"}],"backdrops":[{"file_path":"/backdrop.jpg"}]}"#
+        let client = Self.client([
+            "movie/348/images": images,
+            "tv/121/images": #"{"posters":[],"backdrops":[],"logos":[{"file_path":"/logo.png"}]}"#,
+            "collection/8091/images": images,
+            "/t/p/original/poster.jpg": "JPEG",
+        ])
+        #expect(
+            try await client.images(of: TMDb.Record(.movie, 348))
+                == TMDb.Images(posters: ["/poster.jpg"], backdrops: ["/backdrop.jpg"]),
+            "a record with no logos has none"
+        )
+        #expect(Self.query(of: Stub.asked.withLock { $0[0] })["include_image_language"] == "en,null")
+        #expect(try await client.images(of: TMDb.Record(.series, 121)).offered(for: "logo") == ["/logo.png"])
+        #expect(try await client.images(of: TMDb.Record(.collection, 8091)).offered(for: "fanart") == ["/backdrop.jpg"])
+        #expect(TMDb.Images().offered(for: "banner") == [])
+
+        #expect(try await client.image(at: "/poster.jpg") == Data("JPEG".utf8))
+        #expect(Stub.asked.withLock { $0.last?.url?.host } == "image.tmdb.org")
+        await #expect(throws: TMDb.Unavailable.answered(404)) { try await client.image(at: "/gone.jpg") }
+    }
 }

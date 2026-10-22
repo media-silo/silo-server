@@ -578,14 +578,29 @@ the shell is.
 ### Requirement: A container's artwork is shown, put and removed from the console
 SiloAdmin SHALL show, for a container, each artwork kind its folder holds, and SHALL let the
 operator put an image as a kind — dropped onto it, or chosen — and remove a kind, through the
-library's artwork routes. A refusal SHALL be shown in words.
+library's artwork routes. For a container whose TMDb record the console finds, as its differences
+from TMDb find it, SiloAdmin SHALL let the operator browse TMDb's images for the record — its posters
+for `poster`, its backdrops for `fanart` and its logos for `logo` — and put one, with its
+attribution to `tmdb` and the record's id. A kind whose image is attributed SHALL be shown with its
+attribution, and an image dropped or chosen from this Mac SHALL be put with none, removing any the
+kind had. A refusal SHALL be shown in words.
 
 #### Scenario: a poster dropped
 - **WHEN** the operator drops a JPEG onto a container's poster
 - **THEN** the image is put, and the container shows the poster the silo serves
 
+#### Scenario: a poster taken from TMDb
+- **WHEN** the operator puts one of TMDb's posters for a film the library holds by its TMDb
+  reference
+- **THEN** the container shows the poster the silo serves, credited to TMDb
+
+#### Scenario: a TMDb poster replaced with the operator's own
+- **WHEN** the operator drops a JPEG onto a poster credited to TMDb
+- **THEN** the container shows the new poster, credited to no one
+
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
-(`aLibrarysContainersAreBrowsedAndEditedFromTheConsole`). Dropping and choosing an image are
+(`aLibrarysContainersAreBrowsedAndEditedFromTheConsole`,
+`artworkIsTakenFromTMDbWithItsAttribution`). Dropping and choosing an image are
 pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: The console shows the moves an edit makes, and lays a library out again
@@ -850,3 +865,71 @@ any.
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aSeriesSpecialsArePlacedFromThePool`,
 `aSpecialIsSuggestedAsAMoviesDuplicate`). The pool and its choosing are pinned by nothing yet, as the
 rest of the shell is.
+
+### Requirement: A held container's differences from TMDb are listed, and the operator takes each or leaves it
+For a container the library holds, SiloAdmin SHALL read TMDb's record of the container's `tmdb`
+reference, as a draft from TMDb reads it. A container with no `tmdb` reference of its own SHALL be read
+through the nearest container above it that has one, or, when none above it has one, through a
+container of the library that refers to its items; its differences SHALL be about the entries it
+holds. Picking from TMDb a record whose reference a container of the library carries SHALL open that
+container's differences. A TMDb id SHALL count as covered when the container, a container beneath it,
+or an item the container refers to carries it, or when the container's sidecar declines it. The
+console SHALL list how the library's sidecar differs from the reading:
+
+- a title, year or outline that differs, the outline shown with its attribution;
+- each provider's id TMDb holds that the sidecar lacks, for the container and for each entry it holds;
+- each of TMDb's episodes or seasons, other than a special, whose id is not covered, with where TMDb
+  puts it;
+- items that both hold, at the same level, in a different order;
+- each artwork kind the container's folder has no file for and TMDb has an image for;
+- for a series, each special whose id is not covered, as unassigned, to be placed or declined as a
+  draft's specials are, with its suggestion;
+- for a series, collapsed, each special its sidecar declines, which the operator may place after all,
+  removing the decline.
+
+An item, child or extra the library holds and TMDb does not SHALL be shown, and SHALL NOT be offered
+for removal. Each difference SHALL be chosen or not, none chosen to begin with, and one not chosen
+SHALL change nothing. Taking the chosen field, reference, entry and order differences SHALL make one
+edit draft of the container, based on the sidecar the browser read, carrying the outline's
+attribution when the outline is taken, and the declined refs when a special is declined or placed
+after all, and stored as any edit is. A special placed in a duplicate's home or a breakout SHALL be an
+edit of that container too, and the console SHALL list every edit before it stores any. A chosen child
+container SHALL open as a draft from TMDb beneath the container. Chosen artwork SHALL be put with its attribution. The
+console SHALL read a container against TMDb only when the operator opens its differences.
+
+#### Scenario: an episode TMDb has gained
+- **WHEN** a season the library holds lacks an episode TMDb's record of the season has, and the
+  operator takes that difference alone
+- **THEN** the edit draft adds one entry carrying the episode's references at TMDb's position, and
+  changes nothing else
+
+#### Scenario: an extra TMDb does not know
+- **WHEN** a container the library holds has an extra that TMDb's record has nothing for
+- **THEN** the extra is shown, and nothing offers to remove it
+
+#### Scenario: a serial with no reference of its own
+- **WHEN** a serial with no TMDb reference, beneath a season that has one, holds an episode whose
+  IMDb id TMDb holds and the serial's sidecar lacks
+- **THEN** the serial's differences list that IMDb id against the episode's entry
+
+#### Scenario: episodes regrouped into serials
+- **WHEN** a season holds every one of TMDb's episodes for it within serials beneath it
+- **THEN** no episode is listed as missing, and no order difference is listed
+
+#### Scenario: specials placed elsewhere or declined
+- **WHEN** a series refers to one special's home in another library and to another special's entry in
+  a breakout, and its sidecar declines a third
+- **THEN** none of the three is listed as unassigned, and the third is listed among the declined
+
+#### Scenario: a special TMDb has gained
+- **WHEN** TMDb's season 0 for a series the library holds has gained a special nothing covers
+- **THEN** the special is listed as unassigned, with a suggestion, and not as a missing episode
+
+#### Scenario: a breakout read through the series that refers to it
+- **WHEN** a breakout with no TMDb reference holds entries a series refers to, and TMDb holds an IMDb
+  id for one of those specials that the breakout's entry lacks
+- **THEN** the breakout's differences list that IMDb id against the entry
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
+(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`). The list and its choosing are pinned by nothing
+yet, as the rest of the shell is.

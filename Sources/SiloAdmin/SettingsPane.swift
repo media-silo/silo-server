@@ -169,6 +169,9 @@ struct LibrariesPane: View {
         .sheet(item: $model.shapingTree) { shaping in
             ShapeTreeSheet(shaping: shaping, model: model)
         }
+        .sheet(item: $model.comparing) { comparing in
+            DifferencesSheet(comparing: comparing, model: model)
+        }
         .alert(
             "Remove \(removingLibrary ?? "the library")?",
             isPresented: Binding(

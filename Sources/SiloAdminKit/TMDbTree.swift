@@ -236,6 +236,12 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
             /// The entry to add, for a breakout made before, under the id the tree's ref names.
             public var entry: Special?
             public var entryID: String?
+            /// The type the entry is, an episode unless an extra's type is named.
+            public var entryType: EntryType?
+            /// A ref to add, for a container that refers to a duplicate's home or a breakout, from its
+            /// extras or its first sequence.
+            public var refer: EntryRef?
+            public var asExtra = false
         }
 
         public var documents: [Container]

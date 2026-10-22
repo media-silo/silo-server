@@ -262,6 +262,30 @@ public enum TMDb {
         }
     }
 
+    /// The images TMDb holds for a record, by their paths there, best first: what the artwork kinds
+    /// `poster`, `fanart` and `logo` are offered from.
+    public struct Images: Hashable, Sendable {
+        public var posters: [String]
+        public var backdrops: [String]
+        public var logos: [String]
+
+        public init(posters: [String] = [], backdrops: [String] = [], logos: [String] = []) {
+            self.posters = posters
+            self.backdrops = backdrops
+            self.logos = logos
+        }
+
+        /// The images offered for an artwork kind.
+        public func offered(for kind: String) -> [String] {
+            switch kind {
+            case "poster": posters
+            case "fanart": backdrops
+            case "logo": logos
+            default: []
+            }
+        }
+    }
+
     /// Why TMDb could not be asked: no token, or one it refuses.
     public enum Unavailable: Error, Hashable, Sendable {
         case noToken
@@ -292,6 +316,10 @@ public protocol TMDbSource: Sendable {
     func externalIDs(of episode: TMDb.Episode, in series: Int) async throws -> TMDb.ExternalIDs
     /// What TMDb holds under another provider's id: `imdb` or `tvdb`.
     func find(_ ref: ExternalRef) async throws -> TMDb.Found
+    /// The images TMDb holds for a movie, a series or a collection.
+    func images(of record: TMDb.Record) async throws -> TMDb.Images
+    /// An image's bytes, by its path at TMDb.
+    func image(at path: String) async throws -> Data
 }
 
 /// TMDb's API, version 3, read with a read access token in the language the settings name.
@@ -423,6 +451,34 @@ public struct TMDbClient: TMDbSource {
             },
             episodes: found.tv_episode_results.map { ($0.show_id ?? 0, $0.value) }
         )
+    }
+
+    public func images(of record: TMDb.Record) async throws -> TMDb.Images {
+        let kind =
+            switch record.kind {
+            case .movie: "movie"
+            case .series: "tv"
+            case .collection: "collection"
+            }
+        // Images in any language, and those with none, which is what a backdrop usually is.
+        let images = try await get(
+            "\(kind)/\(record.id)/images",
+            ["include_image_language": "\(language.prefix(2)),null"],
+            as: ImagesJSON.self
+        )
+        return TMDb.Images(
+            posters: images.posters.map(\.file_path),
+            backdrops: images.backdrops.map(\.file_path),
+            logos: (images.logos ?? []).map(\.file_path)
+        )
+    }
+
+    public func image(at path: String) async throws -> Data {
+        let url = URL(string: "https://image.tmdb.org/t/p/original\(path)")!
+        let (data, response) = try await session.data(from: url)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else { throw TMDb.Unavailable.answered(status) }
+        return data
     }
 
     // MARK: The wire
@@ -559,6 +615,12 @@ public struct TMDbClient: TMDbSource {
         var name: String
         var overview: String?
         var parts: [Part]
+    }
+    private struct ImagesJSON: Decodable {
+        struct Image: Decodable { var file_path: String }
+        var posters: [Image]
+        var backdrops: [Image]
+        var logos: [Image]?
     }
     private struct FindJSON: Decodable {
         struct FoundMovie: Decodable {

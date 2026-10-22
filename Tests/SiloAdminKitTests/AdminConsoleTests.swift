@@ -1838,6 +1838,8 @@ extension AdminConsoleTests {
         let sidecars: Mutex<[String: Data]>
         /// The library each container is in, `tv` unless filed elsewhere.
         let libraries: Mutex<[String: String]>
+        /// The artwork kinds each container's folder holds.
+        let artwork: Mutex<[String: Set<String>]> = Mutex([:])
         init(_ containers: [Container] = []) {
             sidecars = Mutex(
                 Dictionary(
@@ -1962,6 +1964,25 @@ extension AdminConsoleTests {
                 let container = sidecar.container
                 let digest = Self.digest(bytes)
                 if rest.count == 2, rest[1] == "smd" { return (200, bytes) }
+                if rest.count == 3, rest[1] == "artwork", method == "PUT" {
+                    let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                    let provider = query.first { $0.name == "provider" }?.value
+                    let value = query.first { $0.name == "value" }?.value
+                    var attributions = sidecar.attributions.filter { $0.subject != .artwork(rest[2]) }
+                    if let provider, let value {
+                        attributions.append(
+                            Attribution(
+                                subject: .artwork(rest[2]),
+                                provider: Provider(rawValue: provider),
+                                value: value
+                            )
+                        )
+                    }
+                    let written = try SidecarFile.data(settingAttributions: attributions, in: bytes)
+                    held.sidecars.withLock { $0[rest[0]] = written }
+                    held.artwork.withLock { $0[rest[0], default: []].insert(rest[2]) }
+                    return (200, Data(#"{"kind":"\#(rest[2])","format":"jpg"}"#.utf8))
+                }
                 if method == "PUT" {
                     struct Edit: Decodable {
                         var document: String
@@ -2018,12 +2039,22 @@ extension AdminConsoleTests {
                         SiloClient.Container.ExternalRef(provider: $0.provider.rawValue, value: $0.value)
                     }
                 )
-                let json =
-                    #"{"id":"\#(container.id)","library":"\#(library)","type":"\#(container.type.rawValue)","title":"\#(container.title.rawValue)","displayTitle":"\#(container.displayTitle)","listed":true,"alternatives":[],"features":[],"sequences":[],"extras":[],"children":[],"externalRefs":[],"attributions":\#(attributions)}"#
+                let parent = held.sidecars.withLock { $0 }.first { _, bytes in
+                    (try? SidecarFile.sidecar(from: bytes))?.container.childContainerIDs.contains(container.id) == true
+                }?.key
+                let refs = json(
+                    container.externalRefs.map {
+                        SiloClient.Container.ExternalRef(provider: $0.provider.rawValue, value: $0.value)
+                    }
+                )
+                let parentField = parent.map { #","parent":"\#($0)""# } ?? ""
+                let containerJSON =
+                    #"{"id":"\#(container.id)","library":"\#(library)","type":"\#(container.type.rawValue)","title":"\#(container.title.rawValue)","displayTitle":"\#(container.displayTitle)","listed":true,"alternatives":[],"features":[],"sequences":[],"extras":[],"children":[],"externalRefs":\#(refs),"attributions":\#(attributions)\#(parentField)}"#
+                let artwork = json(Array(held.artwork.withLock { $0[container.id.value] ?? [] }).sorted())
                 return (
                     200,
                     Data(
-                        #"{"library":"\#(library)","path":"\#(container.id)/container.smd","digest":"\#(digest)","artwork":[],"container":\#(json),"declined":\#(declined)}"#
+                        #"{"library":"\#(library)","path":"\#(container.id)/container.smd","digest":"\#(digest)","artwork":\#(artwork),"container":\#(containerJSON),"declined":\#(declined)}"#
                             .utf8
                     )
                 )
@@ -2445,8 +2476,14 @@ extension AdminConsoleTests {
         var refusesToken = false
         /// Fails as no answer of TMDb's says, as a dropped connection does.
         var unreachable = false
+        var images: [TMDb.Record: TMDb.Images] = [:]
 
         struct Missing: Error {}
+
+        /// A JPEG's signature and nothing else, as every image TMDb serves here.
+        static let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00])
+        func images(of record: TMDb.Record) async throws -> TMDb.Images { images[record] ?? .init() }
+        func image(at path: String) async throws -> Data { Self.jpeg }
 
         func authenticate() async throws {
             if refusesToken { throw TMDb.Unavailable.refused }
@@ -3423,5 +3460,533 @@ extension AdminConsoleTests {
             return
         }
         #expect(held.sidecar(ContainerID(draft.container)!)?.attributions == [attribution])
+    }
+}
+
+// MARK: - Differences from TMDb
+
+extension AdminConsoleTests {
+    /// A held season, a serial and a breakout read against TMDb: an episode TMDb has gained is offered
+    /// at its place and taken alone; an extra TMDb lacks is shown and offered for nothing; an entry's
+    /// missing id is listed against it, through the season above a serial and through TMDb's lookup for
+    /// a breakout; regrouped episodes are neither missing nor out of order; and a series' specials are
+    /// covered wherever they were filed or declined, a gained one listed as unassigned.
+    @Test func aHeldContainersDifferencesFromTMDbAreTakenOrLeft() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let one = Self.episode(1001, 14, 1, "Part One")
+        let two = Self.episode(1002, 14, 2, "Part Two")
+        let three = Self.episode(1003, 14, 3, "Part Three")
+        func entry(_ id: String, _ episode: TMDb.Episode) -> Entry {
+            .leaf(Entry.Leaf(id: ItemID(id)!, type: .episode, externalRefs: [episode.ref]))
+        }
+        var season = Container(
+            id: ContainerID("00000000000000a2")!,
+            type: .season,
+            title: Title("Season 14")!,
+            year: 1976,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "3644")]
+        )
+        season.sequences = [Sequence(id: "episodes", items: [entry("part-one", one), entry("part-three", three)])]
+        season.extras = [.leaf(Entry.Leaf(id: ItemID("making-of")!, type: .behindTheScenes, title: "The Making Of"))]
+        var series = Container(
+            id: ContainerID("00000000000000a1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s14")!, container: season.id))])
+        ]
+        let held = HeldLibrary([series, season])
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb()
+        tmdb.series[121] = TMDb.Series(
+            id: 121,
+            name: "Doctor Who",
+            seasons: [.init(id: 50, number: 0, name: "Specials"), .init(id: 3644, number: 14, name: "Season 14")]
+        )
+        tmdb.seasons["121/14"] = TMDb.Season(
+            id: 3644,
+            number: 14,
+            name: "Season 14",
+            year: 1976,
+            episodes: [one, two, three]
+        )
+        tmdb.episodeIDs[1001] = TMDb.ExternalIDs(imdb: "tt0001001")
+
+        let compared = try await console.compare(season.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(compared.reading == "Season 14 of TMDb's series 121")
+        #expect(compared.differences.contains(.episode(two, after: one.ref)))
+        #expect(
+            compared.differences.contains(
+                .reference(item: "part-one", ExternalRef(provider: .imdb, value: "tt0001001"))
+            )
+        )
+        #expect(!compared.differences.contains { if case .order = $0 { true } else { false } })
+        #expect(compared.heldOnly == ["making-of: The Making Of"], "shown, and offered for nothing")
+        let taking = try await console.take(["episode:1002"], placements: [:], from: compared, of: home)
+        let draft = try #require(taking.draft)
+        #expect(draft.value?.sequences[0].items.map(\.externalRefs) == [[one.ref], [two.ref], [three.ref]])
+        #expect(
+            draft.value?.extras == season.extras && draft.value?.externalRefs == season.externalRefs,
+            "nothing else"
+        )
+        #expect(taking.described.isEmpty)
+
+        // The same season with its episodes regrouped into a serial beneath it, which carries no TMDb
+        // id of its own and is read through the season.
+        var serial = Container(id: ContainerID("00000000000000a3")!, type: .serial, title: Title("The Hand of Fear")!)
+        serial.sequences = [
+            Sequence(id: "parts", items: [entry("part-one", one), entry("part-two", two), entry("part-three", three)])
+        ]
+        var regrouped = season
+        regrouped.sequences = [
+            Sequence(id: "stories", items: [.child(Entry.Child(id: ItemID("hand")!, container: serial.id))])
+        ]
+        regrouped.extras = []
+        held.sidecars.withLock {
+            $0[regrouped.id.value] = try! SidecarFile.data(for: Sidecar(container: regrouped))
+            $0[serial.id.value] = try! SidecarFile.data(for: Sidecar(container: serial))
+        }
+        let whole = try await console.compare(regrouped.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(!whole.differences.contains { if case .episode = $0 { true } else { false } }, "none is missing")
+        #expect(!whole.differences.contains { if case .order = $0 { true } else { false } })
+        let parts = try await console.compare(serial.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(parts.reading.hasPrefix("through Season 14"))
+        #expect(parts.differences == [.reference(item: "part-one", ExternalRef(provider: .imdb, value: "tt0001001"))])
+
+        // The series' specials: one in a breakout, one at a film's home, one declined, one gained.
+        let sofa = Self.episode(3002, 0, 2, "Behind the Sofa: The Hand of Fear", runtime: 40)
+        let day = Self.episode(3003, 0, 3, "The Day of the Doctor", runtime: 77)
+        let declinedTrailer = Self.episode(3004, 0, 4, "Season 14 Trailer", runtime: 2)
+        let gained = Self.episode(3005, 0, 5, "Season 15 Trailer", runtime: 2)
+        tmdb.seasons["121/0"] = TMDb.Season(
+            id: 50,
+            number: 0,
+            name: "Specials",
+            episodes: [sofa, day, declinedTrailer, gained]
+        )
+        var breakout = Container(
+            id: ContainerID("00000000000000a4")!,
+            type: .series,
+            title: Title("Behind the Sofa")!,
+            listed: false
+        )
+        breakout.sequences = [
+            Sequence(
+                id: "episodes",
+                items: [
+                    .leaf(
+                        Entry.Leaf(
+                            id: ItemID("hand")!,
+                            type: .episode,
+                            externalRefs: [sofa.ref, ExternalRef(provider: .imdb, value: "tt0003002")]
+                        )
+                    )
+                ]
+            )
+        ]
+        var film = Container(id: ContainerID("00000000000000a5")!, type: .movie, title: Title("The Day of the Doctor")!)
+        film.sequences = [
+            Sequence(
+                id: "main",
+                items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie, externalRefs: [day.ref]))]
+            )
+        ]
+        held.sidecars.withLock { $0[breakout.id.value] = try! SidecarFile.data(for: Sidecar(container: breakout)) }
+        held.file(Sidecar(container: film), in: "films")
+        held.sidecars.withLock {
+            $0[series.id.value] = try! SidecarFile.data(
+                for: Sidecar(container: series, declined: [declinedTrailer.ref])
+            )
+        }
+        let specials = try await console.compare(series.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        let unassigned = specials.differences.compactMap {
+            if case .special(let special) = $0 { special.id } else { nil }
+        }
+        #expect(unassigned == [gained.id], "a special filed anywhere, or declined, is covered")
+        #expect(specials.declined.map(\.id) == [declinedTrailer.id])
+        #expect(specials.suggestions[gained.id]?.placement == .declined)
+        #expect(!specials.differences.contains { if case .episode = $0 { true } else { false } })
+
+        // The breakout, beneath nothing TMDb knows, read through the series its entry's IMDb id leads to.
+        tmdb.found["imdb:tt0003002"] = TMDb.Found(episodes: [(series: 121, episode: sofa)])
+        tmdb.episodeIDs[3002] = TMDb.ExternalIDs(imdb: "tt0003002", tvdb: "30002")
+        let through = try await console.compare(breakout.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(through.reading == "through TMDb's series 121, which its entries are episodes of")
+        #expect(through.differences == [.reference(item: "hand", ExternalRef(provider: .tvdb, value: "30002"))])
+    }
+
+    /// TMDb's poster for a film the library holds is offered for the kind the folder lacks and put with
+    /// its attribution; an image of the operator's own put over it carries none.
+    @Test func artworkIsTakenFromTMDbWithItsAttribution() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var alien = Container(
+            id: ContainerID("00000000000000b1")!,
+            type: .movie,
+            title: Title("Alien")!,
+            year: 1979,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "348")]
+        )
+        alien.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie))])]
+        let held = HeldLibrary()
+        held.file(Sidecar(container: alien), in: "films")
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb(movies: [348: TMDb.Movie(id: 348, title: "Alien", year: 1979)])
+        tmdb.images[TMDb.Record(.movie, 348)] = TMDb.Images(posters: ["/poster.jpg"], backdrops: ["/backdrop.jpg"])
+
+        let compared = try await console.compare(alien.id.value, in: "films", of: home, from: database, tmdb: tmdb)
+        #expect(
+            compared.differences == [
+                .artwork(kind: "poster", path: "/poster.jpg", record: TMDb.Record(.movie, 348)),
+                .artwork(kind: "fanart", path: "/backdrop.jpg", record: TMDb.Record(.movie, 348)),
+            ]
+        )
+        let taking = try await console.take(["artwork:poster"], placements: [:], from: compared, of: home)
+        #expect(taking.draft == nil, "artwork changes no field")
+        #expect(taking.described == ["put TMDb's poster, credited to TMDb"])
+        try await console.store(taking, in: "films", for: alien.id.value, of: home, tmdb: tmdb)
+        #expect(
+            held.sidecar(alien.id)?.attributions == [
+                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "348")
+            ]
+        )
+
+        try await console.putArtwork(FakeTMDb.jpeg, as: "poster", of: alien.id.value, in: "films", on: home)
+        #expect(held.sidecar(alien.id)?.attributions.isEmpty == true, "the operator's own image is credited to no one")
+    }
+
+    /// A film's and a collection's own fields that TMDb says otherwise, and the ids it holds that the
+    /// film lacks, are offered; taken, they are one edit draft, the outline attributed to the record.
+    @Test func aFilmsAndACollectionsFieldsAreTakenFromTMDb() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var film = Container(
+            id: ContainerID("00000000000000c1")!,
+            type: .movie,
+            title: Title("Alien (1979 cut)")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "348")]
+        )
+        film.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie))])]
+        let collection = Container(
+            id: ContainerID("00000000000000c2")!,
+            type: .collection,
+            title: Title("Alien Films")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "8091")]
+        )
+        let held = HeldLibrary()
+        held.file(Sidecar(container: film), in: "films")
+        held.file(Sidecar(container: collection), in: "films")
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb(movies: [348: Self.alienRecord])
+        tmdb.collections[8091] = TMDb.Collection(id: 8091, name: "Alien Collection", overview: "Ripley.", parts: [])
+
+        let compared = try await console.compare(film.id.value, in: "films", of: home, from: database, tmdb: tmdb)
+        #expect(compared.reading == "TMDb's movie 348")
+        let imdb = ExternalRef(provider: .imdb, value: "tt0078748")
+        #expect(
+            compared.differences == [
+                .title("Alien"), .year(1979), .outline("In space no one can hear you scream.", record: "348"),
+                .reference(item: nil, imdb), .reference(item: nil, ExternalRef(provider: .wikidata, value: "Q103569")),
+            ]
+        )
+        let taking = try await console.take(
+            ["title", "year", "outline", "ref::imdb:tt0078748"],
+            placements: [:],
+            from: compared,
+            of: home
+        )
+        let draft = try #require(taking.draft)
+        let taken = try #require(draft.value)
+        #expect(taken.title == Title("Alien")! && taken.year == 1979 && taken.outline == Self.alienRecord.overview)
+        #expect(taken.externalRefs == film.externalRefs + [imdb], "the id left is not taken")
+        #expect(draft.attributions == [Attribution(subject: .outline, provider: .tmdb, value: "348")])
+        guard case .stored = try await console.store(draft, of: home) else {
+            Issue.record("the edit is stored")
+            return
+        }
+        #expect(held.sidecar(film.id)?.attributions == draft.attributions)
+
+        let set = try await console.compare(collection.id.value, in: "films", of: home, from: database, tmdb: tmdb)
+        #expect(set.reading == "TMDb's collection 8091")
+        #expect(set.differences == [.title("Alien Collection"), .outline("Ripley.", record: "8091")])
+    }
+
+    /// A season TMDb's series above it does not hold, or with no series above it, cannot be read, nor can
+    /// a container with no TMDb id anywhere; one beneath a series is read against its specials, its items'
+    /// order and missing ids taken from TMDb's; and a missing episode TMDb has nothing before goes last.
+    @Test func aComparisonSaysWhyItCannotReadAContainer() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = Self.episode(3101, 0, 1, "The Five Doctors", runtime: 90)
+        let second = Self.episode(3102, 0, 2, "Dimensions in Time", runtime: 15)
+        func entry(_ id: String, _ episode: TMDb.Episode) -> Entry {
+            .leaf(Entry.Leaf(id: ItemID(id)!, type: .episode, externalRefs: [episode.ref]))
+        }
+        let unknown = Container(
+            id: ContainerID("00000000000000d4")!,
+            type: .season,
+            title: Title("Season 30")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "9999")]
+        )
+        var anniversaries = Container(
+            id: ContainerID("00000000000000d5")!,
+            type: .serial,
+            title: Title("Anniversaries")!
+        )
+        anniversaries.sequences = [Sequence(id: "parts", items: [entry("dimensions", second), entry("five", first)])]
+        var arc = Container(id: ContainerID("00000000000000d3")!, type: .arc, title: Title("The Specials")!)
+        arc.sequences = [
+            Sequence(
+                id: "parts",
+                items: [
+                    .child(Entry.Child(id: ItemID("unknown")!, container: unknown.id)),
+                    .child(Entry.Child(id: ItemID("anniversaries")!, container: anniversaries.id)),
+                ]
+            )
+        ]
+        var series = Container(
+            id: ContainerID("00000000000000d1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        series.sequences = [
+            Sequence(id: "arcs", items: [.child(Entry.Child(id: ItemID("specials")!, container: arc.id))])
+        ]
+        let orphan = Container(
+            id: ContainerID("00000000000000d6")!,
+            type: .season,
+            title: Title("Season 14")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "3644")]
+        )
+        var nothing = Container(id: ContainerID("00000000000000d7")!, type: .serial, title: Title("Shada")!)
+        nothing.sequences = [
+            Sequence(
+                id: "parts",
+                items: [
+                    .leaf(
+                        Entry.Leaf(
+                            id: ItemID("one")!,
+                            type: .episode,
+                            externalRefs: [ExternalRef(provider: .imdb, value: "tt9999999")]
+                        )
+                    )
+                ]
+            )
+        ]
+        var season = Container(
+            id: ContainerID("00000000000000d8")!,
+            type: .season,
+            title: Title("Season 14")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "3644")]
+        )
+        let robots = Self.episode(1001, 14, 1, "The Robots of Death")
+        let talons = Self.episode(1002, 14, 2, "The Talons of Weng-Chiang")
+        season.sequences = [Sequence(id: "episodes", items: [entry("talons", talons)])]
+        series.sequences.append(
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s14")!, container: season.id))])
+        )
+        let held = HeldLibrary([series, arc, unknown, anniversaries, orphan, nothing, season])
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb()
+        tmdb.series[121] = TMDb.Series(
+            id: 121,
+            name: "Doctor Who",
+            seasons: [.init(id: 50, number: 0, name: "Specials"), .init(id: 3644, number: 14, name: "Season 14")]
+        )
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [first, second])
+        tmdb.seasons["121/14"] = TMDb.Season(id: 3644, number: 14, name: "Season 14", episodes: [robots, talons])
+        tmdb.episodeIDs[first.id] = TMDb.ExternalIDs(imdb: "tt0085213")
+
+        let reasons = [
+            (unknown, "TMDb's series 121 has no season 9999"),
+            (orphan, "the season carries TMDb's id, but no series above it does"),
+            (
+                nothing,
+                "Shada carries no TMDb id, nothing above it does, and none of its items has an id TMDb can find"
+            ),
+        ]
+        for (container, reason) in reasons {
+            let error = await #expect(throws: AdminConsole.NoTMDbReading.self) {
+                try await console.compare(container.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+            }
+            #expect(error?.reason == reason)
+        }
+
+        let compared = try await console.compare(
+            anniversaries.id.value,
+            in: "tv",
+            of: home,
+            from: database,
+            tmdb: tmdb
+        )
+        #expect(compared.reading == "through Doctor Who, TMDb's series 121")
+        let imdb = ExternalRef(provider: .imdb, value: "tt0085213")
+        #expect(
+            compared.differences == [
+                .reference(item: "five", imdb), .order(sequence: "parts", items: ["five", "dimensions"]),
+            ]
+        )
+        let taking = try await console.take(
+            Set(compared.differences.map(\.id)),
+            placements: [:],
+            from: compared,
+            of: home
+        )
+        let taken = try #require(taking.draft?.value)
+        #expect(taken.sequences[0].items.map(\.id?.value) == ["five", "dimensions"])
+        #expect(taken.sequences[0].items[0].externalRefs == [first.ref, imdb])
+
+        let fourteen = try await console.compare(season.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(fourteen.differences == [.episode(robots, after: nil)])
+        let gained = try await console.take(["episode:1001"], placements: [:], from: fourteen, of: home)
+        #expect(
+            gained.draft?.value?.sequences[0].items.map(\.externalRefs) == [[talons.ref], [robots.ref]],
+            "with nothing before it at TMDb, last"
+        )
+    }
+
+    /// A held series' specials nothing covers are taken into every placement, here and in the
+    /// containers the library holds, with a declined one placed after all losing its decline; the
+    /// series' own fields, its missing id, and a season it lacks are taken with them.
+    @Test func aHeldSeriesSpecialsAreTakenIntoEveryPlacement() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let specials = (0..<11).map { Self.episode(3200 + $0, 0, $0 + 1, "Special \($0 + 1)", runtime: 40) }
+        let (here, there, extraHere, extraThere, own, duplicateHere, duplicateThere) = (
+            specials[0], specials[1], specials[2], specials[3], specials[4], specials[5], specials[6]
+        )
+        let (newBreakout, heldBreakout, declined, undeclined) = (specials[7], specials[8], specials[9], specials[10])
+        var season = Container(
+            id: ContainerID("00000000000000e2")!,
+            type: .season,
+            title: Title("Season 14")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "3644")]
+        )
+        season.sequences = [Sequence(id: "episodes", items: [])]
+        var series = Container(
+            id: ContainerID("00000000000000e1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s14")!, container: season.id))])
+        ]
+        var sofa = Container(id: ContainerID("00000000000000e3")!, type: .series, title: Title("Behind the Sofa")!)
+        sofa.sequences = [Sequence(id: "episodes", items: [])]
+        var film = Container(id: ContainerID("00000000000000e4")!, type: .movie, title: Title("The Five Doctors")!)
+        film.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie))])]
+        let held = HeldLibrary([season, sofa])
+        held.sidecars.withLock {
+            $0[series.id.value] = try! SidecarFile.data(for: Sidecar(container: series, declined: [undeclined.ref]))
+        }
+        held.file(Sidecar(container: film), in: "films")
+        let (console, home) = try await Self.smddbConsole(held)
+        var tmdb = FakeTMDb()
+        tmdb.series[121] = TMDb.Series(
+            id: 121,
+            name: "Doctor Who",
+            year: 1963,
+            overview: "A time traveller.",
+            seasons: [
+                .init(id: 50, number: 0, name: "Specials"), .init(id: 3644, number: 14, name: "Season 14"),
+                .init(id: 3645, number: 15, name: "Season 15"),
+            ],
+            externalIDs: TMDb.ExternalIDs(tvdb: "76107")
+        )
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: specials)
+
+        let compared = try await console.compare(series.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(compared.declined.map(\.id) == [undeclined.id])
+        #expect(compared.differences.contains(.season(.init(id: 3645, number: 15, name: "Season 15"))))
+        #expect(!compared.differences.contains { $0.id == "season:3644" }, "the season the library holds")
+        let confidential = Container(
+            id: try await database.provisionalID(),
+            type: .series,
+            title: Title("Confidential")!,
+            listed: false
+        )
+        let ownID = try await database.provisionalID()
+        let home14 = season.id.value
+        let placements: [Int: SpecialPlacement] = [
+            here.id: .entry(in: series.id.value),
+            there.id: .entry(in: home14),
+            extraHere.id: .extra(of: series.id.value, type: EntryType.featurette.rawValue),
+            extraThere.id: .extra(of: home14, type: EntryType.interview.rawValue),
+            own.id: .child(of: series.id.value, id: ownID.value, type: ContainerType.serial.rawValue),
+            duplicateHere.id: .duplicate(
+                home: film.id.value,
+                item: "feature",
+                library: "films",
+                from: series.id.value,
+                asExtra: true
+            ),
+            duplicateThere.id: .duplicate(
+                home: film.id.value,
+                item: "feature",
+                library: "films",
+                from: home14,
+                asExtra: false
+            ),
+            newBreakout.id: .breakout(confidential.id.value, from: series.id.value, asExtra: true),
+            heldBreakout.id: .breakout(sofa.id.value, from: home14, asExtra: false),
+            declined.id: .declined,
+            undeclined.id: .extra(of: series.id.value, type: EntryType.trailer.rawValue),
+        ]
+        let chosen = Set(["year", "outline", "ref::tvdb:76107", "season:3645"] + specials.map { "special:\($0.id)" })
+        let taking = try await console.take(
+            chosen,
+            placements: placements,
+            breakouts: [confidential.id.value: confidential],
+            from: compared,
+            of: home
+        )
+        #expect(
+            taking.described == [
+                "make Confidential, a series of its own, at the top of the library",
+                "add an entry to \(home14) in tv",
+                "add an extra to \(home14) in tv",
+                "add TMDb's id to feature of \(film.id) in films",
+                "add TMDb's id to feature of \(film.id) in films",
+                "refer to a special from \(home14) in tv",
+                "add an entry to \(sofa.id) in tv",
+                "refer to a special from \(home14) in tv",
+                "make \(own.title) beneath the container",
+                "draft season 15 from TMDb beneath the container",
+            ]
+        )
+        #expect(taking.children.map(\.creating?.parent) == [series.id.value])
+        #expect(console.containerDrafts.draft(of: ownID.value, in: "tv", of: home.id) != nil, "kept on this Mac")
+        let draft = try #require(taking.draft)
+        let taken = try #require(draft.value)
+        #expect(taken.year == 1963 && taken.outline == "A time traveller.")
+        #expect(taken.externalRefs.contains(ExternalRef(provider: .tvdb, value: "76107")))
+        #expect(taken.sequences[0].items.map(\.externalRefs) == [[], [here.ref]])
+        #expect(
+            taken.extras.map(\.type) == [.featurette, nil, nil, .trailer],
+            "the extra, the duplicate's and the breakout's refs, and the special placed after all"
+        )
+        #expect(draft.declined == [declined.ref], "the decline placed after all goes")
+
+        try await console.store(taking, in: "tv", for: series.id.value, of: home, tmdb: tmdb)
+        guard case .stored = try await console.store(draft, of: home) else {
+            Issue.record("the series' own edit is stored")
+            return
+        }
+        #expect(held.container(confidential.id)?.sequences.flatMap(\.items).map(\.externalRefs) == [[newBreakout.ref]])
+        #expect(held.container(sofa.id)?.sequences.flatMap(\.items).map(\.externalRefs) == [[heldBreakout.ref]])
+        let madeSeason = try #require(held.container(season.id))
+        #expect(madeSeason.sequences[0].items.map(\.externalRefs) == [[there.ref], [], []])
+        #expect(
+            madeSeason.sequences[0].items.compactMap(\.reference).map(\.container) == [film.id, sofa.id],
+            "referring to the film's item and the breakout's entry"
+        )
+        #expect(madeSeason.extras.map(\.type) == [.interview] && madeSeason.extras[0].externalRefs == [extraThere.ref])
+        #expect(held.container(film.id)?.sequences[0].items[0].externalRefs == [duplicateHere.ref, duplicateThere.ref])
+        #expect(held.sidecar(series.id)?.declined == [declined.ref])
     }
 }

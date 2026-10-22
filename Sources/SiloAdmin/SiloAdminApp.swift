@@ -131,12 +131,9 @@ final class ConsoleModel {
     var newContainer: NewContainer?
     /// A container being proposed to smddb, when one is.
     var proposing: Proposing?
-    /// TMDb's token keeper and language, why it cannot be asked, a record found there, a draft shaped.
+    /// TMDb's token keeper, and the console's TMDb state: its language, problem and sheets.
     let tokens: any PasskeyStore = ConsoleModel.keychain()
-    var tmdbLanguage: String
-    var tmdbProblem: String?
-    var findingInTMDb: FindingInTMDb?
-    var shapingTree: ShapingTree?
+    var tmdbState = TMDbState()
     /// The trial jobs this console started for a silo, by its id, as the silo last had them.
     private(set) var trialJobs: [AdminConsole.Silo.ID: [AdminConsole.TrialJob]] = [:]
     /// What starting trials could not do, binding by binding, in the silo's words.
@@ -150,7 +147,7 @@ final class ConsoleModel {
         self.console = console
         self.checkDelay = checkDelay
         smddbFolder = UserDefaults.standard.url(forKey: Self.smddbFolderKey)
-        tmdbLanguage = UserDefaults.standard.string(forKey: Self.tmdbLanguageKey) ?? Self.macLanguage
+        tmdbState.language = UserDefaults.standard.string(forKey: Self.tmdbLanguageKey) ?? Self.macLanguage
     }
 
     /// Browses, resolves every added address, and republishes the rows. An added address that
