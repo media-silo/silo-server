@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloClient
+import SmdSidecar
 
 // MARK: - Containers
 
@@ -55,6 +56,7 @@ extension AdminConsole {
                         in: draft.library,
                         document: draft.text,
                         basedOn: draft.base,
+                        attributions: draft.attributions.map(Self.wire),
                         dryRun: true
                     )
                 }
@@ -90,7 +92,8 @@ extension AdminConsole {
                         container: draft.container,
                         in: draft.library,
                         document: draft.text,
-                        basedOn: draft.base
+                        basedOn: draft.base,
+                        attributions: draft.attributions.map(Self.wire)
                     )
                 }
             )
@@ -106,6 +109,15 @@ extension AdminConsole {
                 reason: Self.detail(body).isEmpty ? "the library no longer holds the container" : Self.detail(body)
             )
         }
+    }
+
+    /// An attribution as the silo's routes carry it.
+    nonisolated static func wire(_ attribution: Attribution) -> SiloClient.Container.Attribution {
+        SiloClient.Container.Attribution(
+            subject: attribution.subject.rawValue,
+            provider: attribution.provider.rawValue,
+            value: attribution.value
+        )
     }
 
     /// Where a kind of a container's artwork is served; the silo serves it to anyone who asks.

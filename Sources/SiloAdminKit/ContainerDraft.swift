@@ -30,6 +30,12 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
     /// for a draft of a change to a container the library holds. A new container has no base: its
     /// `base` and `baseText` are empty.
     public var creating: Creating?
+    /// Whose each attributed field of the container is: kept through a rewording, gone with the field,
+    /// and carried by the store so the sidecar says the same. An artwork kind's attribution is the
+    /// artwork route's, and not here.
+    public var attributions: [Attribution] = []
+    /// The base's attributions of the container's fields, what a change to them is read against.
+    public var baseAttributions: [Attribution] = []
 
     /// Where a new container is filed: beneath `parent`, a container the library holds, as the item
     /// `item` at `position` in its sequence `sequence`; or, with no parent, at the top of the library.
@@ -66,10 +72,30 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
         self.edited = edited
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, library, container, title, base, baseText, text, edited, creating, attributions, baseAttributions
+    }
+
+    /// A draft as this Mac kept it, one kept before drafts carried attributions with none.
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        library = try values.decode(String.self, forKey: .library)
+        container = try values.decode(String.self, forKey: .container)
+        title = try values.decode(String.self, forKey: .title)
+        base = try values.decode(String.self, forKey: .base)
+        baseText = try values.decode(String.self, forKey: .baseText)
+        text = try values.decode(String.self, forKey: .text)
+        edited = try values.decode(Date.self, forKey: .edited)
+        creating = try values.decodeIfPresent(Creating.self, forKey: .creating)
+        attributions = try values.decodeIfPresent([Attribution].self, forKey: .attributions) ?? []
+        baseAttributions = try values.decodeIfPresent([Attribution].self, forKey: .baseAttributions) ?? []
+    }
+
     /// A change from the library's container on screen, whose sidecar is its base.
     public static func change(_ opened: SiloClient.LibraryContainer, sidecar: Data) throws -> ContainerDraft {
         let document = try Self.document(of: sidecar)
-        return ContainerDraft(
+        var draft = ContainerDraft(
             library: opened.library,
             container: opened.container.id,
             title: opened.container.displayTitle,
@@ -77,6 +103,42 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
             baseText: document,
             text: document
         )
+        draft.attributions = try SidecarFile.sidecar(from: sidecar).attributions.filter(\.subject.isField)
+        draft.baseAttributions = draft.attributions
+        return draft
+    }
+
+    /// The attributions whose field the container still has; any other subject is kept as it was, for
+    /// the silo to say what it makes of it.
+    public static func pruned(_ attributions: [Attribution], for container: Container) -> [Attribution] {
+        attributions.filter { attribution in
+            if attribution.subject == .outline { return container.outline != nil }
+            if let alternative = attribution.subject.alternative {
+                return container.alternatives.first { $0.id == alternative }?.outline != nil
+            }
+            return true
+        }
+    }
+
+    /// Removes an attribution alone: the operator saying the text is their own.
+    public mutating func removeAttribution(of subject: Attribution.Subject) {
+        attributions.removeAll { $0.subject == subject }
+        edited = .now
+    }
+
+    /// The draft made another document's, whose fields are not the attributed text: smddb's record,
+    /// taken in. A field whose value changes loses its attribution; one that reads the same keeps it.
+    public mutating func take(_ container: Container) {
+        let before = value
+        set(container)
+        attributions.removeAll { attribution in
+            if attribution.subject == .outline { return before?.outline != container.outline }
+            if let alternative = attribution.subject.alternative {
+                return before?.alternatives.first { $0.id == alternative }?.outline
+                    != container.alternatives.first { $0.id == alternative }?.outline
+            }
+            return false
+        }
     }
 
     /// A new container, with the id `id` — the one smddb's client issued — at the top of a library or
@@ -102,6 +164,7 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
         var rebased = self
         rebased.base = landed.digest
         rebased.baseText = try Self.document(of: sidecar)
+        rebased.baseAttributions = try SidecarFile.sidecar(from: sidecar).attributions.filter(\.subject.isField)
         return rebased
     }
 
@@ -118,11 +181,12 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
     /// The text made the container's document, as the form changes it.
     public mutating func set(_ container: Container) {
         text = String(decoding: ContainerFile.data(for: container), as: UTF8.self)
+        attributions = Self.pruned(attributions, for: container)
         edited = .now
     }
 
     /// Whether the text says anything other than its base. A new container always does.
-    public var isChanged: Bool { isNew || text != baseText }
+    public var isChanged: Bool { isNew || text != baseText || attributions != baseAttributions }
 
     /// Whether the library's sidecar is no longer the one the draft was made from: a store would be
     /// refused, so it is to be re-based first. A new container has no sidecar to fall behind.

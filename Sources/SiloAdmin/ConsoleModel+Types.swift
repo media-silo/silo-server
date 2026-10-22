@@ -55,6 +55,29 @@ extension ConsoleModel {
         var failure: String?
     }
 
+    /// A record being found at TMDb: for a library, to draft from; or, for a series the library holds by
+    /// its TMDb reference, one of its seasons to draft beneath it.
+    struct FindingInTMDb: Identifiable {
+        let id = UUID()
+        var silo: AdminConsole.Silo
+        var library: String
+        /// The held series, and its TMDb number, for a season.
+        var series: (container: String, title: String, tmdb: Int)?
+    }
+
+    /// A draft from TMDb being shaped before it is made: the tree as last kept, what each special is
+    /// suggested for, the silo's dry run, and how making it ended.
+    struct ShapingTree: Identifiable {
+        var silo: AdminConsole.Silo
+        var tree: TMDbTree
+        var suggestions: [Int: AdminConsole.SpecialSuggestion] = [:]
+        var check: AdminConsole.ContainerCheck?
+        var outcome: AdminConsole.TMDbCreateOutcome?
+        var failure: String?
+
+        var id: TMDbTree.ID { tree.id }
+    }
+
     /// An import from smddb into a library being chosen.
     struct Importing: Identifiable {
         let id = UUID()

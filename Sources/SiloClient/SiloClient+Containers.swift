@@ -237,6 +237,15 @@ extension SiloClient {
         try await send("GET", "/v1/libraries/\(library)/containers")
     }
 
+    /// Every container a library of the silo holds that carries a provider's reference, itself or
+    /// through one of its items.
+    public func lookup(provider: String, value: String) async throws -> [ContainerSummary] {
+        var path = URLComponents()
+        path.path = "/v1/lookup"
+        path.queryItems = [URLQueryItem(name: "provider", value: provider), URLQueryItem(name: "value", value: value)]
+        return try await send("GET", path.string ?? "")
+    }
+
     public func container(_ id: String, in library: String) async throws -> LibraryContainer {
         try await send("GET", "/v1/libraries/\(library)/containers/\(id)")
     }

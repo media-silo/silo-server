@@ -475,6 +475,24 @@ struct ProposeSheet: View {
             )
             .foregroundStyle(.secondary)
             DifferenceView(lines: proposal.plan.difference)
+            if !proposal.plan.leftOut.isEmpty {
+                GroupBox("Left out, as a provider's work rather than smddb's") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(proposal.plan.leftOut.sorted { $0.key.value < $1.key.value }, id: \.key) { id, left in
+                            ForEach(left, id: \.self) { attribution in
+                                Text(
+                                    "\(id == proposal.plan.container.id ? "" : "\(id): ")\(attribution.subject), attributed to \(attribution.provider)"
+                                )
+                                .font(.caption)
+                            }
+                        }
+                        Text("Each takes smddb's own value instead, or none.").font(.caption2).foregroundStyle(
+                            .secondary
+                        )
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
             if !proposal.plan.offered.isEmpty {
                 GroupBox("Containers it names that smddb does not have") {
                     ForEach(proposal.plan.offered, id: \.id) { offered in

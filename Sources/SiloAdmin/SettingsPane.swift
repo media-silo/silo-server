@@ -94,6 +94,7 @@ struct LibrariesPane: View {
                             .buttonStyle(.borderless)
                             .padding(.horizontal, 8)
                         SmddbCloneBar(model: model)
+                        TMDbBar(model: model)
                     }
                     .padding(.vertical, 8)
                     .frame(minWidth: 220, idealWidth: 260, maxWidth: 360)
@@ -161,6 +162,12 @@ struct LibrariesPane: View {
         }
         .sheet(item: $model.proposing) { proposal in
             ProposeSheet(proposal: proposal, model: model)
+        }
+        .sheet(item: $model.findingInTMDb) { finding in
+            FindInTMDbSheet(finding: finding, model: model)
+        }
+        .sheet(item: $model.shapingTree) { shaping in
+            ShapeTreeSheet(shaping: shaping, model: model)
         }
         .alert(
             "Remove \(removingLibrary ?? "the library")?",

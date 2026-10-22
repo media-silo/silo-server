@@ -220,7 +220,7 @@ extension AdminConsole {
     public func draft(fromSmddb record: Container, in library: String, of silo: Silo) async throws -> ContainerDraft {
         let opened = try await open(container: record.id.value, in: library, of: silo)
         var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
-        draft.set(record)
+        draft.take(record)
         return draft
     }
 
@@ -342,7 +342,19 @@ extension AdminConsole {
         }
         do {
             let result = try await withOperator(silo) {
-                try await $0.create(containers: [draft.text], parent: creating.parent, in: draft.library)
+                try await $0.create(
+                    containers: [draft.text],
+                    parent: creating.parent,
+                    in: draft.library,
+                    attributions: draft.attributions.map {
+                        SiloClient.CreateAttribution(
+                            container: child.id.value,
+                            subject: $0.subject.rawValue,
+                            provider: $0.provider.rawValue,
+                            value: $0.value
+                        )
+                    }
+                )
             }
             try containerDrafts.remove(draft.id, of: silo.id)
             return .created(result)
@@ -362,7 +374,7 @@ extension AdminConsole {
     }
 
     /// A making's result as an edit's, for the verdict the editor shows: its findings, and nothing written.
-    private nonisolated static func editResult(
+    nonisolated static func editResult(
         _ result: SiloClient.ContainerCreateResult
     ) -> SiloClient.ContainerEditResult {
         SiloClient.ContainerEditResult(applied: result.applied, sidecar: "", digest: "", findings: result.findings)
@@ -376,10 +388,14 @@ extension AdminConsole {
     /// go with it, and those neither has, which would refuse it.
     public struct ExportPlan: Hashable, Sendable {
         public var library: String
+        /// The container as it will be contributed: its attributed fields smddb's, or none.
         public var container: Container
         public var record: Container?
         public var offered: [Container]
         public var unavailable: [ContainerID]
+        /// The fields each contributed container's sidecar attributes to a provider, which the
+        /// contribution leaves out: a provider's contributors' writing is not smddb's to hold.
+        public var leftOut: [ContainerID: [Attribution]] = [:]
 
         /// The document's difference from smddb's record, line by line; every line added when smddb has none.
         public var difference: [LineDifference.Line] {
@@ -399,7 +415,10 @@ extension AdminConsole {
         to database: any ContainerDatabase
     ) async throws -> ExportPlan {
         let opened = try await open(container: id, in: library, of: silo)
-        let container = try SidecarFile.sidecar(from: opened.sidecar).container
+        let sidecar = try SidecarFile.sidecar(from: opened.sidecar)
+        let record = try await database.container(sidecar.container.id)
+        let (container, left) = Self.contributable(sidecar, record: record)
+        var leftOut: [ContainerID: [Attribution]] = left.isEmpty ? [:] : [container.id: left]
         var offered: [Container] = []
         var unavailable: [ContainerID] = []
         var seen: Set<ContainerID> = [container.id]
@@ -408,8 +427,9 @@ extension AdminConsole {
             let next = queue.removeFirst()
             guard seen.insert(next).inserted, try await database.container(next) == nil else { continue }
             do {
-                let sidecar = try await withOperator(silo) { try await $0.sidecar(of: next.value, in: library) }
-                let named = try SidecarFile.sidecar(from: sidecar).container
+                let bytes = try await withOperator(silo) { try await $0.sidecar(of: next.value, in: library) }
+                let (named, left) = Self.contributable(try SidecarFile.sidecar(from: bytes), record: nil)
+                if !left.isEmpty { leftOut[named.id] = left }
                 offered.append(named)
                 queue += named.namedContainerIDs
             } catch SiloClientError.status(404, _) {
@@ -419,10 +439,33 @@ extension AdminConsole {
         return ExportPlan(
             library: library,
             container: container,
-            record: try await database.container(container.id),
+            record: record,
             offered: offered,
-            unavailable: unavailable
+            unavailable: unavailable,
+            leftOut: leftOut
         )
+    }
+
+    /// A sidecar's container as smddb may take it: each field the sidecar attributes to a provider given
+    /// the value smddb's record holds, or none when there is no record; and the attributions it left out.
+    public nonisolated static func contributable(
+        _ sidecar: Sidecar,
+        record: Container?
+    ) -> (Container, [Attribution]) {
+        var container = sidecar.container
+        var left: [Attribution] = []
+        for attribution in sidecar.attributions {
+            if attribution.subject == .outline {
+                container.outline = record?.outline
+                left.append(attribution)
+            } else if let alternative = attribution.subject.alternative,
+                let index = container.alternatives.firstIndex(where: { $0.id == alternative })
+            {
+                container.alternatives[index].outline = record?.alternatives.first { $0.id == alternative }?.outline
+                left.append(attribution)
+            }
+        }
+        return (container, left)
     }
 
     /// Contributes the plan's container to smddb, with the offered containers chosen. smddb refuses it
