@@ -2,9 +2,10 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SmdSidecar
 
 /// A container's artwork: images beside its `container.smd`, found by name, which the sidecar lists
-/// none of. They are the names a media server already looks for in a folder, and the library already
+/// none of, though it may attribute a kind to a provider. They are the names a media server already looks for in a folder, and the library already
 /// gives every container a folder of its own. `Containers.md`, *Artwork*.
 public enum Artwork {
     /// The kinds, in the order they are listed.
@@ -50,13 +51,24 @@ public enum Artwork {
         kinds.filter { file(of: $0, in: folder) != nil }
     }
 
-    /// A warning, on the sidecar, for each kind the folder holds in both formats.
-    public static func findings(in folder: URL, sidecar: String) -> [Finding] {
-        kinds.compactMap { kind in
+    /// A warning, on the sidecar, for each kind the folder holds in both formats, and for each kind
+    /// the sidecar attributes that the folder holds no file for.
+    public static func findings(in folder: URL, sidecar: String, attributions: [Attribution] = []) -> [Finding] {
+        let both = kinds.compactMap { kind -> Finding? in
             let both = Format.allCases.allSatisfy {
                 FileManager.default.fileExists(atPath: folder.appendingPathComponent("\(kind).\($0.rawValue)").path)
             }
             return both ? Finding(.warning, path: sidecar, "\(kind) is both \(kind).jpg and \(kind).png") : nil
         }
+        let missing = attributions.compactMap { attribution -> Finding? in
+            guard let kind = attribution.subject.artworkKind, kinds.contains(kind), file(of: kind, in: folder) == nil
+            else { return nil }
+            return Finding(
+                .warning,
+                path: sidecar,
+                "artwork \(kind) is attributed to \(attribution.provider) but the folder has none"
+            )
+        }
+        return both + missing
     }
 }

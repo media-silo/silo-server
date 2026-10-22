@@ -158,6 +158,16 @@ package struct OperatorController {
             let outcome = try await ContainerMaker.create(
                 body.documents,
                 parent: body.parent,
+                attributions: (body.attributions ?? []).map {
+                    (
+                        container: $0.container,
+                        attribution: Attribution(
+                            subject: Attribution.Subject(rawValue: $0.subject),
+                            provider: Provider(rawValue: $0.provider),
+                            value: $0.value
+                        )
+                    )
+                },
                 in: library,
                 dryRun: body.dryRun ?? false,
                 libraries: libraries,
@@ -215,6 +225,16 @@ package struct OperatorController {
                 in: library,
                 document: body.document,
                 basedOn: body.basedOn,
+                attributions: body.attributions?.map {
+                    Attribution(
+                        subject: Attribution.Subject(rawValue: $0.subject),
+                        provider: Provider(rawValue: $0.provider),
+                        value: $0.value
+                    )
+                },
+                declined: body.declined?.map {
+                    ExternalRef(provider: Provider(rawValue: $0.provider), value: $0.value)
+                },
                 dryRun: body.dryRun ?? false,
                 libraries: libraries,
                 index: index

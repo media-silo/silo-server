@@ -40,6 +40,59 @@ public enum Validator {
                 findings += layoutNameFindings(presentation, item: id, entry: entry, isExtra: isExtra, in: sidecar)
             }
         }
+        return findings + attributionFindings(sidecar) + declinedFindings(sidecar)
+    }
+
+    /// The attributions' checks: each names a field the container has, or an artwork kind, and no
+    /// subject twice. Whether an attributed kind's file is there is the walk's, which reads the folder.
+    private static func attributionFindings(_ sidecar: Sidecar) -> [Finding] {
+        var findings: [Finding] = []
+        var seen: Set<Attribution.Subject> = []
+        for attribution in sidecar.attributions {
+            let subject = attribution.subject
+            if !seen.insert(subject).inserted {
+                findings.append(Finding(.error, "\(subject) is attributed twice"))
+            }
+            let present: Bool
+            if subject == .outline {
+                present = sidecar.container.outline != nil
+            } else if let alternative = subject.alternative {
+                present = sidecar.container.alternatives.first { $0.id == alternative }?.outline != nil
+            } else if let kind = subject.artworkKind, Artwork.kinds.contains(kind) {
+                continue
+            } else {
+                findings.append(Finding(.error, "\(subject) is not a field or an artwork kind to attribute"))
+                continue
+            }
+            if !present {
+                findings.append(
+                    Finding(.error, "\(subject) is attributed to \(attribution.provider) but the container has none")
+                )
+            }
+        }
+        return findings
+    }
+
+    /// The declined references' checks: none declined twice, and none both declined and carried by
+    /// an entry, since one thing cannot be held and declined at once.
+    private static func declinedFindings(_ sidecar: Sidecar) -> [Finding] {
+        var findings: [Finding] = []
+        var seen: Set<ExternalRef> = []
+        let entries = sidecar.container.sequences.flatMap(\.items) + sidecar.container.extras
+        for ref in sidecar.declined {
+            guard seen.insert(ref).inserted else {
+                findings.append(Finding(.error, "\(ref.provider) \(ref.value) is declined twice"))
+                continue
+            }
+            for entry in entries where entry.externalRefs.contains(ref) {
+                findings.append(
+                    Finding(
+                        .error,
+                        "\(ref.provider) \(ref.value) is declined but item \(entry.id?.value ?? "?") carries it"
+                    )
+                )
+            }
+        }
         return findings
     }
 

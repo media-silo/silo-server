@@ -45,6 +45,25 @@ extension SiloClient {
         public struct ExternalRef: Hashable, Sendable, Codable {
             public var provider: String
             public var value: String
+
+            public init(provider: String, value: String) {
+                self.provider = provider
+                self.value = value
+            }
+        }
+
+        /// Whose an attributed field or artwork kind is: the subject, as `outline`,
+        /// `alternative/<id>/outline` or `artwork/<kind>`, the provider, and the reference there.
+        public struct Attribution: Hashable, Sendable, Codable {
+            public var subject: String
+            public var provider: String
+            public var value: String
+
+            public init(subject: String, provider: String, value: String) {
+                self.subject = subject
+                self.provider = provider
+                self.value = value
+            }
         }
 
         /// One presentation of an item in the library: the name it is shown under, its profile and
@@ -93,6 +112,37 @@ extension SiloClient {
         public var extras: [Item]
         public var children: [ContainerSummary]
         public var externalRefs: [ExternalRef]
+        /// None from a silo that records none.
+        public var attributions: [Attribution]
+
+        private enum CodingKeys: String, CodingKey {
+            case id, library, type, title, displayTitle, year, typeLabel, outline, listed, parent
+            case defaultAlternative, alternatives, features, sequences, extrasAnchor, extras, children
+            case externalRefs, attributions
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            library = try container.decode(String.self, forKey: .library)
+            type = try container.decode(String.self, forKey: .type)
+            title = try container.decode(String.self, forKey: .title)
+            displayTitle = try container.decode(String.self, forKey: .displayTitle)
+            year = try container.decodeIfPresent(Int.self, forKey: .year)
+            typeLabel = try container.decodeIfPresent(String.self, forKey: .typeLabel)
+            outline = try container.decodeIfPresent(String.self, forKey: .outline)
+            listed = try container.decode(Bool.self, forKey: .listed)
+            parent = try container.decodeIfPresent(String.self, forKey: .parent)
+            defaultAlternative = try container.decodeIfPresent(String.self, forKey: .defaultAlternative)
+            alternatives = try container.decode([Alternative].self, forKey: .alternatives)
+            features = try container.decode([Feature].self, forKey: .features)
+            sequences = try container.decode([Sequence].self, forKey: .sequences)
+            extrasAnchor = try container.decodeIfPresent(String.self, forKey: .extrasAnchor)
+            extras = try container.decode([Item].self, forKey: .extras)
+            children = try container.decode([ContainerSummary].self, forKey: .children)
+            externalRefs = try container.decode([ExternalRef].self, forKey: .externalRefs)
+            attributions = try container.decodeIfPresent([Attribution].self, forKey: .attributions) ?? []
+        }
     }
 
     /// A container in one library: the library, its sidecar's path in it, the digest an edit names as
@@ -103,6 +153,18 @@ extension SiloClient {
         public var digest: String
         public var artwork: [String]
         public var container: Container
+        /// The references the library's sidecar declines; none from a silo that records none.
+        public var declined: [Container.ExternalRef]
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            library = try container.decode(String.self, forKey: .library)
+            path = try container.decode(String.self, forKey: .path)
+            digest = try container.decode(String.self, forKey: .digest)
+            artwork = try container.decode([String].self, forKey: .artwork)
+            self.container = try container.decode(Container.self, forKey: .container)
+            declined = try container.decodeIfPresent([Container.ExternalRef].self, forKey: .declined) ?? []
+        }
     }
 
     /// What an edit wrote, or would write: the sidecar's bytes as text, their digest, and what the
@@ -197,23 +259,34 @@ extension SiloClient {
         var document: String
         var basedOn: String
         var dryRun: Bool?
+        var attributions: [Container.Attribution]?
+        var declined: [Container.ExternalRef]?
     }
 
     /// Sets a container's own fields in a library's sidecar from its repository document, onto the
     /// sidecar whose digest is `basedOn`. Refused with `status(409, _)`, naming the digest the library
     /// holds, when that is no longer it, and with `status(422, _)` carrying the result and its findings
-    /// when they refuse it. Operator only.
+    /// when they refuse it. `attributions`, those of the container's own fields, and `declined`
+    /// replace the sidecar's when given and leave them as they stand when nil. Operator only.
     public func edit(
         container id: String,
         in library: String,
         document: String,
         basedOn: String,
+        attributions: [Container.Attribution]? = nil,
+        declined: [Container.ExternalRef]? = nil,
         dryRun: Bool = false
     ) async throws -> ContainerEditResult {
         try await send(
             "PUT",
             "/v1/libraries/\(library)/containers/\(id)",
-            body: ContainerEdit(document: document, basedOn: basedOn, dryRun: dryRun ? true : nil)
+            body: ContainerEdit(
+                document: document,
+                basedOn: basedOn,
+                dryRun: dryRun ? true : nil,
+                attributions: attributions,
+                declined: declined
+            )
         )
     }
 
@@ -231,10 +304,27 @@ extension SiloClient {
         public var findings: [LastWalk.Finding]
     }
 
+    /// An attribution of a new container's own field, naming the container in the request it
+    /// belongs to.
+    public struct CreateAttribution: Hashable, Sendable, Codable {
+        public var container: String
+        public var subject: String
+        public var provider: String
+        public var value: String
+
+        public init(container: String, subject: String, provider: String, value: String) {
+            self.container = container
+            self.subject = subject
+            self.provider = provider
+            self.value = value
+        }
+    }
+
     private struct ContainerCreate: Codable {
         var documents: [String]
         var parent: String?
         var dryRun: Bool?
+        var attributions: [CreateAttribution]?
     }
 
     /// Makes a tree of containers in a library with no file, from their repository documents, beneath
@@ -246,12 +336,18 @@ extension SiloClient {
         containers documents: [String],
         parent: String?,
         in library: String,
+        attributions: [CreateAttribution] = [],
         dryRun: Bool = false
     ) async throws -> ContainerCreateResult {
         try await send(
             "POST",
             "/v1/libraries/\(library)/containers",
-            body: ContainerCreate(documents: documents, parent: parent, dryRun: dryRun ? true : nil)
+            body: ContainerCreate(
+                documents: documents,
+                parent: parent,
+                dryRun: dryRun ? true : nil,
+                attributions: attributions.isEmpty ? nil : attributions
+            )
         )
     }
 
@@ -266,13 +362,28 @@ extension SiloClient {
         public var format: String
     }
 
-    /// Puts an image as a kind of a container's artwork. Refused with `status(415, _)` for anything
-    /// not a JPEG or a PNG by its bytes, and `status(413, _)` for an image over 25 MB. Operator only.
-    public func putArtwork(_ image: Data, as kind: String, of id: String, in library: String) async throws -> ArtworkPut
-    {
+    /// Puts an image as a kind of a container's artwork, attributed to `provider` and the reference
+    /// `value` there, or with none, which removes any the kind had. Refused with `status(415, _)` for
+    /// anything not a JPEG or a PNG by its bytes, and `status(413, _)` for an image over 25 MB.
+    /// Operator only.
+    public func putArtwork(
+        _ image: Data,
+        as kind: String,
+        of id: String,
+        in library: String,
+        attributedTo attribution: (provider: String, value: String)? = nil
+    ) async throws -> ArtworkPut {
+        var path = URLComponents()
+        path.path = "/v1/libraries/\(library)/containers/\(id)/artwork/\(kind)"
+        if let attribution {
+            path.queryItems = [
+                URLQueryItem(name: "provider", value: attribution.provider),
+                URLQueryItem(name: "value", value: attribution.value),
+            ]
+        }
         let (data, status) = try await request(
             "PUT",
-            "/v1/libraries/\(library)/containers/\(id)/artwork/\(kind)",
+            path.string ?? "",
             data: image,
             contentType: "application/octet-stream"
         )

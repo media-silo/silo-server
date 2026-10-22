@@ -161,7 +161,7 @@ public enum LibraryWalker {
         ) {
             findings.append(finding)
         }
-        findings += Artwork.findings(in: folder, sidecar: relative)
+        findings += Artwork.findings(in: folder, sidecar: relative, attributions: sidecar.attributions)
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         var node = LibraryNode(
             folder: folder,

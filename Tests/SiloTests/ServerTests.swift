@@ -2978,3 +2978,271 @@ extension ServerTests {
         }
     }
 }
+
+// MARK: - Attributions and declined references
+
+/// Each test makes a library of its own in a folder of its own and removes both, so the suite's
+/// library is as the tests above left it.
+extension ServerTests {
+    struct AttributionJSON: Codable, Equatable {
+        var subject: String
+        var provider: String
+        var value: String
+    }
+    struct RefJSON: Codable, Equatable {
+        var provider: String
+        var value: String
+    }
+    struct AttributedRead: Decodable {
+        struct Container: Decodable {
+            var year: Int?
+            var outline: String?
+            var attributions: [AttributionJSON]
+        }
+        var digest: String
+        var declined: [RefJSON]
+        var container: Container
+    }
+    struct AttributedEdit: Encodable {
+        var document: String
+        var basedOn: String
+        var attributions: [AttributionJSON]?
+        var declined: [RefJSON]?
+    }
+    struct AttributedCreate: Encodable {
+        struct Attribution: Encodable {
+            var container: String
+            var subject: String
+            var provider: String
+            var value: String
+        }
+        var documents: [String]
+        var attributions: [Attribution]?
+    }
+    struct FindingsJSON: Decodable {
+        struct Finding: Decodable { var text: String }
+        var findings: [Finding]
+    }
+
+    static let tmdbOutline = AttributionJSON(subject: "outline", provider: "tmdb", value: "348")
+
+    /// A film with an outline, for the attribution tests to make.
+    static func attributedFilm(_ id: String) -> Container {
+        var film = Fixture.film(id, "Alien", 1979)
+        film.outline = "In space no one can hear you scream."
+        return film
+    }
+
+    static func xml(_ container: Container) -> String {
+        String(decoding: ContainerFile.data(for: container), as: UTF8.self)
+    }
+
+    /// Adds a library of its own in a fresh folder, makes `film` in it — with its outline attributed
+    /// when `attributed` — runs `body` with the library's container route, and removes the library
+    /// and its folder.
+    func withAttributionLibrary(
+        _ id: String,
+        film: Container,
+        attributed: Bool = false,
+        _ body: (TestClient, String) async throws -> Void
+    ) async throws {
+        struct NewLibrary: Encodable {
+            var id: String
+            var path: String
+        }
+        let folder = Fixture.root.appendingPathComponent("Media/\(id)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await withClient { client in
+            let added = try await client.post(
+                "/v1/libraries",
+                json: NewLibrary(id: id, path: folder.path),
+                headers: Self.operatorHeaders
+            )
+            #expect(added.status == 201)
+            let create = AttributedCreate(
+                documents: [Self.xml(film)],
+                attributions: attributed
+                    ? [.init(container: film.id.value, subject: "outline", provider: "tmdb", value: "348")] : nil
+            )
+            let made = try await client.send(
+                "POST",
+                "/v1/libraries/\(id)/containers",
+                body: try JSONEncoder().encode(create),
+                headers: Self.operatorHeaders
+            )
+            #expect(made.status == 200)
+            try await body(client, "/v1/libraries/\(id)/containers/\(film.id)")
+            #expect(try await client.send("DELETE", "/v1/libraries/\(id)", headers: Self.operatorHeaders).status == 204)
+        }
+    }
+
+    @Test func aCreateCarriesItsAttributions() async throws {
+        let film = Self.attributedFilm("0000000000000061")
+        try await withAttributionLibrary("attributed-create", film: film, attributed: true) { client, route in
+            let read = try await client.get(route).json(AttributedRead.self)
+            #expect(read.container.outline == film.outline)
+            #expect(read.container.attributions == [Self.tmdbOutline])
+
+            let elsewhere = AttributedCreate(
+                documents: [Self.xml(Self.attributedFilm("0000000000000062"))],
+                attributions: [.init(container: "00000000000000ee", subject: "outline", provider: "tmdb", value: "1")]
+            )
+            let artwork = AttributedCreate(
+                documents: [Self.xml(Self.attributedFilm("0000000000000062"))],
+                attributions: [
+                    .init(container: "0000000000000062", subject: "artwork/poster", provider: "tmdb", value: "1")
+                ]
+            )
+            for refused in [elsewhere, artwork] {
+                let answer = try await client.send(
+                    "POST",
+                    "/v1/libraries/attributed-create/containers",
+                    body: try JSONEncoder().encode(refused),
+                    headers: Self.operatorHeaders
+                )
+                #expect(answer.status == 400)
+            }
+        }
+    }
+
+    @Test func attributionsAreServedWithTheContainer() async throws {
+        let film = Self.attributedFilm("0000000000000063")
+        try await withAttributionLibrary("attributed-read", film: film, attributed: true) { client, _ in
+            let read = try await client.get("/v1/containers/\(film.id)").json(AttributedRead.Container.self)
+            #expect(read.attributions == [Self.tmdbOutline])
+        }
+    }
+
+    @Test func anEditCarriesTheAttributionsOfItsFields() async throws {
+        var film = Self.attributedFilm("0000000000000064")
+        film.outline = nil
+        try await withAttributionLibrary("attributed-edit", film: film) { client, route in
+            func edit(_ body: AttributedEdit) async throws -> TestResponse {
+                try await client.send("PUT", route, body: try JSONEncoder().encode(body), headers: Self.operatorHeaders)
+            }
+            var outlined = film
+            outlined.outline = "In space no one can hear you scream."
+            var read = try await client.get(route).json(AttributedRead.self)
+            let taken = try await edit(
+                AttributedEdit(document: Self.xml(outlined), basedOn: read.digest, attributions: [Self.tmdbOutline])
+            )
+            #expect(taken.status == 200)
+            read = try await client.get(route).json(AttributedRead.self)
+            #expect(read.container.attributions == [Self.tmdbOutline])
+
+            var redated = outlined
+            redated.year = 1980
+            #expect(try await edit(AttributedEdit(document: Self.xml(redated), basedOn: read.digest)).status == 200)
+            read = try await client.get(route).json(AttributedRead.self)
+            #expect(read.container.year == 1980)
+            #expect(read.container.attributions == [Self.tmdbOutline], "an edit without attributions keeps them")
+
+            var bare = redated
+            bare.outline = nil
+            let removed = try await edit(AttributedEdit(document: Self.xml(bare), basedOn: read.digest))
+            #expect(removed.status == 422)
+            #expect(
+                try removed.json(FindingsJSON.self).findings.map(\.text)
+                    == ["outline is attributed to tmdb but the container has none"]
+            )
+            let artwork = AttributionJSON(subject: "artwork/poster", provider: "tmdb", value: "348")
+            #expect(
+                try await edit(
+                    AttributedEdit(document: Self.xml(redated), basedOn: read.digest, attributions: [artwork])
+                ).status == 400
+            )
+            #expect(try await client.get(route).json(AttributedRead.self).digest == read.digest, "nothing written")
+        }
+    }
+
+    @Test func anEditCarriesTheRefsItDeclines() async throws {
+        let film = Self.attributedFilm("0000000000000065")
+        try await withAttributionLibrary("declined-edit", film: film) { client, route in
+            let before = try await client.get(route).json(AttributedRead.self)
+            #expect(before.declined.isEmpty)
+            let trailer = RefJSON(provider: "tmdb", value: "99")
+            let declined = try await client.send(
+                "PUT",
+                route,
+                body: try JSONEncoder().encode(
+                    AttributedEdit(document: Self.xml(film), basedOn: before.digest, declined: [trailer])
+                ),
+                headers: Self.operatorHeaders
+            )
+            #expect(declined.status == 200)
+            let after = try await client.get(route).json(AttributedRead.self)
+            #expect(after.declined == [trailer])
+            #expect(after.container.outline == film.outline && after.container.year == film.year)
+        }
+    }
+
+    @Test func aLibrarysDeclinedRefsAreReadWithinIt() async throws {
+        let film = Self.attributedFilm("0000000000000066")
+        try await withAttributionLibrary("declined-read", film: film) { client, route in
+            let before = try await client.get(route).json(AttributedRead.self)
+            let trailer = RefJSON(provider: "tmdb", value: "99")
+            _ = try await client.send(
+                "PUT",
+                route,
+                body: try JSONEncoder().encode(
+                    AttributedEdit(document: Self.xml(film), basedOn: before.digest, declined: [trailer])
+                ),
+                headers: Self.operatorHeaders
+            )
+            let library = try await client.get(route)
+            #expect(try library.json(AttributedRead.self).declined == [trailer])
+            let typed = try SiloClient.decoder.decode(SiloClient.LibraryContainer.self, from: library.body)
+            #expect(
+                typed.declined == [SiloClient.Container.ExternalRef(provider: "tmdb", value: "99")],
+                "as the console reads it"
+            )
+            let global = try await client.get("/v1/containers/\(film.id)")
+            #expect(global.status == 200)
+            let object = try JSONSerialization.jsonObject(with: global.body) as? [String: Any]
+            #expect(object?["declined"] == nil, "the global read carries none")
+        }
+    }
+
+    @Test func aContainersArtworkIsPutWithItsAttribution() async throws {
+        let film = Self.attributedFilm("0000000000000067")
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0x11, count: 64))
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] + Array(repeating: 0x22, count: 64))
+        let headers = ["Authorization": "Bearer secret"]
+        let poster = AttributionJSON(subject: "artwork/poster", provider: "tmdb", value: "348")
+        try await withAttributionLibrary("attributed-artwork", film: film) { client, route in
+            let put = try await client.send(
+                "PUT",
+                "\(route)/artwork/poster?provider=tmdb&value=348",
+                body: jpeg,
+                headers: headers
+            )
+            #expect(put.status == 200)
+            var read = try await client.get(route).json(AttributedRead.self)
+            #expect(read.container.attributions == [poster])
+
+            #expect(try await client.send("PUT", "\(route)/artwork/poster", body: png, headers: headers).status == 200)
+            read = try await client.get(route).json(AttributedRead.self)
+            #expect(read.container.attributions.isEmpty, "the operator's own image is credited to no one")
+
+            let half = try await client.send(
+                "PUT",
+                "\(route)/artwork/poster?provider=tmdb",
+                body: jpeg,
+                headers: headers
+            )
+            #expect(half.status == 400)
+            #expect(try await client.get(route).json(AttributedRead.self).digest == read.digest)
+            #expect(try await client.get("\(route)/artwork/poster").head?.headerFields[.contentType] == "image/png")
+
+            _ = try await client.send(
+                "PUT",
+                "\(route)/artwork/poster?provider=tmdb&value=348",
+                body: jpeg,
+                headers: headers
+            )
+            #expect(try await client.send("DELETE", "\(route)/artwork/poster", headers: headers).status == 204)
+            #expect(try await client.get(route).json(AttributedRead.self).container.attributions.isEmpty)
+        }
+    }
+}

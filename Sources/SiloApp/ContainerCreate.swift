@@ -5,6 +5,7 @@ import Foundation
 import SiloLibrary
 import SiloStore
 import SmdKit
+import SmdSidecar
 
 /// Container documents that cannot be read, or that are not one tree.
 package struct BadCreate: Error {
@@ -29,9 +30,29 @@ package struct CreateRefused: Error {
 /// would make them, beneath a container the library holds or at its top. The silo takes the containers
 /// as documents and does not ask where they came from. `Smddb.md`, *What the silo adds*.
 enum ContainerMaker {
+    /// A request's attributions by the container they belong to, refused when one names a container
+    /// the request does not carry, or an artwork kind, which a new container has none of.
+    private static func attributedFields(
+        _ attributions: [(container: String, attribution: Attribution)],
+        of containers: [Container]
+    ) throws -> [ContainerID: [Attribution]] {
+        var attributed: [ContainerID: [Attribution]] = [:]
+        for (named, attribution) in attributions {
+            guard let id = ContainerID(named), containers.contains(where: { $0.id == id }) else {
+                throw BadCreate(reason: "an attribution names \(named), which the request does not carry")
+            }
+            guard attribution.subject.artworkKind == nil else {
+                throw BadCreate(reason: "\(attribution.subject) is artwork, which a new container has none of")
+            }
+            attributed[id, default: []].append(attribution)
+        }
+        return attributed
+    }
+
     static func create(
         _ documents: [String],
         parent: String?,
+        attributions: [(container: String, attribution: Attribution)] = [],
         in library: LibraryConfig,
         dryRun: Bool,
         libraries: Libraries,
@@ -43,6 +64,7 @@ enum ContainerMaker {
         } catch {
             throw BadCreate(reason: "a container document cannot be read: \(error.localizedDescription)")
         }
+        let attributedByID = try attributedFields(attributions, of: containers)
         let parentID: ContainerID?
         if let parent {
             guard let id = ContainerID(parent), try index.container(id, in: library.id) != nil else {
@@ -65,7 +87,12 @@ enum ContainerMaker {
             let making: Making
             do {
                 making = try Maker.compute(
-                    MakingRequest(library: library.root, holder: holder, containers: containers)
+                    MakingRequest(
+                        library: library.root,
+                        holder: holder,
+                        containers: containers,
+                        attributions: attributedByID
+                    )
                 )
             } catch let error as MakingError {
                 throw BadCreate(reason: error.localizedDescription)

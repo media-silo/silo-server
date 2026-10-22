@@ -131,6 +131,13 @@ enum Mapping {
             children: children.map(summary),
             externalRefs: container.externalRefs.map {
                 Components.Schemas.ExternalRef(provider: $0.provider.rawValue, value: $0.value)
+            },
+            attributions: sidecar.attributions.map {
+                Components.Schemas.Attribution(
+                    subject: $0.subject.rawValue,
+                    provider: $0.provider.rawValue,
+                    value: $0.value
+                )
             }
         )
     }

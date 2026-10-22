@@ -96,19 +96,27 @@ package struct LibraryController {
             throw NoSuchContainer()
         }
         let folder = libraries.library(library)!.root.appendingPathComponent(row.folder, isDirectory: true)
+        let sidecar = try SidecarFile.sidecar(from: row.document)
         return Components.Schemas.LibraryContainer(
             library: library,
             path: "\(row.folder)/\(SidecarFile.fileName)",
             digest: row.digest,
             artwork: Artwork.held(in: folder).compactMap { .init(rawValue: $0) },
-            container: try container(row, profile: nil)
+            container: try container(row, sidecar: sidecar, profile: nil),
+            declined: sidecar.declined.map {
+                Components.Schemas.ExternalRef(provider: $0.provider.rawValue, value: $0.value)
+            }
         )
     }
 
     /// One library's row for a container as the document's container, with that library's
     /// presentations and children.
-    private func container(_ row: IndexedContainer, profile: String?) throws -> Components.Schemas.Container {
-        let sidecar = try SidecarFile.sidecar(from: row.document)
+    private func container(
+        _ row: IndexedContainer,
+        sidecar: Sidecar? = nil,
+        profile: String?
+    ) throws -> Components.Schemas.Container {
+        let sidecar = try sidecar ?? SidecarFile.sidecar(from: row.document)
         return Mapping.container(
             row,
             sidecar: sidecar,
