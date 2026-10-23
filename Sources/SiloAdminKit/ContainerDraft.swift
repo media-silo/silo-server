@@ -36,6 +36,9 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
     public var attributions: [Attribution] = []
     /// The base's attributions of the container's fields, what a change to them is read against.
     public var baseAttributions: [Attribution] = []
+    /// The references the sidecar is to decline, when the draft changes them; nil leaves them as the
+    /// sidecar has them.
+    public var declined: [ExternalRef]?
 
     /// Where a new container is filed: beneath `parent`, a container the library holds, as the item
     /// `item` at `position` in its sequence `sequence`; or, with no parent, at the top of the library.
@@ -74,6 +77,7 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case id, library, container, title, base, baseText, text, edited, creating, attributions, baseAttributions
+        case declined
     }
 
     /// A draft as this Mac kept it, one kept before drafts carried attributions with none.
@@ -90,6 +94,7 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
         creating = try values.decodeIfPresent(Creating.self, forKey: .creating)
         attributions = try values.decodeIfPresent([Attribution].self, forKey: .attributions) ?? []
         baseAttributions = try values.decodeIfPresent([Attribution].self, forKey: .baseAttributions) ?? []
+        declined = try values.decodeIfPresent([ExternalRef].self, forKey: .declined)
     }
 
     /// A change from the library's container on screen, whose sidecar is its base.
@@ -186,7 +191,7 @@ public struct ContainerDraft: Hashable, Sendable, Identifiable, Codable {
     }
 
     /// Whether the text says anything other than its base. A new container always does.
-    public var isChanged: Bool { isNew || text != baseText || attributions != baseAttributions }
+    public var isChanged: Bool { isNew || text != baseText || attributions != baseAttributions || declined != nil }
 
     /// Whether the library's sidecar is no longer the one the draft was made from: a store would be
     /// refused, so it is to be re-based first. A new container has no sidecar to fall behind.

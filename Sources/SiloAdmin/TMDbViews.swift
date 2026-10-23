@@ -576,3 +576,268 @@ struct ShapeTreeSheet: View {
     }
 }
 #endif
+
+#if canImport(SwiftUI)
+/// A held container's differences from TMDb, each with a tick and none ticked to begin with: its fields,
+/// the ids TMDb holds that it lacks, what TMDb has that nothing covers, an order that differs, artwork,
+/// and a series' specials, the declined ones collapsed. What the library holds and TMDb lacks is shown,
+/// and never offered for removal. Taking makes one edit draft of the container, opened in the editor;
+/// what else it makes is listed and stored only when the operator says.
+struct DifferencesSheet: View {
+    let comparing: ConsoleModel.Comparing
+    let model: ConsoleModel
+    @Environment(\.dismiss) private var dismiss
+
+    private var current: ConsoleModel.Comparing { model.comparing ?? comparing }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("\(current.comparison?.title ?? current.key.container) against TMDb").font(.title3.bold())
+                TMDbMark()
+                Spacer()
+            }
+            if let comparison = current.comparison {
+                Text("Read \(comparison.reading).").font(.caption).foregroundStyle(.secondary)
+                ScrollView { differences(comparison) }
+                if let taking = current.taking { takingSummary(taking) }
+            } else if current.failure == nil {
+                ProgressView("Reading TMDb…")
+            }
+            if let failure = current.failure {
+                Label(failure, systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
+                    .textSelection(.enabled)
+            }
+            Text(TMDb.notice).font(.caption2).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Close") {
+                    model.comparing = nil
+                    dismiss()
+                }
+                if current.taking == nil {
+                    Button("Take the Ticked") { Task { await model.takeDifferences() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(current.chosen.isEmpty)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 620, minHeight: 520)
+    }
+
+    @ViewBuilder
+    private func differences(_ comparison: AdminConsole.TMDbComparison) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            group("Fields", comparison.differences.filter(\.isField), comparison)
+            group("References", comparison.differences.filter(\.isReference), comparison)
+            group("Children", comparison.differences.filter(\.isChild), comparison)
+            group("Order", comparison.differences.filter(\.isOrder), comparison)
+            group("Artwork", comparison.differences.filter(\.isArtwork), comparison)
+            let specials = comparison.differences.compactMap {
+                if case .special(let special) = $0 { special } else { nil }
+            }
+            if !specials.isEmpty {
+                GroupBox("Unassigned specials") {
+                    ForEach(specials) { special in specialRow(special, comparison) }
+                }
+            }
+            if !comparison.declined.isEmpty {
+                DisclosureGroup("Declined: \(comparison.declined.count)") {
+                    ForEach(comparison.declined) { special in specialRow(special, comparison) }
+                }
+            }
+            if !comparison.heldOnly.isEmpty {
+                GroupBox("Held here, and nothing at TMDb: nothing is offered for removal") {
+                    ForEach(comparison.heldOnly, id: \.self) { Text($0).font(.caption) }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if comparison.differences.isEmpty {
+                Label("Nothing differs from TMDb's record", systemImage: "checkmark.seal").foregroundStyle(.green)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func group(
+        _ title: String,
+        _ differences: [AdminConsole.TMDbDifference],
+        _ comparison: AdminConsole.TMDbComparison
+    ) -> some View {
+        if !differences.isEmpty {
+            GroupBox(title) {
+                VStack(alignment: .leading) {
+                    ForEach(differences) { difference in
+                        Toggle(isOn: tick(difference.id)) { label(difference, comparison) }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func tick(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { current.chosen.contains(id) },
+            set: { on in
+                if on { model.comparing?.chosen.insert(id) } else { model.comparing?.chosen.remove(id) }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func label(
+        _ difference: AdminConsole.TMDbDifference,
+        _ comparison: AdminConsole.TMDbComparison
+    ) -> some View {
+        switch difference {
+        case .title(let title): Text("Title: \(title)")
+        case .year(let year): Text("Year: \(year)")
+        case .outline(let text, let record):
+            VStack(alignment: .leading) {
+                Text(text).font(.callout)
+                HStack(spacing: 4) {
+                    TMDbMark()
+                    Text("taken with its attribution to TMDb \(record)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
+        case .episode(let episode, _): Text("Episode \(episode.number): \(episode.title)")
+        case .season(let season): Text("\(season.name), drafted from TMDb beneath this")
+        case .order(let sequence, let items):
+            Text("\(sequence ?? "The sequence") in TMDb's order: \(items.joined(separator: ", "))")
+        case .artwork(let kind, let path, _):
+            HStack {
+                AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(path)")) {
+                    $0.resizable().scaledToFit()
+                } placeholder: {
+                    ProgressView()
+                }
+                .frame(width: 60, height: 60)
+                Text("\(kind), credited to TMDb")
+            }
+        case .special(let special): Text(special.episode.title)
+        }
+    }
+
+    @ViewBuilder
+    private func specialRow(_ special: Special, _ comparison: AdminConsole.TMDbComparison) -> some View {
+        HStack {
+            VStack(alignment: .leading) {
+                HStack(spacing: 4) {
+                    Text(special.episode.title)
+                    TMDbMark()
+                }
+                if let placement = current.placements[special.id] {
+                    Text(describe(placement)).font(.caption).foregroundStyle(.green)
+                } else if let suggestion = comparison.suggestions[special.id] {
+                    Text("Suggested: \(suggestion.reason)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if current.placements[special.id] == nil, let placement = comparison.suggestions[special.id]?.placement {
+                Button("Take") { place(special, placement) }
+            }
+            Menu("Place") {
+                Button("As an entry of \(comparison.title)") { place(special, .entry(in: comparison.container)) }
+                Menu("As an extra of \(comparison.title)") {
+                    ForEach(EntryType.extraTypes, id: \.self) { type in
+                        Button(type.rawValue) { place(special, .extra(of: comparison.container, type: type.rawValue)) }
+                    }
+                }
+                Button("Declined") { place(special, .declined) }
+                Button("Unassigned") {
+                    model.comparing?.placements[special.id] = nil
+                    model.comparing?.chosen.remove("special:\(special.id)")
+                }
+            }
+            .fixedSize()
+        }
+    }
+
+    private func place(_ special: Special, _ placement: SpecialPlacement) {
+        model.comparing?.placements[special.id] = placement
+        model.comparing?.chosen.insert("special:\(special.id)")
+    }
+
+    private func describe(_ placement: SpecialPlacement) -> String {
+        switch placement {
+        case .entry: "an entry"
+        case .extra(_, let type): "a \(type) extra"
+        case .child(_, _, let type): "a \(type) of its own"
+        case .duplicate(let home, let item, let library, _, _): "the same as \(home)#\(item) in \(library)"
+        case .breakout(let id, _, _): "in breakout \(id)"
+        case .declined: "declined"
+        }
+    }
+
+    @ViewBuilder
+    private func takingSummary(_ taking: AdminConsole.TMDbTaking) -> some View {
+        GroupBox("Taken") {
+            VStack(alignment: .leading, spacing: 4) {
+                if taking.draft != nil {
+                    Text("The container's own changes are a draft, open in the editor to review and store.").font(
+                        .caption
+                    )
+                }
+                ForEach(taking.described, id: \.self) { Text("• \($0)").font(.caption) }
+                ForEach(taking.seasons, id: \.self) { number in
+                    Button("Draft Season \(number) from TMDb…") {
+                        Task {
+                            guard let tmdb = current.comparison?.series else { return }
+                            let finding = ConsoleModel.FindingInTMDb(
+                                silo: current.silo,
+                                library: current.key.library,
+                                series: (current.key.container, current.comparison?.title ?? "", tmdb)
+                            )
+                            try? await model.startSeasonDraft(number, for: finding)
+                        }
+                    }
+                }
+                if !taking.heldEdits.isEmpty || !taking.breakouts.isEmpty || !taking.artwork.isEmpty {
+                    HStack {
+                        if current.stored {
+                            Label("Stored", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.caption)
+                        } else {
+                            Button("Store These") { Task { await model.storeTaking() } }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+extension AdminConsole.TMDbDifference {
+    var isField: Bool {
+        switch self {
+        case .title, .year, .outline: true
+        default: false
+        }
+    }
+
+    var isReference: Bool {
+        if case .reference = self { return true }
+        return false
+    }
+
+    var isChild: Bool {
+        switch self {
+        case .episode, .season: true
+        default: false
+        }
+    }
+
+    var isOrder: Bool {
+        if case .order = self { return true }
+        return false
+    }
+
+    var isArtwork: Bool {
+        if case .artwork = self { return true }
+        return false
+    }
+}
+#endif

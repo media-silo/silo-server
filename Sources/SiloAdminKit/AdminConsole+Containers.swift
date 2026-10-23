@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloClient
+import SmdKit
 import SmdSidecar
 
 // MARK: - Containers
@@ -57,6 +58,7 @@ extension AdminConsole {
                         document: draft.text,
                         basedOn: draft.base,
                         attributions: draft.attributions.map(Self.wire),
+                        declined: draft.declined.map(Self.wireRefs),
                         dryRun: true
                     )
                 }
@@ -93,7 +95,8 @@ extension AdminConsole {
                         in: draft.library,
                         document: draft.text,
                         basedOn: draft.base,
-                        attributions: draft.attributions.map(Self.wire)
+                        attributions: draft.attributions.map(Self.wire),
+                        declined: draft.declined.map(Self.wireRefs)
                     )
                 }
             )
@@ -120,22 +123,32 @@ extension AdminConsole {
         )
     }
 
+    /// References as the silo's routes carry them.
+    nonisolated static func wireRefs(_ refs: [ExternalRef]) -> [SiloClient.Container.ExternalRef] {
+        refs.map { SiloClient.Container.ExternalRef(provider: $0.provider.rawValue, value: $0.value) }
+    }
+
     /// Where a kind of a container's artwork is served; the silo serves it to anyone who asks.
     public nonisolated func artworkURL(_ kind: String, of container: String, in library: String, of silo: Silo) -> URL {
         SiloClient(baseURL: silo.url).artworkURL(kind, of: container, in: library)
     }
 
-    /// Puts an image as a kind of a container's artwork. The silo's refusal — not a JPEG or a PNG,
-    /// or too large — comes back as `SettingsRefused` in words.
+    /// Puts an image as a kind of a container's artwork, attributed to a provider's reference when it
+    /// is one of theirs, and with none, which removes any the kind had, when it is the operator's own.
+    /// The silo's refusal — not a JPEG or a PNG, or too large — comes back as `SettingsRefused` in words.
     public func putArtwork(
         _ image: Data,
         as kind: String,
         of container: String,
         in library: String,
-        on silo: Silo
+        on silo: Silo,
+        attributedTo attribution: ExternalRef? = nil
     ) async throws {
+        let attributed = attribution.map { (provider: $0.provider.rawValue, value: $0.value) }
         do {
-            _ = try await withOperator(silo) { try await $0.putArtwork(image, as: kind, of: container, in: library) }
+            _ = try await withOperator(silo) {
+                try await $0.putArtwork(image, as: kind, of: container, in: library, attributedTo: attributed)
+            }
         } catch SiloClientError.status(415, _) {
             throw SettingsRefused(reason: "the silo takes artwork as a JPEG or a PNG, and this is neither")
         } catch SiloClientError.status(413, _) {

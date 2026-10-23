@@ -13,6 +13,27 @@ import SmdSidecar
 extension ConsoleModel {
     static let tmdbLanguageKey = "tmdbLanguage"
 
+    var tmdbLanguage: String {
+        get { tmdbState.language }
+        set { tmdbState.language = newValue }
+    }
+    var tmdbProblem: String? {
+        get { tmdbState.problem }
+        set { tmdbState.problem = newValue }
+    }
+    var findingInTMDb: FindingInTMDb? {
+        get { tmdbState.finding }
+        set { tmdbState.finding = newValue }
+    }
+    var shapingTree: ShapingTree? {
+        get { tmdbState.shaping }
+        set { tmdbState.shaping = newValue }
+    }
+    var comparing: Comparing? {
+        get { tmdbState.comparing }
+        set { tmdbState.comparing = newValue }
+    }
+
     /// This Mac's language and region, as TMDb names a language: `en-GB`.
     static var macLanguage: String {
         guard let code = Locale.current.language.languageCode?.identifier else { return "en-US" }
@@ -92,7 +113,12 @@ extension ConsoleModel {
             return
                 "smddb holds this as \(container.displayTitle), so it is imported from smddb rather than drafted: choose Import from smddb… and find it there."
         case .held(let summary):
-            return "\(finding.library) holds this already, as \(summary.displayTitle)."
+            findingInTMDb = nil
+            await compareWithTMDb(
+                ContainerKey(silo: finding.silo.id, library: finding.library, container: summary.id),
+                on: finding.silo
+            )
+            return nil
         case .draft(let tree):
             findingInTMDb = nil
             await openShaping(tree, on: finding.silo)
@@ -176,6 +202,94 @@ extension ConsoleModel {
         guard let shaping = shapingTree else { return }
         try? console.tmdbDrafts.remove(shaping.tree.id, of: shaping.silo.id)
         shapingTree = nil
+    }
+
+    // MARK: Differences
+
+    /// Opens a held container's differences from TMDb, read now.
+    func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo) async {
+        comparing = Comparing(silo: silo, key: key)
+        guard let database, let tmdb else {
+            comparing?.failure = tmdbProblem ?? smddbProblem ?? "TMDb or smddb's clone cannot be read."
+            return
+        }
+        do {
+            let comparison = try await console.compare(
+                key.container,
+                in: key.library,
+                of: silo,
+                from: database,
+                tmdb: tmdb
+            )
+            comparing?.comparison = comparison
+        } catch let unreadable as AdminConsole.NoTMDbReading {
+            comparing?.failure = unreadable.reason
+        } catch {
+            comparing?.failure = describe(error)
+        }
+    }
+
+    /// Takes the chosen differences: the container's own as an edit draft, opened in the editor to be
+    /// reviewed and stored; the rest gathered and listed, to be stored when the operator confirms.
+    func takeDifferences() async {
+        guard let current = comparing, let comparison = current.comparison else { return }
+        do {
+            let taking = try await console.take(
+                current.chosen,
+                placements: current.placements,
+                breakouts: [:],
+                from: comparison,
+                of: current.silo
+            )
+            comparing?.taking = taking
+            if let draft = taking.draft { open(draft, for: current.silo) }
+        } catch {
+            comparing?.failure = describe(error)
+        }
+    }
+
+    /// Stores what taking gathered beyond the container's draft, and reads the container again.
+    func storeTaking() async {
+        guard let current = comparing, let taking = current.taking, let tmdb else { return }
+        do {
+            try await console.store(
+                taking,
+                in: current.key.library,
+                for: current.key.container,
+                of: current.silo,
+                tmdb: tmdb
+            )
+            comparing?.stored = true
+            await open(current.key)
+        } catch {
+            comparing?.failure = describe(error)
+        }
+    }
+
+    /// TMDb's images for a container's record, for its artwork kinds to be chosen from.
+    func tmdbImages(of record: TMDb.Record) async -> TMDb.Images {
+        (try? await tmdb?.images(of: record)) ?? TMDb.Images()
+    }
+
+    /// Puts one of TMDb's images as a kind of a container's artwork, credited to the record.
+    func putTMDbArtwork(_ path: String, as kind: String, from record: TMDb.Record, of key: ContainerKey) async {
+        guard let tmdb, let silo = silos.first(where: { $0.id == key.silo }) else { return }
+        do {
+            let image = try await tmdb.image(at: path)
+            try await console.putArtwork(
+                image,
+                as: kind,
+                of: key.container,
+                in: key.library,
+                on: silo,
+                attributedTo: record.ref
+            )
+            await open(key)
+        } catch let refused as AdminConsole.SettingsRefused {
+            refusal = .settingsRefused(refused.reason)
+        } catch {
+            refusal = .settingsRefused(describe(error))
+        }
     }
 
     /// An id for a container the tree gains, from smddb's client.

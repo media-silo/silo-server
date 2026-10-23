@@ -185,6 +185,19 @@ private struct ContainerNode: View {
 /// sequences and extras with each item's presentations in this library and the items that have none,
 /// its children, its artwork, and what the library's last walk reported on its sidecar.
 struct ContainerDetail: View {
+    /// The TMDb record a container's images can be browsed for: a movie's, a series' or a collection's.
+    static func record(of container: SiloClient.Container) -> TMDb.Record? {
+        guard let id = container.externalRefs.first(where: { $0.provider == "tmdb" }).flatMap({ Int($0.value) }) else {
+            return nil
+        }
+        switch container.type {
+        case "movie": return TMDb.Record(.movie, id)
+        case "series": return TMDb.Record(.series, id)
+        case "collection": return TMDb.Record(.collection, id)
+        default: return nil
+        }
+    }
+
     let key: ConsoleModel.ContainerKey
     let opened: AdminConsole.OpenedContainer
     let model: ConsoleModel
@@ -232,6 +245,8 @@ struct ContainerDetail: View {
                         }),
                         let silo = model.silos.first(where: { $0.id == key.silo })
                     {
+                        Button("Compare with TMDb…") { Task { await model.compareWithTMDb(key, on: silo) } }
+                            .disabled(model.database == nil || model.tmdbProblem != nil)
                         Button("Add a Season from TMDb…") {
                             model.findingInTMDb = ConsoleModel.FindingInTMDb(
                                 silo: silo,
@@ -250,7 +265,19 @@ struct ContainerDetail: View {
                     }
                 }
 
-                ArtworkStrip(key: key, held: opened.container.artwork, model: model)
+                if container.type != "series", let silo = model.silos.first(where: { $0.id == key.silo }) {
+                    Button("Compare with TMDb…") { Task { await model.compareWithTMDb(key, on: silo) } }
+                        .disabled(model.database == nil || model.tmdbProblem != nil)
+                        .help("One with no TMDb id is read through the container above it, or its entries' other ids")
+                }
+
+                ArtworkStrip(
+                    key: key,
+                    held: opened.container.artwork,
+                    attributions: opened.container.container.attributions,
+                    record: Self.record(of: container),
+                    model: model
+                )
 
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                     field("Title", container.title)
@@ -410,25 +437,72 @@ struct FolderMovesList: View {
 private struct ArtworkStrip: View {
     let key: ConsoleModel.ContainerKey
     let held: [String]
+    /// The container's attributions, which say whose each kind's image is.
+    let attributions: [SiloClient.Container.Attribution]
+    /// The container's TMDb record, when it has one images can be browsed for.
+    let record: TMDb.Record?
     let model: ConsoleModel
+    @State private var browsing: String?
+    @State private var images = TMDb.Images()
 
     var body: some View {
         ScrollView(.horizontal) {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(SiloClient.artworkKinds, id: \.self) { kind in
-                    ArtworkWell(
-                        kind: kind,
-                        url: held.contains(kind) ? model.artworkURL(kind, of: key) : nil,
-                        onPut: { image in
-                            Task { await model.putArtwork(image, as: kind, of: key) }
-                        },
-                        onRemove: {
-                            Task { await model.removeArtwork(kind, of: key) }
+                    VStack(spacing: 2) {
+                        ArtworkWell(
+                            kind: kind,
+                            url: held.contains(kind) ? model.artworkURL(kind, of: key) : nil,
+                            onPut: { image in
+                                Task { await model.putArtwork(image, as: kind, of: key) }
+                            },
+                            onRemove: {
+                                Task { await model.removeArtwork(kind, of: key) }
+                            }
+                        )
+                        if let credit = attributions.first(where: { $0.subject == "artwork/\(kind)" }) {
+                            HStack(spacing: 2) {
+                                if credit.provider == "tmdb" { TMDbMark() }
+                                Text("credited to \(Provider(rawValue: credit.provider).title)").font(.caption2)
+                            }
                         }
-                    )
+                        if record != nil, ["poster", "fanart", "logo"].contains(kind), model.tmdbProblem == nil {
+                            Button("From TMDb…") { browse(kind) }.buttonStyle(.borderless).font(.caption2)
+                        }
+                    }
                 }
             }
         }
+        .popover(isPresented: Binding(get: { browsing != nil }, set: { if !$0 { browsing = nil } })) {
+            if let kind = browsing, let record {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110))]) {
+                        ForEach(images.offered(for: kind), id: \.self) { path in
+                            Button {
+                                browsing = nil
+                                Task { await model.putTMDbArtwork(path, as: kind, from: record, of: key) }
+                            } label: {
+                                AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(path)")) {
+                                    $0.resizable().scaledToFit()
+                                } placeholder: {
+                                    ProgressView()
+                                }
+                                .frame(width: 110, height: 110)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding()
+                }
+                .frame(width: 400, height: 360)
+            }
+        }
+    }
+
+    private func browse(_ kind: String) {
+        guard let record else { return }
+        browsing = kind
+        Task { images = await model.tmdbImages(of: record) }
     }
 }
 
