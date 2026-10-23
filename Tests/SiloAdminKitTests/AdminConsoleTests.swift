@@ -2477,8 +2477,22 @@ extension AdminConsoleTests {
         /// Fails as no answer of TMDb's says, as a dropped connection does.
         var unreachable = false
         var images: [TMDb.Record: TMDb.Images] = [:]
+        /// When set, each episode's other ids are answered after a pause, counting how many are asked at once.
+        var asking: Asking?
 
         struct Missing: Error {}
+
+        /// How many questions of TMDb's are being asked at once, and the most there have been.
+        final class Asking: Sendable {
+            private let counts = Mutex((now: 0, most: 0))
+            var most: Int { counts.withLock { $0.most } }
+
+            func ask() async throws {
+                counts.withLock { $0 = (now: $0.now + 1, most: max($0.most, $0.now + 1)) }
+                defer { counts.withLock { $0.now -= 1 } }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        }
 
         /// A JPEG's signature and nothing else, as every image TMDb serves here.
         static let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00])
@@ -2498,7 +2512,8 @@ extension AdminConsoleTests {
         func episodeGroup(_ id: String) async throws -> TMDb.EpisodeGroup { try groups[id] ?? { throw Missing() }() }
         func collection(_ id: Int) async throws -> TMDb.Collection { try collections[id] ?? { throw Missing() }() }
         func externalIDs(of episode: TMDb.Episode, in series: Int) async throws -> TMDb.ExternalIDs {
-            episodeIDs[episode.id] ?? .init()
+            try await asking?.ask()
+            return episodeIDs[episode.id] ?? .init()
         }
         func find(_ ref: ExternalRef) async throws -> TMDb.Found { found["\(ref.provider):\(ref.value)"] ?? .init() }
     }
@@ -3847,6 +3862,98 @@ extension AdminConsoleTests {
             gained.draft?.value?.sequences[0].items.map(\.externalRefs) == [[talons.ref], [robots.ref]],
             "with nothing before it at TMDb, last"
         )
+    }
+
+    /// A held series read against TMDb says each step as it goes, counting what each step asks, and lists
+    /// the specials nothing covers before their suggestions are read; what it ends with is what it told.
+    @Test func aComparisonSaysEachStepAsItGoesWithWhatItHasFound() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let specials = (0..<9).map { Self.episode(3300 + $0, 0, $0 + 1, "Special \($0 + 1)", runtime: 40) }
+        var series = Container(
+            id: ContainerID("00000000000000f1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        series.sequences = [Sequence(id: "seasons", items: [])]
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series]))
+        var tmdb = FakeTMDb()
+        tmdb.series[121] = TMDb.Series(
+            id: 121,
+            name: "Doctor Who",
+            year: 1963,
+            seasons: [
+                .init(id: 50, number: 0, name: "Specials"), .init(id: 3644, number: 14, name: "Season 14"),
+                .init(id: 3645, number: 15, name: "Season 15"),
+            ]
+        )
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: specials)
+        let told = Mutex<[(AdminConsole.TMDbProgress, AdminConsole.TMDbComparison)]>([])
+        let compared = try await console.compare(
+            series.id.value,
+            in: "tv",
+            of: home,
+            from: database,
+            tmdb: tmdb,
+            progress: { step, found in told.withLock { $0.append((step, found)) } }
+        )
+        let steps = told.withLock { $0 }
+        var said: [String] = []
+        for (step, _) in steps where said.last != step.step { said.append(step.step) }
+        #expect(
+            said == [
+                "Reading TMDb", "Looking for TMDb's seasons in the library", "Reading TMDb's artwork",
+                "Reading TMDb's specials", "Looking for TMDb's specials in the library",
+                "Suggesting where the specials go",
+            ]
+        )
+        let counted = [
+            "Looking for TMDb's seasons in the library": 2, "Looking for TMDb's specials in the library": 9,
+            "Suggesting where the specials go": 9,
+        ]
+        for (step, total) in counted {
+            let told = steps.filter { $0.0.step == step }.map(\.0)
+            #expect(told.map(\.done) == Array(0...total) && told.allSatisfy { $0.total == total }, "\(step)")
+        }
+        func unassigned(_ comparison: AdminConsole.TMDbComparison) -> [Int] {
+            comparison.differences.compactMap { if case .special(let special) = $0 { special.id } else { nil } }
+        }
+        let suggesting = steps.filter { $0.0.step == "Suggesting where the specials go" }.map(\.1)
+        #expect(
+            suggesting.allSatisfy { unassigned($0) == specials.map(\.id) && $0.suggestions.isEmpty },
+            "listed while their suggestions are read"
+        )
+        #expect(unassigned(compared) == specials.map(\.id))
+        #expect(compared.differences.filter { if case .season = $0 { true } else { false } }.count == 2)
+    }
+
+    /// A long series' questions are asked of TMDb several at once, and never more at once than TMDb's
+    /// rate allows for.
+    @Test func aComparisonAsksTMDbSeveralQuestionsAtOnce() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let specials = (0..<20).map { Self.episode(3400 + $0, 0, $0 + 1, "Special \($0 + 1)") }
+        var series = Container(
+            id: ContainerID("00000000000000f2")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        series.sequences = [Sequence(id: "seasons", items: [])]
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series]))
+        var tmdb = FakeTMDb()
+        tmdb.series[121] = TMDb.Series(
+            id: 121,
+            name: "Doctor Who",
+            seasons: [.init(id: 50, number: 0, name: "Specials")]
+        )
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: specials)
+        let asking = FakeTMDb.Asking()
+        tmdb.asking = asking
+        let compared = try await console.compare(series.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(compared.differences.count == 20)
+        #expect(asking.most > 1 && asking.most <= 6, "\(asking.most) at once")
     }
 
     /// A held series' specials nothing covers are taken into every placement, here and in the

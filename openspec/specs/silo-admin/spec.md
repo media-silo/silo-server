@@ -889,13 +889,15 @@ console SHALL list how the library's sidecar differs from the reading:
 
 An item, child or extra the library holds and TMDb does not SHALL be shown, and SHALL NOT be offered
 for removal. Each difference SHALL be chosen or not, none chosen to begin with, and one not chosen
-SHALL change nothing. Taking the chosen field, reference, entry and order differences SHALL make one
-edit draft of the container, based on the sidecar the browser read, carrying the outline's
-attribution when the outline is taken, and the declined refs when a special is declined or placed
-after all, and stored as any edit is. A special placed in a duplicate's home or a breakout SHALL be an
-edit of that container too, and the console SHALL list every edit before it stores any. A chosen child
-container SHALL open as a draft from TMDb beneath the container. Chosen artwork SHALL be put with its attribution. The
-console SHALL read a container against TMDb only when the operator opens its differences.
+SHALL change nothing. Each group's differences SHALL be chosen all at once or none, the group showing
+when only some of them are chosen. Taking the chosen field, reference, entry and order differences
+SHALL make one edit draft of the container, based on the sidecar the browser read, carrying the
+outline's attribution when the outline is taken, and the declined refs when a special is declined or
+placed after all, and stored as any edit is. A special placed in a duplicate's home or a breakout SHALL
+be an edit of that container too, and the console SHALL list every edit before it stores any. A chosen
+child container SHALL open as a draft from TMDb beneath the container. Chosen artwork SHALL be put with
+its attribution. The console SHALL read a container against TMDb only when the operator opens its
+differences.
 
 #### Scenario: an episode TMDb has gained
 - **WHEN** a season the library holds lacks an episode TMDb's record of the season has, and the
@@ -933,3 +935,36 @@ console SHALL read a container against TMDb only when the operator opens its dif
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`). The list and its choosing are pinned by nothing
 yet, as the rest of the shell is.
+
+### Requirement: A reading against TMDb says each step as it goes, and shows what it has found
+While SiloAdmin reads a held container against TMDb, the console SHALL show the step the reading is
+on and, for a step that asks a question of each of several items, how many of them are answered. The
+differences found so far SHALL be shown as they are found, and a series' uncovered specials SHALL be
+listed as unassigned while their suggestions are read; no difference SHALL be taken until the reading
+is over. A reading that fails SHALL say why, with what it found before it stopped. Closing a
+container's differences SHALL stop its reading. While a draft's specials' suggestions are read, the
+console SHALL show how many are read. SiloAdmin SHALL ask a step's questions of TMDb and the silo
+several at once, and no more than six at once. When TMDb answers that too many are being asked, the
+request SHALL be asked again after the wait TMDb names, at most three times, before the console says
+what TMDb answered.
+
+#### Scenario: a series whose specials are being suggested
+- **WHEN** a held series, two of whose seasons and all of whose specials nothing covers, is read
+  against TMDb
+- **THEN** each step is said as it goes, each counted step counting from none to all of its items, and
+  the specials are listed as unassigned while their suggestions are read
+
+#### Scenario: a series with many specials
+- **WHEN** a held series has twenty specials nothing covers
+- **THEN** TMDb is asked about several of them at once, and never about more than six at once
+
+#### Scenario: TMDb asked too much at once
+- **WHEN** TMDb answers a request twice that too many are being asked, naming a wait of no time,
+  and then answers it
+- **THEN** the request is asked three times and its answer read; a request TMDb refuses so four times
+  is said to have been answered 429
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
+(`aComparisonSaysEachStepAsItGoesWithWhatItHasFound`, `aComparisonAsksTMDbSeveralQuestionsAtOnce`);
+`Tests/SiloAdminKitTests/TMDbClientTests.swift` (`tooManyAtOnceIsAskedAgainAfterTMDbsWait`). The
+sheets' showing it is pinned by nothing yet, as the rest of the shell is.

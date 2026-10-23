@@ -63,6 +63,8 @@ extension ConsoleModel {
         var finding: FindingInTMDb?
         var shaping: ShapingTree?
         var comparing: Comparing?
+        /// The reading of the container being compared, cancelled when its sheet closes.
+        var reading: Task<Void, Never>?
     }
 
     /// A held container's differences from TMDb being chosen: as last read, which are chosen, where
@@ -71,7 +73,9 @@ extension ConsoleModel {
         let id = UUID()
         var silo: AdminConsole.Silo
         var key: ContainerKey
+        /// As far as the reading has got, and, until it is over, the step it is on.
         var comparison: AdminConsole.TMDbComparison?
+        var progress: AdminConsole.TMDbProgress?
         var chosen: Set<String> = []
         var placements: [Int: SpecialPlacement] = [:]
         var taking: AdminConsole.TMDbTaking?
@@ -95,6 +99,8 @@ extension ConsoleModel {
         var silo: AdminConsole.Silo
         var tree: TMDbTree
         var suggestions: [Int: AdminConsole.SpecialSuggestion] = [:]
+        /// The step the specials' suggestions are on while they are read.
+        var suggesting: AdminConsole.TMDbProgress?
         var check: AdminConsole.ContainerCheck?
         var outcome: AdminConsole.TMDbCreateOutcome?
         var failure: String?

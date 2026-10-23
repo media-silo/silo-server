@@ -244,9 +244,12 @@ extension AdminConsole {
                     items.append(.child(Entry.Child(id: Self.itemID(part.name, in: items), container: child.id)))
                 }
             } else {
-                for summary in series.seasons where summary.number != 0 {
-                    guard shape.seasons?.contains(summary.number) ?? true else { continue }
-                    let season = try await self.season(try await tmdb.season(summary.number, of: series.id))
+                let wanted = series.seasons.filter { $0.number != 0 && shape.seasons?.contains($0.number) ?? true }
+                let records = try await AdminConsole.concurrently(wanted) { [tmdb, id = series.id] summary in
+                    try await tmdb.season(summary.number, of: id)
+                }
+                for record in records {
+                    let season = try await self.season(record)
                     items.append(
                         .child(Entry.Child(id: Self.itemID(season.title.rawValue, in: items), container: season.id))
                     )
@@ -330,43 +333,81 @@ extension AdminConsole {
         for tree: TMDbTree,
         of silo: Silo,
         from database: any ContainerDatabase,
-        tmdb: any TMDbSource
+        tmdb: any TMDbSource,
+        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
     ) async throws -> (TMDbTree, [Int: SpecialSuggestion]) {
-        let (suggested, suggestions) = try await suggestions(for: tree, of: silo, from: database, tmdb: tmdb)
+        let (suggested, suggestions) = try await suggestions(
+            for: tree,
+            of: silo,
+            from: database,
+            tmdb: tmdb,
+            progress: progress
+        )
         try tmdbDrafts.save(suggested, for: silo.id)
         return (suggested, suggestions)
     }
 
-    /// The suggestions `suggest(for:of:from:tmdb:)` makes, keeping nothing.
+    /// The suggestions `suggest(for:of:from:tmdb:progress:)` makes, keeping nothing.
     func suggestions(
         for tree: TMDbTree,
         of silo: Silo,
         from database: any ContainerDatabase,
-        tmdb: any TMDbSource
+        tmdb: any TMDbSource,
+        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
     ) async throws -> (TMDbTree, [Int: SpecialSuggestion]) {
         var tree = tree
         var suggestions: [Int: SpecialSuggestion] = [:]
         let clone = try await database.containers()
-        for (index, special) in tree.specials.enumerated() where tree.placements[special.id] == nil {
+        let unplaced = tree.specials.indices.filter { tree.placements[tree.specials[$0].id] == nil }
+        var group: TMDb.EpisodeGroup?
+        if let first = tree.episodeGroups.first { group = try await tmdb.episodeGroup(first) }
+        let step = "Suggesting where the specials go"
+        await progress(TMDbProgress(step, of: unplaced.count))
+        // Each special is read on its own, against the tree as it came: none's suggestion rests on another's.
+        let reading: @Sendable (Int) async throws -> (Special, SpecialSuggestion?) = { [tree, group] index in
+            var special = tree.specials[index]
             if special.refs.count == 1, let ids = try? await tmdb.externalIDs(of: special.episode, in: tree.record.id) {
-                tree.specials[index].refs = [special.episode.ref] + ids.refs
+                special.refs = [special.episode.ref] + ids.refs
             }
-            let current = tree.specials[index]
-            if let found = smddbFiling(of: current, in: clone, tree: tree) {
-                suggestions[special.id] = found
-            } else if let beside = breakoutBeside(index, in: tree) {
-                suggestions[special.id] = beside
-            } else if let duplicate = try await duplicate(of: current, in: tree, of: silo, tmdb: tmdb) {
-                suggestions[special.id] = duplicate
-            } else if let grouped = try await groupPosition(of: current, in: tree, tmdb: tmdb) {
-                suggestions[special.id] = grouped
-            } else if let aired = airedPosition(of: current, in: tree) {
-                suggestions[special.id] = aired
-            } else if let named = Self.byItsTitle(current, in: tree) {
-                suggestions[special.id] = named
-            }
+            let suggestion = try await self.suggestion(
+                for: special,
+                at: index,
+                in: tree,
+                clone: clone,
+                group: group,
+                of: silo,
+                tmdb: tmdb
+            )
+            return (special, suggestion)
+        }
+        let read = try await Self.concurrently(
+            unplaced,
+            done: { await progress(TMDbProgress(step, done: $0, of: unplaced.count)) },
+            reading
+        )
+        for (index, (special, suggestion)) in zip(unplaced, read) {
+            tree.specials[index] = special
+            suggestions[special.id] = suggestion
         }
         return (tree, suggestions)
+    }
+
+    /// The strongest suggestion for one special, the special carrying the other ids TMDb holds for it.
+    private func suggestion(
+        for special: Special,
+        at index: Int,
+        in tree: TMDbTree,
+        clone: [Container],
+        group: TMDb.EpisodeGroup?,
+        of silo: Silo,
+        tmdb: any TMDbSource
+    ) async throws -> SpecialSuggestion? {
+        if let found = smddbFiling(of: special, in: clone, tree: tree) { return found }
+        if let beside = breakoutBeside(index, in: tree) { return beside }
+        if let duplicate = try await duplicate(of: special, in: tree, of: silo, tmdb: tmdb) { return duplicate }
+        if let group, let grouped = Self.groupPosition(of: special, in: tree, group: group) { return grouped }
+        if let aired = airedPosition(of: special, in: tree) { return aired }
+        return Self.byItsTitle(special, in: tree)
     }
 
     /// Where smddb's record of the series files the special's reference: in the container of the tree
@@ -496,13 +537,11 @@ extension AdminConsole {
 
     /// The position the series' first episode group gives the special: after the episode it follows
     /// there, in the container of the tree that holds that episode.
-    private func groupPosition(
+    private nonisolated static func groupPosition(
         of special: Special,
         in tree: TMDbTree,
-        tmdb: any TMDbSource
-    ) async throws -> SpecialSuggestion? {
-        guard let first = tree.episodeGroups.first else { return nil }
-        let group = try await tmdb.episodeGroup(first)
+        group: TMDb.EpisodeGroup
+    ) -> SpecialSuggestion? {
         for part in group.groups {
             guard let index = part.episodes.firstIndex(where: { $0.id == special.id }), index > 0 else { continue }
             let before = part.episodes[index - 1]
