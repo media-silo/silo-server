@@ -76,6 +76,11 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     public var drafts: [String: TMDbTree] = [:]
     /// When the walk was last kept on this Mac.
     public var edited: Date
+    /// The season of TMDb's the operator said each held season carrying no TMDb id is, by TMDb id: what
+    /// the season and the containers beneath it are read as. Absent from a walk kept before it was asked.
+    private var identifiedSeasons: [String: Int]?
+
+    public var identified: [String: Int] { identifiedSeasons ?? [:] }
 
     public init(library: String, root: Stop) {
         id = UUID()
@@ -124,6 +129,25 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     }
 
     public var unassigned: [Special] { specials.filter { placements[$0.id] == nil } }
+
+    /// Says which of TMDb's seasons a held season carrying no TMDb id is, or, given none, that it is
+    /// unmatched again. The season and every stop read beneath it are to be read again, and the season's
+    /// TMDb id is chosen to be taken.
+    public mutating func identify(_ stop: String, as season: Int?) {
+        var identified = identified
+        identified[stop] = season
+        identifiedSeasons = identified
+        stops[stop]?.chosen = season.map { ["ref::tmdb:\($0)"] } ?? []
+        for id in [stop] + beneath(stop) where !isNew(id) {
+            stops[id]?.comparison = nil
+            stops[id]?.taken = nil
+        }
+    }
+
+    /// The stops beneath a stop, all the way down.
+    private func beneath(_ stop: String) -> [String] {
+        (stops[stop]?.children ?? []).flatMap { [$0] + beneath($0) }
+    }
 
     /// A stop's reading, as far as it has got. The series' specials are taken from it to sit beside
     /// every stop, rather than as its own differences.
@@ -178,7 +202,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         // Confirmed again after a store made its edit, its edit is to be made again.
         stored.remove("edit:\(id)")
         for top in leaving(confirming: id) { remove(top) }
-        for tree in new {
+        // A season drafted already, by a confirm made twice at once, is not drafted again.
+        let drafted = Set(drafts.values.map(Self.missing))
+        for tree in new where !drafted.contains(Self.missing(tree)) {
             drafts[tree.top] = tree
             stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
         }

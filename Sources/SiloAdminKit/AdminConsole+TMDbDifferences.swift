@@ -24,6 +24,13 @@ extension AdminConsole {
         case episode(TMDb.Episode, after: ExternalRef?)
         /// A season no container beneath the series carries, drafted from TMDb beneath it when taken.
         case season(TMDb.SeasonSummary)
+        /// A season of TMDb's the series holds beneath it: by its TMDb id, or, `suggested`, a season carrying
+        /// none that its title or episodes suggest is this one. Shown among the children, and a stop of the
+        /// walk whatever is chosen, so never chosen itself.
+        case heldSeason(TMDb.SeasonSummary, container: String, suggested: Bool)
+        /// A season beneath a series of TMDb's that carries no TMDb id, so matches nothing there: TMDb's
+        /// seasons, for the operator to say which it is, and the one its title or episodes suggest.
+        case unmatchedSeason(series: Int, seasons: [TMDb.SeasonSummary], suggested: Int?)
         /// Items both hold, at the same level, in TMDb's order rather than the sidecar's.
         case order(sequence: String?, items: [String])
         /// An artwork kind the folder has no file for, and the image TMDb offers for it.
@@ -39,6 +46,8 @@ extension AdminConsole {
             case .reference(let item, let ref): "ref:\(item ?? ""):\(ref.provider):\(ref.value)"
             case .episode(let episode, _): "episode:\(episode.id)"
             case .season(let season): "season:\(season.id)"
+            case .heldSeason(_, let container, _): "held:\(container)"
+            case .unmatchedSeason: "unmatched"
             case .order(let sequence, _): "order:\(sequence ?? "")"
             case .artwork(let kind, _, _): "artwork:\(kind)"
             case .special(let special): "special:\(special.id)"
@@ -85,6 +94,7 @@ extension AdminConsole {
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource,
+        identified: [String: Int] = [:],
         progress: @escaping @Sendable (TMDbProgress, TMDbComparison) async -> Void = { _, _ in }
     ) async throws -> TMDbComparison {
         let opened = try await open(container: id, in: library, of: silo)
@@ -104,6 +114,7 @@ extension AdminConsole {
         )
         await progress(TMDbProgress("Reading TMDb"), comparison)
         let own = container.externalRefs.first { $0.provider == .tmdb }.flatMap { Int($0.value) }
+        let seriesOfSeason = container.type == .season ? try await seriesAbove(opened, of: silo) : nil
         switch (container.type, own) {
         case (.movie, let number?), (.collection, let number?):
             let record = TMDb.Record(container.type == .movie ? .movie : .collection, number)
@@ -126,30 +137,21 @@ extension AdminConsole {
                 tmdb: tmdb,
                 progress: progress
             )
-        case (.season, let season?):
+        case (.season, let own) where own != nil || seriesOfSeason != nil:
             try await compareSeason(
-                season,
+                of: seriesOfSeason,
                 container: container,
-                opened: opened,
+                identified: identified[id],
                 into: &comparison,
                 of: silo,
                 tmdb: tmdb,
                 progress: progress
             )
         default:
-            let (episodes, series, reading) = try await readingThrough(
+            try await compareThrough(
                 opened,
                 container: container,
-                of: silo,
-                tmdb: tmdb
-            )
-            comparison.reading = reading
-            comparison.series = series
-            try await compareEpisodes(
-                episodes,
-                of: series,
-                in: container,
-                missing: false,
+                identified: identified,
                 into: &comparison,
                 of: silo,
                 tmdb: tmdb,
@@ -157,6 +159,38 @@ extension AdminConsole {
             )
         }
         return comparison
+    }
+
+    /// A container with no record of its own: its entries, read against the episodes of what it is read
+    /// through.
+    private func compareThrough(
+        _ opened: OpenedContainer,
+        container: Container,
+        identified: [String: Int],
+        into comparison: inout TMDbComparison,
+        of silo: Silo,
+        tmdb: any TMDbSource,
+        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+    ) async throws {
+        let (episodes, series, reading) = try await readingThrough(
+            opened,
+            container: container,
+            identified: identified,
+            of: silo,
+            tmdb: tmdb
+        )
+        comparison.reading = reading
+        comparison.series = series
+        try await compareEpisodes(
+            episodes,
+            of: series,
+            in: container,
+            missing: false,
+            into: &comparison,
+            of: silo,
+            tmdb: tmdb,
+            progress: progress
+        )
     }
 
     /// A movie's or a collection's fields, the ids TMDb holds that it lacks, and its artwork.
@@ -194,31 +228,56 @@ extension AdminConsole {
         comparison.differences += try await artwork(of: record, held: held, tmdb: tmdb)
     }
 
-    /// A season's fields and its episodes, read through the series above it, which TMDb numbers it in.
+    /// A season's fields and its episodes, read through the series above it, which TMDb numbers it in. A
+    /// season carrying no TMDb id matches nothing there: TMDb's seasons are offered for the operator to say
+    /// which it is, and, once said, it is read as that season and offered its id.
     private func compareSeason(
-        _ season: Int,
+        of series: Int?,
         container: Container,
-        opened: OpenedContainer,
+        identified: Int?,
         into comparison: inout TMDbComparison,
         of silo: Silo,
         tmdb: any TMDbSource,
         progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
     ) async throws {
-        guard let series = try await seriesAbove(opened, of: silo) else {
+        guard let series else {
             throw NoTMDbReading(reason: "the season carries TMDb's id, but no series above it does")
         }
-        guard let summary = try await tmdb.series(series).seasons.first(where: { $0.id == season }) else {
-            throw NoTMDbReading(reason: "TMDb's series \(series) has no season \(season)")
+        let own = container.externalRefs.first { $0.provider == .tmdb }
+        let seasons = try await tmdb.series(series).seasons
+        guard let summary = Self.season(of: container, identified: identified, among: seasons) else {
+            if let own { throw NoTMDbReading(reason: "TMDb's series \(series) has no season \(own.value)") }
+            comparison.series = series
+            comparison.differences = [
+                .unmatchedSeason(
+                    series: series,
+                    seasons: seasons.filter { $0.number != 0 },
+                    suggested: try await suggestedSeason(
+                        of: container,
+                        among: seasons,
+                        series: series,
+                        in: comparison.library,
+                        of: silo,
+                        tmdb: tmdb
+                    )?.id
+                )
+            ]
+            return
         }
         let record = try await tmdb.season(summary.number, of: series)
         comparison.reading = "\(record.name) of TMDb's series \(series)"
         comparison.series = series
+        if own == nil {
+            comparison.differences.append(
+                .reference(item: nil, ExternalRef(provider: .tmdb, value: String(summary.id)))
+            )
+        }
         comparison.differences += Self.fields(
             of: container,
             title: record.name,
             year: record.year,
             overview: record.overview,
-            record: season
+            record: summary.id
         )
         try await compareEpisodes(
             record.episodes,
@@ -316,12 +375,23 @@ extension AdminConsole {
         )
         comparison.differences += Self.missing(record.externalIDs.refs, from: container.externalRefs, item: nil)
         let seasons = record.seasons.filter { $0.number != 0 }
+        let held = try await heldSeasons(
+            beneath: container,
+            among: seasons,
+            series: series,
+            in: comparison.library,
+            of: silo,
+            tmdb: tmdb
+        )
         comparison.differences += try await steps(
             "Looking for TMDb's seasons in the library",
             seasons,
             comparison,
             progress
         ) { season in
+            if let (child, suggested) = held[season.id] {
+                return TMDbDifference.heldSeason(season, container: child, suggested: suggested)
+            }
             let ref = ExternalRef(provider: .tmdb, value: String(season.id))
             return try await self.covered(ref, of: silo) ? nil : TMDbDifference.season(season)
         }
@@ -449,6 +519,13 @@ extension AdminConsole {
             if let runtime = episode.runtime { comparison.runtimes[String(episode.id)] = runtime }
         }
         let entries = container.sequences.flatMap(\.items) + container.extras
+        let byOtherIDs = try await episodesByOtherIDs(
+            beneath: container,
+            of: series,
+            in: comparison.library,
+            of: silo,
+            tmdb: tmdb
+        )
         let found: [[TMDbDifference]] = try await steps(
             "Reading TMDb's episodes",
             Array(episodes.indices),
@@ -456,10 +533,11 @@ extension AdminConsole {
             progress
         ) { index in
             let episode = episodes[index]
-            if let entry = entries.first(where: { $0.externalRefs.contains(episode.ref) }) {
-                guard let series, let item = entry.id?.value else { return nil }
+            if let entry = entries.first(where: { $0.externalRefs.contains(episode.ref) }) ?? byOtherIDs[episode.ref] {
+                // An item of a container beneath is offered its ids at that container's own stop.
+                guard let series, let item = entry.id?.value, entries.contains(entry) else { return nil }
                 let ids = try await tmdb.externalIDs(of: episode, in: series)
-                return Self.missing(ids.refs, from: entry.externalRefs, item: item)
+                return Self.missing([episode.ref] + ids.refs, from: entry.externalRefs, item: item)
             }
             guard missing, try await !self.covered(episode.ref, of: silo) else { return nil }
             return [.episode(episode, after: index > 0 ? episodes[index - 1].ref : nil)]
@@ -476,8 +554,9 @@ extension AdminConsole {
                 comparison.differences.append(.order(sequence: sequence.id, items: sorted.compactMap { $0.id?.value }))
             }
         }
+        let matched = Set(byOtherIDs.filter { tmdbIDs.contains($0.key) }.values)
         comparison.heldOnly = (container.sequences.flatMap(\.items) + container.extras).compactMap { entry in
-            guard entry.childContainer == nil, entry.reference == nil,
+            guard entry.childContainer == nil, entry.reference == nil, !matched.contains(entry),
                 !entry.externalRefs.contains(where: { tmdbIDs.contains($0) })
             else { return nil }
             return entry.title.map { "\(entry.id?.value ?? ""): \($0)" } ?? entry.id?.value
@@ -511,6 +590,7 @@ extension AdminConsole {
     private func readingThrough(
         _ opened: OpenedContainer,
         container: Container,
+        identified: [String: Int],
         of silo: Silo,
         tmdb: any TMDbSource
     ) async throws -> ([TMDb.Episode], Int, String) {
@@ -518,16 +598,26 @@ extension AdminConsole {
         while let id = parent {
             let above = try await open(container: id, in: opened.container.library, of: silo)
             let held = try SidecarFile.sidecar(from: above.sidecar).container
-            if let own = held.externalRefs.first(where: { $0.provider == .tmdb }).flatMap({ Int($0.value) }) {
-                if held.type == .season, let series = try await seriesAbove(above, of: silo),
-                    let number = try await tmdb.series(series).seasons.first(where: { $0.id == own })?.number
-                {
-                    let season = try await tmdb.season(number, of: series)
-                    return (
-                        season.episodes, series,
-                        "through \(held.displayTitle), \(season.name) of TMDb's series \(series)"
+            if held.type == .season, let series = try await seriesAbove(above, of: silo) {
+                guard
+                    let summary = Self.season(
+                        of: held,
+                        identified: identified[id],
+                        among: try await tmdb.series(series).seasons
+                    )
+                else {
+                    throw NoTMDbReading(
+                        reason:
+                            "\(held.displayTitle) above it carries no TMDb id: say which of TMDb's seasons it is at its stop, and this is read through it"
                     )
                 }
+                let season = try await tmdb.season(summary.number, of: series)
+                return (
+                    season.episodes, series,
+                    "through \(held.displayTitle), \(season.name) of TMDb's series \(series)"
+                )
+            }
+            if let own = held.externalRefs.first(where: { $0.provider == .tmdb }).flatMap({ Int($0.value) }) {
                 if held.type == .series {
                     return (
                         try await tmdb.season(0, of: own).episodes, own,
@@ -553,6 +643,123 @@ extension AdminConsole {
             reason:
                 "\(container.displayTitle) carries no TMDb id, nothing above it does, and none of its items has an id TMDb can find"
         )
+    }
+
+    /// Which of TMDb's seasons a held season is: the one its own TMDb id names, or, carrying none, the one
+    /// the operator said it is.
+    nonisolated static func season(
+        of season: Container,
+        identified: Int?,
+        among seasons: [TMDb.SeasonSummary]
+    ) -> TMDb.SeasonSummary? {
+        let own = season.externalRefs.first { $0.provider == .tmdb }.flatMap { Int($0.value) }
+        guard let id = own ?? identified else { return nil }
+        return seasons.first { $0.id == id }
+    }
+
+    /// Which of TMDb's seasons a held season carrying no TMDb id is suggested to be: the one TMDb gives its
+    /// title as a name, the one whose number its title gives (`Season 13`, `Series 13`), or the one an
+    /// episode beneath it is found in by its other ids.
+    private func suggestedSeason(
+        of season: Container,
+        among seasons: [TMDb.SeasonSummary],
+        series: Int,
+        in library: String,
+        of silo: Silo,
+        tmdb: any TMDbSource
+    ) async throws -> TMDb.SeasonSummary? {
+        let title = season.title.rawValue
+        if let named = seasons.first(where: { $0.name.caseInsensitiveCompare(title) == .orderedSame }) { return named }
+        if let number = Self.seasonNumber(in: title), let numbered = seasons.first(where: { $0.number == number }) {
+            return numbered
+        }
+        for entry in try await entries(beneath: season, in: library, of: silo) {
+            for ref in entry.externalRefs where ref.provider == .imdb || ref.provider == .tvdb {
+                guard let found = try await tmdb.find(ref).episodes.first(where: { $0.series == series }) else {
+                    continue
+                }
+                return seasons.first { $0.number == found.episode.season }
+            }
+        }
+        return nil
+    }
+
+    /// The number a season's title gives it, as `Season 13` or `Series 13` does.
+    nonisolated static func seasonNumber(in title: String) -> Int? {
+        let words = title.split(separator: " ")
+        guard words.count == 2, ["season", "series"].contains(words[0].lowercased()) else { return nil }
+        return Int(words[1])
+    }
+
+    /// The seasons a series holds beneath it, by the TMDb season each is or, carrying no TMDb id, is
+    /// suggested to be: the containers its walk stops at whatever is chosen, so the series offers none of
+    /// them as missing.
+    private func heldSeasons(
+        beneath series: Container,
+        among seasons: [TMDb.SeasonSummary],
+        series tmdbSeries: Int,
+        in library: String,
+        of silo: Silo,
+        tmdb: any TMDbSource
+    ) async throws -> [Int: (String, Bool)] {
+        let matched: [(Int, (String, Bool))?] = try await Self.concurrently(series.childContainerIDs) { child in
+            let opened = try await self.open(container: child.value, in: library, of: silo)
+            let held = try SidecarFile.sidecar(from: opened.sidecar).container
+            guard held.type == .season else { return nil }
+            if let season = Self.season(of: held, identified: nil, among: seasons) {
+                return (season.id, (child.value, false))
+            }
+            let suggested = try await self.suggestedSeason(
+                of: held,
+                among: seasons,
+                series: tmdbSeries,
+                in: library,
+                of: silo,
+                tmdb: tmdb
+            )
+            return suggested.map { ($0.id, (child.value, true)) }
+        }
+        return Dictionary(matched.compactMap { $0 }) { first, _ in first }
+    }
+
+    /// A container's own entries, and those of the containers it holds, one level down.
+    private func entries(beneath container: Container, in library: String, of silo: Silo) async throws -> [Entry] {
+        var entries: [Entry] = []
+        for entry in container.sequences.flatMap(\.items) + container.extras {
+            guard let child = entry.childContainer else {
+                entries.append(entry)
+                continue
+            }
+            let opened = try await open(container: child.value, in: library, of: silo)
+            let held = try SidecarFile.sidecar(from: opened.sidecar).container
+            entries += held.sequences.flatMap(\.items) + held.extras
+        }
+        return entries
+    }
+
+    /// The items here and in the containers beneath that carry no TMDb id, by the TMDb episode their other
+    /// ids are found to be: what an episode of TMDb's is matched to when no item carries its id.
+    private func episodesByOtherIDs(
+        beneath container: Container,
+        of series: Int?,
+        in library: String,
+        of silo: Silo,
+        tmdb: any TMDbSource
+    ) async throws -> [ExternalRef: Entry] {
+        guard let series else { return [:] }
+        let unmatched = try await entries(beneath: container, in: library, of: silo).filter { entry in
+            entry.childContainer == nil && !entry.externalRefs.contains { $0.provider == .tmdb }
+                && entry.externalRefs.contains { $0.provider == .imdb || $0.provider == .tvdb }
+        }
+        let found: [(ExternalRef, Entry)?] = try await Self.concurrently(unmatched) { entry in
+            for ref in entry.externalRefs where ref.provider == .imdb || ref.provider == .tvdb {
+                if let episode = try await tmdb.find(ref).episodes.first(where: { $0.series == series })?.episode {
+                    return (episode.ref, entry)
+                }
+            }
+            return nil
+        }
+        return Dictionary(found.compactMap { $0 }) { first, _ in first }
     }
 
     // MARK: Taking

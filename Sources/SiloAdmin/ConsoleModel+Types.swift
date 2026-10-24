@@ -86,6 +86,8 @@ extension ConsoleModel {
         var companions: [SiloClient.ContainerSummary] = []
         /// The new stops confirming the open stop would take out of the walk, said before it does.
         var leaving: [String]?
+        /// A confirm under way, which a second press waits out rather than drafting its seasons again.
+        var confirming = false
         /// Everything storing the walk will do, listed before any of it is done.
         var plan: TMDbWalk.Plan?
         var storing = false

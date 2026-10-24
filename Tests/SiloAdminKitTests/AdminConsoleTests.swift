@@ -4725,6 +4725,160 @@ extension AdminConsoleTests {
         #expect(again.isEmpty, "drafted once")
     }
 
+    /// A series holding a season that carries no TMDb id, with one serial of TMDb's two beneath it: two of
+    /// its parts carry TMDb's ids, and two only TheTVDB's, which TMDb finds.
+    private static func unmatchedSeason() -> (
+        series: Container, season: Container, serial: Container, TMDb: FakeTMDb, episodes: [TMDb.Episode]
+    ) {
+        let zygons = (1...4).map { Self.episode(6100 + $0, 13, $0, "Terror of the Zygons (\($0))") }
+        let evil = (1...4).map { Self.episode(6200 + $0, 13, $0 + 4, "Planet of Evil (\($0))") }
+        var serial = Container(
+            id: ContainerID("00000000000001d2")!,
+            type: .serial,
+            title: Title("Terror of the Zygons")!
+        )
+        serial.sequences = [
+            Sequence(
+                id: "parts",
+                items: zygons.enumerated().map { index, episode in
+                    let ref =
+                        index < 2 ? episode.ref : ExternalRef(provider: .tvdb, value: String(77000 + episode.id))
+                    return .leaf(Entry.Leaf(id: ItemID("part-\(index + 1)")!, type: .episode, externalRefs: [ref]))
+                }
+            )
+        ]
+        var season = Container(id: ContainerID("00000000000001d1")!, type: .season, title: Title("Season 13")!)
+        season.sequences = [
+            Sequence(id: "stories", items: [.child(Entry.Child(id: ItemID("zygons")!, container: serial.id))])
+        ]
+        var series = Container(
+            id: ContainerID("00000000000001d0")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("season-13")!, container: season.id))])
+        ]
+        var tmdb = FakeTMDb()
+        tmdb.series[121] = TMDb.Series(
+            id: 121,
+            name: "Doctor Who",
+            seasons: [
+                .init(id: 50, number: 0, name: "Specials"), .init(id: 6981, number: 13, name: "Season 13"),
+                .init(id: 6982, number: 14, name: "Season 14"),
+            ]
+        )
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [])
+        tmdb.seasons["121/13"] = TMDb.Season(id: 6981, number: 13, name: "Season 13", episodes: zygons + evil)
+        for episode in zygons.dropFirst(2) {
+            tmdb.found["tvdb:\(77000 + episode.id)"] = TMDb.Found(episodes: [(121, episode)])
+        }
+        return (series, season, serial, tmdb, zygons + evil)
+    }
+
+    /// A season carrying no TMDb id matches nothing at TMDb: its series shows the season it is suggested
+    /// to be as held, offering it as missing nowhere, and its own stop says it is unmatched, with TMDb's
+    /// seasons and the suggested one, until the operator says which it is. Then it and what is beneath it
+    /// are read as that season: its id offered, chosen, and the parts beneath matched by their other ids.
+    @Test func aSeasonCarryingNoTMDbIdMatchesNothingUntilSaid() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, episodes) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let thirteen = TMDb.SeasonSummary(id: 6981, number: 13, name: "Season 13")
+        let fourteen = TMDb.SeasonSummary(id: 6982, number: 14, name: "Season 14")
+
+        var walk = try await walking.walk(series.id.value)
+        let children = try #require(walk.stops[series.id.value]?.comparison?.differences).filter {
+            if case .reference = $0 { false } else { true }
+        }
+        #expect(children == [.heldSeason(thirteen, container: season.id.value, suggested: true), .season(fourteen)])
+        try await walking.read(season.id.value, in: &walk)
+        #expect(
+            walk.stops[season.id.value]?.comparison?.differences
+                == [.unmatchedSeason(series: 121, seasons: [thirteen, fourteen], suggested: 6981)]
+        )
+        try await walking.confirm(season.id.value, in: &walk)
+        await #expect(throws: AdminConsole.NoTMDbReading.self) { try await walking.read(serial.id.value, in: &walk) }
+
+        walk.identify(season.id.value, as: 6981)
+        #expect(walk.stops[season.id.value]?.comparison == nil && walk.stops[season.id.value]?.taken == nil)
+        #expect(walk.stops[season.id.value]?.chosen == ["ref::tmdb:6981"])
+        let compared = try await console.compare(
+            season.id.value,
+            in: "tv",
+            of: home,
+            from: database,
+            tmdb: tmdb,
+            identified: walk.identified
+        )
+        #expect(compared.differences.first == .reference(item: nil, ExternalRef(provider: .tmdb, value: "6981")))
+        let missing = compared.differences.compactMap { if case .episode(let episode, _) = $0 { episode } else { nil } }
+        #expect(missing == Array(episodes[4...]), "the parts beneath it held, by TMDb's ids or their others")
+        walk.read(compared)
+        let beneath = try await console.compare(
+            serial.id.value,
+            in: "tv",
+            of: home,
+            from: database,
+            tmdb: tmdb,
+            identified: walk.identified
+        )
+        #expect(beneath.reading == "through Season 13, Season 13 of TMDb's series 121")
+        #expect(
+            beneath.differences == [
+                .reference(item: "part-3", episodes[2].ref), .reference(item: "part-4", episodes[3].ref),
+            ]
+        )
+        #expect(beneath.heldOnly.isEmpty)
+        try await walking.confirm(season.id.value, choosing: walk.stops[season.id.value]?.chosen ?? [], in: &walk)
+        let edit = try #require(Self.edit(of: season.id.value, in: try walk.plan()))
+        #expect(edit.value?.externalRefs == [ExternalRef(provider: .tmdb, value: "6981")])
+
+        walk.identify(season.id.value, as: nil)
+        #expect(walk.identified.isEmpty && walk.stops[season.id.value]?.chosen == [])
+    }
+
+    /// A season carrying no TMDb id is suggested to be the season its title numbers, or, its title giving
+    /// none, the season TMDb finds an episode beneath it in; nothing suggesting one, none is suggested.
+    @Test func anUnmatchedSeasonIsSuggestedByItsNumberOrItsEpisodes() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, season, serial, tmdb, _) = Self.unmatchedSeason()
+        for (title, suggested) in [("Series 13", 6981), ("The Zygon Season", 6981), ("Season Thirteen", nil)] {
+            season.title = Title(title)!
+            if suggested == nil { tmdb.found = [:] }
+            let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+            let compared = try await console.compare(season.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+            guard case .unmatchedSeason(_, _, let said) = compared.differences.first else {
+                Issue.record("\(title) matched")
+                continue
+            }
+            #expect(said == suggested, "\(title)")
+        }
+    }
+
+    /// A stop confirmed twice at once drafts each missing season it chose once.
+    @Test func aStopConfirmedTwiceAtOnceDraftsItsSeasonsOnce() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, _) = Self.missingSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await console.startWalk(at: series.id.value, in: "tv", of: home)
+        try await walking.read(series.id.value, in: &walk)
+        walk.stops[series.id.value]?.chosen = ["season:904"]
+        let first = try await console.drafts(confirming: series.id.value, in: walk, from: database, tmdb: tmdb)
+        let second = try await console.drafts(confirming: series.id.value, in: walk, from: database, tmdb: tmdb)
+        let beneath = try await console.stops(beneath: series.id.value, in: walk, of: home)
+        walk.confirm(series.id.value, beneath: beneath, drafts: first)
+        walk.confirm(series.id.value, beneath: beneath, drafts: second)
+        #expect(walk.drafts.count == 1 && walk.stops.values.filter { $0.title == "Season 4" }.count == 1)
+    }
+
     /// A special placed as an entry of a new season is created with it, in its own sidecar, after the
     /// series' edit that names the season; a field left out is left out.
     @Test func aSpecialPlacedInANewSeasonIsCreatedWithIt() async throws {
