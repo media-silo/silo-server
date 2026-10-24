@@ -148,12 +148,13 @@ stored, the console lists everything it will do, in the order it will do it:
 
 A new container beneath a held one is created after its parent's edit, not before: the create route
 refuses a container whose parent does not yet name it, so the parent's edit, which names it, has to
-land first. A special placed in a new season is stored with that season. An edit a placement makes of
-a container that is itself a confirmed stop is part of that stop's edit, so the stop's edit is not
+land first. A special placed in a new season is stored with that season. An edit a placement makes of a
+container that is itself a confirmed stop is part of that stop's edit, so the stop's edit is not
 refused for a sidecar the store changed a step earlier. The store runs in that order, and the first
 refusal stops it. The console says what was stored and what was not, and the walk keeps what was not,
 to be stored again once the operator has dealt with the refusal. An edit based on a sidecar that has
-changed since its stop read it is refused as 0012 refuses a stale edit, and that stop is read again.
+changed since its stop read it is refused as 0012 refuses a stale edit, and that stop is read again,
+pending with its ticks kept until the operator confirms it again.
 
 **A walk is kept on this Mac.** A walk is work in progress, as a draft is, and is kept on this Mac
 until it is stored or discarded: its stops, their states, ticks and placements, and the pool. Opening

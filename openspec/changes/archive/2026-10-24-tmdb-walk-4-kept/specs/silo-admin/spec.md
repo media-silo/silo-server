@@ -5,10 +5,11 @@
 
 ### Requirement: A walk is kept on this Mac until it is stored or discarded
 A walk SHALL be kept on this Mac, with its stops, their states, choices and placements, and the series'
-unassigned specials, until it is stored or the operator discards it. Opening the differences of a
+unassigned specials, until it is stored whole or the operator discards it. Opening the differences of a
 container that roots a kept walk SHALL offer to resume the walk or start again. The silo SHALL hold
 nothing of a walk. An edit whose sidecar has changed since its stop read it SHALL be refused as a stale
-edit is, the store SHALL stop there, and the stop SHALL be read again.
+edit is, the store SHALL stop there and say so, and the stop SHALL be read again and be pending, its
+choices kept, until the operator confirms it again.
 
 #### Scenario: a walk resumed
 - **WHEN** a walk with two confirmed stops and one placed special is kept, and the console is opened

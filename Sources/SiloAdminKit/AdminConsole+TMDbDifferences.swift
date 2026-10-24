@@ -13,7 +13,7 @@ import SmdSidecar
 /// operator opens a container's differences, and follows nothing. `Tmdb.md`, *Differences*.
 extension AdminConsole {
     /// One way a held container differs from TMDb's reading of it.
-    public enum TMDbDifference: Hashable, Sendable, Identifiable {
+    public enum TMDbDifference: Hashable, Sendable, Identifiable, Codable {
         case title(String)
         case year(Int)
         /// TMDb's overview, attributed to the record it came from when it is taken.
@@ -48,7 +48,7 @@ extension AdminConsole {
 
     /// A held container read against TMDb: what was read, the differences, what the library holds that
     /// TMDb has nothing for, the specials it declines, and what each uncovered special is suggested for.
-    public struct TMDbComparison: Hashable, Sendable {
+    public struct TMDbComparison: Hashable, Sendable, Codable {
         public var library: String
         public var container: String
         public var title: String

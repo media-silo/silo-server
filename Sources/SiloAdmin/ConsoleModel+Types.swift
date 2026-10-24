@@ -76,6 +76,8 @@ extension ConsoleModel {
         var silo: AdminConsole.Silo
         var walk: TMDbWalk
         var open: String
+        /// A walk this Mac kept, offered to be resumed or started again before anything is read.
+        var resuming = false
         var progress: [String: AdminConsole.TMDbProgress] = [:]
         var failures: [String: String] = [:]
         /// The step the series' specials are on while they are read through the series above the root.

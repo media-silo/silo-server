@@ -4,12 +4,13 @@
 import Foundation
 import SmdKit
 import SmdSidecar
+import Synchronization
 
 /// A held container's tree reviewed against TMDb a container at a time: the stops the walk has found,
 /// each with its reading and what the operator chose, the series' specials beside every stop, and
 /// where each was placed. Nothing of it reaches the silo until the walk is stored, and then only what a
 /// confirmed stop took. `TmdbWalk.md`.
-public struct TMDbWalk: Hashable, Sendable, Identifiable {
+public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     /// Where a stop stands: queued and not yet confirmed, confirmed with a change pending, or confirmed
     /// with nothing taken.
     public enum StopState: Hashable, Sendable {
@@ -20,7 +21,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
 
     /// One container of the walk: its differences as last read, the ones ticked now, and the ones
     /// confirming it last kept, which are what storing the walk stores.
-    public struct Stop: Hashable, Sendable, Identifiable {
+    public struct Stop: Hashable, Sendable, Identifiable, Codable {
         public var id: String
         public var title: String
         public var type: String
@@ -73,12 +74,15 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
     /// The containers the walk makes, a missing child chosen at a stop and what is beneath it, each as a
     /// draft from TMDb by the id of its top: every container of a draft is a new stop.
     public var drafts: [String: TMDbTree] = [:]
+    /// When the walk was last kept on this Mac.
+    public var edited: Date
 
     public init(library: String, root: Stop) {
         id = UUID()
         self.library = library
         self.root = root.id
         stops = [root.id: root]
+        edited = .now
     }
 
     /// The walk's stops depth first, each container's children in the order its sequences hold them.
@@ -260,5 +264,74 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
     /// A companion series new in the walk, as its document says it.
     public func companion(_ id: String) -> Container? {
         companions[id].flatMap { try? ContainerFile.container(from: Data($0.utf8)) }
+    }
+}
+
+/// The walks this Mac keeps, by the `ServerID` of the silo each is for, until each is stored or
+/// discarded: one JSON object rewritten atomically whole on every change, as the drafts are. The silo
+/// holds nothing of a walk.
+public final class TMDbWalkStore: Sendable {
+    public let file: URL
+    private let entries: Mutex<[String: [TMDbWalk]]>
+
+    public init(file: URL) {
+        self.file = file
+        entries = Mutex(Self.read(file))
+    }
+
+    /// In memory only, for tests and for platforms where the app passes no file.
+    public init() {
+        file = URL(fileURLWithPath: "/dev/null")
+        entries = Mutex([:])
+    }
+
+    /// A silo's walks, most recently kept first.
+    public func walks(of silo: String) -> [TMDbWalk] {
+        entries.withLock { $0[silo] ?? [] }.sorted { $0.edited > $1.edited }
+    }
+
+    /// The walk kept for a container's tree, rooted at it.
+    public func walk(rootedAt container: String, in library: String, of silo: String) -> TMDbWalk? {
+        walks(of: silo).first { $0.root == container && $0.library == library }
+    }
+
+    /// Keeps a walk, in place of the one it was and of any other rooted at the same container.
+    public func save(_ walk: TMDbWalk, for silo: String) throws {
+        try entries.withLock { entries in
+            var walks = entries[silo] ?? []
+            walks.removeAll { $0.id == walk.id || ($0.root == walk.root && $0.library == walk.library) }
+            walks.append(walk)
+            entries[silo] = walks
+            try Self.persist(entries, to: file)
+        }
+    }
+
+    public func remove(_ id: TMDbWalk.ID, of silo: String) throws {
+        try entries.withLock { entries in
+            guard let index = entries[silo]?.firstIndex(where: { $0.id == id }) else { return }
+            entries[silo]?.remove(at: index)
+            if entries[silo]?.isEmpty == true { entries[silo] = nil }
+            try Self.persist(entries, to: file)
+        }
+    }
+
+    /// Every walk for the silo, gone: forgetting's share.
+    public func removeAll(of silo: String) throws {
+        try entries.withLock { entries in
+            guard entries.removeValue(forKey: silo) != nil else { return }
+            try Self.persist(entries, to: file)
+        }
+    }
+
+    private static func persist(_ entries: [String: [TMDbWalk]], to file: URL) throws {
+        guard file.path != "/dev/null" else { return }
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(entries).write(to: file, options: .atomic)
+    }
+
+    private static func read(_ file: URL) -> [String: [TMDbWalk]] {
+        (try? JSONDecoder().decode([String: [TMDbWalk]].self, from: Data(contentsOf: file))) ?? [:]
     }
 }

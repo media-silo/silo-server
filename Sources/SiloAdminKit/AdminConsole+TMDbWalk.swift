@@ -112,6 +112,8 @@ extension AdminConsole {
         public var stored: [TMDbWalk.Step]
         public var refusal: String?
         public var rest: [TMDbWalk.Step]
+        /// The stop whose sidecar changed since it was read, which is to be read again and confirmed again.
+        public var stale: String?
     }
 
     /// Stores the walk as its plan lists it, step by step, stopping at the first the silo refuses.
@@ -121,7 +123,21 @@ extension AdminConsole {
         var stored: [TMDbWalk.Step] = []
         for (index, step) in steps.enumerated() {
             if let refusal = try await make(step, in: walk.library, of: silo, tmdb: tmdb) {
-                return TMDbWalkStored(walk: walk, stored: stored, refusal: refusal, rest: Array(steps[index...]))
+                var stale: String?
+                // An edit based on a sidecar the library has changed since: its stop is to be read again,
+                // and confirmed again once the operator has looked.
+                if case .edit(let draft) = step.kind, refusal == Self.changedSince(draft) {
+                    stale = draft.container
+                    walk.stops[draft.container]?.comparison = nil
+                    walk.stops[draft.container]?.taken = nil
+                }
+                return TMDbWalkStored(
+                    walk: walk,
+                    stored: stored,
+                    refusal: refusal,
+                    rest: Array(steps[index...]),
+                    stale: stale
+                )
             }
             walk.stored.insert(step.id)
             stored.append(step)
@@ -151,7 +167,7 @@ extension AdminConsole {
                 switch try await store(draft, of: silo) {
                 case .stored: break
                 case .refused(let result): return result.findings.map(\.text).joined(separator: "; ")
-                case .landedFirst: return "\(draft.title) changed in the library after the walk read it"
+                case .landedFirst: return Self.changedSince(draft)
                 }
             case .held(let edit):
                 try await apply(edit, on: silo)
@@ -178,6 +194,11 @@ extension AdminConsole {
         } catch let refused as SettingsRefused {
             return refused.reason
         }
+    }
+
+    /// Why an edit whose sidecar changed after its stop read it is refused.
+    nonisolated static func changedSince(_ draft: ContainerDraft) -> String {
+        "\(draft.title) changed in the library after the walk read it, so it is read again"
     }
 
     /// A special put where the operator placed it, as part of the change of the container it is placed
