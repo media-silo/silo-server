@@ -4978,6 +4978,112 @@ extension AdminConsoleTests {
         #expect(!walk.order.contains(new) && walk.unassigned.map(\.id) == [special.id])
     }
 
+    /// A season drafted from TMDb whose episodes TMDb titles as the parts of stories: three of
+    /// Terror of the Zygons, two of Planet of Evil, and one standing alone.
+    private static func storiedSeason() -> (TMDbTree, season: String, items: [ItemID]) {
+        let titles = [
+            "Terror of the Zygons (1)", "Terror of the Zygons (2)", "Terror of the Zygons (3)", "Planet of Evil (1)",
+            "Planet of Evil (2)", "Pyramids of Mars",
+        ]
+        let items = titles.indices.map { ItemID("e\($0 + 1)")! }
+        var season = Container(id: ContainerID("00000000000001e1")!, type: .season, title: Title("Season 13")!)
+        season.sequences = [
+            Sequence(
+                id: "episodes",
+                items: items.enumerated().map { index, item in
+                    .leaf(
+                        Entry.Leaf(
+                            id: item,
+                            type: .episode,
+                            externalRefs: [ExternalRef(provider: .tmdb, value: String(6100 + index))]
+                        )
+                    )
+                }
+            )
+        ]
+        let tree = TMDbTree(
+            library: "tv",
+            record: TMDb.Record(.series, 121),
+            creating: ContainerDraft.Creating(),
+            containers: [season],
+            top: season.id,
+            episodeTitles: Dictionary(uniqueKeysWithValues: titles.enumerated().map { (String(6100 + $0), $1) })
+        )
+        return (tree, season.id.value, items)
+    }
+
+    /// Runs of a draft's episodes TMDb titles as `Story (1)`, `Story (2)` and on are suggested as groups
+    /// titled by the story; an episode alone, or a title with no part number, is suggested as none.
+    @Test func serialsAreSuggestedFromTMDbsTitlesForTheirParts() {
+        let (tree, season, items) = Self.storiedSeason()
+        #expect(
+            tree.suggestedGroups(in: season) == [
+                SuggestedGroup(title: "Terror of the Zygons", items: Array(items[0...2])),
+                SuggestedGroup(title: "Planet of Evil", items: Array(items[3...4])),
+            ]
+        )
+        #expect(TMDbTree.story(of: "The Five Doctors") == nil && TMDbTree.story(of: "(1)") == nil)
+        #expect(TMDbTree.story(of: "Dimensions in Time (2)") == "Dimensions in Time")
+    }
+
+    /// A group made of a draft's entries gains selected entries in the container's order, keeps what
+    /// the operator gave it, gives up an entry beside itself, and, ungrouped, puts its entries back in its
+    /// place and unassigns the specials placed in it; one left with nothing is ungrouped.
+    @Test func aDraftsGroupIsAddedToTakenFromAndUngrouped() throws {
+        var (tree, season, items) = Self.storiedSeason()
+        let serial = ContainerID("00000000000001e2")!
+        tree.regroup(Array(items[1...2]), in: season, into: serial, type: .serial, title: Title("Zygons")!)
+        var named = try #require(tree.container(serial.value))
+        named.outline = "The Zygons beneath Loch Ness."
+        tree.set(named)
+        #expect(tree.groups(in: season).map(\.id) == [serial] && tree.parent(of: serial.value) == season)
+
+        tree.add([items[0]], to: serial.value)
+        let added = try #require(tree.container(serial.value))
+        #expect(added.sequences[0].items.compactMap(\.id) == Array(items[0...2]), "in the season's order")
+        #expect(added.outline == "The Zygons beneath Loch Ness.", "what it was given kept")
+        #expect(tree.container(season)?.sequences[0].items.first?.childContainer == serial, "at the first one's place")
+
+        tree.remove(items[0], from: serial.value)
+        #expect(tree.container(season)?.sequences[0].items.first?.id == items[0], "before it, as its first")
+        tree.remove(items[2], from: serial.value)
+        #expect(tree.container(season)?.sequences[0].items.dropFirst(2).first?.id == items[2], "after it")
+
+        tree.specials = [Special(episode: Self.episode(3801, 0, 1, "A Christmas Message"))]
+        tree.place(3801, .extra(of: serial.value, type: EntryType.featurette.rawValue))
+        tree.ungroup(serial.value)
+        #expect(tree.container(season)?.sequences[0].items.compactMap(\.id) == items)
+        #expect(tree.container(serial.value) == nil && tree.placements.isEmpty)
+
+        let alone = ContainerID("00000000000001e3")!
+        tree.regroup([items[5]], in: season, into: alone, type: .serial, title: Title("Pyramids of Mars")!)
+        tree.remove(items[5], from: alone.value)
+        #expect(tree.container(alone.value) == nil && tree.container(season)?.sequences[0].items.last?.id == items[5])
+    }
+
+    /// A group ungrouped in a new stop's draft takes its stop out of the walk, and the specials placed
+    /// in it are unassigned again.
+    @Test func aGroupUngroupedInANewStopLeavesTheWalk() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, special) = Self.missingSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        let items = try #require(walk.container(new)).sequences[0].items.compactMap(\.id)
+        let serial = try await database.provisionalID()
+        walk.shape(new) { $0.regroup(items, in: new, into: serial, type: .serial, title: Title("The Smugglers")!) }
+        try await walking.confirm(new, in: &walk)
+        walk.place(special.id, .entry(in: serial.value))
+        #expect(walk.stops[new]?.children == [serial.value])
+
+        walk.shape(new) { $0.ungroup(serial.value) }
+        #expect(walk.stops[serial.value] == nil && walk.stops[new]?.children == [])
+        #expect(walk.unassigned.map(\.id) == [special.id])
+    }
+
     // MARK: Walks kept on this Mac
 
     /// A walk with two confirmed stops, ticks and a placed special, kept in a file and read back by

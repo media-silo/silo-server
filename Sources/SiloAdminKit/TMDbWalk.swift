@@ -113,12 +113,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     /// The container whose pending change a placement is part of: the one the special goes in, the one
     /// that refers to it, or, for a decline, the series.
     public func home(of placement: SpecialPlacement) -> String? {
-        switch placement {
-        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _), .edition(let id, _), .version(let id, _, _):
-            id
-        case .duplicate(_, _, _, let from, _), .breakout(_, let from, _): from
-        case .declined: series
-        }
+        placement.container ?? series
     }
 
     /// The specials placed as part of a stop's pending change.
@@ -272,8 +267,16 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     /// confirmed.
     public mutating func shape(_ id: String, _ change: (inout TMDbTree) -> Void) {
         guard let top = draft(holding: id)?.top, var tree = drafts[top] else { return }
+        let before = Set(tree.containers.map(\.id.value))
         change(&tree)
         drafts[top] = tree
+        // A group ungrouped leaves the walk, and the specials placed in it are unassigned again.
+        let gone = before.subtracting(tree.containers.map(\.id.value))
+        for id in gone { stops[id] = nil }
+        for (special, placement) in placements where home(of: placement).map(gone.contains) ?? false {
+            placements[special] = nil
+        }
+        for id in before where stops[id] != nil { stops[id]?.children.removeAll(where: gone.contains) }
         for container in tree.containers where stops[container.id.value] != nil {
             stops[container.id.value]?.title = container.displayTitle
             stops[container.id.value]?.type = container.type.rawValue

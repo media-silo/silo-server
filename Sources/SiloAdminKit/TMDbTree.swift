@@ -45,6 +45,16 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
     case version(of: String, item: String, title: String)
     /// Not held: the series' sidecar declines it.
     case declined
+
+    /// The container a placement puts the special in, or refers to it from; none for a decline.
+    public var container: String? {
+        switch self {
+        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _), .edition(let id, _), .version(let id, _, _):
+            id
+        case .duplicate(_, _, _, let from, _), .breakout(_, let from, _): from
+        case .declined: nil
+        }
+    }
 }
 
 /// A draft from TMDb: the containers a TMDb record reads as, shaped by the operator before any is made,
