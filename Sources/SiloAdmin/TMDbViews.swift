@@ -427,11 +427,13 @@ struct ShapeTreeSheet: View {
                 }
             }
             .frame(maxHeight: 180)
+            if let suggesting = current.suggesting { ReadingProgress(progress: suggesting) }
             HStack {
                 TextField("New breakout's title", text: $breakoutTitle).frame(maxWidth: 220)
                 Text("then file specials in it from their menus").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Suggest Again") { Task { await model.suggestSpecials() } }
+                    .disabled(current.suggesting != nil)
             }
         }
     }
@@ -578,6 +580,27 @@ struct ShapeTreeSheet: View {
 #endif
 
 #if canImport(SwiftUI)
+/// A reading against TMDb as it goes: the step it is on, and how many of the step's questions are
+/// answered when it asks several.
+struct ReadingProgress: View {
+    let progress: AdminConsole.TMDbProgress
+
+    var body: some View {
+        if let total = progress.total, total > 0 {
+            ProgressView(value: Double(progress.done), total: Double(total)) {
+                Text(progress.step).font(.caption)
+            } currentValueLabel: {
+                Text("\(progress.done) of \(total)").font(.caption2).monospacedDigit()
+            }
+        } else {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text(progress.step).font(.caption)
+            }
+        }
+    }
+}
+
 /// A held container's differences from TMDb, each with a tick and none ticked to begin with: its fields,
 /// the ids TMDb holds that it lacks, what TMDb has that nothing covers, an order that differs, artwork,
 /// and a series' specials, the declined ones collapsed. What the library holds and TMDb lacks is shown,
@@ -597,12 +620,13 @@ struct DifferencesSheet: View {
                 TMDbMark()
                 Spacer()
             }
+            if let progress = current.progress { ReadingProgress(progress: progress) }
             if let comparison = current.comparison {
-                Text("Read \(comparison.reading).").font(.caption).foregroundStyle(.secondary)
+                if !comparison.reading.isEmpty {
+                    Text("Read \(comparison.reading).").font(.caption).foregroundStyle(.secondary)
+                }
                 ScrollView { differences(comparison) }
                 if let taking = current.taking { takingSummary(taking) }
-            } else if current.failure == nil {
-                ProgressView("Reading TMDb…")
             }
             if let failure = current.failure {
                 Label(failure, systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
@@ -618,7 +642,7 @@ struct DifferencesSheet: View {
                 if current.taking == nil {
                     Button("Take the Ticked") { Task { await model.takeDifferences() } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(current.chosen.isEmpty)
+                        .disabled(current.chosen.isEmpty || current.progress != nil)
                 }
             }
         }
@@ -653,7 +677,7 @@ struct DifferencesSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            if comparison.differences.isEmpty {
+            if comparison.differences.isEmpty, current.progress == nil {
                 Label("Nothing differs from TMDb's record", systemImage: "checkmark.seal").foregroundStyle(.green)
             }
         }
@@ -666,13 +690,16 @@ struct DifferencesSheet: View {
         _ comparison: AdminConsole.TMDbComparison
     ) -> some View {
         if !differences.isEmpty {
-            GroupBox(title) {
+            GroupBox {
                 VStack(alignment: .leading) {
                     ForEach(differences) { difference in
                         Toggle(isOn: tick(difference.id)) { label(difference, comparison) }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                // Ticks the group's every difference or none, and shows as mixed while some are ticked.
+                Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
             }
         }
     }

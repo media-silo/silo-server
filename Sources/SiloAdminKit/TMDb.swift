@@ -475,8 +475,7 @@ public struct TMDbClient: TMDbSource {
 
     public func image(at path: String) async throws -> Data {
         let url = URL(string: "https://image.tmdb.org/t/p/original\(path)")!
-        let (data, response) = try await session.data(from: url)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let (data, status) = try await answer(to: URLRequest(url: url))
         guard (200..<300).contains(status) else { throw TMDb.Unavailable.answered(status) }
         return data
     }
@@ -495,11 +494,28 @@ public struct TMDbClient: TMDbSource {
         var request = URLRequest(url: components.url!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let (data, status) = try await answer(to: request)
         if status == 401 { throw TMDb.Unavailable.refused }
         guard (200..<300).contains(status) else { throw TMDb.Unavailable.answered(status) }
         return try JSONDecoder().decode(Answer.self, from: data)
+    }
+
+    /// How many times a request TMDb answers 429, too many at once, is asked again.
+    public static let retries = 3
+
+    /// TMDb's answer to a request, asked again after the wait TMDb's `Retry-After` names, or a second,
+    /// while TMDb says too many are being asked at once.
+    private func answer(to request: URLRequest) async throws -> (Data, Int) {
+        var attempt = 0
+        while true {
+            let (data, response) = try await session.data(for: request)
+            let http = response as? HTTPURLResponse
+            let status = http?.statusCode ?? 0
+            guard status == 429, attempt < Self.retries else { return (data, status) }
+            attempt += 1
+            let wait = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init) ?? 1
+            try await Task.sleep(for: .seconds(max(0, wait)))
+        }
     }
 
     static func year(_ date: String?) -> Int? {

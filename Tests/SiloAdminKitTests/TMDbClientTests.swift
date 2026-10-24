@@ -20,6 +20,7 @@ struct TMDbClientTests {
     private final class Stub: URLProtocol, @unchecked Sendable {
         static let handler = Mutex<@Sendable (URLRequest) -> (Int, String)>({ _ in (404, "") })
         static let asked = Mutex<[URLRequest]>([])
+        static let headers = Mutex<[String: String]>([:])
 
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -27,7 +28,13 @@ struct TMDbClientTests {
         override func startLoading() {
             Self.asked.withLock { $0.append(request) }
             let (status, body) = Self.handler.withLock { $0(request) }
-            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+            let headers = Self.headers.withLock { $0 }
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: headers
+            )!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8))
             client?.urlProtocolDidFinishLoading(self)
@@ -39,6 +46,7 @@ struct TMDbClientTests {
     /// A client whose every request is answered by path, the query aside.
     private static func client(_ answers: [String: String], status: Int = 200) -> TMDbClient {
         Stub.asked.withLock { $0 = [] }
+        Stub.headers.withLock { $0 = [:] }
         Stub.handler.withLock {
             $0 = { request in
                 let path = request.url!.path.replacingOccurrences(of: "/3/", with: "")
@@ -74,6 +82,25 @@ struct TMDbClientTests {
             try await Self.client(["movie/348": "{}"], status: 503).movie(348)
         }
         #expect(TMDb.Unavailable.answered(503).reason == "TMDb answered 503.")
+    }
+
+    @Test func tooManyAtOnceIsAskedAgainAfterTMDbsWait() async throws {
+        let client = Self.client([:])
+        Stub.headers.withLock { $0 = ["Retry-After": "0"] }
+        let answered = Mutex(0)
+        Stub.handler.withLock {
+            $0 = { _ in
+                answered.withLock { $0 += 1 }
+                return answered.withLock { $0 } < 3 ? (429, "") : (200, #"{"id":348,"title":"Alien"}"#)
+            }
+        }
+        #expect(try await client.movie(348).title == "Alien")
+        #expect(Stub.asked.withLock { $0.count } == 3, "asked again twice")
+
+        Stub.handler.withLock { $0 = { _ in (429, "") } }
+        Stub.asked.withLock { $0 = [] }
+        await #expect(throws: TMDb.Unavailable.answered(429)) { try await client.movie(348) }
+        #expect(Stub.asked.withLock { $0.count } == 1 + TMDbClient.retries, "then said")
     }
 
     @Test func aSearchListsFilmsThenSeries() async throws {
