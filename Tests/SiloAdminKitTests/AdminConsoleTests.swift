@@ -4725,13 +4725,15 @@ extension AdminConsoleTests {
         #expect(again.isEmpty, "drafted once")
     }
 
-    /// A series holding a season that carries no TMDb id, with one serial of TMDb's two beneath it: two of
-    /// its parts carry TMDb's ids, and two only TheTVDB's, which TMDb finds.
+    /// A series holding a season that carries no TMDb id, with one serial of TMDb's three beneath it: two
+    /// of its parts carry TMDb's ids, and two only TheTVDB's, which TMDb finds.
     private static func unmatchedSeason() -> (
         series: Container, season: Container, serial: Container, TMDb: FakeTMDb, episodes: [TMDb.Episode]
     ) {
         let zygons = (1...4).map { Self.episode(6100 + $0, 13, $0, "Terror of the Zygons (\($0))") }
-        let evil = (1...4).map { Self.episode(6200 + $0, 13, $0 + 4, "Planet of Evil (\($0))") }
+        let evil =
+            (1...4).map { Self.episode(6200 + $0, 13, $0 + 4, "Planet of Evil (\($0))") }
+            + (1...2).map { Self.episode(6300 + $0, 13, $0 + 8, "Pyramids of Mars (\($0))") }
         var serial = Container(
             id: ContainerID("00000000000001d2")!,
             type: .serial,
@@ -4803,7 +4805,16 @@ extension AdminConsoleTests {
         try await walking.confirm(season.id.value, in: &walk)
         await #expect(throws: AdminConsole.NoTMDbReading.self) { try await walking.read(serial.id.value, in: &walk) }
 
+        func seasons() -> [AdminConsole.TMDbDifference] {
+            walk.differences(of: series.id.value).filter { if case .reference = $0 { false } else { true } }
+        }
+        walk.identify(season.id.value, as: 6982)
+        #expect(
+            seasons() == [.season(thirteen), .heldSeason(fourteen, container: season.id.value, suggested: false)],
+            "said to be another, the one suggested is missing again"
+        )
         walk.identify(season.id.value, as: 6981)
+        #expect(seasons() == [.heldSeason(thirteen, container: season.id.value, suggested: false), .season(fourteen)])
         #expect(walk.stops[season.id.value]?.comparison == nil && walk.stops[season.id.value]?.taken == nil)
         #expect(walk.stops[season.id.value]?.chosen == ["ref::tmdb:6981"])
         let compared = try await console.compare(
@@ -4839,6 +4850,120 @@ extension AdminConsoleTests {
 
         walk.identify(season.id.value, as: nil)
         #expect(walk.identified.isEmpty && walk.stops[season.id.value]?.chosen == [])
+    }
+
+    /// The episodes a held season lacks that TMDb titles as one story's parts are suggested as a group, and
+    /// grouped they are taken as one: a container made beneath the season holding them, named where the
+    /// first of them would have gone, and what TMDb puts after them following it. An episode taken out of
+    /// a group, or a group ungrouped, is ticked again as the group was.
+    @Test func aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, episodes) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season.id.value, in: &walk)
+        walk.identify(season.id.value, as: 6981)
+        walk.read(
+            try await console.compare(
+                season.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        let stop = season.id.value
+        let (evil, pyramids) = (Array(episodes[4..<8].map(\.id)), Array(episodes[8...].map(\.id)))
+        #expect(
+            walk.suggestedGroups(at: stop) == [
+                SuggestedEpisodes(title: "Planet of Evil", episodes: evil),
+                SuggestedEpisodes(title: "Pyramids of Mars", episodes: pyramids),
+            ]
+        )
+
+        let group = "00000000000001d3"
+        walk.stops[stop]?.chosen.formUnion(["episode:\(evil[0])", "episode:\(pyramids[0])"])
+        walk.group(evil.reversed(), at: stop, into: group, type: .serial, title: Title("Planet of Evil")!)
+        #expect(walk.stops[stop]?.groups.map(\.episodes) == [evil], "in TMDb's order")
+        #expect(walk.stops[stop]?.chosen == ["ref::tmdb:6981", "group:\(group)", "episode:\(pyramids[0])"])
+        #expect(walk.suggestedGroups(at: stop).map(\.title) == ["Pyramids of Mars"])
+
+        walk.add([pyramids[1]], toGroup: group, at: stop)
+        walk.remove(pyramids[0], fromGroup: group, at: stop)
+        walk.remove(evil[0], fromGroup: group, at: stop)
+        #expect(walk.stops[stop]?.groups.map(\.episodes) == [Array(evil.dropFirst()) + [pyramids[1]]])
+        #expect(walk.stops[stop]?.chosen.contains("episode:\(evil[0])") == true, "ticked as the group was")
+        walk.ungroup(group, at: stop)
+        #expect(walk.stops[stop]?.groups.isEmpty == true)
+        #expect(walk.stops[stop]?.chosen.isSuperset(of: (evil + pyramids).map { "episode:\($0)" }) == true)
+
+        walk.group(evil, at: stop, into: group, type: .serial, title: Title("Planet of Evil")!)
+        walk.stops[stop]?.chosen.remove("episode:\(pyramids[1])")
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        let plan = try walk.plan()
+        let edit = try #require(Self.edit(of: stop, in: plan)?.value)
+        #expect(
+            edit.sequences.first?.items.map { $0.childContainer?.value ?? $0.externalRefs.first?.value ?? "" } == [
+                serial.id.value, group, String(pyramids[0]),
+            ],
+            "the group where its first part would have gone, and what TMDb puts after it following it"
+        )
+        let made = plan.steps.compactMap { step -> Container? in
+            if case .create(let containers, let parent, _) = step.kind, parent == stop { containers.first } else { nil }
+        }
+        #expect(made.map(\.id.value) == [group] && made.first?.type == .serial)
+        #expect(
+            made.first?.sequences.flatMap(\.items).map { $0.externalRefs }
+                == evil.map { [ExternalRef(provider: .tmdb, value: String($0))] }
+        )
+    }
+
+    /// A special is suggested here only on what ties it to the container: its title naming the container,
+    /// an entry of it, the story an entry is a part of, or a container beneath it; or smddb filing it
+    /// there. Suggested here on when it aired alone, it is not.
+    @Test func aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, _) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season.id.value, in: &walk)
+        let titles = [
+            "The Making of Terror of the Zygons", "Season 13 Trailer", "Doctor Who Confidential",
+            "Doctor Who at the Proms",
+        ]
+        for (index, title) in titles.enumerated() {
+            let special = Special(episode: Self.episode(9000 + index, 0, index + 1, title))
+            walk.specials.append(special)
+            walk.suggestions[special.id] = AdminConsole.SpecialSuggestion(
+                placement: .extra(of: season.id.value, type: "featurette"),
+                reason: "aired among its episodes",
+                basis: index == 3 ? .smddb : .aired
+            )
+        }
+        #expect(walk.specials.map { walk.isSuggested($0, here: season.id.value) } == [true, true, false, true])
+        #expect(!walk.isSuggested(walk.specials[0], here: series.id.value), "suggested for the season, not here")
+
+        // Beneath it, the serial's parts are named by the story TMDb titles them parts of.
+        walk.identify(season.id.value, as: 6981)
+        try await walking.confirm(season.id.value, in: &walk)
+        walk.read(
+            try await console.compare(
+                serial.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        walk.stops[serial.id.value]?.title = "The Zygon Story"
+        walk.suggestions[walk.specials[0].id]?.placement = .extra(of: serial.id.value, type: "featurette")
+        #expect(walk.isSuggested(walk.specials[0], here: serial.id.value))
     }
 
     /// A season carrying no TMDb id is suggested to be the season its title numbers, or, its title giving

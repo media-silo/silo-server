@@ -608,7 +608,7 @@ extension AdminConsole {
                 else {
                     throw NoTMDbReading(
                         reason:
-                            "\(held.displayTitle) above it carries no TMDb id: say which of TMDb's seasons it is at its stop, and this is read through it"
+                            "\(held.displayTitle) above it carries no TMDb id: say which of TMDb's seasons it is when the walk reaches it, and this is read through it"
                     )
                 }
                 let season = try await tmdb.season(summary.number, of: series)
@@ -783,23 +783,34 @@ extension AdminConsole {
         container.extras = container.extras.map(adding)
     }
 
-    /// An episode as an entry just after the one carrying the episode it follows at TMDb, or last.
-    nonisolated static func insert(
-        _ episode: TMDb.Episode,
-        after: ExternalRef?,
-        into container: inout Container
-    ) {
-        let entry = Entry.leaf(
+    /// What an entry goes after: the entry carrying a ref, or the one naming a container.
+    enum Anchor {
+        case ref(ExternalRef)
+        case child(ContainerID)
+    }
+
+    /// An episode as the leaf a container gains for it.
+    nonisolated static func leaf(_ episode: TMDb.Episode, in container: Container) -> Entry {
+        Entry.leaf(
             Entry.Leaf(
                 id: TMDbTree.itemID(for: episode.title, in: container),
                 type: .episode,
                 externalRefs: [episode.ref]
             )
         )
-        if let after {
+    }
+
+    /// An entry put after the one its anchor names, or last when nothing does.
+    nonisolated static func insert(_ entry: Entry, after anchor: Anchor?, into container: inout Container) {
+        if let anchor {
             for index in container.sequences.indices {
-                if let position = container.sequences[index].items.firstIndex(where: { $0.externalRefs.contains(after) }
-                ) {
+                let position = container.sequences[index].items.firstIndex { held in
+                    switch anchor {
+                    case .ref(let ref): held.externalRefs.contains(ref)
+                    case .child(let id): held.childContainer == id
+                    }
+                }
+                if let position {
                     container.sequences[index].items.insert(entry, at: position + 1)
                     return
                 }

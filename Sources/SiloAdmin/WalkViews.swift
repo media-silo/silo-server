@@ -62,14 +62,14 @@ struct WalkSheet: View {
         .padding()
         .frame(minWidth: 1040, minHeight: 680)
         .alert(
-            "Confirming takes stops out of the walk",
+            "Confirming takes containers out of the walk",
             isPresented: Binding(get: { current.leaving != nil }, set: { if !$0 { model.walking?.leaving = nil } })
         ) {
             Button("Confirm", role: .destructive) { Task { await model.confirmStop(leavingSaid: true) } }
             Button("Cancel", role: .cancel) { model.walking?.leaving = nil }
         } message: {
             Text(
-                "No longer chosen, these new stops leave the walk with everything beneath them, and the specials placed in them are unassigned again: \((current.leaving ?? []).joined(separator: ", "))."
+                "No longer chosen, these new containers leave the walk with everything beneath them, and the specials placed in them are unassigned again: \((current.leaving ?? []).joined(separator: ", "))."
             )
         }
     }
@@ -77,7 +77,7 @@ struct WalkSheet: View {
     private var counts: String {
         let stops = walk.order
         let confirmed = stops.filter { walk.state(of: $0) != .pending }.count
-        return "\(confirmed) of \(stops.count) stops confirmed"
+        return "\(confirmed) of \(stops.count) containers confirmed"
     }
 
     private var actions: some View {
@@ -162,7 +162,7 @@ struct WalkSheet: View {
             }
             group("Fields", comparison.differences.filter(\.isField), comparison)
             group("References", comparison.differences.filter(\.isReference), comparison)
-            group("Children", comparison.differences.filter(\.isChild), comparison)
+            WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
             group("Order", comparison.differences.filter(\.isOrder), comparison)
             group("Artwork", comparison.differences.filter(\.isArtwork), comparison)
             let placed = walk.placed(in: comparison.container)
@@ -185,7 +185,9 @@ struct WalkSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            if !comparison.differences.contains(where: { !$0.isSpecial && !$0.isHeld && !$0.isUnmatched }),
+            if !walk.differences(of: comparison.container).contains(where: {
+                !$0.isSpecial && !$0.isHeld && !$0.isUnmatched
+            }),
                 current.progress[comparison.container] == nil
             {
                 Label("Nothing differs from TMDb's record", systemImage: "checkmark.seal").foregroundStyle(.green)
@@ -203,23 +205,13 @@ struct WalkSheet: View {
             GroupBox {
                 VStack(alignment: .leading) {
                     ForEach(differences) { difference in
-                        if difference.isHeld {
-                            // A child the library holds is a stop of the walk whatever is chosen here.
-                            Toggle(isOn: .constant(true)) { label(difference, comparison) }.disabled(true)
-                        } else {
-                            Toggle(isOn: tick(difference.id)) { label(difference, comparison) }
-                        }
+                        Toggle(isOn: tick(difference.id)) { DifferenceLabel(difference: difference, walk: walk) }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
                 // Ticks the group's every difference or none, and shows as mixed while some are ticked.
-                let tickable = differences.filter { !$0.isHeld }
-                if tickable.isEmpty {
-                    Text(title)
-                } else {
-                    Toggle(sources: tickable.map { tick($0.id) }, isOn: \.self) { Text(title) }
-                }
+                Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
             }
         }
     }
@@ -237,51 +229,6 @@ struct WalkSheet: View {
                 model.keepWalk()
             }
         )
-    }
-
-    @ViewBuilder
-    private func label(
-        _ difference: AdminConsole.TMDbDifference,
-        _ comparison: AdminConsole.TMDbComparison
-    ) -> some View {
-        switch difference {
-        case .title(let title): Text("Title: \(title)")
-        case .year(let year): Text("Year: \(year)")
-        case .outline(let text, let record):
-            VStack(alignment: .leading) {
-                Text(text).font(.callout)
-                HStack(spacing: 4) {
-                    TMDbMark()
-                    Text("taken with its attribution to TMDb \(record)").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
-        case .episode(let episode, _): Text("Episode \(episode.number): \(episode.title)")
-        case .season(let season): Text("\(season.name), a new stop beneath this once confirmed")
-        case .heldSeason(let season, let container, let suggested):
-            let held = walk.stops[container]?.title ?? container
-            if suggested {
-                Text(
-                    "\(season.name): perhaps \(held), held here with no TMDb id, so matched to nothing; say which it is at its stop"
-                )
-            } else {
-                Text("\(season.name): held as \(held), a stop of the walk")
-            }
-        case .unmatchedSeason: EmptyView()
-        case .order(let sequence, let items):
-            Text("\(sequence ?? "The sequence") in TMDb's order: \(items.joined(separator: ", "))")
-        case .artwork(let kind, let path, _):
-            HStack {
-                AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(path)")) {
-                    $0.resizable().scaledToFit()
-                } placeholder: {
-                    ProgressView()
-                }
-                .frame(width: 60, height: 60)
-                Text("\(kind), credited to TMDb")
-            }
-        case .special(let special): Text(special.episode.title)
-        }
     }
 
     private func describe(_ placement: SpecialPlacement) -> String {
@@ -373,6 +320,10 @@ private struct NewStop: View {
             group("Fields", offered.filter(\.isField))
             group("References", offered.filter(\.isReference))
             if let container = walk.container(stop), let tree = walk.draft(holding: stop) {
+                Text(
+                    "Each group made here is a new container beneath this one, looked at in the walk once this is confirmed."
+                )
+                .font(.caption).foregroundStyle(.secondary)
                 EntryGrouping(
                     tree: tree,
                     parent: stop,
@@ -392,7 +343,7 @@ private struct NewStop: View {
             GroupBox {
                 VStack(alignment: .leading) {
                     ForEach(differences) { difference in
-                        Toggle(isOn: tick(difference.id)) { Text(describe(difference)) }
+                        Toggle(isOn: tick(difference.id)) { DifferenceLabel(difference: difference, walk: walk) }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -402,13 +353,204 @@ private struct NewStop: View {
         }
     }
 
-    private func describe(_ difference: AdminConsole.TMDbDifference) -> String {
+}
+
+/// A difference as the walk says it, the same for a held container and a new one: a field TMDb's text
+/// is taken into with its attribution marked.
+private struct DifferenceLabel: View {
+    let difference: AdminConsole.TMDbDifference
+    let walk: TMDbWalk
+
+    var body: some View {
         switch difference {
-        case .year(let year): "Year: \(year)"
-        case .outline(let text, _): "\(text) (attributed to TMDb)"
-        case .reference(_, let ref): "\(ref.provider.title) \(ref.value)"
-        default: difference.id
+        case .title(let title): Text("Title: \(title)")
+        case .year(let year): Text("Year: \(year)")
+        case .outline(let text, let record):
+            VStack(alignment: .leading) {
+                Text(text).font(.callout)
+                HStack(spacing: 4) {
+                    TMDbMark()
+                    Text("taken with its attribution to TMDb \(record)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
+        case .episode(let episode, _): Text("Episode \(episode.number): \(episode.title)")
+        case .season(let season): Text(season.name)
+        case .heldSeason(let season, let container, let suggested):
+            let held = walk.stops[container]?.title ?? container
+            if suggested {
+                Text(
+                    "\(season.name): perhaps \(held), which the library holds with no TMDb id; say which season it is when the walk reaches it"
+                )
+            } else if walk.identified[container] != nil {
+                Text("\(season.name): held as \(held), as you said it is")
+            } else {
+                Text("\(season.name): held as \(held)")
+            }
+        case .unmatchedSeason: EmptyView()
+        case .order(let sequence, let items):
+            Text("\(sequence ?? "The sequence") in TMDb's order: \(items.joined(separator: ", "))")
+        case .artwork(let kind, let path, _):
+            HStack {
+                AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(path)")) {
+                    $0.resizable().scaledToFit()
+                } placeholder: {
+                    ProgressView()
+                }
+                .frame(width: 60, height: 60)
+                Text("\(kind), credited to TMDb")
+            }
+        case .special(let special): Text(special.episode.title)
         }
+    }
+}
+
+/// A held stop's children: the seasons TMDb has, those the library holds shown ticked and never chosen,
+/// and the episodes it lacks, which may be grouped into new containers beneath it. What ticking each
+/// does is said once, above them.
+private struct WalkChildren: View {
+    let current: ConsoleModel.Walking
+    let model: ConsoleModel
+    let comparison: AdminConsole.TMDbComparison
+    let tick: (String) -> Binding<Bool>
+
+    private var walk: TMDbWalk { current.walk }
+    private var stop: String { comparison.container }
+    private var groups: [EpisodeGroup] { walk.stops[stop]?.groups ?? [] }
+    private var grouped: Set<Int> { Set(groups.flatMap(\.episodes)) }
+    private var seasons: [AdminConsole.TMDbDifference] {
+        walk.differences(of: stop).filter { $0.isChild && !$0.isEpisode }
+    }
+    private var episodes: [TMDb.Episode] { walk.missingEpisodes(at: stop) }
+
+    var body: some View {
+        if !seasons.isEmpty || !episodes.isEmpty {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 6) {
+                    if !seasons.isEmpty {
+                        Text(
+                            "Ticked, each season the library lacks is drafted from TMDb when this is confirmed, and looked at in the walk after it. Those it holds are looked at whatever is ticked."
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
+                        ForEach(seasons) { season in
+                            if season.isHeld {
+                                Toggle(isOn: .constant(true)) { DifferenceLabel(difference: season, walk: walk) }
+                                    .disabled(true)
+                            } else {
+                                Toggle(isOn: tick(season.id)) { DifferenceLabel(difference: season, walk: walk) }
+                            }
+                        }
+                    }
+                    if !episodes.isEmpty {
+                        Text(
+                            "Ticked, each episode the library lacks is added here when the walk is stored. Grouped, they are added together as a new container beneath this one."
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
+                        missing
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                // Ticks every child that may be chosen or none, and shows as mixed while some are ticked.
+                let tickable =
+                    seasons.filter { !$0.isHeld }.map(\.id)
+                    + episodes.filter { !grouped.contains($0.id) }.map { "episode:\($0.id)" } + groups.map(\.tick)
+                let ticked = tickable.filter { tick($0).wrappedValue }.count
+                if tickable.isEmpty {
+                    Text("Children")
+                } else {
+                    Toggle(sources: tickable.map(tick), isOn: \.self) {
+                        Text(ticked == 0 ? "Children" : "Children, \(ticked) ticked")
+                    }
+                }
+            }
+        }
+    }
+
+    private var missing: some View {
+        GroupingList(
+            rows: rows,
+            suggestions: walk.suggestedGroups(at: stop).map {
+                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init))
+            },
+            defaultKind: defaultKind,
+            chosenWord: "ticked",
+            chosen: ticked,
+            groupTick: { tick("group:\($0.id)") },
+            form: { members, title, type, label in
+                guard let id = try? await model.provisionalID() else { return }
+                model.groupEpisodes { walk, stop in
+                    walk.group(
+                        members.compactMap(Int.init),
+                        at: stop,
+                        into: id.value,
+                        type: type,
+                        typeLabel: label,
+                        title: title
+                    )
+                }
+            },
+            add: { members, group in
+                model.groupEpisodes { $0.add(members.compactMap(Int.init), toGroup: group, at: $1) }
+            },
+            remove: { member, group in
+                guard let episode = Int(member) else { return }
+                model.groupEpisodes { $0.remove(episode, fromGroup: group, at: $1) }
+            },
+            ungroup: { group in model.groupEpisodes { $0.ungroup(group, at: $1) } }
+        )
+    }
+
+    /// The missing episodes in TMDb's order, each group at its first episode's place.
+    private var rows: [GroupingRow] {
+        var rows: [GroupingRow] = []
+        for episode in episodes {
+            if let group = groups.first(where: { $0.episodes.contains(episode.id) }) {
+                guard group.episodes.first == episode.id else { continue }
+                let members = group.episodes.compactMap { id in episodes.first { $0.id == id } }
+                rows.append(
+                    .group(
+                        GroupingGroup(
+                            id: group.id,
+                            title: group.title.rawValue,
+                            kind: group.typeLabel ?? group.type.title,
+                            members: members.map(member)
+                        )
+                    )
+                )
+            } else {
+                rows.append(.member(member(episode)))
+            }
+        }
+        return rows
+    }
+
+    private func member(_ episode: TMDb.Episode) -> GroupingMember {
+        GroupingMember(id: String(episode.id), title: "Episode \(episode.number): \(episode.title)")
+    }
+
+    /// The episodes not grouped, ticked as the stop has them.
+    private var ticked: Binding<Set<String>> {
+        let loose = episodes.filter { !grouped.contains($0.id) }.map(\.id)
+        return Binding(
+            get: {
+                let chosen = walk.stops[stop]?.chosen ?? []
+                return Set(loose.filter { chosen.contains("episode:\($0)") }.map(String.init))
+            },
+            set: { members in
+                for episode in loose { tick("episode:\(episode)").wrappedValue = members.contains(String(episode)) }
+            }
+        )
+    }
+
+    /// The kind the containers held beneath it and the groups made already are, mostly.
+    private var defaultKind: ContainerType? {
+        let held = (walk.container(stop)?.childContainerIDs ?? []).compactMap { child in
+            walk.stops[child.value].flatMap { ContainerType(rawValue: $0.type) }
+        }
+        let kinds = held + groups.map(\.type)
+        let counts = Dictionary(kinds.map { ($0, 1) }, uniquingKeysWith: +)
+        return counts.max { $0.value < $1.value }?.key
     }
 }
 
@@ -503,7 +645,7 @@ private struct WalkSpecials: View {
     }
 
     private func isSuggestedHere(_ special: Special) -> Bool {
-        walk.suggestions[special.id]?.placement.flatMap(walk.home) == current.open
+        walk.isSuggested(special, here: current.open)
     }
 
     @ViewBuilder

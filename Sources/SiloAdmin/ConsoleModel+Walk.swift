@@ -264,6 +264,15 @@ extension ConsoleModel {
         keepWalk()
     }
 
+    /// Groups the open held stop's missing episodes, or changes the groups made of them.
+    func groupEpisodes(_ change: (inout TMDbWalk, String) -> Void) {
+        guard let open = walking?.open, var walk = walking?.walk else { return }
+        change(&walk, open)
+        walking?.walk = walk
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// Lists everything storing the walk will do, before any of it is done.
     func listStore() {
         do {
