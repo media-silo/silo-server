@@ -38,6 +38,10 @@ extension ConsoleModel {
             guard walking?.id == starting.id else { return }
             walking?.walk = walk
             if let series = walk.series, series != walk.root { readSpecials(of: series, for: starting.id) }
+            if walk.series != nil {
+                let held = try? await console.companionSeries(in: key.library, besides: walk.series, of: silo)
+                if walking?.id == starting.id { walking?.companions = held ?? [] }
+            }
         } catch {
             if walking?.id == starting.id { walking?.failure = describe(error) }
             return
@@ -159,9 +163,10 @@ extension ConsoleModel {
         if let next = walking?.walk.next, next != current.open { Task { await read(next) } }
     }
 
-    /// Puts a special where the operator says, or back among the unassigned.
-    func place(_ special: Int, _ placement: SpecialPlacement?) {
-        walking?.walk.place(special, placement)
+    /// Puts a special where the operator says, or back among the unassigned; a new companion series it
+    /// names is kept with the walk.
+    func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
+        walking?.walk.place(special, placement, companion: companion)
         walking?.plan = nil
     }
 

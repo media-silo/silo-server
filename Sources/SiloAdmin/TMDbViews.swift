@@ -265,6 +265,8 @@ struct ShapeTreeSheet: View {
     @State private var groupType: ContainerType = .serial
     @State private var groupLabel = ""
     @State private var breakoutTitle = ""
+    @State private var breakoutListed = false
+    @State private var alternativeTitle = ""
 
     private var current: ConsoleModel.ShapingTree { model.shapingTree ?? shaping }
     private var tree: TMDbTree { current.tree }
@@ -430,7 +432,9 @@ struct ShapeTreeSheet: View {
             if let suggesting = current.suggesting { ReadingProgress(progress: suggesting) }
             HStack {
                 TextField("New breakout's title", text: $breakoutTitle).frame(maxWidth: 220)
-                Text("then file specials in it from their menus").font(.caption).foregroundStyle(.secondary)
+                Toggle("Listed", isOn: $breakoutListed)
+                TextField("A new alternative's title", text: $alternativeTitle).frame(maxWidth: 200)
+                Text("then file specials from their menus").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Suggest Again") { Task { await model.suggestSpecials() } }
                     .disabled(current.suggesting != nil)
@@ -488,6 +492,7 @@ struct ShapeTreeSheet: View {
                             }
                         }
                     }
+                    alternativesMenu(special, of: container)
                     breakoutMenu(special, from: container)
                 }
             }
@@ -498,6 +503,34 @@ struct ShapeTreeSheet: View {
         .fixedSize()
     }
 
+    /// Another way to play a container: a new edition of it, or a version of one of its items.
+    @ViewBuilder
+    private func alternativesMenu(_ special: Special, of container: Container) -> some View {
+        let named = alternativeTitle.trimmingCharacters(in: .whitespaces)
+        let id = container.id.value
+        Button("As a new edition, \(named.isEmpty ? "Omnibus" : named)") {
+            model.updateTree { $0.place(special.id, .edition(of: id, title: named.isEmpty ? "Omnibus" : named)) }
+        }
+        Menu("As a version of one of its items") {
+            ForEach(container.sequences.flatMap(\.items).compactMap(\.id), id: \.self) { item in
+                Button("\(entryTitle(item, in: container)), \(named.isEmpty ? "Special edition" : named)") {
+                    model.updateTree {
+                        $0.place(
+                            special.id,
+                            .version(of: id, item: item.value, title: named.isEmpty ? "Special edition" : named)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func entryTitle(_ item: ItemID, in container: Container) -> String {
+        let entry = container.sequences.flatMap(\.items).first { $0.id == item }
+        let ref = entry?.externalRefs.first { $0.provider == .tmdb }
+        return entry?.title ?? ref.flatMap { tree.episodeTitles[$0.value] } ?? item.value
+    }
+
     @ViewBuilder
     private func breakoutMenu(_ special: Special, from container: Container) -> some View {
         Menu("Into a breakout, referred to from its extras") {
@@ -506,11 +539,18 @@ struct ShapeTreeSheet: View {
                     model.updateTree { $0.place(special.id, .breakout(id, from: container.id.value, asExtra: true)) }
                 }
             }
+            ForEach(current.companions) { companion in
+                Button("\(companion.displayTitle)\(companion.listed ? "" : " (unlisted)"), held already") {
+                    model.updateTree {
+                        $0.place(special.id, .breakout(companion.id, from: container.id.value, asExtra: true))
+                    }
+                }
+            }
             if let title = Title(breakoutTitle) {
-                Button("A new one, \(title)") {
+                Button("A new one, \(title), \(breakoutListed ? "listed" : "unlisted")") {
                     Task {
                         guard let id = try? await model.provisionalID() else { return }
-                        var breakout = Container(id: id, type: .series, title: title, listed: false)
+                        var breakout = Container(id: id, type: .series, title: title, listed: breakoutListed)
                         breakout.sequences = [Sequence(id: "episodes", items: [])]
                         model.updateTree {
                             $0.place(
@@ -534,6 +574,8 @@ struct ShapeTreeSheet: View {
         case .child(let id, _, let type): return "a \(type) of its own beneath \(title(id))"
         case .duplicate(let home, let item, let library, _, _): return "the same as \(home)#\(item) in \(library)"
         case .breakout(let id, let from, _): return "in \(title(id)), referred to from \(title(from))"
+        case .edition(let id, let alternative): return "a new edition of \(title(id)), \(alternative)"
+        case .version(let id, let item, let alternative): return "a version of \(item) of \(title(id)), \(alternative)"
         case .declined: return "declined"
         }
     }

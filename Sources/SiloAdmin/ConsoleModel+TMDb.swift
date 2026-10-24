@@ -140,6 +140,10 @@ extension ConsoleModel {
     /// Opens a draft from TMDb to be shaped, with its specials' suggestions.
     func openShaping(_ tree: TMDbTree, on silo: AdminConsole.Silo) async {
         shapingTree = ShapingTree(silo: silo, tree: tree)
+        if !tree.specials.isEmpty {
+            shapingTree?.companions =
+                (try? await console.companionSeries(in: tree.library, besides: nil, of: silo)) ?? []
+        }
         await suggestSpecials()
         await checkTree()
     }

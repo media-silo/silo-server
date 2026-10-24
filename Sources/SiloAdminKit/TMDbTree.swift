@@ -36,6 +36,13 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
     /// An entry in a series of the operator's own, new in this tree's library or held already, referred
     /// to from a container of the tree.
     case breakout(String, from: String, asExtra: Bool)
+    /// Another way to play a container, as an omnibus edition is: a new sequence holding the special as
+    /// its only entry, named by a new alternative with the title given.
+    case edition(of: String, title: String)
+    /// Another way to play one of a container's items, as an episode with new effects is: a new sequence
+    /// holding the special in that item's place and referring to each of the sequence's other items,
+    /// named by a new alternative with the title given.
+    case version(of: String, item: String, title: String)
     /// Not held: the series' sidecar declines it.
     case declined
 }
@@ -64,6 +71,9 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     public var airDates: [String: String]
     /// The series' episode groups, for suggesting where one places a special.
     public var episodeGroups: [String]
+    /// How long each of the tree's episodes runs, in minutes, by TMDb id, for suggesting an omnibus; nil
+    /// for a draft kept before runtimes were.
+    public var runtimes: [String: Int]?
     /// The series' specials, in TMDb's season 0 order.
     public var specials: [Special]
     /// Where each special goes, by its TMDb id; one with none is unassigned.
@@ -83,6 +93,7 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         episodeTitles: [String: String] = [:],
         airDates: [String: String] = [:],
         episodeGroups: [String] = [],
+        runtimes: [String: Int] = [:],
         specials: [Special] = []
     ) {
         id = UUID()
@@ -101,6 +112,7 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         self.episodeTitles = episodeTitles
         self.airDates = airDates
         self.episodeGroups = episodeGroups
+        self.runtimes = runtimes
         self.specials = specials
         placements = [:]
         breakouts = [:]
@@ -348,6 +360,14 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
                 }
                 Self.refer(to: EntryRef(container: breakout, item: entryID), from: &referrer, asExtra: asExtra)
                 byID[from] = referrer
+            case .edition(let id, let title):
+                guard var container = byID[id] else { continue }
+                Self.edition(special, titled: title, in: &container)
+                byID[id] = container
+            case .version(let id, let item, let title):
+                guard var container = byID[id] else { continue }
+                Self.version(special, of: item, titled: title, in: &container)
+                byID[id] = container
             case .declined:
                 declined += special.refs.filter { $0.provider == .tmdb }
             }
@@ -393,6 +413,40 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         let index = container.sequences.firstIndex { sequence != nil && $0.id == sequence } ?? 0
         let count = container.sequences[index].items.count
         container.sequences[index].items.insert(entry, at: min(max(position ?? count, 0), count))
+    }
+
+    /// A special as a new edition of a container: a sequence of its own holding it alone, and an
+    /// alternative with the title given naming that sequence. The container's other sequences stay.
+    static func edition(_ special: Special, titled title: String, in container: inout Container) {
+        let entry = leaf(special, type: .episode, in: container)
+        alternative(titled: title, playing: [entry], in: &container)
+    }
+
+    /// A special as a version of one item: a sequence holding it in the item's place and referring to
+    /// each of the other items of the sequence the item is in, so each stays one entry, and an
+    /// alternative with the title given naming it.
+    static func version(_ special: Special, of item: String, titled title: String, in container: inout Container) {
+        guard let source = container.sequences.first(where: { $0.items.contains { $0.id?.value == item } }) else {
+            return
+        }
+        let entry = leaf(special, type: .episode, in: container)
+        let items = source.items.map { other -> Entry in
+            if other.id?.value == item { return entry }
+            return other.id.map { .ref(EntryRef(item: $0)) } ?? other
+        }
+        alternative(titled: title, playing: items, in: &container)
+    }
+
+    private static func alternative(titled title: String, playing items: [Entry], in container: inout Container) {
+        let sequence = Slug.unique(from: title, avoiding: Set(container.sequences.compactMap(\.id)))
+        container.sequences.append(Sequence(id: sequence, items: items))
+        container.alternatives.append(
+            Alternative(
+                id: Slug.unique(from: title, avoiding: Set(container.alternatives.map(\.id))),
+                sequence: sequence,
+                title: title
+            )
+        )
     }
 
     static func refer(to ref: EntryRef, from container: inout Container, asExtra: Bool) {

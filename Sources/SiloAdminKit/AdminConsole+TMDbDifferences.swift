@@ -63,6 +63,8 @@ extension AdminConsole {
         public var suggestions: [Int: SpecialSuggestion]
         /// TMDb's title for each episode compared, by TMDb id: shown, and stored nowhere.
         public var episodeTitles: [String: String]
+        /// How long each episode compared runs, in minutes, by TMDb id, for suggesting an omnibus.
+        public var runtimes: [String: Int] = [:]
         /// The container as the reading found it, which its stop's edit is based on.
         public var opened: OpenedContainer
     }
@@ -442,7 +444,10 @@ extension AdminConsole {
         progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
     ) async throws {
         let tmdbIDs = Set(episodes.map(\.ref))
-        for episode in episodes { comparison.episodeTitles[String(episode.id)] = episode.title }
+        for episode in episodes {
+            comparison.episodeTitles[String(episode.id)] = episode.title
+            if let runtime = episode.runtime { comparison.runtimes[String(episode.id)] = runtime }
+        }
         let entries = container.sequences.flatMap(\.items) + container.extras
         let found: [[TMDbDifference]] = try await steps(
             "Reading TMDb's episodes",

@@ -1906,6 +1906,14 @@ extension AdminConsoleTests {
                 return (200, Data("[\(carrying.map(summary).joined(separator: ","))]".utf8))
             case (_, "/v1/server"): return (200, Data(Self.serverInfo("home", "Home Silo", bootstrap: false).utf8))
             case (_, "/v1/operator"): return (200, Data(Self.active.utf8))
+            case ("GET", prefix):
+                // The library's containers no other names, listed or not.
+                let all = held.sidecars.withLock { $0 }.compactMap { id, bytes in
+                    held.library(of: id) == library ? try? SidecarFile.sidecar(from: bytes).container : nil
+                }
+                let named = Set(all.flatMap(\.childContainerIDs))
+                let top = all.filter { !named.contains($0.id) }.sorted { $0.id.value < $1.id.value }
+                return (200, Data("[\(top.map(summary).joined(separator: ","))]".utf8))
             case ("POST", prefix):
                 struct Create: Decodable {
                     struct Attributed: Decodable {
@@ -3132,7 +3140,8 @@ extension AdminConsoleTests {
             suggestions[interlude.id]
                 == AdminConsole.SpecialSuggestion(
                     placement: .entry(in: season, sequence: "episodes", position: 1),
-                    reason: "Story arcs places it after Everything Changes"
+                    reason: "Story arcs places it after Everything Changes",
+                    basis: .group
                 )
         )
         #expect(
@@ -3222,14 +3231,16 @@ extension AdminConsoleTests {
             suggestions[filed.id]
                 == AdminConsole.SpecialSuggestion(
                     placement: .entry(in: season),
-                    reason: "smddb files it in \(recordSeason.displayTitle)"
+                    reason: "smddb files it in \(recordSeason.displayTitle)",
+                    basis: .smddb
                 )
         )
         #expect(
             suggestions[interviewed.id]
                 == AdminConsole.SpecialSuggestion(
                     placement: .extra(of: tree.top, type: EntryType.interview.rawValue),
-                    reason: "smddb files it among \(record.displayTitle)'s extras"
+                    reason: "smddb files it among \(record.displayTitle)'s extras",
+                    basis: .smddb
                 )
         )
         #expect(
@@ -3242,14 +3253,16 @@ extension AdminConsoleTests {
                         from: tree.top,
                         asExtra: true
                     ),
-                    reason: "its IMDb id is Rose's, an episode of TMDb's series 777, which tv holds"
+                    reason: "its IMDb id is Rose's, an episode of TMDb's series 777, which tv holds",
+                    basis: .duplicate
                 )
         )
         #expect(
             suggestions[film.id]
                 == AdminConsole.SpecialSuggestion(
                     placement: nil,
-                    reason: "its TVDB id is Doctor Who's, TMDb's movie 1234, which no library holds: draft it first"
+                    reason: "its TVDB id is Doctor Who's, TMDb's movie 1234, which no library holds: draft it first",
+                    basis: .duplicate
                 )
         )
         #expect(
@@ -3257,7 +3270,8 @@ extension AdminConsoleTests {
                 == AdminConsole.SpecialSuggestion(
                     placement: nil,
                     reason:
-                        "its IMDb id is Dalek's, an episode of TMDb's series 778, which no library holds: draft it first"
+                        "its IMDb id is Dalek's, an episode of TMDb's series 778, which no library holds: draft it first",
+                    basis: .duplicate
                 )
         )
     }
@@ -4438,5 +4452,237 @@ extension AdminConsoleTests {
         #expect(stored.refusal == nil)
         #expect(held.container(serials[0].id)?.sequences[0].items[0].externalRefs == refs)
         #expect(held.container(seasons[0].id)?.extras.compactMap(\.reference).map(\.item.value) == ["part-one"])
+    }
+
+    // MARK: Alternatives and companions
+
+    /// The walked series with its first season's first serial, The Daleks, holding four episodes and an
+    /// alternate broadcast order, TMDb's titles and runtimes for them, and the specials given.
+    private static func daleks(
+        _ specials: [TMDb.Episode]
+    ) -> (series: Container, held: [Container], serial: Container, parts: [TMDb.Episode], TMDb: FakeTMDb) {
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        let parts = ["The Dead Planet", "The Survivors", "The Escape", "The Ambush"].enumerated().map { index, title in
+            Self.episode(5101 + index, 1, index + 1, title, runtime: 25)
+        }
+        func entry(_ index: Int) -> Entry {
+            .leaf(Entry.Leaf(id: ItemID("part-\(index + 1)")!, type: .episode, externalRefs: [parts[index].ref]))
+        }
+        var serial = serials[0]
+        serial.title = Title("The Daleks")!
+        serial.sequences = [
+            Sequence(id: "parts", items: parts.indices.map(entry)),
+            Sequence(id: "broadcast", items: [.ref(EntryRef(item: ItemID("part-1")!))]),
+        ]
+        serial.alternatives = [Alternative(id: "broadcast", sequence: "broadcast", title: "As broadcast")]
+        tmdb.seasons["121/1"]?.episodes = parts
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: specials)
+        return (series, seasons + [serial] + serials.dropFirst(), serial, parts, tmdb)
+    }
+
+    /// Walks to the serial: the series confirmed, and its seasons until the serial is a stop, which is
+    /// read.
+    private func walkToTheSerial(_ walking: Walking, _ series: Container, _ serial: Container) async throws -> TMDbWalk
+    {
+        var walk = try await walking.walk(series.id.value)
+        for season in walk.order.dropFirst() where walk.stops[serial.id.value] == nil {
+            try await walking.confirm(season, in: &walk)
+        }
+        try await walking.read(serial.id.value, in: &walk)
+        return walk
+    }
+
+    /// A special placed as a new edition of a serial is a sequence holding it alone, named by an
+    /// alternative with the title given; one placed in the serial's alternate sequence goes at its
+    /// position; and the serial's other sequences are unchanged.
+    @Test func aSpecialPlacedAsANewEditionIsASequenceOfItsOwn() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let omnibus = Self.episode(3701, 0, 1, "The Daleks: Omnibus", runtime: 100)
+        let trailer = Self.episode(3702, 0, 2, "The Daleks: Trailer", runtime: 40)
+        let (series, contents, serial, _, tmdb) = Self.daleks([omnibus, trailer])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        walk.place(omnibus.id, .edition(of: serial.id.value, title: "Omnibus"))
+        walk.place(trailer.id, .entry(in: serial.id.value, sequence: "broadcast", position: 1))
+        #expect(walk.placed(in: serial.id.value).count == 2)
+        try await walking.confirm(serial.id.value, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let made = try #require(held.container(serial.id))
+        #expect(made.sequences.map(\.id) == ["parts", "broadcast", "omnibus"])
+        #expect(made.sequences[0] == serial.sequences[0], "the parts are as they were")
+        #expect(made.sequences[2].items.map(\.externalRefs) == [[omnibus.ref]])
+        #expect(made.sequences[1].items.map(\.externalRefs) == [[], [trailer.ref]], "at its position")
+        #expect(
+            made.alternatives == [
+                Alternative(id: "broadcast", sequence: "broadcast", title: "As broadcast"),
+                Alternative(id: "omnibus", sequence: "omnibus", title: "Omnibus"),
+            ]
+        )
+    }
+
+    /// A special placed as a version of the first of a serial's four episodes is a sequence holding it
+    /// first and referring to the other three, named by an alternative; the serial still holds one entry
+    /// for each episode.
+    @Test func aSpecialPlacedAsAVersionOfAnEpisodeRefersToTheRest() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let enhanced = Self.episode(3711, 0, 1, "The Dead Planet (Special Edition)", runtime: 25)
+        let (series, contents, serial, _, tmdb) = Self.daleks([enhanced])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        walk.place(enhanced.id, .version(of: serial.id.value, item: "part-1", title: "Special edition"))
+        try await walking.confirm(serial.id.value, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let made = try #require(held.container(serial.id))
+        let version = try #require(made.sequences.last)
+        #expect(version.id == "special-edition")
+        #expect(version.items.first?.externalRefs == [enhanced.ref])
+        #expect(version.items.dropFirst().map(\.reference?.item.value) == ["part-2", "part-3", "part-4"])
+        #expect(
+            made.alternatives.last
+                == Alternative(id: "special-edition", sequence: "special-edition", title: "Special edition")
+        )
+        #expect(made.itemIDs.count == 5, "one entry for each episode, and the special's")
+    }
+
+    /// A special whose title names a serial beside "Omnibus", one that runs as long as the serial's
+    /// episodes together, and one whose title names an episode beside "Special Edition" are suggested,
+    /// once the serial is read, as new editions of it and as a version of the episode.
+    @Test func anOmnibusAndASpecialEditionAreSuggestedAsAlternatives() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let omnibus = Self.episode(3721, 0, 1, "The Daleks: Omnibus", runtime: 100)
+        let movie = Self.episode(3722, 0, 2, "The Daleks: The Movie", runtime: 98)
+        let enhanced = Self.episode(3723, 0, 3, "The Survivors (Special Edition)", runtime: 25)
+        let elsewhere = Self.episode(3724, 0, 4, "The Daleks in Colour", runtime: 60)
+        let (series, contents, serial, parts, tmdb) = Self.daleks([omnibus, movie, enhanced, elsewhere])
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        let walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        #expect(
+            walk.suggestions[omnibus.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .edition(of: id, title: "Omnibus"),
+                    reason: "its title names The Daleks as an omnibus",
+                    basis: .alternative
+                )
+        )
+        #expect(
+            walk.suggestions[movie.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .edition(of: id, title: "Omnibus"),
+                    reason: "it runs 98 minutes, as The Daleks's 4 episodes do together",
+                    basis: .alternative
+                )
+        )
+        #expect(
+            walk.suggestions[enhanced.id]
+                == AdminConsole.SpecialSuggestion(
+                    placement: .version(of: id, item: "part-2", title: "Special edition"),
+                    reason: "its title names The Survivors as another version of it",
+                    basis: .alternative
+                )
+        )
+        #expect(walk.suggestions[elsewhere.id] == nil, "named, but neither an omnibus nor as long")
+        #expect(walk.suggestions[omnibus.id]?.placement.flatMap(walk.home) == id, "suggested at the serial")
+
+        // A draft's specials are suggested the same way, against its containers.
+        var tree = TMDbTree(
+            library: "tv",
+            record: TMDb.Record(.series, 121),
+            creating: ContainerDraft.Creating(),
+            containers: [serial],
+            top: serial.id,
+            episodeTitles: Dictionary(uniqueKeysWithValues: parts.map { (String($0.id), $0.title) }),
+            runtimes: Dictionary(uniqueKeysWithValues: parts.map { (String($0.id), 25) }),
+            specials: [Special(episode: movie), Special(episode: enhanced), Special(episode: omnibus)]
+        )
+        tree.episodeGroups = []
+        let (_, suggestions) = try await console.suggest(for: tree, of: home, from: database, tmdb: tmdb)
+        #expect(suggestions[movie.id]?.placement == .edition(of: id, title: "Omnibus"))
+        #expect(suggestions[enhanced.id]?.placement == .version(of: id, item: "part-2", title: "Special edition"))
+        for special in [movie, enhanced] { tree.place(special.id, suggestions[special.id]?.placement) }
+        tree.place(omnibus.id, .version(of: id, item: "no-such-part", title: "Lost"))
+        let made = try #require(tree.making.documents.first)
+        #expect(made.sequences.map(\.id) == ["parts", "broadcast", "omnibus", "special-edition"])
+        #expect(
+            made.alternatives.map(\.title) == ["As broadcast", "Omnibus", "Special edition"],
+            "and none for no item"
+        )
+    }
+
+    /// A special placed in a listed series the library holds is an entry of that series, referred to
+    /// from the season's extras, and the series stays listed; the walked series is no companion.
+    @Test func aSpecialIsPlacedInACompanionSeriesTheLibraryHolds() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let concert = Self.episode(3731, 0, 1, "Doctor Who at the Proms 2008", runtime: 60)
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [concert])
+        var proms = Container(id: ContainerID("00000000000001c1")!, type: .series, title: Title("At the Proms")!)
+        proms.sequences = [Sequence(id: "concerts", items: [])]
+        let held = HeldLibrary([series, proms] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let season = seasons[0].id.value
+
+        let companions = try await console.companionSeries(in: "tv", besides: series.id.value, of: home)
+        #expect(companions.map(\.id) == [proms.id.value] && companions[0].listed)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.read(season, in: &walk)
+        walk.place(concert.id, .breakout(proms.id.value, from: season, asExtra: true))
+        try await walking.confirm(season, in: &walk)
+        let plan = try walk.plan()
+        #expect(
+            plan.steps.map(\.id).first?.hasPrefix("held:tv/\(proms.id)") == true,
+            "before the edit that refers to it"
+        )
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let filed = try #require(held.container(proms.id))
+        #expect(filed.listed && filed.sequences[0].items.map(\.externalRefs) == [[concert.ref]])
+        let entry = try #require(filed.sequences[0].items.first?.id)
+        #expect(held.container(seasons[0].id)?.extras == [.ref(EntryRef(container: proms.id, item: entry))])
+    }
+
+    /// A special placed in a new companion series the operator titles and lists makes the series listed,
+    /// holding the special's entry, before the edit that refers to it.
+    @Test func aNewCompanionSeriesIsCreatedListedWhenTheOperatorSays() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let concert = Self.episode(3741, 0, 1, "Doctor Who at the Proms 2010", runtime: 60)
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [concert])
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let season = seasons[0].id.value
+        var proms = Container(id: try await database.provisionalID(), type: .series, title: Title("At the Proms")!)
+        proms.sequences = [Sequence(id: "concerts", items: [])]
+        #expect(!Container(id: proms.id, type: .series, title: proms.title, listed: false).listed)
+
+        var walk = try await walking.walk(series.id.value)
+        try await walking.read(season, in: &walk)
+        walk.place(concert.id, .breakout(proms.id.value, from: season, asExtra: false), companion: proms)
+        try await walking.confirm(season, in: &walk)
+        let plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["create:\(proms.id)", "edit:\(season)"])
+        #expect(plan.steps[0].described == "make At the Proms, a series of its own, at the top of the library")
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let made = try #require(held.container(proms.id))
+        #expect(made.listed && made.sequences[0].items.map(\.externalRefs) == [[concert.ref]])
+        #expect(held.container(seasons[0].id)?.sequences[0].items.last?.reference?.container == proms.id)
     }
 }
