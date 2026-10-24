@@ -20,10 +20,14 @@ become part of the pending change of the container it was placed in, and removin
 SHALL return it. A stop never opened, and a special never placed, SHALL change nothing.
 
 Nothing SHALL be stored until the operator stores the walk. Before storing, the console SHALL list
-every creation, edit and artwork put the walk makes, in the order it will make them: creations, each
-parent before its children; the edits of the walk's changed containers; the edits that specials placed
-elsewhere make of other containers; and the artwork. Storing SHALL make them in that order and stop at
-the first refusal, saying what was stored and what was not, and the walk SHALL keep what was not.
+every creation, edit and artwork put the walk makes, in the order it will make them: the companion
+series it makes at the top of the library; the edits that specials placed elsewhere make of containers
+outside the walk, so that what the walk's edits refer to is there; each changed container's edit, in
+the tree's order, each followed by the creation of the containers it names beneath it, since a
+container is created beneath a parent only once the parent names it; and the artwork. An edit a
+placement makes of a container that is a confirmed stop SHALL be part of that stop's edit. Storing
+SHALL make them in that order and stop at the first refusal, saying what was stored and what was not,
+and the walk SHALL keep what was not.
 
 #### Scenario: a series confirmed with nothing chosen
 - **WHEN** a held series holding three seasons, each holding serials, is confirmed with nothing chosen
@@ -53,8 +57,9 @@ the first refusal, saying what was stored and what was not, and the walk SHALL k
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`confirmingAStopQueuesTheContainersBeneathItInTheTreesOrder`,
 `aSpecialPlacedAtAStopIsStoredInThatContainersEdit`, `aConfirmedStopOpenedAgainKeepsWhatWasChosen`,
-`aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`). The walk's sheet is pinned by
-nothing yet, as the rest of the shell is.
+`aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`,
+`anEditOfAConfirmedStopIsPartOfThatStopsEdit`). The walk's sheet is pinned by nothing yet, as the rest
+of the shell is.
 
 ## MODIFIED Requirements
 
@@ -87,10 +92,10 @@ field, reference, entry and order differences as one pending edit of the contain
 sidecar its stop read, carrying the outline's attribution when the outline is chosen, and the declined
 refs when a special is declined or placed after all, and stored when the walk is stored. A special
 placed in a duplicate's home or a breakout SHALL be an edit of that container too, and the console
-SHALL list every edit before it stores any. A chosen child container SHALL open as a draft from TMDb
-beneath the container. Chosen artwork SHALL be put with its attribution when the walk is stored. The
-console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
-opened.
+SHALL list every edit before it stores any. A chosen child container SHALL be offered, once the walk is
+stored, as a draft from TMDb beneath the container. Chosen artwork SHALL be put with its attribution
+when the walk is stored. The console SHALL read a container against TMDb only when its stop is opened,
+or as the next stop to be opened.
 
 #### Scenario: an episode TMDb has gained
 - **WHEN** a season the library holds lacks an episode TMDb's record of the season has, and the

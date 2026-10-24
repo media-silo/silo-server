@@ -63,6 +63,8 @@ extension AdminConsole {
         public var suggestions: [Int: SpecialSuggestion]
         /// TMDb's title for each episode compared, by TMDb id: shown, and stored nowhere.
         public var episodeTitles: [String: String]
+        /// The container as the reading found it, which its stop's edit is based on.
+        public var opened: OpenedContainer
     }
 
     /// Why a container cannot be read against TMDb: it carries no reference TMDb can be asked by,
@@ -95,7 +97,8 @@ extension AdminConsole {
             heldOnly: [],
             declined: [],
             suggestions: [:],
-            episodeTitles: [:]
+            episodeTitles: [:],
+            opened: opened
         )
         await progress(TMDbProgress("Reading TMDb"), comparison)
         let own = container.externalRefs.first { $0.provider == .tmdb }.flatMap { Int($0.value) }
@@ -327,6 +330,28 @@ extension AdminConsole {
             tmdb: tmdb
         )
         guard record.seasons.contains(where: { $0.number == 0 }) else { return }
+        try await compareSpecials(
+            of: series,
+            sidecar: sidecar,
+            into: &comparison,
+            of: silo,
+            database: database,
+            tmdb: tmdb,
+            progress: progress
+        )
+    }
+
+    /// The series' specials nothing covers, listed as they are found and then with their suggestions,
+    /// and the ones its sidecar declines.
+    private func compareSpecials(
+        of series: Int,
+        sidecar: Sidecar,
+        into comparison: inout TMDbComparison,
+        of silo: Silo,
+        database: any ContainerDatabase,
+        tmdb: any TMDbSource,
+        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+    ) async throws {
         await progress(TMDbProgress("Reading TMDb's specials"), comparison)
         let specials = try await tmdb.season(0, of: series).episodes
         for episode in specials { comparison.episodeTitles[String(episode.id)] = episode.title }
@@ -346,8 +371,8 @@ extension AdminConsole {
             library: comparison.library,
             record: TMDb.Record(.series, series),
             creating: ContainerDraft.Creating(),
-            containers: [container],
-            top: container.id,
+            containers: [sidecar.container],
+            top: sidecar.container.id,
             specials: uncovered
         )
         let (suggested, suggestions) = try await self.suggestions(
@@ -359,6 +384,47 @@ extension AdminConsole {
         )
         comparison.differences = held + suggested.specials.map(TMDbDifference.special)
         comparison.suggestions = suggestions
+    }
+
+    /// The specials of the series a walk is beneath, read as a comparison of the series holding them
+    /// alone: what sits beside every stop of a walk rooted below the series.
+    public func specials(
+        of series: String,
+        in library: String,
+        of silo: Silo,
+        from database: any ContainerDatabase,
+        tmdb: any TMDbSource,
+        progress: @escaping @Sendable (TMDbProgress, TMDbComparison) async -> Void = { _, _ in }
+    ) async throws -> TMDbComparison {
+        let opened = try await open(container: series, in: library, of: silo)
+        let sidecar = try SidecarFile.sidecar(from: opened.sidecar)
+        var comparison = TMDbComparison(
+            library: library,
+            container: series,
+            title: sidecar.container.displayTitle,
+            reading: "",
+            differences: [],
+            heldOnly: [],
+            declined: [],
+            suggestions: [:],
+            episodeTitles: [:],
+            opened: opened
+        )
+        let tmdbRef = sidecar.container.externalRefs.first { $0.provider == .tmdb }
+        guard let number = tmdbRef.flatMap({ Int($0.value) }) else { return comparison }
+        comparison.reading = "TMDb's series \(number)"
+        comparison.series = number
+        guard try await tmdb.series(number).seasons.contains(where: { $0.number == 0 }) else { return comparison }
+        try await compareSpecials(
+            of: number,
+            sidecar: sidecar,
+            into: &comparison,
+            of: silo,
+            database: database,
+            tmdb: tmdb,
+            progress: progress
+        )
+        return comparison
     }
 
     /// The entries' differences from TMDb's episodes: the other ids TMDb holds for each one the container
@@ -415,6 +481,11 @@ extension AdminConsole {
 
     /// The TMDb id of the nearest series above a container that carries one.
     private func seriesAbove(_ opened: OpenedContainer, of silo: Silo) async throws -> Int? {
+        try await seriesContainerAbove(opened, of: silo)?.tmdb
+    }
+
+    /// The nearest series above a container that carries a TMDb id, and that id.
+    func seriesContainerAbove(_ opened: OpenedContainer, of silo: Silo) async throws -> (id: String, tmdb: Int)? {
         var parent = opened.container.container.parent
         while let id = parent {
             let above = try await open(container: id, in: opened.container.library, of: silo)
@@ -423,7 +494,7 @@ extension AdminConsole {
                     Int($0.value)
                 })
             {
-                return tmdb
+                return (id, tmdb)
             }
             parent = above.container.container.parent
         }
@@ -481,218 +552,7 @@ extension AdminConsole {
 
     // MARK: Taking
 
-    /// What taking chosen differences comes to: an edit draft of the container, kept on this Mac to be
-    /// stored as any edit is; the edits of other containers and the breakouts that placed specials make,
-    /// listed before any is stored; drafts of new containers beneath it; the seasons to draft from
-    /// TMDb beneath it; and the artwork to put.
-    public struct TMDbTaking: Hashable, Sendable {
-        public var draft: ContainerDraft?
-        public var heldEdits: [TMDbTree.Making.HeldEdit]
-        public var breakouts: [Container]
-        public var children: [ContainerDraft]
-        public var seasons: [Int]
-        public var artwork: [TMDbDifference]
-
-        /// Every edit and creation beyond the container's own draft, in words, before any is stored.
-        public var described: [String] {
-            breakouts.map { "make \($0.displayTitle), a series of its own, at the top of the library" }
-                + heldEdits.map { edit in
-                    if edit.ref != nil {
-                        return "add TMDb's id to \(edit.item ?? "") of \(edit.container) in \(edit.library)"
-                    }
-                    if edit.refer != nil { return "refer to a special from \(edit.container) in \(edit.library)" }
-                    if edit.entryType != nil { return "add an extra to \(edit.container) in \(edit.library)" }
-                    return "add an entry to \(edit.container) in \(edit.library)"
-                }
-                + children.map { "make \($0.title) beneath the container" }
-                + seasons.map { "draft season \($0) from TMDb beneath the container" }
-                + artwork.map { "put TMDb's \($0.id.dropFirst("artwork:".count)), credited to TMDb" }
-        }
-    }
-
-    /// Takes the chosen differences, with the specials placed as the operator placed them: the
-    /// container's own changes as one edit draft based on its sidecar as the silo has it now; the rest
-    /// gathered to be listed and stored when the operator confirms. Nothing is stored here.
-    public func take(
-        _ chosen: Set<String>,
-        placements: [Int: SpecialPlacement],
-        breakouts: [String: Container] = [:],
-        from comparison: TMDbComparison,
-        of silo: Silo
-    ) async throws -> TMDbTaking {
-        let opened = try await open(container: comparison.container, in: comparison.library, of: silo)
-        let sidecar = try SidecarFile.sidecar(from: opened.sidecar)
-        var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
-        guard var container = draft.value else {
-            throw StoreRefused(reason: "the sidecar does not read as a container")
-        }
-        var taking = TMDbTaking(draft: nil, heldEdits: [], breakouts: [], children: [], seasons: [], artwork: [])
-        var outline: Attribution?
-        var declined = sidecar.declined
-        for difference in comparison.differences where chosen.contains(difference.id) {
-            switch difference {
-            case .title(let title): if let title = Title(title) { container.title = title }
-            case .year(let year): container.year = year
-            case .outline(let text, let record):
-                container.outline = text
-                outline = Attribution(subject: .outline, provider: .tmdb, value: record)
-            case .reference(nil, let ref): container.externalRefs.append(ref)
-            case .reference(let item?, let ref): Self.add(ref, toItem: item, in: &container)
-            case .episode(let episode, let after): Self.insert(episode, after: after, into: &container)
-            case .order(let sequence, let items): Self.reorder(sequence, to: items, in: &container)
-            case .season(let season): taking.seasons.append(season.number)
-            case .artwork: taking.artwork.append(difference)
-            case .special(let special):
-                guard let placement = placements[special.id] else { continue }
-                try place(
-                    special,
-                    placement,
-                    in: &container,
-                    declined: &declined,
-                    breakouts: breakouts,
-                    into: &taking,
-                    comparison: comparison
-                )
-            }
-        }
-        // A declined special placed after all is held, so its decline goes.
-        for special in comparison.declined {
-            guard let placement = placements[special.id], placement != .declined else { continue }
-            declined.removeAll { $0 == special.episode.ref }
-            try place(
-                special,
-                placement,
-                in: &container,
-                declined: &declined,
-                breakouts: breakouts,
-                into: &taking,
-                comparison: comparison
-            )
-        }
-        draft.set(container)
-        if let outline {
-            draft.attributions.removeAll { $0.subject == .outline }
-            draft.attributions.append(outline)
-        }
-        if declined != sidecar.declined { draft.declined = declined }
-        if draft.isChanged {
-            try containerDrafts.save(draft, for: silo.id)
-            taking.draft = draft
-        }
-        for child in taking.children { try containerDrafts.save(child, for: silo.id) }
-        return taking
-    }
-
-    private func place(
-        _ special: Special,
-        _ placement: SpecialPlacement,
-        in container: inout Container,
-        declined: inout [ExternalRef],
-        breakouts: [String: Container],
-        into taking: inout TMDbTaking,
-        comparison: TMDbComparison
-    ) throws {
-        let here = container.id.value
-        let library = comparison.library
-        func entryID(in title: String) -> String { "\(Slug.make(from: title))-\(special.id)" }
-        switch placement {
-        case .entry(let id, let sequence, let position) where id == here:
-            TMDbTree.insert(
-                TMDbTree.leaf(special, type: .episode, in: container),
-                into: &container,
-                sequence: sequence,
-                at: position
-            )
-        case .entry(let id, _, _):
-            taking.heldEdits.append(
-                .init(library: library, container: id, entry: special, entryID: entryID(in: special.episode.title))
-            )
-        case .extra(let id, let type) where id == here:
-            container.extras.append(
-                TMDbTree.leaf(special, type: EntryType(rawValue: type) ?? .featurette, in: container)
-            )
-        case .extra(let id, let type):
-            taking.heldEdits.append(
-                .init(
-                    library: library,
-                    container: id,
-                    entry: special,
-                    entryID: entryID(in: special.episode.title),
-                    entryType: EntryType(rawValue: type)
-                )
-            )
-        case .child(let parent, let id, let type):
-            guard let childID = ContainerID(id), let title = Title(special.episode.title) ?? Title("Special") else {
-                return
-            }
-            var child = Container(id: childID, type: ContainerType(rawValue: type) ?? .serial, title: title)
-            child.sequences = [Sequence(id: "parts", items: [TMDbTree.leaf(special, type: .episode, in: child)])]
-            taking.children.append(ContainerDraft.new(child, in: library, at: ContainerDraft.Creating(parent: parent)))
-        case .duplicate(let home, let item, let homeLibrary, let from, let asExtra):
-            taking.heldEdits.append(.init(library: homeLibrary, container: home, item: item, ref: special.episode.ref))
-            guard let homeID = ContainerID(home), let itemID = ItemID(item) else { return }
-            let ref = EntryRef(container: homeID, item: itemID)
-            if from == here {
-                TMDbTree.refer(to: ref, from: &container, asExtra: asExtra)
-            } else {
-                taking.heldEdits.append(.init(library: library, container: from, refer: ref, asExtra: asExtra))
-            }
-        case .breakout(let breakout, let from, let asExtra):
-            let item = ItemID(entryID(in: special.episode.title))!
-            if var made = breakouts[breakout] ?? taking.breakouts.first(where: { $0.id.value == breakout }) {
-                TMDbTree.insert(
-                    .leaf(Entry.Leaf(id: item, type: .episode, externalRefs: special.refs)),
-                    into: &made,
-                    sequence: nil,
-                    at: nil
-                )
-                taking.breakouts.removeAll { $0.id == made.id }
-                taking.breakouts.append(made)
-            } else {
-                taking.heldEdits.append(
-                    .init(library: library, container: breakout, entry: special, entryID: item.value)
-                )
-            }
-            guard let breakoutID = ContainerID(breakout) else { return }
-            let ref = EntryRef(container: breakoutID, item: item)
-            if from == here {
-                TMDbTree.refer(to: ref, from: &container, asExtra: asExtra)
-            } else {
-                taking.heldEdits.append(.init(library: library, container: from, refer: ref, asExtra: asExtra))
-            }
-        case .declined:
-            if !declined.contains(special.episode.ref) { declined.append(special.episode.ref) }
-        }
-    }
-
-    /// Stores what taking gathered beyond the container's own draft: the new breakouts, the edits of
-    /// the other containers, and the artwork, each put with its attribution to TMDb.
-    public func store(
-        _ taking: TMDbTaking,
-        in library: String,
-        for container: String,
-        of silo: Silo,
-        tmdb: any TMDbSource
-    ) async throws {
-        for breakout in taking.breakouts {
-            _ = try await withOperator(silo) {
-                try await $0.create(containers: [TMDbTree.text(breakout)], parent: nil, in: library)
-            }
-        }
-        for edit in taking.heldEdits { try await apply(edit, on: silo) }
-        for case .artwork(let kind, let path, let record) in taking.artwork {
-            try await putArtwork(
-                try await tmdb.image(at: path),
-                as: kind,
-                of: container,
-                in: library,
-                on: silo,
-                attributedTo: record.ref
-            )
-        }
-    }
-
-    private nonisolated static func add(_ ref: ExternalRef, toItem item: String, in container: inout Container) {
+    nonisolated static func add(_ ref: ExternalRef, toItem item: String, in container: inout Container) {
         func adding(_ entry: Entry) -> Entry {
             guard entry.id?.value == item else { return entry }
             switch entry {
@@ -712,7 +572,7 @@ extension AdminConsole {
     }
 
     /// An episode as an entry just after the one carrying the episode it follows at TMDb, or last.
-    private nonisolated static func insert(
+    nonisolated static func insert(
         _ episode: TMDb.Episode,
         after: ExternalRef?,
         into container: inout Container
@@ -738,7 +598,7 @@ extension AdminConsole {
 
     /// A sequence's items carrying TMDb's ids put in the order given, each in a place one of them held,
     /// the others where they stood.
-    private nonisolated static func reorder(_ sequence: String?, to items: [String], in container: inout Container) {
+    nonisolated static func reorder(_ sequence: String?, to items: [String], in container: inout Container) {
         guard let index = container.sequences.firstIndex(where: { $0.id == sequence }) else { return }
         var queue = items.compactMap { id in container.sequences[index].items.first { $0.id?.value == id } }
         let moving = Set(items)

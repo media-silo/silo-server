@@ -29,15 +29,6 @@ extension ConsoleModel {
         get { tmdbState.shaping }
         set { tmdbState.shaping = newValue }
     }
-    var comparing: Comparing? {
-        get { tmdbState.comparing }
-        set {
-            // However the sheet closes, a reading nobody is shown stops asking TMDb and the silo.
-            if newValue?.id != tmdbState.comparing?.id { tmdbState.reading?.cancel() }
-            tmdbState.comparing = newValue
-        }
-    }
-
     /// This Mac's language and region, as TMDb names a language: `en-GB`.
     static var macLanguage: String {
         guard let code = Locale.current.language.languageCode?.identifier else { return "en-US" }
@@ -216,86 +207,6 @@ extension ConsoleModel {
         guard let shaping = shapingTree else { return }
         try? console.tmdbDrafts.remove(shaping.tree.id, of: shaping.silo.id)
         shapingTree = nil
-    }
-
-    // MARK: Differences
-
-    /// Opens a held container's differences from TMDb, read now: each step shown as it goes, with the
-    /// differences found so far, and a failure said where the reading stopped.
-    func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo) async {
-        let opening = Comparing(silo: silo, key: key, progress: AdminConsole.TMDbProgress("Opening the container"))
-        comparing = opening
-        guard let database, let tmdb else {
-            comparing?.progress = nil
-            comparing?.failure = tmdbProblem ?? smddbProblem ?? "TMDb or smddb's clone cannot be read."
-            return
-        }
-        let id = opening.id
-        let reading = Task {
-            do {
-                let comparison = try await console.compare(
-                    key.container,
-                    in: key.library,
-                    of: silo,
-                    from: database,
-                    tmdb: tmdb,
-                    progress: { step, found in await self.read(step, found, for: id) }
-                )
-                if comparing?.id == id { comparing?.comparison = comparison }
-            } catch let unreadable as AdminConsole.NoTMDbReading {
-                if comparing?.id == id { comparing?.failure = unreadable.reason }
-            } catch {
-                // A reading stopped by its sheet closing failed at nothing.
-                if comparing?.id == id, !Task.isCancelled { comparing?.failure = describe(error) }
-            }
-            if comparing?.id == id { comparing?.progress = nil }
-        }
-        tmdbState.reading = reading
-        await reading.value
-    }
-
-    /// A step of a reading, shown while the sheet it was asked for is open.
-    private func read(_ step: AdminConsole.TMDbProgress, _ found: AdminConsole.TMDbComparison, for id: UUID) {
-        guard comparing?.id == id else { return }
-        comparing?.progress = step
-        comparing?.comparison = found
-    }
-
-    /// Takes the chosen differences: the container's own as an edit draft, opened in the editor to be
-    /// reviewed and stored; the rest gathered and listed, to be stored when the operator confirms.
-    func takeDifferences() async {
-        guard let current = comparing, let comparison = current.comparison else { return }
-        do {
-            let taking = try await console.take(
-                current.chosen,
-                placements: current.placements,
-                breakouts: [:],
-                from: comparison,
-                of: current.silo
-            )
-            comparing?.taking = taking
-            if let draft = taking.draft { open(draft, for: current.silo) }
-        } catch {
-            comparing?.failure = describe(error)
-        }
-    }
-
-    /// Stores what taking gathered beyond the container's draft, and reads the container again.
-    func storeTaking() async {
-        guard let current = comparing, let taking = current.taking, let tmdb else { return }
-        do {
-            try await console.store(
-                taking,
-                in: current.key.library,
-                for: current.key.container,
-                of: current.silo,
-                tmdb: tmdb
-            )
-            comparing?.stored = true
-            await open(current.key)
-        } catch {
-            comparing?.failure = describe(error)
-        }
     }
 
     /// TMDb's images for a container's record, for its artwork kinds to be chosen from.

@@ -731,6 +731,19 @@ extension AdminConsole {
         let opened = try await open(container: edit.container, in: edit.library, of: silo)
         var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
         guard var container = draft.value else { return }
+        Self.applying(edit, to: &container)
+        draft.set(container)
+        switch try await store(draft, of: silo) {
+        case .stored: break
+        case .refused(let result):
+            throw StoreRefused(reason: result.findings.map(\.text).joined(separator: "; "))
+        case .landedFirst:
+            throw StoreRefused(reason: "\(edit.container) changed in \(edit.library) as it was edited; try again")
+        }
+    }
+
+    /// What an edit a placement makes does to the container it is of.
+    nonisolated static func applying(_ edit: TMDbTree.Making.HeldEdit, to container: inout Container) {
         if let item = edit.item, let ref = edit.ref {
             container.sequences = container.sequences.map { sequence in
                 var sequence = sequence
@@ -753,14 +766,6 @@ extension AdminConsole {
             }
         }
         if let refer = edit.refer { TMDbTree.refer(to: refer, from: &container, asExtra: edit.asExtra) }
-        draft.set(container)
-        switch try await store(draft, of: silo) {
-        case .stored: break
-        case .refused(let result):
-            throw StoreRefused(reason: result.findings.map(\.text).joined(separator: "; "))
-        case .landedFirst:
-            throw StoreRefused(reason: "\(edit.container) changed in \(edit.library) as it was edited; try again")
-        }
     }
 
     private nonisolated static func adding(_ ref: ExternalRef, to entry: Entry, if item: String) -> Entry {

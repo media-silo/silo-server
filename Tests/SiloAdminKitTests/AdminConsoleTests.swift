@@ -2539,6 +2539,42 @@ extension AdminConsoleTests {
         TMDb.Episode(id: id, season: season, number: number, title: title, airDate: aired, runtime: runtime)
     }
 
+    /// The console, silo, clone and TMDb a walk is asked of.
+    private struct Walking {
+        var console: AdminConsole
+        var home: AdminConsole.Silo
+        var database: any ContainerDatabase
+        var tmdb: any TMDbSource
+        var library = "tv"
+
+        /// Opens a stop: its container read against TMDb.
+        func read(_ id: String, in walk: inout TMDbWalk) async throws {
+            walk.read(try await console.compare(id, in: library, of: home, from: database, tmdb: tmdb))
+        }
+
+        /// Opens a stop, ticks what is given, and confirms it.
+        func confirm(_ id: String, choosing chosen: Set<String> = [], in walk: inout TMDbWalk) async throws {
+            if walk.stops[id]?.comparison == nil { try await read(id, in: &walk) }
+            walk.stops[id]?.chosen = chosen
+            walk.confirm(id, beneath: try await console.stops(beneath: id, in: walk, of: home))
+        }
+
+        /// A walk rooted at a held container, its root read, ticked as given, and confirmed.
+        func walk(_ id: String, choosing chosen: Set<String> = []) async throws -> TMDbWalk {
+            var walk = try await console.startWalk(at: id, in: library, of: home)
+            try await confirm(id, choosing: chosen, in: &walk)
+            return walk
+        }
+    }
+
+    /// The edit a walk's store makes of a container.
+    private static func edit(of id: String, in plan: TMDbWalk.Plan) -> ContainerDraft? {
+        plan.steps.lazy.compactMap { step in
+            if case .edit(let draft) = step.kind, draft.container == id { draft } else { nil }
+        }
+        .first
+    }
+
     /// The token is asked of TMDb: none given, or one TMDb refuses, leaves its actions unavailable, and
     /// says which.
     @Test func tmdbIsUnavailableWithoutAToken() async throws {
@@ -3540,14 +3576,21 @@ extension AdminConsoleTests {
         )
         #expect(!compared.differences.contains { if case .order = $0 { true } else { false } })
         #expect(compared.heldOnly == ["making-of: The Making Of"], "shown, and offered for nothing")
-        let taking = try await console.take(["episode:1002"], placements: [:], from: compared, of: home)
-        let draft = try #require(taking.draft)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let walk = try await walking.walk(season.id.value, choosing: ["episode:1002"])
+        let plan = try walk.plan()
+        let draft = try #require(Self.edit(of: season.id.value, in: plan))
         #expect(draft.value?.sequences[0].items.map(\.externalRefs) == [[one.ref], [two.ref], [three.ref]])
         #expect(
             draft.value?.extras == season.extras && draft.value?.externalRefs == season.externalRefs,
             "nothing else"
         )
-        #expect(taking.described.isEmpty)
+        #expect(plan.steps.count == 1, "the season's edit and nothing else")
+        let stored = try await console.store(walk, of: home, tmdb: tmdb)
+        #expect(stored.refusal == nil && stored.rest.isEmpty)
+        #expect(
+            held.container(season.id)?.sequences[0].items.map(\.externalRefs) == [[one.ref], [two.ref], [three.ref]]
+        )
 
         // The same season with its episodes regrouped into a serial beneath it, which carries no TMDb
         // id of its own and is read through the season.
@@ -3659,10 +3702,13 @@ extension AdminConsoleTests {
                 .artwork(kind: "fanart", path: "/backdrop.jpg", record: TMDb.Record(.movie, 348)),
             ]
         )
-        let taking = try await console.take(["artwork:poster"], placements: [:], from: compared, of: home)
-        #expect(taking.draft == nil, "artwork changes no field")
-        #expect(taking.described == ["put TMDb's poster, credited to TMDb"])
-        try await console.store(taking, in: "films", for: alien.id.value, of: home, tmdb: tmdb)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb, library: "films")
+        let walk = try await walking.walk(alien.id.value, choosing: ["artwork:poster"])
+        #expect(
+            try walk.plan().steps.map(\.described) == ["put TMDb's poster on \(alien.displayTitle), credited to TMDb"],
+            "artwork changes no field"
+        )
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
         #expect(
             held.sidecar(alien.id)?.attributions == [
                 Attribution(subject: .artwork("poster"), provider: .tmdb, value: "348")
@@ -3707,21 +3753,14 @@ extension AdminConsoleTests {
                 .reference(item: nil, imdb), .reference(item: nil, ExternalRef(provider: .wikidata, value: "Q103569")),
             ]
         )
-        let taking = try await console.take(
-            ["title", "year", "outline", "ref::imdb:tt0078748"],
-            placements: [:],
-            from: compared,
-            of: home
-        )
-        let draft = try #require(taking.draft)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb, library: "films")
+        let walk = try await walking.walk(film.id.value, choosing: ["title", "year", "outline", "ref::imdb:tt0078748"])
+        let draft = try #require(Self.edit(of: film.id.value, in: try walk.plan()))
         let taken = try #require(draft.value)
         #expect(taken.title == Title("Alien")! && taken.year == 1979 && taken.outline == Self.alienRecord.overview)
         #expect(taken.externalRefs == film.externalRefs + [imdb], "the id left is not taken")
         #expect(draft.attributions == [Attribution(subject: .outline, provider: .tmdb, value: "348")])
-        guard case .stored = try await console.store(draft, of: home) else {
-            Issue.record("the edit is stored")
-            return
-        }
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil, "the edit is stored")
         #expect(held.sidecar(film.id)?.attributions == draft.attributions)
 
         let set = try await console.compare(collection.id.value, in: "films", of: home, from: database, tmdb: tmdb)
@@ -3845,21 +3884,18 @@ extension AdminConsoleTests {
                 .reference(item: "five", imdb), .order(sequence: "parts", items: ["five", "dimensions"]),
             ]
         )
-        let taking = try await console.take(
-            Set(compared.differences.map(\.id)),
-            placements: [:],
-            from: compared,
-            of: home
-        )
-        let taken = try #require(taking.draft?.value)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let walk = try await walking.walk(anniversaries.id.value, choosing: Set(compared.differences.map(\.id)))
+        let taken = try #require(Self.edit(of: anniversaries.id.value, in: try walk.plan())?.value)
         #expect(taken.sequences[0].items.map(\.id?.value) == ["five", "dimensions"])
         #expect(taken.sequences[0].items[0].externalRefs == [first.ref, imdb])
 
         let fourteen = try await console.compare(season.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
         #expect(fourteen.differences == [.episode(robots, after: nil)])
-        let gained = try await console.take(["episode:1001"], placements: [:], from: fourteen, of: home)
+        let gained = try await walking.walk(season.id.value, choosing: ["episode:1001"])
         #expect(
-            gained.draft?.value?.sequences[0].items.map(\.externalRefs) == [[talons.ref], [robots.ref]],
+            Self.edit(of: season.id.value, in: try gained.plan())?.value?.sequences[0].items.map(\.externalRefs)
+                == [[talons.ref], [robots.ref]],
             "with nothing before it at TMDb, last"
         )
     }
@@ -4006,9 +4042,14 @@ extension AdminConsoleTests {
             externalIDs: TMDb.ExternalIDs(tvdb: "76107")
         )
         tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: specials)
+        tmdb.seasons["121/14"] = TMDb.Season(id: 3644, number: 14, name: "Season 14", episodes: [])
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
 
-        let compared = try await console.compare(series.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
-        #expect(compared.declined.map(\.id) == [undeclined.id])
+        var walk = try await console.startWalk(at: series.id.value, in: "tv", of: home)
+        try await walking.read(series.id.value, in: &walk)
+        let compared = try #require(walk.stops[series.id.value]?.comparison)
+        #expect(walk.declined.map(\.id) == [undeclined.id])
+        #expect(walk.unassigned.map(\.id) == specials.dropLast().map(\.id), "beside every stop, not the series' own")
         #expect(compared.differences.contains(.season(.init(id: 3645, number: 15, name: "Season 15"))))
         #expect(!compared.differences.contains { $0.id == "season:3644" }, "the season the library holds")
         let confidential = Container(
@@ -4019,11 +4060,9 @@ extension AdminConsoleTests {
         )
         let ownID = try await database.provisionalID()
         let home14 = season.id.value
-        let placements: [Int: SpecialPlacement] = [
+        let atTheSeries: [Int: SpecialPlacement] = [
             here.id: .entry(in: series.id.value),
-            there.id: .entry(in: home14),
             extraHere.id: .extra(of: series.id.value, type: EntryType.featurette.rawValue),
-            extraThere.id: .extra(of: home14, type: EntryType.interview.rawValue),
             own.id: .child(of: series.id.value, id: ownID.value, type: ContainerType.serial.rawValue),
             duplicateHere.id: .duplicate(
                 home: film.id.value,
@@ -4032,6 +4071,24 @@ extension AdminConsoleTests {
                 from: series.id.value,
                 asExtra: true
             ),
+            declined.id: .declined,
+            undeclined.id: .extra(of: series.id.value, type: EntryType.trailer.rawValue),
+        ]
+        for (special, placement) in atTheSeries { walk.place(special, placement) }
+        walk.place(
+            newBreakout.id,
+            .breakout(confidential.id.value, from: series.id.value, asExtra: true),
+            companion: confidential
+        )
+        try await walking.confirm(
+            series.id.value,
+            choosing: ["year", "outline", "ref::tvdb:76107", "season:3645"],
+            in: &walk
+        )
+        #expect(walk.next == home14)
+        let atTheSeason: [Int: SpecialPlacement] = [
+            there.id: .entry(in: home14),
+            extraThere.id: .extra(of: home14, type: EntryType.interview.rawValue),
             duplicateThere.id: .duplicate(
                 home: film.id.value,
                 item: "feature",
@@ -4039,53 +4096,46 @@ extension AdminConsoleTests {
                 from: home14,
                 asExtra: false
             ),
-            newBreakout.id: .breakout(confidential.id.value, from: series.id.value, asExtra: true),
             heldBreakout.id: .breakout(sofa.id.value, from: home14, asExtra: false),
-            declined.id: .declined,
-            undeclined.id: .extra(of: series.id.value, type: EntryType.trailer.rawValue),
         ]
-        let chosen = Set(["year", "outline", "ref::tvdb:76107", "season:3645"] + specials.map { "special:\($0.id)" })
-        let taking = try await console.take(
-            chosen,
-            placements: placements,
-            breakouts: [confidential.id.value: confidential],
-            from: compared,
-            of: home
+        try await walking.read(home14, in: &walk)
+        for (special, placement) in atTheSeason { walk.place(special, placement) }
+        try await walking.confirm(home14, in: &walk)
+        #expect(walk.unassigned.isEmpty && walk.state(of: home14) == .changed)
+
+        let plan = try walk.plan()
+        #expect(
+            plan.steps.map(\.id).filter { !$0.hasPrefix("held:") } == [
+                "create:\(confidential.id)", "edit:\(series.id)", "create:\(ownID)", "edit:\(home14)",
+            ],
+            "the companion first, then each stop's edit, the series' followed by the container it names"
         )
         #expect(
-            taking.described == [
-                "make Confidential, a series of its own, at the top of the library",
-                "add an entry to \(home14) in tv",
-                "add an extra to \(home14) in tv",
+            plan.steps.filter { $0.id.hasPrefix("held:") }.map(\.described) == [
                 "add TMDb's id to feature of \(film.id) in films",
                 "add TMDb's id to feature of \(film.id) in films",
-                "refer to a special from \(home14) in tv",
                 "add an entry to \(sofa.id) in tv",
-                "refer to a special from \(home14) in tv",
-                "make \(own.title) beneath the container",
-                "draft season 15 from TMDb beneath the container",
             ]
         )
-        #expect(taking.children.map(\.creating?.parent) == [series.id.value])
-        #expect(console.containerDrafts.draft(of: ownID.value, in: "tv", of: home.id) != nil, "kept on this Mac")
-        let draft = try #require(taking.draft)
+        #expect(plan.steps.firstIndex { $0.id.hasPrefix("held:") } == 1, "before the edits that refer to them")
+        #expect(plan.seasons.map(\.season.number) == [15], "drafted from TMDb once the walk is stored")
+        let draft = try #require(Self.edit(of: series.id.value, in: plan))
         let taken = try #require(draft.value)
         #expect(taken.year == 1963 && taken.outline == "A time traveller.")
         #expect(taken.externalRefs.contains(ExternalRef(provider: .tvdb, value: "76107")))
-        #expect(taken.sequences[0].items.map(\.externalRefs) == [[], [here.ref]])
+        #expect(taken.sequences[0].items.map(\.externalRefs) == [[], [here.ref], []])
+        #expect(taken.sequences[0].items.last?.childContainer == ownID, "naming the container of its own")
         #expect(
             taken.extras.map(\.type) == [.featurette, nil, nil, .trailer],
             "the extra, the duplicate's and the breakout's refs, and the special placed after all"
         )
         #expect(draft.declined == [declined.ref], "the decline placed after all goes")
 
-        try await console.store(taking, in: "tv", for: series.id.value, of: home, tmdb: tmdb)
-        guard case .stored = try await console.store(draft, of: home) else {
-            Issue.record("the series' own edit is stored")
-            return
-        }
+        let stored = try await console.store(walk, of: home, tmdb: tmdb)
+        #expect(stored.refusal == nil && stored.stored.count == plan.steps.count)
         #expect(held.container(confidential.id)?.sequences.flatMap(\.items).map(\.externalRefs) == [[newBreakout.ref]])
         #expect(held.container(sofa.id)?.sequences.flatMap(\.items).map(\.externalRefs) == [[heldBreakout.ref]])
+        #expect(held.container(ownID)?.sequences.flatMap(\.items).map(\.externalRefs) == [[own.ref]])
         let madeSeason = try #require(held.container(season.id))
         #expect(madeSeason.sequences[0].items.map(\.externalRefs) == [[there.ref], [], []])
         #expect(
@@ -4095,5 +4145,298 @@ extension AdminConsoleTests {
         #expect(madeSeason.extras.map(\.type) == [.interview] && madeSeason.extras[0].externalRefs == [extraThere.ref])
         #expect(held.container(film.id)?.sequences[0].items[0].externalRefs == [duplicateHere.ref, duplicateThere.ref])
         #expect(held.sidecar(series.id)?.declined == [declined.ref])
+    }
+
+    // MARK: Walks
+
+    /// A held series of three seasons, each holding serials, with TMDb's record of each, for walks.
+    private static func walkedSeries() -> (
+        series: Container, seasons: [Container], serials: [Container], TMDb: FakeTMDb
+    ) {
+        let serials = (1...4).map { number in
+            var serial = Container(
+                id: ContainerID(String(format: "%016x", 0x1b0 + number))!,
+                type: .serial,
+                title: Title("Serial \(number)")!
+            )
+            serial.sequences = [
+                Sequence(
+                    id: "parts",
+                    items: [
+                        .leaf(
+                            Entry.Leaf(
+                                id: ItemID("part-one")!,
+                                type: .episode,
+                                externalRefs: [ExternalRef(provider: .tmdb, value: String(5000 + number))]
+                            )
+                        )
+                    ]
+                )
+            ]
+            return serial
+        }
+        // Held in an order their ids do not sort in, which is the order the walk keeps.
+        let seasons = [(3, [serials[3]]), (1, [serials[0], serials[1]]), (2, [serials[2]])].map { number, beneath in
+            var season = Container(
+                id: ContainerID(String(format: "%016x", 0x1a0 + number))!,
+                type: .season,
+                title: Title("Season \(number)")!,
+                externalRefs: [ExternalRef(provider: .tmdb, value: String(900 + number))]
+            )
+            season.sequences = [
+                Sequence(
+                    id: "stories",
+                    items: beneath.map {
+                        .child(Entry.Child(id: ItemID(Slug.make(from: $0.title.rawValue))!, container: $0.id))
+                    }
+                )
+            ]
+            return season
+        }
+        var series = Container(
+            id: ContainerID("00000000000001a0")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "121")]
+        )
+        series.sequences = [
+            Sequence(
+                id: "seasons",
+                items: seasons.map {
+                    .child(Entry.Child(id: ItemID(Slug.make(from: $0.title.rawValue))!, container: $0.id))
+                }
+            )
+        ]
+        var tmdb = FakeTMDb()
+        tmdb.series[121] = TMDb.Series(
+            id: 121,
+            name: "Doctor Who",
+            seasons: [
+                .init(id: 50, number: 0, name: "Specials"), .init(id: 901, number: 1, name: "Season 1"),
+                .init(id: 902, number: 2, name: "Season 2"), .init(id: 903, number: 3, name: "Season 3"),
+            ]
+        )
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [])
+        for number in 1...3 {
+            let episodes = serials.indices.filter {
+                seasons[[1, 2, 0][number - 1]].childContainerIDs.contains(serials[$0].id)
+            }
+            .map { Self.episode(5001 + $0, number, $0 + 1, "Part One") }
+            tmdb.seasons["121/\(number)"] = TMDb.Season(
+                id: 900 + number,
+                number: number,
+                name: "Season \(number)",
+                episodes: episodes
+            )
+        }
+        return (series, [seasons[1], seasons[2], seasons[0]], serials, tmdb)
+    }
+
+    /// Confirming a series with nothing ticked records it as looked at and queues each season the library
+    /// holds beneath it, in its sequence's order; confirming a season queues its serials ahead of the next
+    /// season, so the walk goes depth first.
+    @Test func confirmingAStopQueuesTheContainersBeneathItInTheTreesOrder() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, seasons, serials, tmdb) = Self.walkedSeries()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + seasons + serials))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await console.startWalk(at: series.id.value, in: "tv", of: home)
+        #expect(walk.order == [series.id.value] && walk.state(of: series.id.value) == .pending)
+        #expect(walk.series == series.id.value)
+        try await walking.confirm(series.id.value, in: &walk)
+        #expect(walk.state(of: series.id.value) == .lookedAt)
+        let held = [seasons[2], seasons[0], seasons[1]].map(\.id.value)
+        #expect(walk.order == [series.id.value] + held, "in the order the series' sequence holds them")
+        #expect(walk.stops[held[0]]?.title == "Season 3" && walk.stops[held[0]]?.parent == series.id.value)
+        #expect(held.allSatisfy { walk.state(of: $0) == .pending && walk.stops[$0]?.comparison == nil })
+        #expect(walk.next == held[0], "and none of them read until it is opened")
+
+        try await walking.confirm(held[1], in: &walk)
+        #expect(walk.next == held[0])
+        try await walking.confirm(held[0], in: &walk)
+        #expect(
+            walk.order == [series.id.value, held[0], serials[3].id.value, held[1]] + serials[0...1].map(\.id.value) + [
+                held[2]
+            ]
+        )
+        #expect(walk.next == serials[3].id.value, "the season's serial before the next season")
+
+        // A stop TMDb never read, confirmed as it is, takes nothing and still queues what is beneath it.
+        walk.confirm(held[2], beneath: try await console.stops(beneath: held[2], in: walk, of: home))
+        #expect(walk.stops[held[2]]?.comparison == nil && walk.state(of: held[2]) == .lookedAt)
+        #expect(walk.order.last == serials[2].id.value)
+        #expect(try walk.plan().steps.isEmpty)
+    }
+
+    /// A special placed as an entry of a season while the season's stop is open leaves the unassigned,
+    /// and is stored in the season's edit carrying its references; the series no longer lists it. A walk
+    /// rooted at the season has the series' specials beside it too.
+    @Test func aSpecialPlacedAtAStopIsStoredInThatContainersEdit() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        let k9 = Self.episode(3501, 0, 1, "K9 and Company", runtime: 50)
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [k9])
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let season = seasons[0].id.value
+
+        var walk = try await walking.walk(series.id.value)
+        #expect(walk.unassigned.map(\.id) == [k9.id])
+        try await walking.read(season, in: &walk)
+        walk.place(k9.id, .entry(in: season, sequence: "stories", position: 1))
+        #expect(walk.unassigned.isEmpty && walk.placed(in: season).map(\.id) == [k9.id])
+        try await walking.confirm(season, in: &walk)
+        #expect(walk.state(of: season) == .changed, "a placement is a change")
+        walk.place(k9.id, nil)
+        #expect(walk.unassigned.map(\.id) == [k9.id] && walk.state(of: season) == .lookedAt, "and unplaced, it is back")
+        walk.place(k9.id, .entry(in: season, sequence: "stories", position: 1))
+
+        let stored = try await console.store(walk, of: home, tmdb: tmdb)
+        #expect(stored.refusal == nil && stored.stored.map(\.id) == ["edit:\(season)"])
+        let items = try #require(held.container(seasons[0].id)?.sequences[0].items)
+        #expect(items.map(\.externalRefs) == [[], [k9.ref], []], "at the position it was placed")
+        let again = try await console.compare(series.id.value, in: "tv", of: home, from: database, tmdb: tmdb)
+        #expect(!again.differences.contains { if case .special = $0 { true } else { false } }, "no longer unassigned")
+
+        var below = try await console.startWalk(at: season, in: "tv", of: home)
+        #expect(below.series == series.id.value)
+        let k10 = Self.episode(3502, 0, 2, "Dimensions in Time", runtime: 15)
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [k9, k10])
+        below.pool(try await console.specials(of: series.id.value, in: "tv", of: home, from: database, tmdb: tmdb))
+        #expect(below.unassigned.map(\.id) == [k10.id], "the series' specials, read through the series above")
+        below.place(k10.id, .declined)
+        try await walking.confirm(season, in: &below)
+        #expect(try below.plan().steps.map(\.id) == ["decline:\(series.id)"], "the series, no stop, declines it")
+        #expect(try await console.store(below, of: home, tmdb: tmdb).refusal == nil)
+        #expect(held.sidecar(series.id)?.declined == [k10.ref])
+    }
+
+    /// A confirmed season opened again shows its ticks as they were left; one more ticked is kept only
+    /// once the season is confirmed again, which replaces its pending change.
+    @Test func aConfirmedStopOpenedAgainKeepsWhatWasChosen() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.episodeIDs[5001] = TMDb.ExternalIDs(imdb: "tt0005001", tvdb: "5001")
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + seasons + serials))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let serial = serials[0].id.value
+        let (imdb, tvdb) = ("ref:part-one:imdb:tt0005001", "ref:part-one:tvdb:5001")
+
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(seasons[0].id.value, in: &walk)
+        try await walking.read(serial, in: &walk)
+        #expect(Set(walk.stops[serial]?.comparison?.differences.map(\.id) ?? []) == [imdb, tvdb])
+        try await walking.confirm(serial, choosing: [imdb], in: &walk)
+        #expect(Self.edit(of: serial, in: try walk.plan())?.value?.sequences[0].items[0].externalRefs.count == 2)
+
+        #expect(walk.stops[serial]?.chosen == [imdb], "opened again, as it was left")
+        walk.stops[serial]?.chosen.insert(tvdb)
+        #expect(
+            Self.edit(of: serial, in: try walk.plan())?.value?.sequences[0].items[0].externalRefs.count == 2,
+            "ticked, not yet kept"
+        )
+        walk.confirm(serial, beneath: try await console.stops(beneath: serial, in: walk, of: home))
+        let refs = Self.edit(of: serial, in: try walk.plan())?.value?.sequences[0].items[0].externalRefs
+        #expect(refs?.map(\.provider) == [.tmdb, .tvdb, .imdb], "both, in one edit, in the reading's order")
+    }
+
+    /// A walk stored with stops it never opened, or opened and never confirmed, stores only what its
+    /// confirmed stops took.
+    @Test func aWalkStoresOnlyWhatWasConfirmed() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.series[121]?.overview = "A time traveller."
+        tmdb.seasons["121/1"]?.overview = "The first."
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let before = held.sidecars.withLock { $0 }
+
+        var walk = try await walking.walk(series.id.value, choosing: ["outline"])
+        try await walking.read(seasons[0].id.value, in: &walk)
+        walk.stops[seasons[0].id.value]?.chosen = ["outline"]
+        #expect(try walk.plan().steps.map(\.id) == ["edit:\(series.id)"])
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let after = held.sidecars.withLock { $0 }
+        #expect(after.filter { before[$0.key] != $0.value }.map(\.key) == [series.id.value])
+        #expect(held.container(series.id)?.outline == "A time traveller.")
+    }
+
+    /// The store lists every edit before it makes any, and the silo refusing the second of three stops it
+    /// there: the first is stored, and the walk keeps the second and third to be stored again.
+    @Test func aWalksStoreStopsAtTheFirstRefusal() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.series[121]?.overview = "A time traveller."
+        tmdb.seasons["121/1"]?.name = "Refused"
+        tmdb.seasons["121/2"]?.overview = "The second."
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let (one, two) = (seasons[0].id.value, seasons[1].id.value)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["outline"])
+        try await walking.confirm(one, choosing: ["title"], in: &walk)
+        try await walking.confirm(two, choosing: ["outline"], in: &walk)
+        let plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["edit:\(series.id)", "edit:\(one)", "edit:\(two)"])
+        #expect(
+            plan.steps.map(\.described) == [
+                "edit Doctor Who: its outline", "edit Season 1: its title", "edit Season 2: its outline",
+            ]
+        )
+
+        let stored = try await console.store(walk, of: home, tmdb: tmdb)
+        #expect(stored.stored.map(\.id) == ["edit:\(series.id)"])
+        #expect(stored.refusal == "the validator refuses it")
+        #expect(stored.rest.map(\.id) == ["edit:\(one)", "edit:\(two)"])
+        #expect(try stored.walk.plan().steps.map(\.id) == ["edit:\(one)", "edit:\(two)"], "kept, to be stored again")
+        #expect(held.container(series.id)?.outline == "A time traveller.")
+        #expect(held.container(seasons[1].id)?.outline == nil)
+    }
+
+    /// A special placed as the duplicate of an item a confirmed stop holds is made in that stop's own
+    /// edit, beside what the stop took, so the store makes one edit of it and refuses neither.
+    @Test func anEditOfAConfirmedStopIsPartOfThatStopsEdit() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        let omnibus = Self.episode(3601, 0, 1, "Serial 1: Omnibus", runtime: 90)
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [omnibus])
+        tmdb.episodeIDs[5001] = TMDb.ExternalIDs(imdb: "tt0005001")
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let (season, serial) = (seasons[0].id.value, serials[0].id.value)
+
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season, in: &walk)
+        try await walking.confirm(serial, choosing: ["ref:part-one:imdb:tt0005001"], in: &walk)
+        try await walking.read(season, in: &walk)
+        walk.place(
+            omnibus.id,
+            .duplicate(home: serial, item: "part-one", library: "tv", from: season, asExtra: true)
+        )
+        let plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["edit:\(season)", "edit:\(serial)"], "no edit of the serial of its own")
+        let refs = Self.edit(of: serial, in: plan)?.value?.sequences[0].items[0].externalRefs
+        #expect(
+            refs == [
+                ExternalRef(provider: .tmdb, value: "5001"), ExternalRef(provider: .imdb, value: "tt0005001"),
+                omnibus.ref,
+            ]
+        )
+
+        let stored = try await console.store(walk, of: home, tmdb: tmdb)
+        #expect(stored.refusal == nil)
+        #expect(held.container(serials[0].id)?.sequences[0].items[0].externalRefs == refs)
+        #expect(held.container(seasons[0].id)?.extras.compactMap(\.reference).map(\.item.value) == ["part-one"])
     }
 }

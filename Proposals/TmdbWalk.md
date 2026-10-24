@@ -132,20 +132,22 @@ stop beneath it. Specials can be placed in a new stop as in a held one.
 **One store, at the end.** Nothing reaches the silo until the operator stores the walk. Before it is
 stored, the console lists everything it will do, in the order it will do it:
 
-1. the new containers, each parent before its children, and any companion series made for specials,
-   through 0013's create route;
-2. the edit of each changed container, based on the sidecar its stop read, including the specials
-   placed in it and the declined refs;
-3. the edits of other containers that specials placed elsewhere make, a duplicate's home or a
-   companion series the library holds;
+1. any companion series made for specials, at the top of the library, through 0013's create route;
+2. the edits of other containers that specials placed elsewhere make, a duplicate's home or a
+   companion series the library holds, so that what the walk's own edits refer to is there;
+3. the edit of each changed container, in the tree's order, based on the sidecar its stop read,
+   including the specials placed in it and the declined refs, each followed by the creation of the new
+   containers it names beneath it, through 0013's create route;
 4. the artwork put, each with its attribution.
 
-A dry run of the creations, through 0013's create route, runs with the list. A new container is
-created before anything that refers to it, so a special placed in a new season is stored with that
-season. The store runs in that order, and the first refusal stops it. The console says what was stored
-and what was not, and the walk keeps what was not, to be stored again once the operator has dealt with
-the refusal. An edit based on a sidecar that has changed since its stop read it is refused as 0012
-refuses a stale edit, and that stop is read again.
+A new container beneath a held one is created after its parent's edit, not before: the create route
+refuses a container whose parent does not yet name it, so the parent's edit, which names it, has to
+land first. A special placed in a new season is stored with that season. An edit a placement makes of
+a container that is itself a confirmed stop is part of that stop's edit, so the stop's edit is not
+refused for a sidecar the store changed a step earlier. The store runs in that order, and the first
+refusal stops it. The console says what was stored and what was not, and the walk keeps what was not,
+to be stored again once the operator has dealt with the refusal. An edit based on a sidecar that has
+changed since its stop read it is refused as 0012 refuses a stale edit, and that stop is read again.
 
 **A walk is kept on this Mac.** A walk is work in progress, as a draft is, and is kept on this Mac
 until it is stored or discarded: its stops, their states, ticks and placements, and the pool. Opening
@@ -218,10 +220,10 @@ operator did not tick it, so it was never walked. They select *Doctor Who* in th
 year, references and poster are ticked. They untick the poster, regroup its episodes into two serials,
 place the season's Christmas special as an entry between them, and confirm.
 
-They store the walk. The list shows *Season 27* and its two serials to be created first, then the
-edits of *Doctor Who* and of each season and serial they changed, then the fanart, credited to TMDb.
-The dry run passes, and the store makes them in that order. The specials they did not place are still
-unassigned, and wait in the pool for the next walk.
+They store the walk. The list shows the edit of *Doctor Who*, which names *Season 27*, followed by the
+creation of *Season 27* and its two serials, then the edits of each season and serial they changed,
+then the fanart, credited to TMDb. The store makes them in that order. The specials they did not place
+are still unassigned, and wait in the pool for the next walk.
 
 ## What this asks of an implementation
 

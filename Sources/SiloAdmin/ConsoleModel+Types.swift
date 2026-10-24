@@ -62,25 +62,31 @@ extension ConsoleModel {
         var problem: String?
         var finding: FindingInTMDb?
         var shaping: ShapingTree?
-        var comparing: Comparing?
-        /// The reading of the container being compared, cancelled when its sheet closes.
-        var reading: Task<Void, Never>?
+        var walking: Walking?
+        /// The readings of the walk's stops, by stop, cancelled when its sheet closes.
+        var readings: [String: Task<Void, Never>] = [:]
+        /// The reading of the series' specials, for a walk rooted below the series.
+        var pooling: Task<Void, Never>?
     }
 
-    /// A held container's differences from TMDb being chosen: as last read, which are chosen, where
-    /// each special goes, what taking them gathered, and why the last thing asked failed.
-    struct Comparing: Identifiable {
+    /// A held tree being walked against TMDb: the walk as it stands, the stop open, each stop's reading
+    /// as it goes and why one failed, and the store's list and how storing it ended.
+    struct Walking: Identifiable {
         let id = UUID()
         var silo: AdminConsole.Silo
-        var key: ContainerKey
-        /// As far as the reading has got, and, until it is over, the step it is on.
-        var comparison: AdminConsole.TMDbComparison?
-        var progress: AdminConsole.TMDbProgress?
-        var chosen: Set<String> = []
-        var placements: [Int: SpecialPlacement] = [:]
-        var taking: AdminConsole.TMDbTaking?
-        var stored = false
+        var walk: TMDbWalk
+        var open: String
+        var progress: [String: AdminConsole.TMDbProgress] = [:]
+        var failures: [String: String] = [:]
+        /// The step the series' specials are on while they are read through the series above the root.
+        var pooling: AdminConsole.TMDbProgress?
+        /// Everything storing the walk will do, listed before any of it is done.
+        var plan: TMDbWalk.Plan?
+        var storing = false
+        var stored: AdminConsole.TMDbWalkStored?
         var failure: String?
+
+        var stop: TMDbWalk.Stop? { walk.stops[open] }
     }
 
     /// A record being found at TMDb: for a library, to draft from; or, for a series the library holds by
