@@ -77,7 +77,8 @@ extension ConsoleModel {
             await running.value
             return
         }
-        guard current.walk.stops[stop]?.comparison == nil else { return }
+        // A new stop is a draft from TMDb already, with nothing in the library to read.
+        guard current.walk.stops[stop]?.comparison == nil, !current.walk.isNew(stop) else { return }
         let (id, silo, library) = (current.id, current.silo, current.walk.library)
         walking?.failures[stop] = nil
         walking?.progress[stop] = AdminConsole.TMDbProgress("Opening the container")
@@ -149,12 +150,26 @@ extension ConsoleModel {
 
     /// Confirms the open stop: what is ticked is kept as its pending change, the containers beneath it
     /// join the walk, and the next stop is read while the operator looks at this one.
-    func confirmStop() async {
-        guard let current = walking else { return }
+    /// A missing child no longer chosen takes its new stops out of the walk, so the console says which
+    /// first, and confirms only once the operator says so.
+    func confirmStop(leavingSaid: Bool = false) async {
+        guard let current = walking, let database, let tmdb else { return }
+        let leaving = current.walk.leaving(confirming: current.open)
+        if !leaving.isEmpty, !leavingSaid {
+            walking?.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
+            return
+        }
+        walking?.leaving = nil
         do {
+            let drafts = try await console.drafts(
+                confirming: current.open,
+                in: current.walk,
+                from: database,
+                tmdb: tmdb
+            )
             let beneath = try await console.stops(beneath: current.open, in: current.walk, of: current.silo)
             guard walking?.id == current.id else { return }
-            walking?.walk.confirm(current.open, beneath: beneath)
+            walking?.walk.confirm(current.open, beneath: beneath, drafts: drafts)
             walking?.plan = nil
         } catch {
             walking?.failure = describe(error)
@@ -167,6 +182,13 @@ extension ConsoleModel {
     /// names is kept with the walk.
     func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
         walking?.walk.place(special, placement, companion: companion)
+        walking?.plan = nil
+    }
+
+    /// Shapes the open new stop's draft as a draft from TMDb is shaped.
+    func shapeNewStop(_ change: (inout TMDbTree) -> Void) {
+        guard let open = walking?.open else { return }
+        walking?.walk.shape(open, change)
         walking?.plan = nil
     }
 

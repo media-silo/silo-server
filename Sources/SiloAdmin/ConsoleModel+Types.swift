@@ -82,6 +82,8 @@ extension ConsoleModel {
         var pooling: AdminConsole.TMDbProgress?
         /// The series the library holds that a special may go into as its companion.
         var companions: [SiloClient.ContainerSummary] = []
+        /// The new stops confirming the open stop would take out of the walk, said before it does.
+        var leaving: [String]?
         /// Everything storing the walk will do, listed before any of it is done.
         var plan: TMDbWalk.Plan?
         var storing = false

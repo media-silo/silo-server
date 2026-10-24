@@ -38,6 +38,18 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
             self.type = type
             self.parent = parent
         }
+
+        /// A new stop for a container of a draft, everything it is offered with chosen to begin with.
+        init(newIn tree: TMDbTree, _ id: String, parent: String, offering: [AdminConsole.TMDbDifference]) {
+            let container = tree.container(id)
+            self.init(
+                id: id,
+                title: container?.displayTitle ?? id,
+                type: container?.type.rawValue ?? "",
+                parent: parent
+            )
+            chosen = Set(offering.map(\.id))
+        }
     }
 
     public let id: UUID
@@ -58,6 +70,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
     public var companions: [String: String] = [:]
     /// The steps a store made, by id, so a store after a refusal makes only the rest.
     public var stored: Set<String> = []
+    /// The containers the walk makes, a missing child chosen at a stop and what is beneath it, each as a
+    /// draft from TMDb by the id of its top: every container of a draft is a new stop.
+    public var drafts: [String: TMDbTree] = [:]
 
     public init(library: String, root: Stop) {
         id = UUID()
@@ -150,15 +165,89 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
         }
     }
 
-    /// Keeps what is ticked as the stop's pending change, and adds the stops found beneath it.
-    public mutating func confirm(_ id: String, beneath: [Stop]) {
+    /// Keeps what is ticked as the stop's pending change, and adds the stops found beneath it: the
+    /// containers the library holds there, then each missing child chosen, as a new stop. A missing child
+    /// no longer chosen leaves, with every stop beneath it.
+    public mutating func confirm(_ id: String, beneath: [Stop], drafts new: [TMDbTree] = []) {
         guard var stop = stops[id] else { return }
         stop.taken = stop.chosen
         // Confirmed again after a store made its edit, its edit is to be made again.
         stored.remove("edit:\(id)")
+        for top in leaving(confirming: id) { remove(top) }
+        for tree in new {
+            drafts[tree.top] = tree
+            stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
+        }
         for child in beneath where stops[child.id] == nil { stops[child.id] = child }
-        stop.children = beneath.map(\.id)
+        let tops = drafts.values.filter { $0.creating.parent == id }.map(\.top).sorted()
+        stop.children = beneath.map(\.id) + tops.filter { !beneath.map(\.id).contains($0) }
         stops[id] = stop
+    }
+
+    /// The new stops confirming a stop would take out of the walk: those whose missing child is no longer
+    /// chosen there.
+    public func leaving(confirming id: String) -> [String] {
+        guard let chosen = stops[id]?.chosen else { return [] }
+        return drafts.values.filter { tree in
+            tree.creating.parent == id && !chosen.contains(Self.missing(tree))
+        }
+        .map(\.top).sorted()
+    }
+
+    /// The difference a draft is the missing child of.
+    static func missing(_ tree: TMDbTree) -> String {
+        let ref = tree.container(tree.top)?.externalRefs.first { $0.provider == .tmdb }
+        return "season:\(ref?.value ?? "")"
+    }
+
+    /// A new stop and every container beneath it out of the walk, the specials placed in them unassigned
+    /// again.
+    private mutating func remove(_ top: String) {
+        guard let tree = drafts.removeValue(forKey: top) else { return }
+        let ids = Set(tree.containers.map(\.id.value))
+        for id in ids { stops[id] = nil }
+        for (special, placement) in placements where home(of: placement).map(ids.contains) ?? false {
+            placements[special] = nil
+        }
+        if let parent = tree.creating.parent { stops[parent]?.children.removeAll { $0 == top } }
+    }
+
+    /// The draft a new stop is a container of.
+    public func draft(holding id: String) -> TMDbTree? {
+        drafts.values.first { $0.documents[id] != nil }
+    }
+
+    public func isNew(_ id: String) -> Bool { draft(holding: id) != nil }
+
+    /// A stop's container: as its draft has it for a new stop, as its reading found it otherwise.
+    public func container(_ id: String) -> Container? {
+        if let tree = draft(holding: id) { return tree.container(id) }
+        return (stops[id]?.comparison?.opened.sidecar).flatMap { try? SidecarFile.sidecar(from: $0).container }
+    }
+
+    /// What a new stop is created with that the operator may leave out: its year, its outline, attributed
+    /// to TMDb, and its references.
+    public func offered(_ id: String, in tree: TMDbTree? = nil) -> [AdminConsole.TMDbDifference] {
+        guard let container = (tree ?? draft(holding: id))?.container(id) else { return [] }
+        var offered: [AdminConsole.TMDbDifference] = []
+        if let year = container.year { offered.append(.year(year)) }
+        let record = container.externalRefs.first { $0.provider == .tmdb }?.value ?? ""
+        if let outline = container.outline, !outline.isEmpty { offered.append(.outline(outline, record: record)) }
+        offered += container.externalRefs.map { .reference(item: nil, $0) }
+        return offered
+    }
+
+    /// Reshapes a new stop's draft, as a draft from TMDb is shaped: a container of it set, or its entries
+    /// regrouped. Each container the shaping makes beneath a new stop is a new stop once that stop is
+    /// confirmed.
+    public mutating func shape(_ id: String, _ change: (inout TMDbTree) -> Void) {
+        guard let top = draft(holding: id)?.top, var tree = drafts[top] else { return }
+        change(&tree)
+        drafts[top] = tree
+        for container in tree.containers where stops[container.id.value] != nil {
+            stops[container.id.value]?.title = container.displayTitle
+            stops[container.id.value]?.type = container.type.rawValue
+        }
     }
 
     /// Puts a special where the operator says, or, with nil, back among the unassigned. A new companion

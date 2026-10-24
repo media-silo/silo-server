@@ -2562,9 +2562,10 @@ extension AdminConsoleTests {
 
         /// Opens a stop, ticks what is given, and confirms it.
         func confirm(_ id: String, choosing chosen: Set<String> = [], in walk: inout TMDbWalk) async throws {
-            if walk.stops[id]?.comparison == nil { try await read(id, in: &walk) }
+            if walk.stops[id]?.comparison == nil, !walk.isNew(id) { try await read(id, in: &walk) }
             walk.stops[id]?.chosen = chosen
-            walk.confirm(id, beneath: try await console.stops(beneath: id, in: walk, of: home))
+            let drafts = try await console.drafts(confirming: id, in: walk, from: database, tmdb: tmdb)
+            walk.confirm(id, beneath: try await console.stops(beneath: id, in: walk, of: home), drafts: drafts)
         }
 
         /// A walk rooted at a held container, its root read, ticked as given, and confirmed.
@@ -4096,7 +4097,7 @@ extension AdminConsoleTests {
         )
         try await walking.confirm(
             series.id.value,
-            choosing: ["year", "outline", "ref::tvdb:76107", "season:3645"],
+            choosing: ["year", "outline", "ref::tvdb:76107"],
             in: &walk
         )
         #expect(walk.next == home14)
@@ -4132,7 +4133,6 @@ extension AdminConsoleTests {
             ]
         )
         #expect(plan.steps.firstIndex { $0.id.hasPrefix("held:") } == 1, "before the edits that refer to them")
-        #expect(plan.seasons.map(\.season.number) == [15], "drafted from TMDb once the walk is stored")
         let draft = try #require(Self.edit(of: series.id.value, in: plan))
         let taken = try #require(draft.value)
         #expect(taken.year == 1963 && taken.outline == "A time traveller.")
@@ -4684,5 +4684,143 @@ extension AdminConsoleTests {
         let made = try #require(held.container(proms.id))
         #expect(made.listed && made.sequences[0].items.map(\.externalRefs) == [[concert.ref]])
         #expect(held.container(seasons[0].id)?.sequences[0].items.last?.reference?.container == proms.id)
+    }
+
+    // MARK: New containers in a walk
+
+    /// The walked series with a fourth season TMDb has and the library lacks, of four episodes, and one
+    /// special.
+    private static func missingSeason() -> (
+        series: Container, held: [Container], TMDb: FakeTMDb, episodes: [TMDb.Episode], special: TMDb.Episode
+    ) {
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        let episodes = (1...4).map { Self.episode(5400 + $0, 4, $0, "The Smugglers \($0)", runtime: 25) }
+        tmdb.series[121]?.seasons.append(.init(id: 904, number: 4, name: "Season 4"))
+        tmdb.seasons["121/4"] = TMDb.Season(id: 904, number: 4, name: "Season 4", year: 1966, episodes: episodes)
+        let special = Self.episode(3801, 0, 1, "A Christmas Message", runtime: 5)
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [special])
+        return (series, seasons + serials, tmdb, episodes, special)
+    }
+
+    /// A missing season chosen at a held series' stop joins the walk, once the stop is confirmed, as a
+    /// new stop beneath the series with TMDb's year and references chosen; never reached, it makes
+    /// nothing.
+    @Test func aMissingSeasonChosenInAWalkIsANewStop() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, _) = Self.missingSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        let walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.stops[series.id.value]?.children.last)
+        #expect(walk.isNew(new) && walk.drafts.keys.sorted() == [new])
+        #expect(walk.order.last == new && walk.stops[new]?.parent == series.id.value)
+        #expect(walk.stops[new]?.title == "Season 4" && walk.state(of: new) == .pending)
+        let offered = walk.offered(new)
+        #expect(offered == [.year(1966), .reference(item: nil, ExternalRef(provider: .tmdb, value: "904"))])
+        #expect(walk.stops[new]?.chosen == Set(offered.map(\.id)), "everything TMDb has for it, chosen")
+        #expect(try walk.plan().steps.isEmpty, "never reached, it makes nothing")
+        let again = try await console.drafts(confirming: series.id.value, in: walk, from: database, tmdb: tmdb)
+        #expect(again.isEmpty, "drafted once")
+    }
+
+    /// A special placed as an entry of a new season is created with it, in its own sidecar, after the
+    /// series' edit that names the season; a field left out is left out.
+    @Test func aSpecialPlacedInANewSeasonIsCreatedWithIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, episodes, special) = Self.missingSeason()
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        walk.place(special.id, .entry(in: new, sequence: "episodes", position: 1))
+        #expect(walk.placed(in: new).map(\.id) == [special.id])
+        try await walking.confirm(new, choosing: ["ref::tmdb:904"], in: &walk)
+        let plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["edit:\(series.id)", "create:\(new)"])
+        #expect(plan.steps[1].described == "make Season 4 beneath Doctor Who")
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let made = try #require(held.container(ContainerID(new)!))
+        #expect(
+            made.sequences[0].items.map(\.externalRefs) == [[episodes[0].ref], [special.ref]]
+                + episodes.dropFirst().map { [$0.ref] }
+        )
+        #expect(made.year == nil, "the year left out")
+        #expect(held.container(series.id)?.childContainerIDs.last?.value == new, "named by the series")
+    }
+
+    /// A new season's episodes regrouped into two serials make each serial a new stop beneath it, made
+    /// with it in one creation, a special placed in one held in its sidecar.
+    @Test func aNewSeasonsSerialsAreStopsBeneathIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, contents, tmdb, _, special) = Self.missingSeason()
+        let concert = Self.episode(3802, 0, 2, "Doctor Who at the Proms", runtime: 60)
+        tmdb.seasons["121/0"]?.episodes.append(concert)
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        let drafted = try #require(walk.container(new))
+        let items = drafted.sequences[0].items.compactMap(\.id)
+        let (first, second) = (try await database.provisionalID(), try await database.provisionalID())
+        var proms = Container(id: try await database.provisionalID(), type: .series, title: Title("At the Proms")!)
+        proms.sequences = [Sequence(id: "concerts", items: [])]
+        walk.shape(new) {
+            $0.regroup(Array(items[0...1]), in: new, into: first, type: .serial, title: Title("Part A")!)
+        }
+        walk.shape(new) {
+            $0.regroup(Array(items[2...3]), in: new, into: second, type: .serial, title: Title("Part B")!)
+        }
+        try await walking.confirm(new, in: &walk)
+        #expect(walk.stops[new]?.children == [first.value, second.value])
+        #expect([first, second].allSatisfy { walk.isNew($0.value) && walk.state(of: $0.value) == .pending })
+        try await walking.confirm(second.value, in: &walk)
+        walk.place(special.id, .extra(of: second.value, type: EntryType.featurette.rawValue))
+        try await walking.confirm(first.value, in: &walk)
+        walk.place(concert.id, .breakout(proms.id.value, from: first.value, asExtra: true), companion: proms)
+
+        let plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["create:\(proms.id)", "edit:\(series.id)", "create:\(new)"])
+        #expect(plan.steps.last?.described == "make Season 4 and the 2 beneath it beneath Doctor Who")
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(held.container(first)?.sequences[0].items.count == 2)
+        #expect(held.container(second)?.extras.map(\.externalRefs) == [[special.ref]])
+        #expect(held.container(proms.id)?.sequences[0].items.map(\.externalRefs) == [[concert.ref]])
+        #expect(held.container(first)?.extras.compactMap(\.reference).map(\.container) == [proms.id])
+    }
+
+    /// A missing season chosen earlier and unchosen takes its new stop, and its serials' stops, out of the
+    /// walk once the series is confirmed again, which says which first; a special placed in one is
+    /// unassigned again.
+    @Test func unchoosingAMissingSeasonRemovesItsStops() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, special) = Self.missingSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        let drafted = try #require(walk.container(new))
+        let items = drafted.sequences[0].items.compactMap(\.id)
+        let serial = try await database.provisionalID()
+        walk.shape(new) { $0.regroup(items, in: new, into: serial, type: .serial, title: Title("The Smugglers")!) }
+        try await walking.confirm(new, in: &walk)
+        walk.place(special.id, .entry(in: serial.value))
+        #expect(walk.unassigned.isEmpty)
+
+        walk.stops[series.id.value]?.chosen.remove("season:904")
+        #expect(walk.leaving(confirming: series.id.value) == [new], "said before it goes")
+        try await walking.confirm(series.id.value, in: &walk)
+        #expect(walk.drafts.isEmpty && walk.stops[new] == nil && walk.stops[serial.value] == nil)
+        #expect(!walk.order.contains(new) && walk.unassigned.map(\.id) == [special.id])
     }
 }
