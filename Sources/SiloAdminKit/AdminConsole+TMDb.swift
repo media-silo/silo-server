@@ -332,9 +332,9 @@ extension AdminConsole {
 
     /// A placement the console thinks most likely for a special, and why; nil placement when the reason
     /// is advice rather than a place, as for a duplicate whose home no library holds yet.
-    public struct SpecialSuggestion: Hashable, Sendable {
+    public struct SpecialSuggestion: Hashable, Sendable, Codable {
         /// What a suggestion rests on, strongest first.
-        public enum Basis: Int, Hashable, Sendable, Comparable {
+        public enum Basis: Int, Hashable, Sendable, Comparable, Codable {
             case smddb
             case breakout
             case duplicate

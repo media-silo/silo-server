@@ -4823,4 +4823,104 @@ extension AdminConsoleTests {
         #expect(walk.drafts.isEmpty && walk.stops[new] == nil && walk.stops[serial.value] == nil)
         #expect(!walk.order.contains(new) && walk.unassigned.map(\.id) == [special.id])
     }
+
+    // MARK: Walks kept on this Mac
+
+    /// A walk with two confirmed stops, ticks and a placed special, kept in a file and read back by
+    /// another store, as a relaunched console reads it, is the same walk, and stores the same.
+    @Test func aWalkIsKeptOnThisMacAndResumed() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        let k9 = Self.episode(3901, 0, 1, "K9 and Company", runtime: 50)
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [k9])
+        tmdb.series[121]?.overview = "A time traveller."
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + seasons + serials))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let season = seasons[0].id.value
+
+        var walk = try await walking.walk(series.id.value, choosing: ["outline"])
+        try await walking.read(season, in: &walk)
+        walk.place(k9.id, .entry(in: season, sequence: "stories", position: 0))
+        try await walking.confirm(season, in: &walk)
+        try await walking.read(serials[0].id.value, in: &walk)
+        walk.stops[serials[0].id.value]?.chosen = ["something ticked"]
+
+        let file = folder.appending(path: "tmdb-walks.json")
+        try TMDbWalkStore(file: file).save(walk, for: home.id)
+        let resumed = try #require(TMDbWalkStore(file: file).walk(rootedAt: series.id.value, in: "tv", of: home.id))
+        #expect(resumed == walk, "its stops, states, ticks and placements, as they were")
+        #expect(resumed.order.map(resumed.state) == walk.order.map(walk.state))
+        func said(_ plan: TMDbWalk.Plan) -> [String] {
+            plan.steps.map { step in if case .edit(let draft) = step.kind { draft.text } else { step.described } }
+        }
+        #expect(try said(resumed.plan()) == said(walk.plan()), "and stores the same")
+        #expect(TMDbWalkStore(file: file).walk(rootedAt: season, in: "tv", of: home.id) == nil, "kept by its root")
+
+        var again = TMDbWalk(
+            library: "tv",
+            root: TMDbWalk.Stop(id: series.id.value, title: "Doctor Who", type: "series")
+        )
+        again.edited = walk.edited.addingTimeInterval(1)
+        try TMDbWalkStore(file: file).save(again, for: home.id)
+        #expect(TMDbWalkStore(file: file).walks(of: home.id).map(\.id) == [again.id], "one walk for each root")
+    }
+
+    /// A discarded walk is gone from this Mac, and opening its root's differences starts a new walk.
+    @Test func aDiscardedWalkIsGone() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "walks-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "tmdb-walks.json")
+        let walk = TMDbWalk(
+            library: "tv",
+            root: TMDbWalk.Stop(id: "00000000000001a0", title: "Doctor Who", type: "series")
+        )
+        let store = TMDbWalkStore(file: file)
+        try store.save(walk, for: "home")
+        #expect(TMDbWalkStore(file: file).walks(of: "home").map(\.id) == [walk.id])
+        try store.remove(walk.id, of: "home")
+        #expect(store.walk(rootedAt: walk.root, in: "tv", of: "home") == nil)
+        #expect(TMDbWalkStore(file: file).walks(of: "home").isEmpty, "and off this Mac")
+        try store.save(walk, for: "home")
+        try store.removeAll(of: "home")
+        #expect(TMDbWalkStore(file: file).walks(of: "home").isEmpty, "a forgotten silo's walks go with it")
+    }
+
+    /// A stop's sidecar changed in the library after the stop was read: its edit is refused as a stale
+    /// edit is, the store stops there and says so, and the stop is pending again, to be read and confirmed
+    /// again; stored again, the change behind the walk is kept.
+    @Test func aStopWhoseSidecarChangedIsReadAgain() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.series[121]?.overview = "A time traveller."
+        tmdb.seasons["121/1"]?.overview = "The first."
+        tmdb.seasons["121/2"]?.overview = "The second."
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let (one, two) = (seasons[0].id.value, seasons[1].id.value)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["outline"])
+        try await walking.confirm(one, choosing: ["outline"], in: &walk)
+        try await walking.confirm(two, choosing: ["outline"], in: &walk)
+        var behind = seasons[0]
+        behind.year = 1963
+        held.sidecars.withLock { $0[one] = try! SidecarFile.data(for: Sidecar(container: behind)) }
+
+        let stored = try await console.store(walk, of: home, tmdb: tmdb)
+        #expect(stored.stored.map(\.id) == ["edit:\(series.id)"])
+        #expect(stored.refusal == "Season 1 changed in the library after the walk read it, so it is read again")
+        #expect(stored.stale == one && stored.rest.map(\.id) == ["edit:\(one)", "edit:\(two)"])
+        walk = stored.walk
+        #expect(walk.stops[one]?.comparison == nil && walk.state(of: one) == .pending)
+        #expect(walk.stops[one]?.chosen == ["outline"], "its ticks kept for when it is confirmed again")
+        #expect(try walk.plan().steps.map(\.id) == ["edit:\(two)"], "nothing of it stored until then")
+
+        try await walking.confirm(one, choosing: ["outline"], in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(seasons[0].id))
+        #expect(made.outline == "The first." && made.year == 1963, "the change behind the walk kept")
+        #expect(held.container(seasons[1].id)?.outline == "The second.")
+    }
 }

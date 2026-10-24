@@ -131,7 +131,7 @@ public enum TMDb {
         public var ref: ExternalRef { ExternalRef(provider: .tmdb, value: String(id)) }
     }
 
-    public struct SeasonSummary: Hashable, Sendable {
+    public struct SeasonSummary: Hashable, Sendable, Codable {
         public var id: Int
         public var number: Int
         public var name: String

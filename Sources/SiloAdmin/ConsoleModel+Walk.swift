@@ -26,6 +26,62 @@ extension ConsoleModel {
     /// Starts a walk of a held container's tree against TMDb, rooted at it: its first stop opened and
     /// read, and, for a walk rooted below a series, the series' specials read beside it.
     func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo) async {
+        // A walk this Mac keeps for the container is offered to be resumed, or started again.
+        if let kept = console.tmdbWalks.walk(rootedAt: key.container, in: key.library, of: silo.id) {
+            walking = Walking(silo: silo, walk: kept, open: kept.next ?? kept.root, resuming: true)
+            return
+        }
+        await startWalk(key, on: silo)
+    }
+
+    /// Goes on with the walk this Mac kept, as it was left.
+    func resumeWalk() async {
+        guard let current = walking, current.resuming else { return }
+        walking?.resuming = false
+        let walk = current.walk
+        if let series = walk.series, series != walk.root, walk.specials.isEmpty {
+            readSpecials(of: series, for: current.id)
+        }
+        await readCompanions(for: current.id)
+        await openStop(current.open)
+    }
+
+    /// Discards the walk this Mac kept for the container and starts a new one.
+    func startWalkAgain() async {
+        guard let current = walking else { return }
+        try? console.tmdbWalks.remove(current.walk.id, of: current.silo.id)
+        await startWalk(
+            ContainerKey(silo: current.silo.id, library: current.walk.library, container: current.walk.root),
+            on: current.silo
+        )
+    }
+
+    /// Discards the walk: off this Mac, and the sheet closed. Nothing it held was stored.
+    func discardWalk() {
+        guard let current = walking else { return }
+        try? console.tmdbWalks.remove(current.walk.id, of: current.silo.id)
+        walking = nil
+    }
+
+    /// Keeps the walk on this Mac as it stands, to be resumed after the console closes.
+    func keepWalk() {
+        guard var walk = walking?.walk, let silo = walking?.silo, walking?.resuming == false else { return }
+        walk.edited = .now
+        walking?.walk.edited = walk.edited
+        try? console.tmdbWalks.save(walk, for: silo.id)
+    }
+
+    private func readCompanions(for id: UUID) async {
+        guard let current = walking, current.walk.series != nil else { return }
+        let held = try? await console.companionSeries(
+            in: current.walk.library,
+            besides: current.walk.series,
+            of: current.silo
+        )
+        if walking?.id == id { walking?.companions = held ?? [] }
+    }
+
+    private func startWalk(_ key: ContainerKey, on silo: AdminConsole.Silo) async {
         let root = TMDbWalk.Stop(id: key.container, title: key.container, type: "")
         let starting = Walking(silo: silo, walk: TMDbWalk(library: key.library, root: root), open: key.container)
         walking = starting
@@ -38,10 +94,7 @@ extension ConsoleModel {
             guard walking?.id == starting.id else { return }
             walking?.walk = walk
             if let series = walk.series, series != walk.root { readSpecials(of: series, for: starting.id) }
-            if walk.series != nil {
-                let held = try? await console.companionSeries(in: key.library, besides: walk.series, of: silo)
-                if walking?.id == starting.id { walking?.companions = held ?? [] }
-            }
+            await readCompanions(for: starting.id)
         } catch {
             if walking?.id == starting.id { walking?.failure = describe(error) }
             return
@@ -92,7 +145,10 @@ extension ConsoleModel {
                     tmdb: tmdb,
                     progress: { step, found in await self.reading(step, found, of: stop, for: id) }
                 )
-                if walking?.id == id { walking?.walk.read(comparison) }
+                if walking?.id == id {
+                    walking?.walk.read(comparison)
+                    keepWalk()
+                }
             } catch let unreadable as AdminConsole.NoTMDbReading {
                 if walking?.id == id { walking?.failures[stop] = unreadable.reason }
             } catch {
@@ -171,6 +227,7 @@ extension ConsoleModel {
             guard walking?.id == current.id else { return }
             walking?.walk.confirm(current.open, beneath: beneath, drafts: drafts)
             walking?.plan = nil
+            keepWalk()
         } catch {
             walking?.failure = describe(error)
             return
@@ -183,6 +240,7 @@ extension ConsoleModel {
     func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
         walking?.walk.place(special, placement, companion: companion)
         walking?.plan = nil
+        keepWalk()
     }
 
     /// Shapes the open new stop's draft as a draft from TMDb is shaped.
@@ -190,6 +248,7 @@ extension ConsoleModel {
         guard let open = walking?.open else { return }
         walking?.walk.shape(open, change)
         walking?.plan = nil
+        keepWalk()
     }
 
     /// Lists everything storing the walk will do, before any of it is done.
@@ -213,6 +272,16 @@ extension ConsoleModel {
             walking?.walk = stored.walk
             walking?.stored = stored
             walking?.plan = try? stored.walk.plan()
+            if stored.refusal == nil {
+                // Stored whole, the walk ends, and this Mac keeps it no longer.
+                try? console.tmdbWalks.remove(stored.walk.id, of: current.silo.id)
+            } else {
+                keepWalk()
+            }
+            if let stale = stored.stale {
+                walking?.open = stale
+                await read(stale)
+            }
             await open(ContainerKey(silo: current.silo.id, library: current.walk.library, container: current.walk.root))
         } catch {
             walking?.failure = describe(error)

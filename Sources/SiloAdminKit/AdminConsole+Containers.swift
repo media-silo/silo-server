@@ -11,7 +11,7 @@ import SmdSidecar
 extension AdminConsole {
     /// A library's container as the console shows it: as the library's sidecar says it, the sidecar's
     /// bytes, and what the library's last walk reported on that sidecar, in the walk's words.
-    public struct OpenedContainer: Hashable, Sendable {
+    public struct OpenedContainer: Hashable, Sendable, Codable {
         public var container: SiloClient.LibraryContainer
         public var sidecar: Data
         public var findings: [SiloClient.LastWalk.Finding]

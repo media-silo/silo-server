@@ -26,6 +26,7 @@ struct SiloAdminApp: App {
                 file: folder.appending(path: "container-drafts.json", directoryHint: .notDirectory)
             ),
             tmdbDrafts: TMDbDraftStore(file: folder.appending(path: "tmdb-drafts.json", directoryHint: .notDirectory)),
+            tmdbWalks: TMDbWalkStore(file: folder.appending(path: "tmdb-walks.json", directoryHint: .notDirectory)),
             passkeys: KeychainPasskeyStore()
         )
         _model = State(initialValue: ConsoleModel(console: console))

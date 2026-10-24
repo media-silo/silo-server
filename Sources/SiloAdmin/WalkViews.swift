@@ -28,6 +28,19 @@ struct WalkSheet: View {
                 Spacer()
                 Text(counts).font(.caption).foregroundStyle(.secondary)
             }
+            if current.resuming {
+                HStack {
+                    Label(
+                        "This Mac kept a walk of this tree, last changed \(walk.edited.formatted(date: .abbreviated, time: .shortened)): \(counts).",
+                        systemImage: "clock.arrow.circlepath"
+                    )
+                    Spacer()
+                    Button("Start Again", role: .destructive) { Task { await model.startWalkAgain() } }
+                    Button("Resume") { Task { await model.resumeWalk() } }.buttonStyle(.borderedProminent)
+                }
+                .padding(8)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            }
             HSplitView {
                 WalkTree(walk: walk, open: current.open) { stop in Task { await model.openStop(stop) } }
                     .frame(minWidth: 220, idealWidth: 260)
@@ -37,6 +50,7 @@ struct WalkSheet: View {
                 }
             }
             .frame(minHeight: 380)
+            .disabled(current.resuming)
             if let plan = current.plan { storeList(plan) }
             if let failure = current.failure {
                 Label(failure, systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
@@ -69,15 +83,22 @@ struct WalkSheet: View {
     private var actions: some View {
         HStack {
             Button("Close") {
+                model.keepWalk()
                 model.walking = nil
                 dismiss()
             }
+            Button("Discard the Walk", role: .destructive) {
+                model.discardWalk()
+                dismiss()
+            }
+            .help("Nothing of the walk has been stored unless the store said so; discarded, this Mac keeps none of it.")
             Spacer()
             if current.plan == nil {
                 Button("Store the Walk…") { model.listStore() }
                     .disabled(walk.order.allSatisfy { walk.state(of: $0) == .pending })
             }
             Button("Confirm") { Task { await model.confirmStop() } }
+                .disabled(current.resuming)
                 .disabled(current.stop == nil || current.progress[current.open] != nil)
             Button("Next") { Task { await model.nextStop() } }
                 .buttonStyle(.borderedProminent)
@@ -188,6 +209,7 @@ struct WalkSheet: View {
                 } else {
                     model.walking?.walk.stops[open]?.chosen.remove(id)
                 }
+                model.keepWalk()
             }
         )
     }
