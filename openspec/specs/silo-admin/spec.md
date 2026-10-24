@@ -780,8 +780,16 @@ kept on this Mac as a new container's draft is. The top SHALL be filed beneath t
 library that carries the reference of the record above it, when there is one, or at the top of the
 library. The form SHALL show each episode's title from TMDb beside its entry, marked as TMDb's, and
 SHALL store none. The operator SHALL be able to shape the tree before it is created: re-type a
-container, regroup entries into child containers, and drop what they will not hold. The console
-SHALL show the dry run of the whole tree as they shape it. Creating SHALL store the parent's edit
+container, group entries into child containers, and drop what they will not hold. Entries SHALL be
+selected, and the selection made a new group, of the kind, title and label the operator gives, at the
+first one's place, or added to a group the draft holds beneath the same container, the group's entries
+then in the container's order. A group SHALL be selected whole; its entries SHALL be shown in it, none
+selectable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
+ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
+with nothing SHALL be ungrouped. A run of two or more entries in one sequence whose episodes TMDb
+titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be marked as a
+run and suggested as a serial titled by the story, to be grouped one at a time or all at once. The
+console SHALL show the dry run of the whole tree as they shape it. Creating SHALL store the parent's edit
 naming the top, as creating a child does, and then make the tree, with its attributions, in one
 request to the silo.
 
@@ -800,13 +808,29 @@ request to the silo.
 - **THEN** the series' sidecar names the season, and the library holds the season with an entry for
   each episode carrying its references and no title, and no presentations
 
+#### Scenario: a season's serials suggested from TMDb's titles
+- **WHEN** a drafted season's episodes are titled at TMDb as three parts of one story, two of another,
+  and one with no part number
+- **THEN** the first three are suggested as a serial titled by the first story, the next two as one
+  titled by the second, and the last as none
+
+#### Scenario: a group added to and taken from
+- **WHEN** an entry before a group is added to it, and its last entry is then taken out of it
+- **THEN** the group holds its entries in the season's order at the first one's place, and the entry
+  taken out follows the group
+
+#### Scenario: a group ungrouped
+- **WHEN** a group a special is placed in is ungrouped
+- **THEN** its entries are back in its place, and the special is unassigned again
+
 #### Scenario: a season regrouped into serials
 - **WHEN** the operator regroups a drafted season's episodes into two serials beneath it, and creates it
 - **THEN** the library holds the season, with the two serials beneath it, each holding its episodes in
   TMDb's order
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraftedFromTMDb`,
-`aRecordSmddbHoldsIsImportedRatherThanDrafted`). The search, the shaping and the dry run as the
+`aRecordSmddbHoldsIsImportedRatherThanDrafted`, `serialsAreSuggestedFromTMDbsTitlesForTheirParts`,
+`aDraftsGroupIsAddedToTakenFromAndUngrouped`). The search, the shaping's sheet and the dry run as the
 operator shapes are pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each
@@ -1076,7 +1100,8 @@ stop beneath it: a draft from TMDb, read as a draft from TMDb reads it, with ids
 It SHALL be drafted once, however many times the stop is confirmed, and the console SHALL take no
 second confirm of a stop while one is under way. The walk's tree SHALL show it as new. Its fields and
 references, and any artwork TMDb offers for it, SHALL be chosen to begin with. It SHALL be shaped as a
-draft from TMDb is shaped, and each container the shaping makes beneath it SHALL be a new stop.
+draft from TMDb is shaped, and each container the shaping makes beneath it SHALL be a new stop; one
+the shaping ungroups SHALL leave the walk, and the specials placed in it SHALL be unassigned again.
 Specials SHALL be placeable in a new stop as in a held one. A new stop SHALL be made only once it is
 confirmed: storing the walk SHALL create it through the create route, with the containers beneath it in
 one creation, right after the edit of its parent that names it, since the create route makes a
@@ -1102,6 +1127,11 @@ console says which, and the specials placed in them SHALL be unassigned again.
 - **WHEN** a new season's episodes are regrouped into two serials
 - **THEN** each serial is a new stop beneath the season
 
+#### Scenario: a new season's serial ungrouped
+- **WHEN** a serial a new season's episodes were grouped into, with a special placed in it, is
+  ungrouped
+- **THEN** the serial's stop leaves the walk, and the special is unassigned again
+
 #### Scenario: a new season unchosen
 - **WHEN** a missing season chosen earlier is unchosen, and the series' stop is confirmed again
 - **THEN** the season's stop and its serials' stops leave the walk, and a special placed in one of them
@@ -1109,7 +1139,8 @@ console says which, and the specials placed in them SHALL be unassigned again.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMissingSeasonChosenInAWalkIsANewStop`,
 `aStopConfirmedTwiceAtOnceDraftsItsSeasonsOnce`, `aSpecialPlacedInANewSeasonIsCreatedWithIt`,
-`aNewSeasonsSerialsAreStopsBeneathIt`, `unchoosingAMissingSeasonRemovesItsStops`). The walk's sheet is
+`aNewSeasonsSerialsAreStopsBeneathIt`, `aGroupUngroupedInANewStopLeavesTheWalk`,
+`unchoosingAMissingSeasonRemovesItsStops`). The walk's sheet is
 pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A walk is kept on this Mac until it is stored or discarded

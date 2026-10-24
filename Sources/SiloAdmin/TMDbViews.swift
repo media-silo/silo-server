@@ -260,10 +260,6 @@ struct ShapeTreeSheet: View {
     let model: ConsoleModel
     @Environment(\.dismiss) private var dismiss
     @State private var selected: String?
-    @State private var chosenEntries: Set<String> = []
-    @State private var groupTitle = ""
-    @State private var groupType: ContainerType = .serial
-    @State private var groupLabel = ""
     @State private var breakoutTitle = ""
     @State private var breakoutListed = false
     @State private var alternativeTitle = ""
@@ -338,26 +334,16 @@ struct ShapeTreeSheet: View {
 
     @ViewBuilder
     private func entryRow(_ entry: Entry, in container: Container) -> some View {
-        let key = "\(container.id.value)/\(entry.id?.value ?? "")"
         if let child = entry.childContainer {
             Text("↳ \(tree.container(child.value)?.displayTitle ?? child.value)").foregroundStyle(.secondary)
         } else {
-            Toggle(
-                isOn: Binding(
-                    get: { chosenEntries.contains(key) },
-                    set: { on in
-                        if on { chosenEntries.insert(key) } else { chosenEntries.remove(key) }
-                    }
-                )
-            ) {
-                HStack(spacing: 4) {
-                    Text(entry.id?.value ?? "a reference").font(.caption.monospaced())
-                    if let tmdb = entry.externalRefs.first(where: { $0.provider == .tmdb }),
-                        let title = tree.episodeTitles[tmdb.value]
-                    {
-                        Text(title)
-                        TMDbMark()
-                    }
+            HStack(spacing: 4) {
+                Text(entry.id?.value ?? "a reference").font(.caption.monospaced())
+                if let tmdb = entry.externalRefs.first(where: { $0.provider == .tmdb }),
+                    let title = tree.episodeTitles[tmdb.value]
+                {
+                    Text(title)
+                    TMDbMark()
                 }
             }
         }
@@ -365,22 +351,14 @@ struct ShapeTreeSheet: View {
 
     @ViewBuilder
     private var detail: some View {
-        VStack(alignment: .leading) {
-            if !chosenEntries.isEmpty, let parent = chosenParent {
-                GroupBox("Group \(chosenEntries.count) chosen into a new container") {
-                    HStack {
-                        TextField("Title", text: $groupTitle)
-                        Picker("Type", selection: $groupType) {
-                            ForEach(ContainerType.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .fixedSize()
-                        TextField("Label", text: $groupLabel).frame(maxWidth: 80)
-                        Button("Group") { Task { await regroup(in: parent) } }
-                            .disabled(Title(groupTitle) == nil)
-                    }
-                }
-            }
+        ScrollView {
             if let selected, let container = tree.container(selected) {
+                EntryGrouping(
+                    tree: tree,
+                    parent: selected,
+                    update: { model.updateTree($0) },
+                    provisionalID: { try? await model.provisionalID() }
+                )
                 AttributionsLine(attributions: tree.attributions[selected] ?? []) { subject in
                     model.updateTree { $0.removeAttribution(of: subject, from: selected) }
                 }
@@ -389,34 +367,10 @@ struct ShapeTreeSheet: View {
                 ContentUnavailableView(
                     "Nothing Chosen",
                     systemImage: "square.stack.3d.up",
-                    description: Text("Choose a container to shape it, or tick entries to group them.")
+                    description: Text("Choose a container to shape it and group its entries.")
                 )
             }
         }
-    }
-
-    /// The container the chosen entries are in, when they are all in one.
-    private var chosenParent: String? {
-        let parents = Set(chosenEntries.map { String($0.split(separator: "/").first ?? "") })
-        return parents.count == 1 ? parents.first : nil
-    }
-
-    private func regroup(in parent: String) async {
-        guard let title = Title(groupTitle), let id = try? await model.provisionalID() else { return }
-        let items = chosenEntries.compactMap { $0.split(separator: "/").last.flatMap { ItemID(String($0)) } }
-        let order = tree.container(parent)?.sequences.flatMap(\.items).compactMap(\.id) ?? []
-        model.updateTree {
-            $0.regroup(
-                order.filter(items.contains),
-                in: parent,
-                into: id,
-                type: groupType,
-                typeLabel: groupLabel.isEmpty ? nil : groupLabel,
-                title: title
-            )
-        }
-        chosenEntries = []
-        groupTitle = ""
     }
 
     // MARK: Specials
