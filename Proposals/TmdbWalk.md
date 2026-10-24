@@ -91,7 +91,10 @@ unassigned specials sit in a panel beside every stop, with their suggestions, as
 Placing a special from the panel offers the open stop first: an entry in its sequence at a position, or
 one of its extras. The other placements stay available anywhere: a duplicate's home, a companion
 series, a child container, or declined. A special whose suggestion names the open stop is marked as
-suggested here. A placed special leaves the panel and becomes part of the pending change of the
+suggested here only when something ties it there: its title names the stop, one of its entries, the
+story TMDb titles an entry a part of, or a container beneath it, or smddb files it there. An air date
+alone marks nothing, since too many specials air near a season they have nothing to do with, and a
+series' own title, which most of its specials carry, ties nothing either. A placed special leaves the panel and becomes part of the pending change of the
 container it was placed in, which then shows as *changed*. Removing it from that change returns it to
 the panel. The panel counts how many are still unassigned, and a special left there holds nothing up,
 as in 0017.
@@ -130,8 +133,10 @@ when no library holds it.
 fields and references TMDb has for it, and any artwork TMDb offers, all ticked to begin with, since the
 library holds nothing to keep. TMDb is not yet asked for a season's own images, so a new season offers
 none, and its poster is put once it is held, as any container's is. The operator unticks what they do
-not want and shapes it as 0017's form shapes a draft: re-typing it, or regrouping its episodes into
-serials. Each serial the shaping makes is a new stop beneath it. Specials can be placed in a new stop
+not want and shapes it as 0017's form shapes a draft: re-typing it, or grouping its episodes into
+containers of the kind they choose, such as serials. Each group the shaping makes is a new stop beneath it.
+The episodes a held container lacks are grouped the same way at its own stop, and each group chosen
+is made beneath it when the walk is stored, where its first episode would have gone. Specials can be placed in a new stop
 as in a held one. A new stop is made only once it is confirmed, with everything beneath it in one
 creation, right after the edit of its parent that names it; one ticked and never reached makes nothing.
 
@@ -202,8 +207,9 @@ operator ticks References whole and confirms. *Season 1* shows as changed, and i
 the sidebar beneath it as pending. *Next* opens *An Unearthly Child*, the first of them, which differs
 in nothing. They confirm it, and it shows as looked at.
 
-At *Season 18*, the panel marks *K9 and Company* as suggested here, since it aired between two of
-this season's episodes. The operator places it as an entry after the last episode, and the panel's
+At *Season 18*, the panel suggests *K9 and Company* for the season, since it aired between two of
+this season's episodes, without marking it as suggested here, since nothing in its title names the
+season. The operator places it as an entry after the last episode, and the panel's
 count goes down by one. At *The Five Doctors*, a serial they hold in *Season 20*, they place a
 making-of as one of its extras.
 

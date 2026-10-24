@@ -787,8 +787,10 @@ then in the container's order. A group SHALL be selected whole; its entries SHAL
 selectable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
 with nothing SHALL be ungrouped. A run of two or more entries in one sequence whose episodes TMDb
-titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be marked as a
-run and suggested as a serial titled by the story, to be grouped one at a time or all at once. The
+titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be bracketed and
+suggested as a group titled by the story, to be grouped one at a time or all at once. No kind SHALL be
+assumed for a group: the kind the container's groups mostly are SHALL be chosen to begin with, when
+it has any, and otherwise the operator SHALL choose one before any group is made. The
 console SHALL show the dry run of the whole tree as they shape it. Creating SHALL store the parent's edit
 naming the top, as creating a child does, and then make the tree, with its attributions, in one
 request to the silo.
@@ -811,7 +813,7 @@ request to the silo.
 #### Scenario: a season's serials suggested from TMDb's titles
 - **WHEN** a drafted season's episodes are titled at TMDb as three parts of one story, two of another,
   and one with no part number
-- **THEN** the first three are suggested as a serial titled by the first story, the next two as one
+- **THEN** the first three are suggested as a group titled by the first story, the next two as one
   titled by the second, and the last as none
 
 #### Scenario: a group added to and taken from
@@ -962,7 +964,14 @@ sidecar its stop read, carrying the outline's attribution when the outline is ch
 refs when a special is declined or placed after all, and stored when the walk is stored. A special
 placed in a duplicate's home or a breakout SHALL be an edit of that container too, and the console
 SHALL list every edit before it stores any. A chosen child container SHALL join the walk as a new stop
-beneath the container. Chosen artwork SHALL be put with its attribution when the walk is stored. The
+beneath the container. The episodes a held container lacks SHALL be groupable into new containers
+beneath it as a draft's entries are, a group of the kind, title and label the operator gives, made
+of the episodes chosen, or added to a group made there already; runs TMDb titles as the parts of one
+story SHALL be suggested as a draft's are. A group SHALL be chosen whole, its episodes shown in it,
+each only to be taken out of it or the group ungrouped, each episode then chosen as the group was. A
+group chosen SHALL be made, when the walk is stored, as a container beneath the held one holding its
+episodes in TMDb's order, named in the held container's edit where the first of them would have gone,
+and none of its episodes SHALL be added to the held container itself. Chosen artwork SHALL be put with its attribution when the walk is stored. The
 console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
 opened.
 
@@ -971,6 +980,12 @@ opened.
   operator chooses that difference alone, confirms the season's stop and stores the walk
 - **THEN** the season's edit adds one entry carrying the episode's references at TMDb's position, and
   changes nothing else
+
+#### Scenario: missing episodes grouped
+- **WHEN** a held season lacks four parts of one story and the first part of the next, the four are
+  grouped as a serial, all five are chosen, and the walk is stored
+- **THEN** the serial is created beneath the season holding the four, the season's edit names it where
+  the first part would have gone, and the next story's part follows it
 
 #### Scenario: an extra TMDb does not know
 - **WHEN** a container the library holds has an extra that TMDb's record has nothing for
@@ -1000,7 +1015,8 @@ opened.
 - **THEN** the breakout's differences list that IMDb id against the entry
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
-(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`). The list and its choosing are pinned by nothing
+(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`,
+`aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`). The list and its choosing are pinned by nothing
 yet, as the rest of the shell is.
 
 ### Requirement: A reading against TMDb says each step as it goes, and shows what it has found
@@ -1046,7 +1062,10 @@ walk has found it, each stop with its state: pending, open, changed, or looked a
 be able to open any stop of the walk, and a confirmed stop SHALL open with its choices and placements
 as they were left; confirming it again SHALL replace its pending change. When the walk's root is a
 series, or is beneath one, the series' unassigned specials SHALL be shown beside every stop with their
-suggestions, a special whose suggestion names the open stop marked as such. A special SHALL be
+suggestions. A special suggested for the open stop SHALL be marked as suggested there only on
+something that ties it there: its title naming the stop, an entry of it, the story TMDb titles an
+entry a part of, or a container beneath it; or smddb filing it there. A series' own title, which any
+of its specials may carry, SHALL tie nothing. A special SHALL be
 placeable in the open stop, as an entry in a sequence of it at a position or as one of its extras, and
 anywhere a draft's specials may be placed. A placed special SHALL leave the unassigned specials and
 become part of the pending change of the container it was placed in, and removing it from that change
@@ -1073,6 +1092,11 @@ and the walk SHALL keep what was not.
 - **THEN** the season's edit adds an entry carrying the special's references, and the special is no
   longer unassigned
 
+#### Scenario: a special suggested where it aired
+- **WHEN** a special is suggested for a season for when it aired alone, and another, titled as the
+  making of a serial beneath the season, is suggested for the season too
+- **THEN** only the second is marked as suggested there
+
 #### Scenario: a stop opened again
 - **WHEN** a confirmed season is opened again from the walk's tree, one more difference is chosen, and
   the season is confirmed again
@@ -1091,7 +1115,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`confirmingAStopQueuesTheContainersBeneathItInTheTreesOrder`,
 `aSpecialPlacedAtAStopIsStoredInThatContainersEdit`, `aConfirmedStopOpenedAgainKeepsWhatWasChosen`,
 `aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`,
-`anEditOfAConfirmedStopIsPartOfThatStopsEdit`). The walk's sheet is pinned by nothing yet, as the rest
+`anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`). The walk's sheet is pinned by nothing yet, as the rest
 of the shell is.
 
 ### Requirement: A missing child chosen in a walk is a new container, created when the walk is stored
@@ -1182,13 +1206,20 @@ TMDb's seasons the library holds beneath it, by its `tmdb` reference or as the s
 held season carrying none, saying which; such a season SHALL be a stop of the walk whatever is chosen,
 SHALL NOT be choosable, and SHALL NOT be offered as missing. An item carrying no `tmdb` reference SHALL
 be matched to the episode TMDb finds by its other ids, and SHALL NOT be listed as held only or its
-episode as missing; one held at the stop's own level SHALL be offered TMDb's id.
+episode as missing; one held at the stop's own level SHALL be offered TMDb's id. Once the operator says
+which season a held one is, the series' stop SHALL list that season as held by it, as they said, and
+a season it was only suggested to be, when they said another, SHALL be listed as missing again, without
+the series being read again; a season said to be held SHALL NOT be drafted.
 
 #### Scenario: a season imported without TMDb's id
 - **WHEN** a series holds a season titled with its number and no TMDb id, holding one of TMDb's two
   serials for that season
 - **THEN** the series' stop lists TMDb's season as perhaps the held one, offering it as missing nowhere,
   and the season's stop says it matches nothing at TMDb, suggesting TMDb's season of that number
+
+#### Scenario: the operator says it is another season
+- **WHEN** the operator says the season is TMDb's next season, not the one suggested
+- **THEN** the series' stop lists the next season as held by it, and the one suggested as missing
 
 #### Scenario: the operator says which season it is
 - **WHEN** the operator says the season is TMDb's season of that number

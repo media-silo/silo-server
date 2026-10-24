@@ -32,6 +32,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         public var chosen: Set<String> = []
         /// What confirming it last kept; nil until it is confirmed.
         public var taken: Set<String>?
+        /// The groups the operator made of a held stop's missing episodes; absent from a walk kept before
+        /// they were asked.
+        var episodeGroups: [EpisodeGroup]?
 
         public init(id: String, title: String, type: String, parent: String? = nil) {
             self.id = id
@@ -136,6 +139,27 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         for id in [stop] + beneath(stop) where !isNew(id) {
             stops[id]?.comparison = nil
             stops[id]?.taken = nil
+            stops[id]?.groups = []
+        }
+    }
+
+    /// A stop's differences as the walk reads them now: a season a held child beneath it was said to be
+    /// is held by that child, and one it was only suggested to be, said to be another, is missing again.
+    public func differences(of stop: String) -> [AdminConsole.TMDbDifference] {
+        let differences = stops[stop]?.comparison?.differences ?? []
+        let said = identified.filter { stops[$0.key]?.parent == stop }
+        guard !said.isEmpty else { return differences }
+        return differences.map { difference in
+            if case .heldSeason(let season, let container, _) = difference, let identified = said[container] {
+                return identified == season.id
+                    ? .heldSeason(season, container: container, suggested: false) : .season(season)
+            }
+            if case .season(let season) = difference,
+                let container = said.first(where: { $0.value == season.id })?.key
+            {
+                return .heldSeason(season, container: container, suggested: false)
+            }
+            return difference
         }
     }
 

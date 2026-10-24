@@ -71,13 +71,13 @@ extension AdminConsole {
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
     ) async throws -> [TMDbTree] {
-        guard let stop = walk.stops[id], let comparison = stop.comparison, let series = comparison.series else {
+        guard let stop = walk.stops[id], let series = stop.comparison?.series else {
             return []
         }
         let drafted = Set(walk.drafts.values.map(TMDbWalk.missing))
         let sequence = walk.container(id)?.sequences.first { $0.items.contains { $0.childContainer != nil } }?.id
         var trees: [TMDbTree] = []
-        for case .season(let season) in comparison.differences
+        for case .season(let season) in walk.differences(of: id)
         where stop.chosen.contains("season:\(season.id)") && !drafted.contains("season:\(season.id)") {
             trees.append(
                 try await draft(
@@ -302,6 +302,8 @@ extension TMDbWalk {
         var draft: ContainerDraft
         var container: Container
         var children: [Container] = []
+        /// The groups of its missing episodes taken, by each episode's TMDb id.
+        var grouped: [String: EpisodeGroup] = [:]
         /// The new containers the walk makes beneath it, each with what is beneath it.
         var made: [(creating: ContainerDraft.Creating, making: TMDbTree.Making)] = []
     }
@@ -419,7 +421,19 @@ extension TMDbWalk {
             throw AdminConsole.StoreRefused(reason: "\(stop.title)'s sidecar does not read as a container")
         }
         var change = Change(stop: stop, draft: draft, container: held)
-        for difference in comparison.differences where taken.contains(difference.id) {
+        let groups = stop.groups.filter { taken.contains($0.tick) }
+        for group in groups {
+            for episode in group.episodes { change.grouped[String(episode)] = group }
+        }
+        for difference in comparison.differences {
+            // A group taken is made beneath the stop, named where its first episode would have gone.
+            if case .episode(let episode, let after) = difference, let group = change.grouped[String(episode.id)] {
+                if Self.first(of: group, in: comparison) == episode.id {
+                    Self.make(group, after: after, into: &change, comparison: comparison)
+                }
+                continue
+            }
+            guard taken.contains(difference.id) else { continue }
             Self.take(difference, into: &change, comparison: comparison, gathering: &gathering)
         }
         var declined = sidecar.declined
@@ -470,7 +484,12 @@ extension TMDbWalk {
         case .outline(let text, _): change.container.outline = text
         case .reference(nil, let ref): change.container.externalRefs.append(ref)
         case .reference(let item?, let ref): AdminConsole.add(ref, toItem: item, in: &change.container)
-        case .episode(let episode, let after): AdminConsole.insert(episode, after: after, into: &change.container)
+        case .episode(let episode, let after):
+            AdminConsole.insert(
+                AdminConsole.leaf(episode, in: change.container),
+                after: Self.anchor(after, in: change),
+                into: &change.container
+            )
         case .order(let sequence, let items): AdminConsole.reorder(sequence, to: items, in: &change.container)
         // A missing season chosen is a new stop of the walk, made with what its own stop keeps.
         case .season, .heldSeason, .unmatchedSeason: break
@@ -484,6 +503,52 @@ extension TMDbWalk {
             )
         case .special: break
         }
+    }
+
+    /// The first of a group's episodes the stop's reading still offers.
+    private static func first(of group: EpisodeGroup, in comparison: AdminConsole.TMDbComparison) -> Int? {
+        let offered = comparison.differences.compactMap { difference -> Int? in
+            if case .episode(let episode, _) = difference { episode.id } else { nil }
+        }
+        return group.episodes.first(where: offered.contains)
+    }
+
+    /// A group of a stop's missing episodes as the container it makes beneath the stop, those its reading
+    /// still offers in it, named in the stop where the first of them would have gone.
+    private static func make(
+        _ group: EpisodeGroup,
+        after: ExternalRef?,
+        into change: inout Change,
+        comparison: AdminConsole.TMDbComparison
+    ) {
+        guard let id = ContainerID(group.id) else { return }
+        var child = Container(id: id, type: group.type, title: group.title)
+        child.typeLabel = group.typeLabel
+        let episodes = comparison.differences.compactMap { difference -> TMDb.Episode? in
+            guard case .episode(let episode, _) = difference, group.episodes.contains(episode.id) else { return nil }
+            return episode
+        }
+        child.sequences = [Sequence(id: "parts", items: [])]
+        for episode in episodes {
+            TMDbTree.insert(AdminConsole.leaf(episode, in: child), into: &child, sequence: nil, at: nil)
+        }
+        let item = ItemID(
+            Slug.unique(from: group.title.rawValue, avoiding: Set(change.container.itemIDs.map(\.value)))
+        )!
+        AdminConsole.insert(
+            .child(Entry.Child(id: item, container: id)),
+            after: anchor(after, in: change),
+            into: &change.container
+        )
+        change.children.append(child)
+    }
+
+    /// What an entry TMDb puts after an episode goes after in the stop's container: the episode, or the
+    /// group taken in its place.
+    private static func anchor(_ after: ExternalRef?, in change: Change) -> AdminConsole.Anchor? {
+        guard let after else { return nil }
+        if let group = change.grouped[after.value], let id = ContainerID(group.id) { return .child(id) }
+        return .ref(after)
     }
 
     /// A stop's edit, naming the containers of its own placed specials make beneath it, then their making.

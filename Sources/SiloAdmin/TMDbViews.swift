@@ -628,6 +628,11 @@ extension AdminConsole.TMDbDifference {
         return false
     }
 
+    var isEpisode: Bool {
+        if case .episode = self { return true }
+        return false
+    }
+
     var isOrder: Bool {
         if case .order = self { return true }
         return false

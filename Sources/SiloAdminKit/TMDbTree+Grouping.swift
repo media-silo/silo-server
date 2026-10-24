@@ -4,7 +4,7 @@
 import SmdKit
 
 /// A run of a container's entries that TMDb titles as the parts of one story, as `Terror of the Zygons
-/// (1)` to `(4)` are: suggested to be grouped as a serial titled by the story.
+/// (1)` to `(4)` are: suggested to be grouped, titled by the story.
 public struct SuggestedGroup: Hashable, Sendable {
     public var title: String
     public var items: [ItemID]
@@ -98,27 +98,41 @@ extension TMDbTree {
     /// The runs of a container's entries TMDb titles as the parts of one story, `Title (1)`, `Title (2)`
     /// and on, two or more running together in one sequence.
     public func suggestedGroups(in parentID: String) -> [SuggestedGroup] {
-        guard let parent = container(parentID) else { return [] }
-        var suggested: [SuggestedGroup] = []
-        for sequence in parent.sequences {
-            var run: SuggestedGroup?
-            for entry in sequence.items + [nil] {
-                let story = entry.flatMap { entry -> (String, ItemID)? in
-                    guard entry.childContainer == nil, let item = entry.id,
-                        let tmdb = entry.externalRefs.first(where: { $0.provider == .tmdb }),
-                        let title = episodeTitles[tmdb.value], let story = Self.story(of: title)
-                    else { return nil }
-                    return (story, item)
+        (container(parentID)?.sequences ?? []).flatMap { sequence in
+            Self.runs(
+                of: sequence.items.compactMap { entry -> (ItemID, String?)? in
+                    guard let item = entry.id else { return nil }
+                    let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
+                    return (item, entry.childContainer == nil ? tmdb.flatMap { episodeTitles[$0.value] } : nil)
                 }
-                if let (title, item) = story, run?.title == title {
-                    run?.items.append(item)
-                    continue
-                }
-                if let ended = run, ended.items.count > 1 { suggested.append(ended) }
-                run = story.map { SuggestedGroup(title: $0.0, items: [$0.1]) }
+            )
+            .map { SuggestedGroup(title: $0.title, items: $0.ids) }
+        }
+    }
+
+    /// The runs of two or more titles together that name the parts of one story, each with what it was
+    /// told of each; a nil title ends a run.
+    static func runs<ID>(of titled: [(ID, String?)]) -> [(title: String, ids: [ID])] {
+        var runs: [(title: String, ids: [ID])] = []
+        var run: (title: String, ids: [ID])?
+        func end() {
+            if let ended = run, ended.ids.count > 1 { runs.append(ended) }
+            run = nil
+        }
+        for (id, title) in titled {
+            guard let story = title.flatMap(story(of:)) else {
+                end()
+                continue
+            }
+            if run?.title == story {
+                run?.ids.append(id)
+            } else {
+                end()
+                run = (story, [id])
             }
         }
-        return suggested
+        end()
+        return runs
     }
 
     /// The story an episode's title names it a part of, as `Terror of the Zygons (1)` names `Terror of the
