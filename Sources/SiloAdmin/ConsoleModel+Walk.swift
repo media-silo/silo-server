@@ -116,6 +116,16 @@ extension ConsoleModel {
         await read(open)
     }
 
+    /// Says which of TMDb's seasons the open stop, a held season carrying no TMDb id, is, or that it is
+    /// unmatched again, and reads it as that season.
+    func identifySeason(_ season: Int?) async {
+        guard let open = walking?.open, tmdbState.readings[open] == nil else { return }
+        walking?.walk.identify(open, as: season)
+        walking?.plan = nil
+        keepWalk()
+        await read(open)
+    }
+
     /// Opens the first stop not yet confirmed, in the tree's order.
     func nextStop() async {
         guard let next = walking?.walk.next else { return }
@@ -143,6 +153,7 @@ extension ConsoleModel {
                     of: silo,
                     from: database,
                     tmdb: tmdb,
+                    identified: current.walk.identified,
                     progress: { step, found in await self.reading(step, found, of: stop, for: id) }
                 )
                 if walking?.id == id {
@@ -209,13 +220,15 @@ extension ConsoleModel {
     /// A missing child no longer chosen takes its new stops out of the walk, so the console says which
     /// first, and confirms only once the operator says so.
     func confirmStop(leavingSaid: Bool = false) async {
-        guard let current = walking, let database, let tmdb else { return }
+        guard let current = walking, !current.confirming, let database, let tmdb else { return }
         let leaving = current.walk.leaving(confirming: current.open)
         if !leaving.isEmpty, !leavingSaid {
             walking?.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
             return
         }
         walking?.leaving = nil
+        walking?.confirming = true
+        defer { if walking?.id == current.id { walking?.confirming = false } }
         do {
             let drafts = try await console.drafts(
                 confirming: current.open,

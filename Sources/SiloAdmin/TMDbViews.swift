@@ -73,7 +73,7 @@ struct AttributionsLine: View {
                 ForEach(attributions, id: \.self) { attribution in
                     HStack(spacing: 4) {
                         if attribution.provider == .tmdb { TMDbMark() }
-                        Text("\(attribution.subject) from \(attribution.provider.title) \(attribution.value)")
+                        Text("\(attribution.subject.rawValue) from \(attribution.provider.title) \(attribution.value)")
                             .font(.caption)
                         Button("My Own Words…") { confirming = attribution.subject }
                             .buttonStyle(.borderless).font(.caption)
@@ -547,7 +547,7 @@ struct ShapeTreeSheet: View {
                 }
             }
             if let title = Title(breakoutTitle) {
-                Button("A new one, \(title), \(breakoutListed ? "listed" : "unlisted")") {
+                Button("A new one, \(title.rawValue), \(breakoutListed ? "listed" : "unlisted")") {
                     Task {
                         guard let id = try? await model.provisionalID() else { return }
                         var breakout = Container(id: id, type: .series, title: title, listed: breakoutListed)
@@ -658,9 +658,20 @@ extension AdminConsole.TMDbDifference {
 
     var isChild: Bool {
         switch self {
-        case .episode, .season: true
+        case .episode, .season, .heldSeason: true
         default: false
         }
+    }
+
+    /// A child the library holds, shown among the children and never chosen.
+    var isHeld: Bool {
+        if case .heldSeason = self { return true }
+        return false
+    }
+
+    var isUnmatched: Bool {
+        if case .unmatchedSeason = self { return true }
+        return false
     }
 
     var isOrder: Bool {

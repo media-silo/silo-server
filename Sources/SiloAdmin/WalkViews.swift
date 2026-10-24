@@ -98,7 +98,7 @@ struct WalkSheet: View {
                     .disabled(walk.order.allSatisfy { walk.state(of: $0) == .pending })
             }
             Button("Confirm") { Task { await model.confirmStop() } }
-                .disabled(current.resuming)
+                .disabled(current.resuming || current.confirming)
                 .disabled(current.stop == nil || current.progress[current.open] != nil)
             Button("Next") { Task { await model.nextStop() } }
                 .buttonStyle(.borderedProminent)
@@ -146,6 +146,20 @@ struct WalkSheet: View {
     @ViewBuilder
     private func differences(_ comparison: AdminConsole.TMDbComparison) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            ForEach(comparison.differences.filter(\.isUnmatched)) { unmatched in
+                if case .unmatchedSeason(_, let seasons, let suggested) = unmatched {
+                    UnmatchedSeason(title: comparison.title, seasons: seasons, suggested: suggested) { season in
+                        Task { await model.identifySeason(season) }
+                    }
+                }
+            }
+            if let season = walk.identified[comparison.container] {
+                HStack {
+                    Text("Read as TMDb's season \(season), as you said it is.").font(.caption)
+                    Button("Unmatched Again") { Task { await model.identifySeason(nil) } }
+                        .buttonStyle(.borderless).font(.caption)
+                }
+            }
             group("Fields", comparison.differences.filter(\.isField), comparison)
             group("References", comparison.differences.filter(\.isReference), comparison)
             group("Children", comparison.differences.filter(\.isChild), comparison)
@@ -171,7 +185,8 @@ struct WalkSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            if !comparison.differences.contains(where: { !$0.isSpecial }), current.progress[comparison.container] == nil
+            if !comparison.differences.contains(where: { !$0.isSpecial && !$0.isHeld && !$0.isUnmatched }),
+                current.progress[comparison.container] == nil
             {
                 Label("Nothing differs from TMDb's record", systemImage: "checkmark.seal").foregroundStyle(.green)
             }
@@ -188,13 +203,23 @@ struct WalkSheet: View {
             GroupBox {
                 VStack(alignment: .leading) {
                     ForEach(differences) { difference in
-                        Toggle(isOn: tick(difference.id)) { label(difference, comparison) }
+                        if difference.isHeld {
+                            // A child the library holds is a stop of the walk whatever is chosen here.
+                            Toggle(isOn: .constant(true)) { label(difference, comparison) }.disabled(true)
+                        } else {
+                            Toggle(isOn: tick(difference.id)) { label(difference, comparison) }
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
                 // Ticks the group's every difference or none, and shows as mixed while some are ticked.
-                Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
+                let tickable = differences.filter { !$0.isHeld }
+                if tickable.isEmpty {
+                    Text(title)
+                } else {
+                    Toggle(sources: tickable.map { tick($0.id) }, isOn: \.self) { Text(title) }
+                }
             }
         }
     }
@@ -233,6 +258,16 @@ struct WalkSheet: View {
         case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
         case .episode(let episode, _): Text("Episode \(episode.number): \(episode.title)")
         case .season(let season): Text("\(season.name), a new stop beneath this once confirmed")
+        case .heldSeason(let season, let container, let suggested):
+            let held = walk.stops[container]?.title ?? container
+            if suggested {
+                Text(
+                    "\(season.name): perhaps \(held), held here with no TMDb id, so matched to nothing; say which it is at its stop"
+                )
+            } else {
+                Text("\(season.name): held as \(held), a stop of the walk")
+            }
+        case .unmatchedSeason: EmptyView()
         case .order(let sequence, let items):
             Text("\(sequence ?? "The sequence") in TMDb's order: \(items.joined(separator: ", "))")
         case .artwork(let kind, let path, _):
@@ -623,7 +658,9 @@ private struct WalkSpecials: View {
             }
             if let named = Title(companionTitle.trimmingCharacters(in: .whitespaces)) {
                 Divider()
-                Button("A new one, \(named), \(companionListed ? "listed" : "unlisted"), referred to from the extras") {
+                Button(
+                    "A new one, \(named.rawValue), \(companionListed ? "listed" : "unlisted"), referred to from the extras"
+                ) {
                     Task {
                         guard let id = try? await model.provisionalID() else { return }
                         var companion = Container(id: id, type: .series, title: named, listed: companionListed)
@@ -676,6 +713,49 @@ private struct WalkSpecials: View {
         case .version(let id, let item, let alternative): return "a version of \(item) of \(title(id)), \(alternative)"
         case .declined: return "declined"
         }
+    }
+}
+
+/// A held season carrying no TMDb id, which matches nothing at TMDb: said plainly, with TMDb's seasons to
+/// say which it is, the one its title or episodes suggest chosen to begin with.
+private struct UnmatchedSeason: View {
+    let title: String
+    let seasons: [TMDb.SeasonSummary]
+    let suggested: Int?
+    let identify: (Int) -> Void
+    @State private var chosen: Int?
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(
+                    "\(title) carries no TMDb id, so nothing at TMDb is read against it. Say which of TMDb's seasons it is, and it is read as that season and offered its id."
+                )
+                .font(.callout)
+                if let suggested, let season = seasons.first(where: { $0.id == suggested }) {
+                    Text("Its title or an episode beneath it suggests \(season.name).").font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Nothing about it suggests which.").font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Picker("TMDb's season", selection: $chosen) {
+                        Text("Choose…").tag(Int?.none)
+                        ForEach(seasons, id: \.id) { season in
+                            Text(season.id == suggested ? "\(season.name), suggested" : season.name).tag(
+                                Int?.some(season.id)
+                            )
+                        }
+                    }
+                    .fixedSize()
+                    Button("Read as This Season") { chosen.map(identify) }.disabled(chosen == nil)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Label("Matches nothing at TMDb", systemImage: "questionmark.circle").foregroundStyle(.orange)
+        }
+        .onAppear { chosen = chosen ?? suggested }
     }
 }
 #endif

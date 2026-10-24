@@ -148,7 +148,9 @@ struct ImportSheet: View {
             List(found, id: \.id, selection: $picked) { container in
                 VStack(alignment: .leading) {
                     Text(container.displayTitle)
-                    Text("\(container.type.title), \(container.id)").font(.caption).foregroundStyle(.secondary)
+                    Text("\(container.type.title), \(container.id.description)").font(.caption).foregroundStyle(
+                        .secondary
+                    )
                 }
                 .tag(container.id)
             }
@@ -168,8 +170,11 @@ struct ImportSheet: View {
     @ViewBuilder
     private var chooseStep: some View {
         if let plan {
-            Text(plan.parent.map { "Beneath \($0), which the library holds." } ?? "At the top of the library.")
-                .foregroundStyle(.secondary)
+            Text(
+                plan.parent.map { "Beneath \($0.description), which the library holds." }
+                    ?? "At the top of the library."
+            )
+            .foregroundStyle(.secondary)
             List {
                 ForEach(plan.ancestors, id: \.id) { ancestor in
                     Label("\(ancestor.displayTitle), made above it", systemImage: "arrow.up")
@@ -481,7 +486,7 @@ struct ProposeSheet: View {
                         ForEach(proposal.plan.leftOut.sorted { $0.key.value < $1.key.value }, id: \.key) { id, left in
                             ForEach(left, id: \.self) { attribution in
                                 Text(
-                                    "\(id == proposal.plan.container.id ? "" : "\(id): ")\(attribution.subject), attributed to \(attribution.provider)"
+                                    "\(id == proposal.plan.container.id ? "" : "\(id.description): ")\(attribution.subject.rawValue), attributed to \(attribution.provider.title)"
                                 )
                                 .font(.caption)
                             }

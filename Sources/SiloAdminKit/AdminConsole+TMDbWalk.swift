@@ -473,7 +473,7 @@ extension TMDbWalk {
         case .episode(let episode, let after): AdminConsole.insert(episode, after: after, into: &change.container)
         case .order(let sequence, let items): AdminConsole.reorder(sequence, to: items, in: &change.container)
         // A missing season chosen is a new stop of the walk, made with what its own stop keeps.
-        case .season: break
+        case .season, .heldSeason, .unmatchedSeason: break
         case .artwork(let kind, let path, let record):
             gathering.artwork.append(
                 Step(
