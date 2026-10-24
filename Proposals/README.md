@@ -87,3 +87,8 @@ deltas in `openspec/changes/`, as that README describes.
   to TMDb in the sidecar, left out of what is proposed to smddb, and, for artwork, never contributed;
   and a provider's season 0 is a pool of unassigned specials, each placed, filed as a duplicate of
   another record or in a series of the operator's own, or declined.
+- [A held tree reviewed against TMDb](TmdbWalk.md) — a held container's differences from TMDb are
+  reviewed as a walk through its tree: a queue of the containers beneath it, each read as it comes up,
+  a sidebar showing the tree and each container's state for the operator to go back to, the series'
+  unassigned specials beside every container so each is placed where it belongs, and one store at the
+  end that lists every edit, creation and put before it makes any.
