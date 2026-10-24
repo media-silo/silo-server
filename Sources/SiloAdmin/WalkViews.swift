@@ -363,9 +363,6 @@ private struct NewStop: View {
     let model: ConsoleModel
     let stop: String
     let tick: (String) -> Binding<Bool>
-    @State private var chosenEntries: Set<ItemID> = []
-    @State private var groupTitle = ""
-    @State private var groupType: ContainerType = .serial
 
     private var walk: TMDbWalk { current.walk }
 
@@ -375,23 +372,13 @@ private struct NewStop: View {
             let offered = walk.offered(stop)
             group("Fields", offered.filter(\.isField))
             group("References", offered.filter(\.isReference))
-            if let container = walk.container(stop) {
-                GroupBox("Its entries: tick some to group them into a container beneath it") {
-                    VStack(alignment: .leading) {
-                        ForEach(container.sequences.flatMap(\.items), id: \.self) { entry in entryRow(entry) }
-                        if !chosenEntries.isEmpty {
-                            HStack {
-                                TextField("Title", text: $groupTitle)
-                                Picker("Type", selection: $groupType) {
-                                    ForEach(ContainerType.allCases, id: \.self) { Text($0.title).tag($0) }
-                                }
-                                .fixedSize()
-                                Button("Group") { Task { await regroup(container) } }.disabled(Title(groupTitle) == nil)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+            if let container = walk.container(stop), let tree = walk.draft(holding: stop) {
+                EntryGrouping(
+                    tree: tree,
+                    parent: stop,
+                    update: { model.shapeNewStop($0) },
+                    provisionalID: { try? await model.provisionalID() }
+                )
                 DisclosureGroup("Its form") {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
                 }
@@ -422,34 +409,6 @@ private struct NewStop: View {
         case .reference(_, let ref): "\(ref.provider.title) \(ref.value)"
         default: difference.id
         }
-    }
-
-    @ViewBuilder
-    private func entryRow(_ entry: Entry) -> some View {
-        if let child = entry.childContainer {
-            Text("↳ \(walk.container(child.value)?.displayTitle ?? child.value), a new stop once this is confirmed")
-                .foregroundStyle(.secondary)
-        } else if let item = entry.id {
-            let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
-            Toggle(
-                isOn: Binding(
-                    get: { chosenEntries.contains(item) },
-                    set: { on in
-                        if on { chosenEntries.insert(item) } else { chosenEntries.remove(item) }
-                    }
-                )
-            ) {
-                Text(tmdb.flatMap { walk.draft(holding: stop)?.episodeTitles[$0.value] } ?? item.value)
-            }
-        }
-    }
-
-    private func regroup(_ container: Container) async {
-        guard let title = Title(groupTitle), let id = try? await model.provisionalID() else { return }
-        let order = container.sequences.flatMap(\.items).compactMap(\.id).filter(chosenEntries.contains)
-        model.shapeNewStop { $0.regroup(order, in: stop, into: id, type: groupType, title: title) }
-        chosenEntries = []
-        groupTitle = ""
     }
 }
 
