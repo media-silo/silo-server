@@ -47,6 +47,17 @@ struct WalkSheet: View {
         }
         .padding()
         .frame(minWidth: 1040, minHeight: 680)
+        .alert(
+            "Confirming takes stops out of the walk",
+            isPresented: Binding(get: { current.leaving != nil }, set: { if !$0 { model.walking?.leaving = nil } })
+        ) {
+            Button("Confirm", role: .destructive) { Task { await model.confirmStop(leavingSaid: true) } }
+            Button("Cancel", role: .cancel) { model.walking?.leaving = nil }
+        } message: {
+            Text(
+                "No longer chosen, these new stops leave the walk with everything beneath them, and the specials placed in them are unassigned again: \((current.leaving ?? []).joined(separator: ", "))."
+            )
+        }
     }
 
     private var counts: String {
@@ -97,7 +108,9 @@ struct WalkSheet: View {
                     Text("Confirmed as it is, it takes nothing, and the walk goes on beneath it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if let comparison = stop.comparison {
+                if walk.isNew(stop.id) {
+                    ScrollView { NewStop(current: current, model: model, stop: stop.id, tick: tick) }
+                } else if let comparison = stop.comparison {
                     if !comparison.reading.isEmpty {
                         Text("Read \(comparison.reading).").font(.caption).foregroundStyle(.secondary)
                     }
@@ -197,7 +210,7 @@ struct WalkSheet: View {
             }
         case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
         case .episode(let episode, _): Text("Episode \(episode.number): \(episode.title)")
-        case .season(let season): Text("\(season.name), drafted from TMDb once the walk is stored")
+        case .season(let season): Text("\(season.name), a new stop beneath this once confirmed")
         case .order(let sequence, let items):
             Text("\(sequence ?? "The sequence") in TMDb's order: \(items.joined(separator: ", "))")
         case .artwork(let kind, let path, _):
@@ -236,19 +249,6 @@ struct WalkSheet: View {
                     }
                 }
                 ForEach(plan.steps) { step in Text("• \(step.described)").font(.caption) }
-                ForEach(plan.seasons, id: \.self) { season in
-                    Button("Draft \(season.season.name) from TMDb…") {
-                        Task {
-                            let finding = ConsoleModel.FindingInTMDb(
-                                silo: current.silo,
-                                library: walk.library,
-                                series: (season.parent, walk.stops[season.parent]?.title ?? "", season.series)
-                            )
-                            try? await model.startSeasonDraft(season.season.number, for: finding)
-                        }
-                    }
-                    .disabled(!plan.steps.isEmpty)
-                }
                 HStack {
                     if plan.steps.isEmpty {
                         Label(current.stored == nil ? "Nothing to store" : "Stored", systemImage: "checkmark.circle")
@@ -279,7 +279,8 @@ private struct WalkTree: View {
                     StopState(state: walk.state(of: id), compact: true)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(stop.title).lineLimit(1)
-                        Text(stop.type).font(.caption2).foregroundStyle(.secondary)
+                        Text(walk.isNew(id) ? "\(stop.type), new" : stop.type).font(.caption2)
+                            .foregroundStyle(walk.isNew(id) ? .blue : .secondary)
                     }
                 }
                 .padding(.leading, CGFloat(depth(of: id)) * 14)
@@ -295,6 +296,103 @@ private struct WalkTree: View {
             parent = walk.stops[above]?.parent
         }
         return depth
+    }
+}
+
+/// A new stop: what it will be created with, each ticked to begin with, and its draft shaped as a
+/// draft from TMDb is, its container's form and its entries regrouped into containers beneath it.
+private struct NewStop: View {
+    let current: ConsoleModel.Walking
+    let model: ConsoleModel
+    let stop: String
+    let tick: (String) -> Binding<Bool>
+    @State private var chosenEntries: Set<ItemID> = []
+    @State private var groupTitle = ""
+    @State private var groupType: ContainerType = .serial
+
+    private var walk: TMDbWalk { current.walk }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("New: drafted from TMDb, and made when the walk is stored.").font(.caption).foregroundStyle(.secondary)
+            let offered = walk.offered(stop)
+            group("Fields", offered.filter(\.isField))
+            group("References", offered.filter(\.isReference))
+            if let container = walk.container(stop) {
+                GroupBox("Its entries: tick some to group them into a container beneath it") {
+                    VStack(alignment: .leading) {
+                        ForEach(container.sequences.flatMap(\.items), id: \.self) { entry in entryRow(entry) }
+                        if !chosenEntries.isEmpty {
+                            HStack {
+                                TextField("Title", text: $groupTitle)
+                                Picker("Type", selection: $groupType) {
+                                    ForEach(ContainerType.allCases, id: \.self) { Text($0.title).tag($0) }
+                                }
+                                .fixedSize()
+                                Button("Group") { Task { await regroup(container) } }.disabled(Title(groupTitle) == nil)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                DisclosureGroup("Its form") {
+                    ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func group(_ title: String, _ differences: [AdminConsole.TMDbDifference]) -> some View {
+        if !differences.isEmpty {
+            GroupBox {
+                VStack(alignment: .leading) {
+                    ForEach(differences) { difference in
+                        Toggle(isOn: tick(difference.id)) { Text(describe(difference)) }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
+            }
+        }
+    }
+
+    private func describe(_ difference: AdminConsole.TMDbDifference) -> String {
+        switch difference {
+        case .year(let year): "Year: \(year)"
+        case .outline(let text, _): "\(text) (attributed to TMDb)"
+        case .reference(_, let ref): "\(ref.provider.title) \(ref.value)"
+        default: difference.id
+        }
+    }
+
+    @ViewBuilder
+    private func entryRow(_ entry: Entry) -> some View {
+        if let child = entry.childContainer {
+            Text("↳ \(walk.container(child.value)?.displayTitle ?? child.value), a new stop once this is confirmed")
+                .foregroundStyle(.secondary)
+        } else if let item = entry.id {
+            let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
+            Toggle(
+                isOn: Binding(
+                    get: { chosenEntries.contains(item) },
+                    set: { on in
+                        if on { chosenEntries.insert(item) } else { chosenEntries.remove(item) }
+                    }
+                )
+            ) {
+                Text(tmdb.flatMap { walk.draft(holding: stop)?.episodeTitles[$0.value] } ?? item.value)
+            }
+        }
+    }
+
+    private func regroup(_ container: Container) async {
+        guard let title = Title(groupTitle), let id = try? await model.provisionalID() else { return }
+        let order = container.sequences.flatMap(\.items).compactMap(\.id).filter(chosenEntries.contains)
+        model.shapeNewStop { $0.regroup(order, in: stop, into: id, type: groupType, title: title) }
+        chosenEntries = []
+        groupTitle = ""
     }
 }
 
@@ -419,7 +517,7 @@ private struct WalkSpecials: View {
     private func placementMenu(_ special: Special) -> some View {
         let open = current.open
         let title = walk.stops[open]?.title ?? open
-        let held = (current.stop?.comparison?.opened.sidecar).flatMap { try? SidecarFile.sidecar(from: $0).container }
+        let held = walk.container(open)
         Menu("Place") {
             if let held {
                 Menu("As an entry of \(title)") {
@@ -461,7 +559,7 @@ private struct WalkSpecials: View {
             Button("Declined") { model.place(special.id, .declined) }
         }
         .fixedSize()
-        .disabled(current.stop?.comparison == nil)
+        .disabled(walk.container(current.open) == nil)
     }
 
     /// Another way to play the open stop: a new edition of it, or a version of one of its items.
@@ -534,7 +632,8 @@ private struct WalkSpecials: View {
 
     private func itemTitle(_ entry: Entry) -> String {
         if let title = entry.title { return title }
-        let titles = current.stop?.comparison?.episodeTitles ?? [:]
+        let titles =
+            current.stop?.comparison?.episodeTitles ?? walk.draft(holding: current.open)?.episodeTitles ?? [:]
         if let ref = entry.externalRefs.first(where: { $0.provider == .tmdb }), let title = titles[ref.value] {
             return title
         }

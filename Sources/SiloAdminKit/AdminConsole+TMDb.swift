@@ -107,16 +107,31 @@ extension AdminConsole {
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
     ) async throws -> TMDbTree {
-        var reader = Reader(tmdb: tmdb, database: database)
-        let season = try await reader.season(try await tmdb.season(number, of: series))
-        let tree = reader.tree(
-            top: season,
-            record: TMDb.Record(.series, series),
-            library: library,
-            creating: ContainerDraft.Creating(parent: held)
+        let tree = try await draft(
+            ofSeason: number,
+            of: series,
+            at: ContainerDraft.Creating(parent: held),
+            into: library,
+            from: database,
+            tmdb: tmdb
         )
         try tmdbDrafts.save(tree, for: silo.id)
         return tree
+    }
+
+    /// A draft of one of a series' seasons, filed where it is said to be, kept nowhere: what a walk makes
+    /// a season the library lacks into.
+    public func draft(
+        ofSeason number: Int,
+        of series: Int,
+        at creating: ContainerDraft.Creating,
+        into library: String,
+        from database: any ContainerDatabase,
+        tmdb: any TMDbSource
+    ) async throws -> TMDbTree {
+        var reader = Reader(tmdb: tmdb, database: database)
+        let season = try await reader.season(try await tmdb.season(number, of: series))
+        return reader.tree(top: season, record: TMDb.Record(.series, series), library: library, creating: creating)
     }
 
     /// The library's container that carries a record's reference, of the record's kind, if any.

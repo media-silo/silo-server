@@ -3,23 +3,27 @@
 
 ## ADDED Requirements
 
-### Requirement: A missing child chosen in a walk is a new container, created when the walk is stored A
-missing child chosen at a stop of a walk SHALL join the walk, when the stop is confirmed, as a new stop
-beneath it: a draft from TMDb, read as a draft from TMDb reads it, with ids from smddb's client. The
-walk's tree SHALL show it as new. Its fields, references and artwork SHALL be chosen to begin with. It
-SHALL be shaped as a draft from TMDb is shaped, and each container the shaping makes beneath it SHALL
-be a new stop. Specials SHALL be placeable in a new stop as in a held one. Storing the walk SHALL
-create each new container through the create route before any creation or edit that refers to it, each
-parent before its children. Unchoosing a missing child and confirming its parent's stop again SHALL
-remove its new stop and every stop beneath it from the walk, after the console says which.
+### Requirement: A missing child chosen in a walk is a new container, created when the walk is stored
+A missing child chosen at a stop of a walk SHALL join the walk, when the stop is confirmed, as a new
+stop beneath it: a draft from TMDb, read as a draft from TMDb reads it, with ids from smddb's client.
+The walk's tree SHALL show it as new. Its fields and references, and any artwork TMDb offers for it,
+SHALL be chosen to begin with. It SHALL be shaped as a draft from TMDb is shaped, and each container
+the shaping makes beneath it SHALL be a new stop. Specials SHALL be placeable in a new stop as in a
+held one. A new stop SHALL be made only once it is confirmed: storing the walk SHALL create it through
+the create route, with the containers beneath it in one creation, right after the edit of its parent
+that names it, since the create route makes a container beneath a parent only once the parent names it.
+Unchoosing a missing child and confirming its parent's stop again SHALL remove its new stop and every
+stop beneath it from the walk, after the console says which, and the specials placed in them SHALL be
+unassigned again.
 
 #### Scenario: a season TMDb has that the library lacks
 - **WHEN** a missing season is chosen at a held series' stop, and the stop is confirmed
-- **THEN** the season is a new stop beneath the series, with TMDb's title, year and references chosen
+- **THEN** the season is a new stop beneath the series, titled as TMDb titles it, with TMDb's year and
+  references chosen
 
 #### Scenario: a special placed in a new season
 - **WHEN** a special is placed as an entry of a new season, and the walk is stored
-- **THEN** the season is created holding the entry, before the series' edit that names the season
+- **THEN** the season is created holding the entry, after the series' edit that names the season
 
 #### Scenario: a new season regrouped
 - **WHEN** a new season's episodes are regrouped into two serials
@@ -27,7 +31,8 @@ remove its new stop and every stop beneath it from the walk, after the console s
 
 #### Scenario: a new season unchosen
 - **WHEN** a missing season chosen earlier is unchosen, and the series' stop is confirmed again
-- **THEN** the season's stop and its serials' stops leave the walk
+- **THEN** the season's stop and its serials' stops leave the walk, and a special placed in one of them
+  is unassigned again
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMissingSeasonChosenInAWalkIsANewStop`,
 `aSpecialPlacedInANewSeasonIsCreatedWithIt`, `aNewSeasonsSerialsAreStopsBeneathIt`,

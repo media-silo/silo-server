@@ -127,10 +127,13 @@ when no library holds it.
 
 **A new stop.** A missing child the operator ticked is a draft from TMDb beneath its parent, made as
 0017's draft makes one, with ids from smddb's client. Its stop shows what it will be created with: the
-fields, references and artwork TMDb has for it, all ticked to begin with, since the library holds
-nothing to keep. The operator unticks what they do not want and shapes it as 0017's form shapes a
-draft: re-typing it, or regrouping its episodes into serials. Each serial the shaping makes is a new
-stop beneath it. Specials can be placed in a new stop as in a held one.
+fields and references TMDb has for it, and any artwork TMDb offers, all ticked to begin with, since the
+library holds nothing to keep. TMDb is not yet asked for a season's own images, so a new season offers
+none, and its poster is put once it is held, as any container's is. The operator unticks what they do
+not want and shapes it as 0017's form shapes a draft: re-typing it, or regrouping its episodes into
+serials. Each serial the shaping makes is a new stop beneath it. Specials can be placed in a new stop
+as in a held one. A new stop is made only once it is confirmed, with everything beneath it in one
+creation, right after the edit of its parent that names it; one ticked and never reached makes nothing.
 
 **One store, at the end.** Nothing reaches the silo until the operator stores the walk. Before it is
 stored, the console lists everything it will do, in the order it will do it:
@@ -218,10 +221,10 @@ select *Season 20* in the sidebar, which opens with its ticks as they left them,
 and confirm again.
 
 TMDb has a *Season 27* the library does not hold. It was listed under the series' Children, and the
-operator did not tick it, so it was never walked. They select *Doctor Who* in the sidebar, tick
-*Season 27*, and confirm again. *Season 27* joins the sidebar as new. When they open it, its title,
-year, references and poster are ticked. They untick the poster, regroup its episodes into two serials,
-place the season's Christmas special as an entry between them, and confirm.
+operator did not tick it, so it was never walked. They select *Doctor Who* in the sidebar, tick *Season
+27*, and confirm again. *Season 27* joins the sidebar as new. When they open it, its year and
+references are ticked. They leave them ticked, regroup its episodes into two serials, place the
+season's Christmas special as an entry between them, and confirm.
 
 They store the walk. The list shows the edit of *Doctor Who*, which names *Season 27*, followed by the
 creation of *Season 27* and its two serials, then the edits of each season and serial they changed,
