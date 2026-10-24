@@ -780,11 +780,15 @@ kept on this Mac as a new container's draft is. The top SHALL be filed beneath t
 library that carries the reference of the record above it, when there is one, or at the top of the
 library. The form SHALL show each episode's title from TMDb beside its entry, marked as TMDb's, and
 SHALL store none. The operator SHALL be able to shape the tree before it is created: re-type a
-container, group entries into child containers, and drop what they will not hold. Entries SHALL be
-selected, and the selection made a new group, of the kind, title and label the operator gives, at the
+container, group entries into child containers, and drop what they will not hold. Each entry, and each
+group as one, SHALL be ticked to be made, all of them ticked to begin with; one unticked SHALL be left
+out when the tree is made, a group with everything in it, and an entry naming a container the library
+holds already SHALL be shown ticked and SHALL NOT be choosable. The container's heading SHALL say how
+many of its entries are ticked, and tick them all or none. Entries SHALL be
+ticked, and those ticked made a new group, of the kind, title and label the operator gives, at the
 first one's place, or added to a group the draft holds beneath the same container, the group's entries
-then in the container's order. A group SHALL be selected whole; its entries SHALL be shown in it, none
-selectable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
+then in the container's order. A group SHALL be ticked whole; its entries SHALL be shown in it, none
+choosable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
 with nothing SHALL be ungrouped. A run of two or more entries in one sequence whose episodes TMDb
 titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be bracketed and
@@ -821,6 +825,11 @@ request to the silo.
 - **THEN** the group holds its entries in the season's order at the first one's place, and the entry
   taken out follows the group
 
+#### Scenario: an entry and a group unticked
+- **WHEN** one of a drafted season's entries and a group of three others are unticked, and the tree is
+  made
+- **THEN** the season is made without the entry, and neither the group nor its three entries are made
+
 #### Scenario: a group ungrouped
 - **WHEN** a group a special is placed in is ungrouped
 - **THEN** its entries are back in its place, and the special is unassigned again
@@ -832,7 +841,7 @@ request to the silo.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraftedFromTMDb`,
 `aRecordSmddbHoldsIsImportedRatherThanDrafted`, `serialsAreSuggestedFromTMDbsTitlesForTheirParts`,
-`aDraftsGroupIsAddedToTakenFromAndUngrouped`). The search, the shaping's sheet and the dry run as the
+`aDraftsGroupIsAddedToTakenFromAndUngrouped`, `aDraftsEntryUntickedIsLeftOutOfWhatIsMade`). The search, the shaping's sheet and the dry run as the
 operator shapes are pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each
@@ -1125,7 +1134,8 @@ It SHALL be drafted once, however many times the stop is confirmed, and the cons
 second confirm of a stop while one is under way. The walk's tree SHALL show it as new. Its fields and
 references, and any artwork TMDb offers for it, SHALL be chosen to begin with. It SHALL be shaped as a
 draft from TMDb is shaped, and each container the shaping makes beneath it SHALL be a new stop; one
-the shaping ungroups SHALL leave the walk, and the specials placed in it SHALL be unassigned again.
+the shaping ungroups, or unticks, SHALL leave the walk, and the specials placed in it SHALL be
+unassigned again; one ticked again SHALL be a new stop once the stop above it is confirmed again.
 Specials SHALL be placeable in a new stop as in a held one. A new stop SHALL be made only once it is
 confirmed: storing the walk SHALL create it through the create route, with the containers beneath it in
 one creation, right after the edit of its parent that names it, since the create route makes a
@@ -1156,6 +1166,12 @@ console says which, and the specials placed in them SHALL be unassigned again.
   ungrouped
 - **THEN** the serial's stop leaves the walk, and the special is unassigned again
 
+#### Scenario: a new season's serial unticked
+- **WHEN** a serial a new season's episodes were grouped into, with a special placed in it, is
+  unticked, and later ticked again and the season confirmed again
+- **THEN** the serial's stop leaves the walk and the special is unassigned again, and once ticked again
+  the serial is a stop beneath the season once more
+
 #### Scenario: a new season unchosen
 - **WHEN** a missing season chosen earlier is unchosen, and the series' stop is confirmed again
 - **THEN** the season's stop and its serials' stops leave the walk, and a special placed in one of them
@@ -1164,6 +1180,7 @@ console says which, and the specials placed in them SHALL be unassigned again.
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMissingSeasonChosenInAWalkIsANewStop`,
 `aStopConfirmedTwiceAtOnceDraftsItsSeasonsOnce`, `aSpecialPlacedInANewSeasonIsCreatedWithIt`,
 `aNewSeasonsSerialsAreStopsBeneathIt`, `aGroupUngroupedInANewStopLeavesTheWalk`,
+`aGroupLeftOutOfANewStopLeavesTheWalkUntilTickedAgain`,
 `unchoosingAMissingSeasonRemovesItsStops`). The walk's sheet is
 pinned by nothing yet, as the rest of the shell is.
 

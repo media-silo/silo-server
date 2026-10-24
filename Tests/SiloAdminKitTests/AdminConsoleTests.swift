@@ -5186,6 +5186,59 @@ extension AdminConsoleTests {
         #expect(tree.container(alone.value) == nil && tree.container(season)?.sequences[0].items.last?.id == items[5])
     }
 
+    /// A draft's entries are all made to begin with; one unticked is left out of what making it makes,
+    /// a group with everything in it, and grouped, an entry is made with its group.
+    @Test func aDraftsEntryUntickedIsLeftOutOfWhatIsMade() throws {
+        var (tree, season, items) = Self.storiedSeason()
+        let serial = ContainerID("00000000000001e2")!
+        tree.regroup(Array(items[0...2]), in: season, into: serial, type: .serial, title: Title("Zygons")!)
+        let entry = try #require(tree.container(season)?.sequences[0].items.first?.id)
+        #expect(tree.making.documents.map(\.id.value) == [season, serial.value], "everything, to begin with")
+
+        tree.include(items[3], in: season, false)
+        tree.include(entry, in: season, false)
+        #expect(tree.isLeftOut(items[3], in: season) && !tree.isMade(serial.value))
+        let made = tree.making.documents
+        #expect(made.map(\.id.value) == [season], "the group left out with everything in it")
+        #expect(made.first?.sequences[0].items.compactMap(\.id) == Array(items[4...5]))
+
+        tree.include(entry, in: season, true)
+        let pair = ContainerID("00000000000001e3")!
+        tree.regroup(Array(items[3...4]), in: season, into: pair, type: .serial, title: Title("Planet of Evil")!)
+        #expect(!tree.isLeftOut(items[3], in: season), "grouped, it is made with its group")
+        #expect(tree.making.documents.map(\.id.value) == [season, serial.value, pair.value])
+        #expect(tree.making.documents.last?.sequences[0].items.compactMap(\.id) == Array(items[3...4]))
+    }
+
+    /// A group unticked in a new stop's draft takes its stop out of the walk, unassigning the specials
+    /// placed in it, and ticked again it is a stop once the new stop is confirmed again.
+    @Test func aGroupLeftOutOfANewStopLeavesTheWalkUntilTickedAgain() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, special) = Self.missingSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        let items = try #require(walk.container(new)).sequences[0].items.compactMap(\.id)
+        let serial = try await database.provisionalID()
+        walk.shape(new) { $0.regroup(items, in: new, into: serial, type: .serial, title: Title("The Smugglers")!) }
+        try await walking.confirm(new, in: &walk)
+        walk.place(special.id, .entry(in: serial.value))
+        let entry = try #require(walk.container(new)?.sequences[0].items.first?.id)
+
+        walk.shape(new) { $0.include(entry, in: new, false) }
+        #expect(walk.stops[serial.value] == nil && walk.stops[new]?.children == [])
+        #expect(walk.unassigned.map(\.id) == [special.id])
+        try await walking.confirm(new, in: &walk)
+        #expect(walk.stops[new]?.children == [], "left out, no stop when confirmed again")
+
+        walk.shape(new) { $0.include(entry, in: new, true) }
+        try await walking.confirm(new, in: &walk)
+        #expect(walk.stops[new]?.children == [serial.value])
+    }
+
     /// A group ungrouped in a new stop's draft takes its stop out of the walk, and the specials placed
     /// in it are unassigned again.
     @Test func aGroupUngroupedInANewStopLeavesTheWalk() async throws {

@@ -94,10 +94,10 @@ series, a child container, or declined. A special whose suggestion names the ope
 suggested here only when something ties it there: its title names the stop, one of its entries, the
 story TMDb titles an entry a part of, or a container beneath it, or smddb files it there. An air date
 alone marks nothing, since too many specials air near a season they have nothing to do with, and a
-series' own title, which most of its specials carry, ties nothing either. A placed special leaves the panel and becomes part of the pending change of the
-container it was placed in, which then shows as *changed*. Removing it from that change returns it to
-the panel. The panel counts how many are still unassigned, and a special left there holds nothing up,
-as in 0017.
+series' own title, which most of its specials carry, ties nothing either. A placed special leaves the
+panel and becomes part of the pending change of the container it was placed in, which then shows as
+*changed*. Removing it from that change returns it to the panel. The panel counts how many are still
+unassigned, and a special left there holds nothing up, as in 0017.
 
 **A special as an alternative.** A special can also be placed as an alternative of the open stop, a cut
 of the container naming the sequence it plays, as SmdKit's model has it:
@@ -134,11 +134,13 @@ fields and references TMDb has for it, and any artwork TMDb offers, all ticked t
 library holds nothing to keep. TMDb is not yet asked for a season's own images, so a new season offers
 none, and its poster is put once it is held, as any container's is. The operator unticks what they do
 not want and shapes it as 0017's form shapes a draft: re-typing it, or grouping its episodes into
-containers of the kind they choose, such as serials. Each group the shaping makes is a new stop beneath it.
-The episodes a held container lacks are grouped the same way at its own stop, and each group chosen
-is made beneath it when the walk is stored, where its first episode would have gone. Specials can be placed in a new stop
-as in a held one. A new stop is made only once it is confirmed, with everything beneath it in one
-creation, right after the edit of its parent that names it; one ticked and never reached makes nothing.
+containers of the kind they choose, such as serials, and unticking any child it should not hold, which
+is left out when it is made, as a held container's unticked children are not taken. Each group the
+shaping makes is a new stop beneath it. The episodes a held container lacks are grouped the same way at
+its own stop, and each group chosen is made beneath it when the walk is stored, where its first episode
+would have gone. Specials can be placed in a new stop as in a held one. A new stop is made only once it
+is confirmed, with everything beneath it in one creation, right after the edit of its parent that names
+it; one ticked and never reached makes nothing.
 
 **One store, at the end.** Nothing reaches the silo until the operator stores the walk. Before it is
 stored, the console lists everything it will do, in the order it will do it:

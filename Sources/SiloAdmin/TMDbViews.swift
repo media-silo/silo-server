@@ -320,6 +320,9 @@ struct ShapeTreeSheet: View {
                 } header: {
                     HStack {
                         Text("\(container.typeLabel ?? container.type.title): \(container.displayTitle)")
+                        if !tree.isMade(container.id.value) {
+                            Text("left out").font(.caption).foregroundStyle(.secondary)
+                        }
                         Spacer()
                         if container.id.value != tree.top {
                             Button("Drop") { model.updateTree { $0.drop(container.id.value) } }
