@@ -49,6 +49,18 @@ extension AdminConsole {
         return beneath.compactMap { $0 }
     }
 
+    /// The series a library holds that specials may go into as their companion, listed or not: every one
+    /// at the top of the library but the series they are of.
+    public func companionSeries(
+        in library: String,
+        besides series: String?,
+        of silo: Silo
+    ) async throws -> [SiloClient.ContainerSummary] {
+        try await containers(in: library, of: silo).filter {
+            $0.type == ContainerType.series.rawValue && $0.id != series
+        }
+    }
+
     /// How a store of a walk ended: what it made, and, when the silo refused a step, why, and the steps
     /// it did not make, which the walk keeps.
     public struct TMDbWalkStored: Hashable, Sendable {
@@ -172,6 +184,10 @@ extension AdminConsole {
             }
             guard let breakoutID = ContainerID(breakout) else { return }
             TMDbTree.refer(to: EntryRef(container: breakoutID, item: item), from: &container, asExtra: asExtra)
+        case .edition(_, let title):
+            TMDbTree.edition(special, titled: title, in: &container)
+        case .version(_, let item, let title):
+            TMDbTree.version(special, of: item, titled: title, in: &container)
         case .declined:
             if !declined.contains(special.episode.ref) { declined.append(special.episode.ref) }
         }

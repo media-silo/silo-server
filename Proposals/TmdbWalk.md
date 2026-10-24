@@ -107,10 +107,13 @@ of the container naming the sequence it plays, as SmdKit's model has it:
   as *Special edition*. The other items are referred to, not copied, so each stays one entry.
 
 The special's entry carries its refs wherever it is placed, so it counts as covered as any placed
-special does. 0017's suggestions gain two, ahead of the air date: a special whose title names the
-open container with a word such as "Omnibus" or "Compilation", or whose runtime is close to the sum of
-a sequence's, is suggested as a new edition of it; a special whose title names one of its items with
-words such as "Special Edition", "Enhanced" or "New Effects" is suggested as a version of that item.
+special does. 0017's suggestions gain two, ahead of the air date: a special whose title names the open
+container, with a word such as "Omnibus" or "Compilation" or with a runtime within a tenth of one of
+its sequences together, is suggested as a new edition of it; a special whose title names one of its
+items with words such as "Special Edition", "Enhanced" or "New Effects" is suggested as a version of
+that item. A runtime alone is not enough: a Christmas special can run as long as a two-part serial
+does. In a walk these are read from each stop as it is read, since the series' reading has none of the
+serials' episodes to compare with.
 
 **A special in a companion series.** A companion series is what 0017 calls a breakout: a series beside
 this one, holding specials that read as a programme TMDb has no series for, which the open stop refers

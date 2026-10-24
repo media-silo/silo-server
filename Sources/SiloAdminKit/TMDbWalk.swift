@@ -3,6 +3,7 @@
 
 import Foundation
 import SmdKit
+import SmdSidecar
 
 /// A held container's tree reviewed against TMDb a container at a time: the stops the walk has found,
 /// each with its reading and what the operator chose, the series' specials beside every stop, and
@@ -89,7 +90,8 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
     /// that refers to it, or, for a decline, the series.
     public func home(of placement: SpecialPlacement) -> String? {
         switch placement {
-        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _): id
+        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _), .edition(let id, _), .version(let id, _, _):
+            id
         case .duplicate(_, _, _, let from, _), .breakout(_, let from, _): from
         case .declined: series
         }
@@ -109,14 +111,43 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable {
     public mutating func read(_ comparison: AdminConsole.TMDbComparison) {
         stops[comparison.container]?.comparison = comparison
         stops[comparison.container]?.title = comparison.title
-        if comparison.container == series { pool(comparison) }
+        if comparison.container == series {
+            pool(comparison)
+        } else {
+            suggestAlternatives(of: [comparison])
+        }
     }
 
-    /// The series' specials, from its reading.
+    /// The series' specials, from its reading, each suggested as an alternative of a stop read already
+    /// where that is stronger than the series' reading suggests.
     public mutating func pool(_ comparison: AdminConsole.TMDbComparison) {
         specials = comparison.differences.compactMap { if case .special(let special) = $0 { special } else { nil } }
         declined = comparison.declined
         suggestions = comparison.suggestions
+        suggestAlternatives(of: order.compactMap { $0 == series ? nil : stops[$0]?.comparison })
+    }
+
+    /// Each unassigned special suggested as another way to play a container a stop read, unless what it
+    /// is suggested for already rests on something stronger.
+    private mutating func suggestAlternatives(of readings: [AdminConsole.TMDbComparison]) {
+        let held = readings.compactMap { reading in
+            (try? SidecarFile.sidecar(from: reading.opened.sidecar)).map { (reading, $0.container) }
+        }
+        guard !held.isEmpty else { return }
+        for special in unassigned where (suggestions[special.id]?.basis ?? .title) > .alternative {
+            for (reading, container) in held {
+                guard
+                    let suggestion = AdminConsole.alternative(
+                        of: special,
+                        in: [container],
+                        titles: reading.episodeTitles,
+                        runtimes: reading.runtimes
+                    )
+                else { continue }
+                suggestions[special.id] = suggestion
+                break
+            }
+        }
     }
 
     /// Keeps what is ticked as the stop's pending change, and adds the stops found beneath it.

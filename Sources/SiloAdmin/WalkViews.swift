@@ -341,6 +341,9 @@ private struct StopState: View {
 private struct WalkSpecials: View {
     let current: ConsoleModel.Walking
     let model: ConsoleModel
+    @State private var alternativeTitle = ""
+    @State private var companionTitle = ""
+    @State private var companionListed = false
 
     private var walk: TMDbWalk { current.walk }
 
@@ -351,6 +354,7 @@ private struct WalkSpecials: View {
             if walk.series == walk.root, walk.stops[walk.root]?.comparison == nil {
                 Text("Read with the series.").font(.caption).foregroundStyle(.secondary)
             }
+            namingFields
             List {
                 ForEach(ordered) { special in row(special) }
                 if !walk.declined.isEmpty, walk.stops[walk.series ?? ""] != nil {
@@ -361,6 +365,21 @@ private struct WalkSpecials: View {
             }
         }
         .padding(.horizontal, 6)
+    }
+
+    /// What a new alternative and a new companion series are called, for the menus to make them with.
+    private var namingFields: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextField("A new alternative's title", text: $alternativeTitle)
+            HStack {
+                TextField("A new companion series' title", text: $companionTitle)
+                Toggle("Listed", isOn: $companionListed)
+                    .help(
+                        "Unlisted, it is browsed to only through what refers to it; listed, the household finds it too."
+                    )
+            }
+        }
+        .font(.caption)
     }
 
     /// The unassigned, those suggested for the open stop first.
@@ -406,7 +425,7 @@ private struct WalkSpecials: View {
                 Menu("As an entry of \(title)") {
                     ForEach(held.sequences.indices, id: \.self) { index in
                         let sequence = held.sequences[index]
-                        Menu(sequence.id ?? "The sequence") {
+                        Menu(sequenceTitle(sequence, in: held)) {
                             Button("First") {
                                 model.place(special.id, .entry(in: open, sequence: sequence.id, position: 0))
                             }
@@ -424,6 +443,7 @@ private struct WalkSpecials: View {
                         Button("As its first") { model.place(special.id, .entry(in: open)) }
                     }
                 }
+                alternativesMenu(special, of: held)
             }
             Menu("As an extra of \(title)") {
                 ForEach(EntryType.extraTypes, id: \.self) { type in
@@ -436,11 +456,80 @@ private struct WalkSpecials: View {
                     model.place(special.id, .child(of: open, id: id.value, type: ContainerType.serial.rawValue))
                 }
             }
+            companionMenu(special)
             Divider()
             Button("Declined") { model.place(special.id, .declined) }
         }
         .fixedSize()
         .disabled(current.stop?.comparison == nil)
+    }
+
+    /// Another way to play the open stop: a new edition of it, or a version of one of its items.
+    @ViewBuilder
+    private func alternativesMenu(_ special: Special, of held: Container) -> some View {
+        let open = current.open
+        let named = alternativeTitle.trimmingCharacters(in: .whitespaces)
+        Button("As a new edition of \(held.displayTitle), \(named.isEmpty ? "Omnibus" : named)") {
+            model.place(special.id, .edition(of: open, title: named.isEmpty ? "Omnibus" : named))
+        }
+        Menu("As a version of one of its items") {
+            ForEach(held.sequences.flatMap(\.items).filter { $0.id != nil }, id: \.self) { entry in
+                Button("\(itemTitle(entry)), \(named.isEmpty ? "Special edition" : named)") {
+                    guard let item = entry.id?.value else { return }
+                    model.place(
+                        special.id,
+                        .version(of: open, item: item, title: named.isEmpty ? "Special edition" : named)
+                    )
+                }
+            }
+        }
+    }
+
+    /// A companion series beside this one, held already or new, referred to from the open stop.
+    @ViewBuilder
+    private func companionMenu(_ special: Special) -> some View {
+        let open = current.open
+        let title = walk.stops[open]?.title ?? open
+        Menu("Into a companion series") {
+            ForEach(companionChoices, id: \.id) { id, name, listed in
+                Menu("\(name)\(listed ? "" : " (unlisted)")") {
+                    Button("Referred to from \(title)'s extras") {
+                        model.place(special.id, .breakout(id, from: open, asExtra: true))
+                    }
+                    Button("Referred to from \(title)'s sequence") {
+                        model.place(special.id, .breakout(id, from: open, asExtra: false))
+                    }
+                }
+            }
+            if let named = Title(companionTitle.trimmingCharacters(in: .whitespaces)) {
+                Divider()
+                Button("A new one, \(named), \(companionListed ? "listed" : "unlisted"), referred to from the extras") {
+                    Task {
+                        guard let id = try? await model.provisionalID() else { return }
+                        var companion = Container(id: id, type: .series, title: named, listed: companionListed)
+                        companion.sequences = [Sequence(id: "episodes", items: [])]
+                        model.place(special.id, .breakout(id.value, from: open, asExtra: true), companion: companion)
+                        companionTitle = ""
+                    }
+                }
+            }
+        }
+    }
+
+    /// The series a special may go into as its companion: those the library holds, then those the walk
+    /// makes.
+    private var companionChoices: [(id: String, name: String, listed: Bool)] {
+        let made = walk.companions.keys.sorted().compactMap(walk.companion)
+        return current.companions.map { ($0.id, $0.displayTitle, $0.listed) }
+            + made.map { ($0.id.value, $0.displayTitle, $0.listed) }
+    }
+
+    /// A sequence by the alternative that plays it, when one does.
+    private func sequenceTitle(_ sequence: Sequence, in container: Container) -> String {
+        guard let alternative = container.alternatives.first(where: { $0.sequence == sequence.id }) else {
+            return sequence.id ?? "The sequence"
+        }
+        return "\(alternative.title ?? alternative.id), an alternative"
     }
 
     private func itemTitle(_ entry: Entry) -> String {
@@ -462,6 +551,8 @@ private struct WalkSpecials: View {
         case .child(let id, _, let type): return "a \(type) of its own beneath \(title(id))"
         case .duplicate(let home, let item, let library, _, _): return "the same as \(home)#\(item) in \(library)"
         case .breakout(let id, let from, _): return "in \(title(id)), referred to from \(title(from))"
+        case .edition(let id, let alternative): return "a new edition of \(title(id)), \(alternative)"
+        case .version(let id, let item, let alternative): return "a version of \(item) of \(title(id)), \(alternative)"
         case .declined: return "declined"
         }
     }

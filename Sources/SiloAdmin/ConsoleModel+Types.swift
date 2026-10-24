@@ -80,6 +80,8 @@ extension ConsoleModel {
         var failures: [String: String] = [:]
         /// The step the series' specials are on while they are read through the series above the root.
         var pooling: AdminConsole.TMDbProgress?
+        /// The series the library holds that a special may go into as its companion.
+        var companions: [SiloClient.ContainerSummary] = []
         /// Everything storing the walk will do, listed before any of it is done.
         var plan: TMDbWalk.Plan?
         var storing = false
@@ -107,6 +109,8 @@ extension ConsoleModel {
         var suggestions: [Int: AdminConsole.SpecialSuggestion] = [:]
         /// The step the specials' suggestions are on while they are read.
         var suggesting: AdminConsole.TMDbProgress?
+        /// The series the library holds that a special may go into as a breakout.
+        var companions: [SiloClient.ContainerSummary] = []
         var check: AdminConsole.ContainerCheck?
         var outcome: AdminConsole.TMDbCreateOutcome?
         var failure: String?

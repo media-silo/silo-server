@@ -32,14 +32,15 @@ until the operator does. It SHALL suggest, strongest first: where smddb's record
 the special's ref, when the clone holds the series; the breakout that holds the specials before and
 after it in TMDb's season 0 order; a duplicate of the TMDb record whose IMDb or TVDB id the special
 shares, found through TMDb's lookup by external id; the position an episode group of the series gives
-the special; a new edition of a container whose title the special's title names beside a word such as
-"Omnibus", or whose sequence's runtimes come close together to the special's; a version of an item
-whose title the special's title names beside words such as "Special Edition"; an entry between the two
-episodes the special aired between; and, for a short special whose title names it as one, an extra of
-the type its title suggests, or declined for a trailer. A special left unassigned SHALL NOT stop the
-tree from being created, and creating SHALL hold none of the unassigned. Placing a special in a
-duplicate's home or a breakout that the library holds SHALL be an edit of that container, and the
-console SHALL list every edit and creation the placements make before it stores any.
+the special; a new edition of a container whose title the special's title names, beside a word such as
+"Omnibus" or when the special runs within a tenth of one of the container's sequences together; a
+version of an item whose title the special's title names beside words such as "Special Edition"; in a
+walk, each of these two read from the stops read so far, in place of a weaker suggestion; an entry
+between the two episodes the special aired between; and, for a short special whose title names it as
+one, an extra of the type its title suggests, or declined for a trailer. A special left unassigned
+SHALL NOT stop the tree from being created, and creating SHALL hold none of the unassigned. Placing a
+special in a duplicate's home or a breakout that the library holds SHALL be an edit of that container,
+and the console SHALL list every edit and creation the placements make before it stores any.
 
 #### Scenario: a special that is also a TMDb movie
 - **WHEN** a series' special shares its IMDb id with a TMDb movie that another library holds, and the

@@ -138,6 +138,7 @@ extension AdminConsole {
         var containers: [Container] = []
         var episodeTitles: [String: String] = [:]
         var airDates: [String: String] = [:]
+        var runtimes: [String: Int] = [:]
         var episodeGroups: [String] = []
         var specials: [Special] = []
         /// The collection a movie read is in, for filing it beneath one the library holds.
@@ -159,6 +160,7 @@ extension AdminConsole {
                 episodeTitles: episodeTitles,
                 airDates: airDates,
                 episodeGroups: episodeGroups,
+                runtimes: runtimes,
                 specials: specials
             )
         }
@@ -299,6 +301,7 @@ extension AdminConsole {
         private mutating func note(_ episode: TMDb.Episode) {
             episodeTitles[String(episode.id)] = episode.title
             if let airDate = episode.airDate { airDates[String(episode.id)] = airDate }
+            if let runtime = episode.runtime { runtimes[String(episode.id)] = runtime }
         }
 
         private mutating func replace(_ container: Container) {
@@ -315,12 +318,27 @@ extension AdminConsole {
     /// A placement the console thinks most likely for a special, and why; nil placement when the reason
     /// is advice rather than a place, as for a duplicate whose home no library holds yet.
     public struct SpecialSuggestion: Hashable, Sendable {
+        /// What a suggestion rests on, strongest first.
+        public enum Basis: Int, Hashable, Sendable, Comparable {
+            case smddb
+            case breakout
+            case duplicate
+            case group
+            case alternative
+            case aired
+            case title
+
+            public static func < (lhs: Basis, rhs: Basis) -> Bool { lhs.rawValue < rhs.rawValue }
+        }
+
         public var placement: SpecialPlacement?
         public var reason: String
+        public var basis: Basis
 
-        public init(placement: SpecialPlacement?, reason: String) {
+        public init(placement: SpecialPlacement?, reason: String, basis: Basis = .title) {
             self.placement = placement
             self.reason = reason
+            self.basis = basis
         }
     }
 
@@ -406,6 +424,14 @@ extension AdminConsole {
         if let beside = breakoutBeside(index, in: tree) { return beside }
         if let duplicate = try await duplicate(of: special, in: tree, of: silo, tmdb: tmdb) { return duplicate }
         if let group, let grouped = Self.groupPosition(of: special, in: tree, group: group) { return grouped }
+        if let alternative = Self.alternative(
+            of: special,
+            in: tree.containers,
+            titles: tree.episodeTitles,
+            runtimes: tree.runtimes ?? [:]
+        ) {
+            return alternative
+        }
         if let aired = airedPosition(of: special, in: tree) { return aired }
         return Self.byItsTitle(special, in: tree)
     }
@@ -427,7 +453,8 @@ extension AdminConsole {
             if container.sequences.flatMap(\.items).contains(where: { $0.externalRefs.contains(special.episode.ref) }) {
                 return SpecialSuggestion(
                     placement: .entry(in: mine.id.value),
-                    reason: "smddb files it in \(container.displayTitle)"
+                    reason: "smddb files it in \(container.displayTitle)",
+                    basis: .smddb
                 )
             }
             if let extra = container.extras.first(where: { $0.externalRefs.contains(special.episode.ref) }) {
@@ -436,7 +463,8 @@ extension AdminConsole {
                         of: mine.id.value,
                         type: extra.type?.rawValue ?? EntryType.featurette.rawValue
                     ),
-                    reason: "smddb files it among \(container.displayTitle)'s extras"
+                    reason: "smddb files it among \(container.displayTitle)'s extras",
+                    basis: .smddb
                 )
             }
         }
@@ -453,7 +481,8 @@ extension AdminConsole {
         let title = tree.container(before)?.displayTitle ?? before
         return SpecialSuggestion(
             placement: .breakout(before, from: from, asExtra: asExtra),
-            reason: "the specials either side of it are in \(title)"
+            reason: "the specials either side of it are in \(title)",
+            basis: .breakout
         )
     }
 
@@ -475,7 +504,8 @@ extension AdminConsole {
                 else {
                     return SpecialSuggestion(
                         placement: nil,
-                        reason: "\(reason), which no library holds: draft it first"
+                        reason: "\(reason), which no library holds: draft it first",
+                        basis: .duplicate
                     )
                 }
                 return SpecialSuggestion(
@@ -486,7 +516,8 @@ extension AdminConsole {
                         from: tree.top,
                         asExtra: false
                     ),
-                    reason: "\(reason), which \(home.library) holds"
+                    reason: "\(reason), which \(home.library) holds",
+                    basis: .duplicate
                 )
             }
             if let other = others.first {
@@ -494,7 +525,8 @@ extension AdminConsole {
                 guard let home = try await home(of: other.episode.ref, of: silo) else {
                     return SpecialSuggestion(
                         placement: nil,
-                        reason: "\(reason), which no library holds: draft it first"
+                        reason: "\(reason), which no library holds: draft it first",
+                        basis: .duplicate
                     )
                 }
                 return SpecialSuggestion(
@@ -505,7 +537,8 @@ extension AdminConsole {
                         from: tree.top,
                         asExtra: true
                     ),
-                    reason: "\(reason), which \(home.library) holds"
+                    reason: "\(reason), which \(home.library) holds",
+                    basis: .duplicate
                 )
             }
         }
@@ -548,8 +581,65 @@ extension AdminConsole {
             guard let place = Self.after(before.ref, in: tree) else { continue }
             return SpecialSuggestion(
                 placement: place,
-                reason: "\(group.name) places it after \(before.title)"
+                reason: "\(group.name) places it after \(before.title)",
+                basis: .group
             )
+        }
+        return nil
+    }
+
+    /// Another way to play a container the special's title names: a new edition of it, beside a word
+    /// such as "Omnibus", or when the special runs within a tenth of one of its sequences together; or a
+    /// version of one of its items whose title the special's names beside words such as "Special
+    /// Edition".
+    nonisolated static func alternative(
+        of special: Special,
+        in containers: [Container],
+        titles: [String: String],
+        runtimes: [String: Int]
+    ) -> SpecialSuggestion? {
+        let title = special.episode.title.lowercased()
+        let versioned = ["special edition", "enhanced", "new effects"].contains { title.contains($0) }
+        let collected = ["omnibus", "compilation"].first { title.contains($0) }
+        func named(_ entry: Entry) -> String? {
+            entry.title ?? entry.externalRefs.first { $0.provider == .tmdb }.flatMap { titles[$0.value] }
+        }
+        for container in containers {
+            if versioned {
+                for entry in container.sequences.flatMap(\.items) {
+                    guard let item = entry.id?.value, let name = named(entry), name.count > 3,
+                        title.contains(name.lowercased())
+                    else { continue }
+                    return SpecialSuggestion(
+                        placement: .version(of: container.id.value, item: item, title: "Special edition"),
+                        reason: "its title names \(name) as another version of it",
+                        basis: .alternative
+                    )
+                }
+            }
+            guard title.contains(container.title.rawValue.lowercased()) else { continue }
+            if let collected {
+                return SpecialSuggestion(
+                    placement: .edition(of: container.id.value, title: collected.capitalized),
+                    reason: "its title names \(container.displayTitle) as an \(collected)",
+                    basis: .alternative
+                )
+            }
+            guard let runtime = special.episode.runtime else { continue }
+            for sequence in container.sequences where sequence.items.count > 1 {
+                let times = sequence.items.map { entry in
+                    entry.externalRefs.first { $0.provider == .tmdb }.flatMap { runtimes[$0.value] }
+                }
+                guard times.allSatisfy({ $0 != nil }) else { continue }
+                let together = times.compactMap { $0 }.reduce(0, +)
+                guard abs(together - runtime) * 10 <= together else { continue }
+                return SpecialSuggestion(
+                    placement: .edition(of: container.id.value, title: "Omnibus"),
+                    reason:
+                        "it runs \(runtime) minutes, as \(container.displayTitle)'s \(times.count) episodes do together",
+                    basis: .alternative
+                )
+            }
         }
         return nil
     }
@@ -565,7 +655,7 @@ extension AdminConsole {
         else { return nil }
         let earlier = tree.episodeTitles[before.key] ?? before.key
         let later = tree.episodeTitles[after.key] ?? after.key
-        return SpecialSuggestion(placement: place, reason: "it aired between \(earlier) and \(later)")
+        return SpecialSuggestion(placement: place, reason: "it aired between \(earlier) and \(later)", basis: .aired)
     }
 
     /// An entry just after the one carrying a reference, in the container of the tree that holds it.
