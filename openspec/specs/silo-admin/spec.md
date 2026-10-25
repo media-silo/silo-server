@@ -1212,7 +1212,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 `aSpecialPlacedAtAStopIsStoredInThatContainersEdit`, `aConfirmedStopOpenedAgainKeepsWhatWasChosen`,
 `aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`,
 `anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`,
-`aStopShowsTheAlternativesItsPlacedSpecialsMake`). The walk's sheet is pinned by nothing yet, as the rest
+`aStopShowsTheAlternativesItsPlacedSpecialsMake`,
+`aNewStopShowsTheAlternativesItsPlacedSpecialsMake`). The walk's sheet is pinned by nothing yet, as the rest
 of the shell is.
 
 ### Requirement: A missing child chosen in a walk is a new container, created when the walk is stored

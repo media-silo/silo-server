@@ -5396,6 +5396,33 @@ extension AdminConsoleTests {
         #expect(held.container(series.id)?.childContainerIDs.last?.value == new, "named by the series")
     }
 
+    /// A new stop shows the alternatives its placed specials make before it is confirmed, as creating it
+    /// makes them.
+    @Test func aNewStopShowsTheAlternativesItsPlacedSpecialsMake() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, special) = Self.missingSeason()
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        #expect(walk.alternatives(at: new).isEmpty)
+        walk.place(special.id, .edition(of: new, title: "Extended"))
+        let shown = walk.alternatives(at: new)
+        #expect(shown.map(\.title) == ["Extended"], "shown while the new stop is pending")
+        #expect(shown.map(\.plays) == [[special.title]])
+        #expect(shown.map(\.isPlaced) == [true])
+
+        try await walking.confirm(new, choosing: ["ref::tmdb:904"], in: &walk)
+        #expect(walk.alternatives(at: new) == shown, "and the same once it is confirmed")
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(ContainerID(new)!))
+        #expect(made.alternatives.map(\.id) == shown.map(\.id))
+        #expect(made.alternatives.map(\.title) == shown.map(\.title))
+    }
+
     /// A new season's episodes regrouped into two serials make each serial a new stop beneath it, made
     /// with it in one creation, a special placed in one held in its sidecar.
     @Test func aNewSeasonsSerialsAreStopsBeneathIt() async throws {
