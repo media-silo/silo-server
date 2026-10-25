@@ -13,8 +13,6 @@ season itself or grouped into a new serial beside the one held. Proposal:
 ## What Changes
 - A held stop's reading finds the containers it holds beneath it, each shown among its children at
   the place of the first of TMDb's episodes it holds.
-- Its missing episodes may be added to one of them as to a group made there, taken out again, or
-  grouped instead; storing the walk adds them to that container, in its own stop's edit once that is
-  confirmed, and what TMDb puts after them follows the container.
-- The held container's stop lists what was added to it among its children, each only to be taken
-  out again.
+- Its missing episodes may be put into one of them as into a group made there, taken out again, or
+  grouped instead; put there, they are that container's own missing episodes, ticked, grouped and
+  taken at its stop, and what TMDb puts after them follows the container.

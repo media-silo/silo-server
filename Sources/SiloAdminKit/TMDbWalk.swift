@@ -150,7 +150,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     /// A stop's differences as the walk reads them now: a season a held child beneath it was said to be
     /// is held by that child, and one it was only suggested to be, said to be another, is missing again.
     public func differences(of stop: String) -> [AdminConsole.TMDbDifference] {
-        let differences = stops[stop]?.comparison?.differences ?? []
+        let differences = (stops[stop]?.comparison?.differences ?? []) + handed(to: stop)
         let said = identified.filter { stops[$0.key]?.parent == stop }
         guard !said.isEmpty else { return differences }
         return differences.map { difference in
@@ -232,7 +232,11 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
             stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
         }
         draftGroups(of: stop)
-        for child in beneath where stops[child.id] == nil { stops[child.id] = child }
+        for var child in beneath where stops[child.id] == nil {
+            // Found once missing episodes were handed to it, they are ticked to begin with.
+            child.chosen.formUnion((stop.intoHeld[child.id] ?? []).map { "episode:\($0)" })
+            stops[child.id] = child
+        }
         let tops = drafts.values.filter { $0.creating.parent == id }.map(\.top).sorted()
         stop.children = beneath.map(\.id) + tops.filter { !beneath.map(\.id).contains($0) }
         stops[id] = stop

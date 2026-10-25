@@ -1013,12 +1013,9 @@ ungrouped or unchosen SHALL leave the walk then. Each container the held one
 holds beneath it SHALL be shown among its children, at the place of the first of TMDb's episodes it
 holds, or after them when it holds none, and its missing episodes selected SHALL be addable to it as
 to a group made there, each only to be taken out of it again, chosen then, or grouped instead. One
-added there SHALL be taken whenever the held container's stop is confirmed, and storing the walk
-SHALL add it to that container after the entries it holds, in TMDb's order, in that container's own
-edit when its stop is confirmed and onto its sidecar as it is then when not; none of them SHALL be
-added to the held container itself, and an entry TMDb puts after one of them SHALL follow the
-container. That container's stop SHALL show what was added to it among its children, at TMDb's
-place for each, said to be from the held one, and each only to be taken out again.
+put there SHALL be one of that container's own missing episodes from then on, chosen at its stop to
+begin with, and grouped and taken there as any of its own are; none of them SHALL be added to the held
+container itself, and an entry TMDb puts after one of them SHALL follow the container.
 Chosen artwork SHALL be put with its attribution when the walk is stored. The
 console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
 opened.
@@ -1044,7 +1041,8 @@ opened.
 
 #### Scenario: missing parts added to a serial held beneath
 - **WHEN** a held season holds a serial beneath it holding the first story's parts, lacks two parts of
-  the next story, which are added to that serial, chooses the third part, and the walk is stored
+  the next story, which are added to that serial, chooses the third part, confirms the serial's
+  stop with both of the two chosen there, and the walk is stored
 - **THEN** the serial is shown among the season's children before the missing parts, the serial gains
   the two parts after its own, and the season's edit adds the third part after the serial and neither
   of the two

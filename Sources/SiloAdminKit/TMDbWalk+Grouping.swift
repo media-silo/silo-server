@@ -57,11 +57,27 @@ extension TMDbWalk.Stop {
 }
 
 extension TMDbWalk {
-    /// The episodes a held stop's reading offers, in TMDb's order.
+    /// The episodes a held stop's reading offers, in TMDb's order, and those its parent handed to it.
     public func missingEpisodes(at stop: String) -> [TMDb.Episode] {
-        (stops[stop]?.comparison?.differences ?? []).compactMap { difference in
+        episodeDifferences(at: stop).compactMap { difference in
             if case .episode(let episode, _) = difference { episode } else { nil }
         }
+    }
+
+    /// The missing episodes a held stop's parent handed to it, as the parent offers them: the stop's own
+    /// to tick, group and take, as though its reading had offered them, and offered by the parent no
+    /// longer.
+    public func handed(to stop: String) -> [AdminConsole.TMDbDifference] {
+        guard let parent = stops[stop]?.parent, let handed = stops[parent]?.intoHeld[stop] else { return [] }
+        return episodeDifferences(at: parent).filter { difference in
+            if case .episode(let episode, _) = difference { handed.contains(episode.id) } else { false }
+        }
+    }
+
+    private func episodeDifferences(at stop: String) -> [AdminConsole.TMDbDifference] {
+        (stops[stop]?.comparison?.differences ?? []).filter { difference in
+            if case .episode = difference { true } else { false }
+        } + handed(to: stop)
     }
 
     /// The runs of a held stop's missing episodes, grouped in none of its groups, that TMDb titles as the
@@ -176,9 +192,9 @@ extension TMDbWalk {
         }
     }
 
-    /// Missing episodes of a held stop added to a container it holds beneath it, in TMDb's order after
-    /// any added already: taken whenever the stop is, as entries of that container, in place of entries
-    /// of the stop. Each leaves any group, or other container, it was in.
+    /// Missing episodes of a held stop handed to a container it holds beneath it, in TMDb's order after
+    /// any handed already: that container's own missing episodes from then on, ticked at its stop, and
+    /// none of the held stop's. Each leaves any group, or other container, it was in.
     public mutating func add(_ episodes: [Int], toHeld child: String, at stop: String) {
         guard heldChildren(at: stop).contains(where: { $0.id == child }), !episodes.isEmpty else { return }
         let members = stops[stop]?.intoHeld[child] ?? []
@@ -186,27 +202,25 @@ extension TMDbWalk {
         let ordered = inOrder(Set(members).union(episodes), at: stop)
         stops[stop]?.intoHeld[child] = ordered
         stops[stop]?.chosen.subtract(episodes.map { "episode:\($0)" })
+        stops[child]?.chosen.formUnion(episodes.map { "episode:\($0)" })
     }
 
-    /// One episode out of the held container it was added to, back among the stop's missing ones and
-    /// ticked, as everything added there was taken.
+    /// One episode out of the held container it was handed to, back among the stop's missing ones and
+    /// ticked, as it was there to begin with.
     public mutating func remove(_ episode: Int, fromHeld child: String, at stop: String) {
         guard stops[stop]?.intoHeld[child]?.contains(episode) == true else { return }
         leave(episode, at: stop)
         stops[stop]?.chosen.insert("episode:\(episode)")
     }
 
-    /// The missing episodes a held stop's parent added to it, in TMDb's order: added here when the walk
-    /// is stored.
-    public func addedFromAbove(_ stop: String) -> [TMDb.Episode] {
-        guard let parent = stops[stop]?.parent, let added = stops[parent]?.intoHeld[stop] else { return [] }
-        return missingEpisodes(at: parent).filter { added.contains($0.id) }
-    }
-
     /// An episode out of whichever group of the stop, or held container, holds it, and a group left with
-    /// none gone.
+    /// none gone; out of a held container, it is no longer ticked or grouped there either.
     private mutating func leave(_ episode: Int, at stop: String) {
         if let intoHeld = stops[stop]?.intoHeld {
+            for (child, handed) in intoHeld where handed.contains(episode) {
+                leave(episode, at: child)
+                stops[child]?.chosen.remove("episode:\(episode)")
+            }
             stops[stop]?.intoHeld = intoHeld.mapValues { $0.filter { $0 != episode } }.filter { !$0.value.isEmpty }
         }
         guard var groups = stops[stop]?.groups else { return }

@@ -4996,8 +4996,8 @@ extension AdminConsoleTests {
     }
 
     /// A container held beneath a held season is among its children, at the place of the first episode it
-    /// holds, and the season's missing episodes may be added to it, taken out of it again, or grouped
-    /// instead; storing the walk adds them to it, in its stop's edit once that is confirmed.
+    /// holds, and the season's missing episodes may be put into it, taken out of it again, or grouped
+    /// instead; put there, they are its own missing episodes, ticked at its stop and added in its edit.
     @Test func aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -5047,7 +5047,10 @@ extension AdminConsoleTests {
         walk.stops[stop]?.chosen.subtract((evil[2...] + pyramids).map { "episode:\($0)" })
         walk.stops[stop]?.chosen.insert("episode:\(evil[2])")
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
-        #expect(walk.addedFromAbove(held).map(\.id) == [evil[0], evil[1]])
+        let ticks = { (ids: [Int]) in Set(ids.map { "episode:\($0)" }) }
+        #expect(walk.missingEpisodes(at: held).map(\.id) == [evil[0], evil[1]], "the serial's own now")
+        #expect(walk.stops[held]?.chosen == ticks([evil[0], evil[1]]), "ticked there to begin with")
+        #expect(walk.differences(of: stop).count == walk.stops[stop]?.comparison?.differences.count)
         #expect(walk.state(of: stop) == .changed)
         var keptBefore = walk
         keptBefore.stops[stop]?.comparison?.heldChildren = nil
@@ -5059,22 +5062,24 @@ extension AdminConsoleTests {
         )
 
         var plan = try walk.plan()
-        let added = plan.steps.compactMap { step -> Int? in
-            if case .held(let edit) = step.kind, edit.container == held { edit.entry?.id } else { nil }
-        }
-        #expect(added == [evil[0], evil[1]], "the serial's stop not confirmed, edits of it as it is then")
+        #expect(Self.edit(of: held, in: plan) == nil, "nothing added to the serial until its stop is confirmed")
         let edit = try #require(Self.edit(of: stop, in: plan)?.value)
         #expect(
             edit.sequences.first?.items.map { $0.childContainer?.value ?? $0.externalRefs.first?.value ?? "" } == [
                 held, String(evil[2]),
             ],
-            "what TMDb puts after them following the serial they were added to"
+            "neither added to the season, and what TMDb puts after them following the serial"
         )
 
+        walk.remove(evil[1], fromHeld: held, at: stop)
+        #expect(walk.stops[held]?.chosen == ticks([evil[0]]), "taken out, no longer ticked there")
+        walk.add([evil[1]], toHeld: held, at: stop)
+        #expect(walk.stops[held]?.chosen == ticks([evil[0], evil[1]]), "ticked there, the serial's stop found already")
         walk.read(
             try await console.compare(held, in: "tv", of: home, from: database, tmdb: tmdb, identified: walk.identified)
         )
-        try await walking.confirm(held, in: &walk)
+        #expect(walk.missingEpisodes(at: held).map(\.id) == [evil[0], evil[1]], "read again, still its own")
+        try await walking.confirm(held, choosing: ticks([evil[0], evil[1]]), in: &walk)
         plan = try walk.plan()
         #expect(!plan.steps.contains { if case .held = $0.kind { true } else { false } })
         let serialEdit = try #require(Self.edit(of: held, in: plan)?.value)
@@ -5083,6 +5088,14 @@ extension AdminConsoleTests {
                 == [evil[0], evil[1]].map { [ExternalRef(provider: .tmdb, value: String($0))] },
             "in the serial's own edit, after the parts it holds"
         )
+        try await walking.confirm(held, choosing: ticks([evil[1]]), in: &walk)
+        let unticked = try #require(Self.edit(of: held, in: try walk.plan())?.value)
+        #expect(
+            unticked.sequences.first?.items.last?.externalRefs
+                == [ExternalRef(provider: .tmdb, value: String(evil[1]))],
+            "one unticked at the serial is added nowhere"
+        )
+        #expect(unticked.sequences.first?.items.count == serial.sequences.first.map { $0.items.count + 1 })
     }
 
     /// A special is suggested here only on what ties it to the container: its title naming the container,
