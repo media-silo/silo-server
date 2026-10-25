@@ -171,6 +171,7 @@ struct WalkSheet: View {
             WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
             DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
             DifferenceGroup("Artwork", comparison.differences.filter(\.isArtwork), walk: walk, tick: tick)
+            StopAlternatives(walk: walk, stop: comparison.container)
             PlacedSpecials(walk: walk, model: model, stop: comparison.container)
             if !comparison.heldOnly.isEmpty {
                 GroupBox("Held here, and nothing at TMDb: nothing is offered for removal") {
@@ -308,6 +309,7 @@ private struct NewStop: View {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
                 }
             }
+            StopAlternatives(walk: walk, stop: stop)
             PlacedSpecials(walk: walk, model: model, stop: stop)
         }
     }
@@ -345,6 +347,34 @@ private struct DifferenceGroup: View {
             } label: {
                 // Ticks the group's every difference or none, and shows as mixed while some are ticked.
                 Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
+            }
+        }
+    }
+}
+
+/// The ways a stop's container is played, as storing the walk would leave it: those it holds or its draft
+/// has, then those the specials placed in it make, each with what it plays.
+private struct StopAlternatives: View {
+    let walk: TMDbWalk
+    let stop: String
+
+    var body: some View {
+        let alternatives = walk.alternatives(at: stop)
+        if !alternatives.isEmpty {
+            GroupBox("Alternatives") {
+                ForEach(alternatives) { alternative in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(alternative.title)
+                            if alternative.isPlaced {
+                                Text("new, made by a special placed here").font(.caption).foregroundStyle(.green)
+                            }
+                        }
+                        Text("Plays \(alternative.plays.joined(separator: ", "))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -862,8 +892,9 @@ private struct WalkSpecials: View {
         case .child(let id, _, let type): return "a \(type) of its own beneath \(title(id))"
         case .duplicate(let home, let item, let library, _, _): return "the same as \(home)#\(item) in \(library)"
         case .breakout(let id, let from, _): return "in \(title(id)), referred to from \(title(from))"
-        case .edition(let id, let alternative): return "a new edition of \(title(id)), \(alternative)"
-        case .version(let id, let item, let alternative): return "a version of \(item) of \(title(id)), \(alternative)"
+        case .edition(let id, let alternative): return "\(alternative), another version of \(title(id))"
+        case .version(let id, let item, let alternative):
+            return "\(alternative), another version, in place of \(walk.title(ofItem: item, at: id)) of \(title(id))"
         case .declined: return "declined"
         }
     }

@@ -4671,6 +4671,61 @@ extension AdminConsoleTests {
         #expect(made.itemIDs.count == 5, "one entry for each episode, and the special's")
     }
 
+    /// A stop shows the alternatives storing would leave its container with, before it is confirmed: those
+    /// it holds, then those its placed specials make, each by its title and what it plays; and storing
+    /// makes them as shown.
+    @Test func aStopShowsTheAlternativesItsPlacedSpecialsMake() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pilot = Self.episode(3741, 0, 1, "The Dead Planet (Unaired Pilot)", runtime: 25)
+        let colour = Self.episode(3742, 0, 2, "The Daleks in Colour", runtime: 75)
+        let (series, contents, serial, _, tmdb) = Self.daleks([pilot, colour])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        let broadcast = TMDbWalk.StopAlternative(
+            id: "broadcast",
+            title: "As broadcast",
+            plays: ["The Dead Planet"],
+            isPlaced: false
+        )
+        #expect(walk.alternatives(at: id) == [broadcast])
+        walk.place(pilot.id, .version(of: id, item: "part-1", title: "Pilot"))
+        walk.place(colour.id, .edition(of: id, title: "In colour"))
+        #expect(walk.title(ofItem: "part-1", at: id) == "The Dead Planet")
+        let shown = walk.alternatives(at: id)
+        #expect(
+            shown == [
+                broadcast,
+                TMDbWalk.StopAlternative(
+                    id: "pilot",
+                    title: "Pilot",
+                    plays: ["The Dead Planet (Unaired Pilot)", "The Survivors", "The Escape", "The Ambush"],
+                    isPlaced: true
+                ),
+                TMDbWalk.StopAlternative(
+                    id: "in-colour",
+                    title: "In colour",
+                    plays: ["The Daleks in Colour"],
+                    isPlaced: true
+                ),
+            ],
+            "shown while the stop is pending"
+        )
+
+        try await walking.confirm(id, in: &walk)
+        #expect(walk.alternatives(at: id) == shown, "and the same once it is confirmed")
+        let steps = try walk.plan().steps.map(\.described)
+        #expect(steps.contains("edit The Daleks: 2 entries, 2 alternatives"), "\(steps)")
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(serial.id))
+        #expect(made.alternatives.map(\.id) == shown.map(\.id))
+        #expect(made.alternatives.map(\.title) == shown.map(\.title))
+    }
+
     /// A special whose title names a serial beside "Omnibus", one that runs as long as the serial's
     /// episodes together, and one whose title names an episode beside "Special Edition" are suggested,
     /// once the serial is read, as new editions of it and as a version of the episode.
