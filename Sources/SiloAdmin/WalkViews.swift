@@ -661,9 +661,8 @@ private struct StopState: View {
 private struct WalkSpecials: View {
     let current: ConsoleModel.Walking
     let model: ConsoleModel
-    @State private var alternativeTitle = ""
-    @State private var companionTitle = ""
-    @State private var companionListed = false
+    /// What is being made for a special, asked as it is placed.
+    @State private var naming: SpecialNaming?
 
     private var walk: TMDbWalk { current.walk }
 
@@ -674,7 +673,6 @@ private struct WalkSpecials: View {
             if walk.series == walk.root, walk.stops[walk.root]?.comparison == nil {
                 Text("Read with the series.").font(.caption).foregroundStyle(.secondary)
             }
-            namingFields
             List {
                 ForEach(ordered) { special in row(special) }
                 if !walk.declined.isEmpty, walk.stops[walk.series ?? ""] != nil {
@@ -685,21 +683,27 @@ private struct WalkSpecials: View {
             }
         }
         .padding(.horizontal, 6)
+        .sheet(item: $naming) { naming in
+            SpecialNamingSheet(naming: naming) { title, listed in place(naming, titled: title, listed: listed) }
+        }
     }
 
-    /// What a new alternative and a new companion series are called, for the menus to make them with.
-    private var namingFields: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("A new alternative's title", text: $alternativeTitle)
-            HStack {
-                TextField("A new companion series' title", text: $companionTitle)
-                Toggle("Listed", isOn: $companionListed)
-                    .help(
-                        "Unlisted, it is browsed to only through what refers to it; listed, the household finds it too."
-                    )
+    /// A special placed as what was named for it: another version of the open stop, or of one of its
+    /// episodes, titled as asked, or a new companion series of that title.
+    private func place(_ naming: SpecialNaming, titled title: Title, listed: Bool) {
+        switch naming {
+        case .edition(let special, let stop, _):
+            model.place(special.id, .edition(of: stop, title: title.rawValue))
+        case .version(let special, let stop, let item, _):
+            model.place(special.id, .version(of: stop, item: item, title: title.rawValue))
+        case .companion(let special, let stop):
+            Task {
+                guard let id = try? await model.provisionalID() else { return }
+                var companion = Container(id: id, type: .series, title: title, listed: listed)
+                companion.sequences = [Sequence(id: "episodes", items: [])]
+                model.place(special.id, .breakout(id.value, from: stop, asExtra: true), companion: companion)
             }
         }
-        .font(.caption)
     }
 
     /// The unassigned, those suggested for the open stop first.
@@ -788,18 +792,14 @@ private struct WalkSpecials: View {
     @ViewBuilder
     private func alternativesMenu(_ special: Special, of held: Container) -> some View {
         let open = current.open
-        let named = alternativeTitle.trimmingCharacters(in: .whitespaces)
-        Button("As a new edition of \(held.displayTitle), \(named.isEmpty ? "Omnibus" : named)") {
-            model.place(special.id, .edition(of: open, title: named.isEmpty ? "Omnibus" : named))
+        Button("As Another Version of \(held.displayTitle)…") {
+            naming = .edition(special, of: open, held.displayTitle)
         }
-        Menu("As a version of one of its items") {
+        Menu("In Place of One of Its Items, as Another Version") {
             ForEach(held.sequences.flatMap(\.items).filter { $0.id != nil }, id: \.self) { entry in
-                Button("\(itemTitle(entry)), \(named.isEmpty ? "Special edition" : named)") {
+                Button("\(itemTitle(entry))…") {
                     guard let item = entry.id?.value else { return }
-                    model.place(
-                        special.id,
-                        .version(of: open, item: item, title: named.isEmpty ? "Special edition" : named)
-                    )
+                    naming = .version(special, of: open, item: item, itemTitle(entry))
                 }
             }
         }
@@ -821,20 +821,8 @@ private struct WalkSpecials: View {
                     }
                 }
             }
-            if let named = Title(companionTitle.trimmingCharacters(in: .whitespaces)) {
-                Divider()
-                Button(
-                    "A new one, \(named.rawValue), \(companionListed ? "listed" : "unlisted"), referred to from the extras"
-                ) {
-                    Task {
-                        guard let id = try? await model.provisionalID() else { return }
-                        var companion = Container(id: id, type: .series, title: named, listed: companionListed)
-                        companion.sequences = [Sequence(id: "episodes", items: [])]
-                        model.place(special.id, .breakout(id.value, from: open, asExtra: true), companion: companion)
-                        companionTitle = ""
-                    }
-                }
-            }
+            Divider()
+            Button("A New One, Referred to from \(title)'s Extras…") { naming = .companion(special, from: open) }
         }
     }
 
