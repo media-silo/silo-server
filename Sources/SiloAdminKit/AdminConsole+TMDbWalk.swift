@@ -333,7 +333,8 @@ extension TMDbWalk {
         for id in order {
             if let change = try change(of: id, gathering: &gathering) { changes.append(change) }
         }
-        for top in drafts.keys.sorted() {
+        // In the walk's order, so each is named in its parent among the siblings listed around it.
+        for top in order.filter({ drafts[$0] != nil }) + drafts.keys.sorted().filter({ !order.contains($0) }) {
             guard let parent = drafts[top]?.creating.parent,
                 let index = changes.firstIndex(where: { $0.stop.id == parent }),
                 let made = making(of: top, gathering: &gathering)
@@ -586,7 +587,11 @@ extension TMDbWalk {
         }
         for (creating, making) in change.made {
             guard let top = making.documents.first else { continue }
-            named = AdminConsole.naming(top, in: named, at: creating)
+            named = AdminConsole.naming(
+                top,
+                in: named,
+                at: placing(top.id.value, creating, among: change.stop.children, in: named)
+            )
         }
         draft.set(named)
         var steps: [Step] = []
@@ -617,6 +622,27 @@ extension TMDbWalk {
                         "make \(top.displayTitle)\(beneath > 0 ? " and the \(beneath) beneath it" : "") beneath \(change.stop.title)"
                 )
             }
+    }
+
+    /// Where a new container is named in its parent: where its creating says, or, said nowhere, before the
+    /// first sibling listed after it that the parent names, and last when none is.
+    private static func placing(
+        _ top: String,
+        _ creating: ContainerDraft.Creating,
+        among children: [String],
+        in parent: Container
+    ) -> ContainerDraft.Creating {
+        guard creating.position == nil, let index = children.firstIndex(of: top) else { return creating }
+        let sequence = parent.sequences.firstIndex { $0.id != nil && $0.id == creating.sequence } ?? 0
+        guard parent.sequences.indices.contains(sequence) else { return creating }
+        let items = parent.sequences[sequence].items
+        var placed = creating
+        placed.position =
+            children[(index + 1)...].lazy.compactMap { sibling in
+                items.firstIndex { $0.childContainer?.value == sibling }
+            }
+            .first
+        return placed
     }
 
     /// The specials declined in a series that is no confirmed stop of the walk, as an edit of its own.

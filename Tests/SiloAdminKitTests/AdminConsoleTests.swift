@@ -4247,8 +4247,9 @@ extension AdminConsoleTests {
     }
 
     /// Confirming a series with nothing ticked records it as looked at and queues each season the library
-    /// holds beneath it, in its sequence's order; confirming a season queues its serials ahead of the next
-    /// season, so the walk goes depth first.
+    /// holds beneath it, in the order its children list them, which is TMDb's rather than its sequence's;
+    /// confirming a season queues its serials ahead of the next season, so the walk goes depth first, and
+    /// a stop never read queues what is beneath it in its sequence's order.
     @Test func confirmingAStopQueuesTheContainersBeneathItInTheTreesOrder() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -4261,9 +4262,10 @@ extension AdminConsoleTests {
         #expect(walk.series == series.id.value)
         try await walking.confirm(series.id.value, in: &walk)
         #expect(walk.state(of: series.id.value) == .lookedAt)
-        let held = [seasons[2], seasons[0], seasons[1]].map(\.id.value)
-        #expect(walk.order == [series.id.value] + held, "in the order the series' sequence holds them")
-        #expect(walk.stops[held[0]]?.title == "Season 3" && walk.stops[held[0]]?.parent == series.id.value)
+        let held = seasons.map(\.id.value)
+        #expect(series.childContainerIDs.map(\.value) == [held[2], held[0], held[1]], "its sequence holds 3, 1, 2")
+        #expect(walk.order == [series.id.value] + held, "as its children list them, in TMDb's order")
+        #expect(walk.stops[held[0]]?.title == "Season 1" && walk.stops[held[0]]?.parent == series.id.value)
         #expect(held.allSatisfy { walk.state(of: $0) == .pending && walk.stops[$0]?.comparison == nil })
         #expect(walk.next == held[0], "and none of them read until it is opened")
 
@@ -4271,17 +4273,68 @@ extension AdminConsoleTests {
         #expect(walk.next == held[0])
         try await walking.confirm(held[0], in: &walk)
         #expect(
-            walk.order == [series.id.value, held[0], serials[3].id.value, held[1]] + serials[0...1].map(\.id.value) + [
-                held[2]
+            walk.order == [series.id.value, held[0]] + serials[0...1].map(\.id.value) + [
+                held[1], serials[2].id.value, held[2],
             ]
         )
-        #expect(walk.next == serials[3].id.value, "the season's serial before the next season")
+        #expect(walk.next == serials[0].id.value, "the season's serials before the next season")
 
         // A stop TMDb never read, confirmed as it is, takes nothing and still queues what is beneath it.
         walk.confirm(held[2], beneath: try await console.stops(beneath: held[2], in: walk, of: home))
         #expect(walk.stops[held[2]]?.comparison == nil && walk.state(of: held[2]) == .lookedAt)
-        #expect(walk.order.last == serials[2].id.value)
+        #expect(walk.order.last == serials[3].id.value)
         #expect(try walk.plan().steps.isEmpty)
+    }
+
+    /// A stop's children are queued, and a new season named in its series, in the order the stop's
+    /// children list them, whatever their ids: a season TMDb puts between two the library holds goes
+    /// between them, and a held season's groups follow their first episodes.
+    @Test func aStopsChildrenAreInTheOrderItsChildrenListThem() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        let (one, two, three) = (seasons[0], seasons[1], seasons[2])
+        series.sequences[0].items = [one, three].map {
+            .child(Entry.Child(id: ItemID(Slug.make(from: $0.title.rawValue))!, container: $0.id))
+        }
+        let library = [series, one, three] + serials.filter { !two.childContainerIDs.contains($0.id) }
+        let (console, home) = try await Self.smddbConsole(HeldLibrary(library))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value, choosing: ["season:902"])
+        let new = try #require(walk.drafts.keys.first)
+        #expect(walk.stops[series.id.value]?.children == [one.id.value, new, three.id.value])
+        try await walking.confirm(new, choosing: walk.stops[new]?.chosen ?? [], in: &walk)
+        let edit = try #require(Self.edit(of: series.id.value, in: try walk.plan())?.value)
+        #expect(edit.childContainerIDs.map(\.value) == [one.id.value, new, three.id.value], "named between them")
+
+        let (held, heldSeason, serial, unmatched, episodes) = Self.unmatchedSeason()
+        let (zygons, later) = try await Self.smddbConsole(HeldLibrary([held, heldSeason, serial]))
+        let walkingUnmatched = Walking(console: zygons, home: later, database: database, tmdb: unmatched)
+        var grouped = try await walkingUnmatched.walk(held.id.value)
+        let stop = heldSeason.id.value
+        try await walkingUnmatched.confirm(stop, in: &grouped)
+        grouped.identify(stop, as: 6981)
+        grouped.read(
+            try await zygons.compare(
+                stop,
+                in: "tv",
+                of: later,
+                from: database,
+                tmdb: unmatched,
+                identified: grouped.identified
+            )
+        )
+        let (evil, pyramids) = ("00000000000001d3", "00000000000001c0")
+        grouped.group(
+            episodes[8...].map(\.id),
+            at: stop,
+            into: pyramids,
+            type: .serial,
+            title: Title("Pyramids of Mars")!
+        )
+        grouped.group(episodes[4..<8].map(\.id), at: stop, into: evil, type: .serial, title: Title("Planet of Evil")!)
+        try await walkingUnmatched.confirm(stop, choosing: grouped.stops[stop]?.chosen ?? [], in: &grouped)
+        #expect(grouped.stops[stop]?.children == [serial.id.value, evil, pyramids], "by their first parts")
     }
 
     /// A special placed as an entry of a season while the season's stop is open leaves the unassigned,

@@ -539,38 +539,27 @@ private struct WalkChildren: View {
         }
     }
 
-    /// The missing episodes in TMDb's order, each group at its first episode's place, and each container
-    /// held beneath at the place of the first of TMDb's episodes it holds, or last when it holds none.
+    /// The children as the walk lists them, each group with its episodes and each container held beneath
+    /// with those put into it.
     private var rows: [GroupingRow] {
-        var rows: [GroupingRow] = []
-        var waiting = held.enumerated().sorted {
-            ($0.element.number ?? .max, $0.offset) < ($1.element.number ?? .max, $1.offset)
-        }
-        .map(\.element)
-        for episode in episodes {
-            while let next = waiting.first, (next.number ?? .max) < episode.number {
-                rows.append(heldRow(next))
-                waiting.removeFirst()
-            }
-            if intoHeld.values.contains(where: { $0.contains(episode.id) }) { continue }
-            if let group = groups.first(where: { $0.episodes.contains(episode.id) }) {
-                guard group.episodes.first == episode.id else { continue }
+        walk.children(at: stop).map { child in
+            switch child {
+            case .episode(let episode):
+                return .member(member(episode))
+            case .group(let group):
                 let members = group.episodes.compactMap { id in episodes.first { $0.id == id } }
-                rows.append(
-                    .group(
-                        GroupingGroup(
-                            id: group.id,
-                            title: group.title.rawValue,
-                            kind: group.typeLabel ?? group.type.title,
-                            members: members.map(member)
-                        )
+                return .group(
+                    GroupingGroup(
+                        id: group.id,
+                        title: group.title.rawValue,
+                        kind: group.typeLabel ?? group.type.title,
+                        members: members.map(member)
                     )
                 )
-            } else {
-                rows.append(.member(member(episode)))
+            case .held(let held):
+                return heldRow(held)
             }
         }
-        return rows + waiting.map(heldRow)
     }
 
     /// A container held beneath, with the missing episodes added to it.
