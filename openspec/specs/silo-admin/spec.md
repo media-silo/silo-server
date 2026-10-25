@@ -999,7 +999,8 @@ beneath the container. The episodes a held container lacks SHALL be groupable in
 beneath it as a draft's entries are, a group of the kind, title and label the operator gives, made
 of the episodes selected, as a draft's entries are, ticked, or added to a group made there already; runs TMDb titles as the parts of one
 story SHALL be suggested as a draft's are, but for a run of the story the held container is titled
-as, which is its own parts. A group SHALL be chosen whole, its episodes shown in it,
+as, which is its own parts, and SHALL instead be offered to be titled by its part numbers, as a
+draft's own parts are, the entries the walk adds for them carrying those titles. A group SHALL be chosen whole, its episodes shown in it,
 each only to be taken out of it or the group ungrouped, each episode then chosen as the group was. A
 group chosen SHALL be made, when the walk is stored, as a container beneath the held one holding its
 episodes in TMDb's order, named in the held container's edit where the first of them would have gone,

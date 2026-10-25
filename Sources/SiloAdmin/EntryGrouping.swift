@@ -72,8 +72,6 @@ struct GroupingList<Heading: View>: View {
     /// rather than grouped again.
     var renaming: GroupingSuggestion?
     var rename: (_ word: String) -> Void = { _ in }
-    /// What ticking does here, said above the entries.
-    var note: String?
     @ViewBuilder let heading: Heading
     /// The entries selected to be grouped.
     @State private var selected: Set<String> = []
@@ -88,7 +86,6 @@ struct GroupingList<Heading: View>: View {
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
-                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
                 ForEach(segments, id: \.id) { segment in view(of: segment) }
             }
             .padding(.leading, 4)

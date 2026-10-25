@@ -83,13 +83,43 @@ extension TMDbWalk {
     /// The runs of a held stop's missing episodes, grouped in none of its groups, that TMDb titles as the
     /// parts of one story.
     public func suggestedGroups(at stop: String) -> [SuggestedEpisodes] {
+        // A run of the story the stop is titled as is its own parts, not a group to make of them.
+        storyRuns(at: stop).filter { !isOwn($0, at: stop) }
+    }
+
+    /// The run of a held stop's missing episodes that are its own story's parts, to be titled by their
+    /// part numbers rather than grouped, as a draft's own parts are.
+    public func suggestedRenaming(at stop: String) -> SuggestedEpisodes? {
+        storyRuns(at: stop).first { isOwn($0, at: stop) }
+    }
+
+    /// Missing episodes of a held stop titled by the word given and each one's part number at TMDb, as
+    /// `Part 3`: the titles the entries the walk adds for them carry.
+    public mutating func title(_ episodes: [Int], at stop: String, as word: String) {
+        for episode in missingEpisodes(at: stop) where episodes.contains(episode.id) {
+            guard let number = TMDbTree.part(of: episode.title) else { continue }
+            titles[episode.id] = "\(word) \(number)"
+        }
+    }
+
+    /// An episode as the walk shows it and adds it: the operator's own title, or TMDb's.
+    public func title(of episode: TMDb.Episode) -> String { titles[episode.id] ?? episode.title }
+
+    /// The runs of a held stop's missing episodes, grouped in none and titled by none of the operator's
+    /// own, that TMDb titles as the parts of one story.
+    private func storyRuns(at stop: String) -> [SuggestedEpisodes] {
         let grouped = Set((stops[stop]?.groups ?? []).flatMap(\.episodes))
             .union((stops[stop]?.intoHeld ?? [:]).values.joined())
-        // A run of the story the stop is titled as is its own parts, not a group to make of them.
-        let own = stops[stop]?.title ?? ""
-        return TMDbTree.runs(of: missingEpisodes(at: stop).map { ($0.id, grouped.contains($0.id) ? nil : $0.title) })
-            .filter { $0.title.caseInsensitiveCompare(own) != .orderedSame }
-            .map { SuggestedEpisodes(title: $0.title, episodes: $0.ids) }
+        let runs = TMDbTree.runs(
+            of: missingEpisodes(at: stop).map {
+                ($0.id, grouped.contains($0.id) || titles[$0.id] != nil ? nil : $0.title)
+            }
+        )
+        return runs.map { SuggestedEpisodes(title: $0.title, episodes: $0.ids) }
+    }
+
+    private func isOwn(_ run: SuggestedEpisodes, at stop: String) -> Bool {
+        run.title.caseInsensitiveCompare(stops[stop]?.title ?? "") == .orderedSame
     }
 
     /// Missing episodes of a held stop made a new group beneath it, taken in place of its episodes, and
@@ -164,7 +194,12 @@ extension TMDbWalk {
             child.typeLabel = group.typeLabel
             child.sequences = [Sequence(id: "parts", items: [])]
             for episode in episodes {
-                TMDbTree.insert(AdminConsole.leaf(episode, in: child), into: &child, sequence: nil, at: nil)
+                TMDbTree.insert(
+                    AdminConsole.leaf(episode, in: child, title: self.titles[episode.id]),
+                    into: &child,
+                    sequence: nil,
+                    at: nil
+                )
             }
             let tree = TMDbTree(
                 library: library,

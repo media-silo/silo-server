@@ -848,15 +848,16 @@ extension AdminConsole {
         case child(ContainerID)
     }
 
-    /// An episode as the leaf a container gains for it.
-    nonisolated static func leaf(_ episode: TMDb.Episode, in container: Container) -> Entry {
-        Entry.leaf(
-            Entry.Leaf(
-                id: TMDbTree.itemID(for: episode.title, in: container),
-                type: .episode,
-                externalRefs: [episode.ref]
-            )
+    /// An episode as the leaf a container gains for it, carrying the operator's own title when it has
+    /// one.
+    nonisolated static func leaf(_ episode: TMDb.Episode, in container: Container, title: String? = nil) -> Entry {
+        var leaf = Entry.Leaf(
+            id: TMDbTree.itemID(for: episode.title, in: container),
+            type: .episode,
+            externalRefs: [episode.ref]
         )
+        leaf.title = title
+        return .leaf(leaf)
     }
 
     /// An entry put after the one its anchor names, or last when nothing does.

@@ -385,7 +385,7 @@ private struct DifferenceLabel: View {
                 }
             }
         case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
-        case .episode(let episode, _): Text(episode.title)
+        case .episode(let episode, _): Text(walk.title(of: episode))
         case .season(let season): Text(season.name)
         case .heldSeason(let season, let container, let suggested):
             let held = walk.stops[container]?.title ?? container
@@ -482,7 +482,13 @@ private struct WalkChildren: View {
         }
     }
 
+    /// What ticking does said above the list, and the list, as a new stop has them.
+    @ViewBuilder
     private var missing: some View {
+        Text(
+            "Ticked, each child the library lacks is added to this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed, and each child put into one held here is that one's own, ticked at its stop."
+        )
+        .font(.caption).foregroundStyle(.secondary)
         GroupingList(
             rows: rows,
             suggestions: walk.suggestedGroups(at: stop).map {
@@ -521,8 +527,13 @@ private struct WalkChildren: View {
                 }
             },
             ungroup: { group in model.groupEpisodes { $0.ungroup(group, at: $1) } },
-            note:
-                "Ticked, each episode the library lacks is added here when the walk is stored. Grouped, they are added together as a new container beneath this one; put into one held here, they are its own, ticked at its stop."
+            renaming: walk.suggestedRenaming(at: stop).map {
+                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init))
+            },
+            rename: { word in
+                guard let episodes = walk.suggestedRenaming(at: stop)?.episodes else { return }
+                model.groupEpisodes { $0.title(episodes, at: $1, as: word) }
+            }
         ) {
             heading(tickable)
         }
@@ -577,7 +588,7 @@ private struct WalkChildren: View {
     }
 
     private func member(_ episode: TMDb.Episode) -> GroupingMember {
-        GroupingMember(id: String(episode.id), title: episode.title)
+        GroupingMember(id: String(episode.id), title: walk.title(of: episode))
     }
 
     /// The episodes not grouped, ticked as the stop has them.

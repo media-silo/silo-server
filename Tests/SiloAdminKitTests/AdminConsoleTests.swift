@@ -4885,6 +4885,14 @@ extension AdminConsoleTests {
         )
         walk.stops[stop]?.title = "Planet of Evil"
         #expect(walk.suggestedGroups(at: stop).map(\.title) == ["Pyramids of Mars"], "its own story's parts, no group")
+        #expect(
+            walk.suggestedRenaming(at: stop) == SuggestedEpisodes(title: "Planet of Evil", episodes: evil),
+            "titled by their numbers instead"
+        )
+        walk.title(evil, at: stop, as: "Part")
+        #expect(walk.titles == Dictionary(uniqueKeysWithValues: evil.enumerated().map { ($1, "Part \($0 + 1)") }))
+        #expect(walk.suggestedRenaming(at: stop) == nil && walk.title(of: episodes[4]) == "Part 1")
+        #expect(walk.suggestedGroups(at: stop).map(\.title) == ["Pyramids of Mars"])
         walk.stops[stop]?.title = "Season 13"
 
         let group = "00000000000001d3"
@@ -4928,6 +4936,7 @@ extension AdminConsoleTests {
             made.first?.sequences.flatMap(\.items).map { $0.externalRefs }
                 == evil.map { [ExternalRef(provider: .tmdb, value: String($0))] }
         )
+        #expect(made.first?.sequences.flatMap(\.items).map(\.title) == (1...4).map { "Part \($0)" }, "as titled")
     }
 
     /// A group a held season takes is a new stop beneath it once the season is confirmed: specials placed

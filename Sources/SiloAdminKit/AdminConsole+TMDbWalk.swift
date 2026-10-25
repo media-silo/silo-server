@@ -306,6 +306,8 @@ extension TMDbWalk {
         var grouped: [String: EpisodeGroup] = [:]
         /// The containers held beneath it its missing episodes were handed to, by each episode's TMDb id.
         var intoHeld: [String: String] = [:]
+        /// The operator's own titles for its missing episodes, by TMDb id.
+        var titles: [Int: String] = [:]
         /// The new containers the walk makes beneath it, each with what is beneath it.
         var made: [(creating: ContainerDraft.Creating, making: TMDbTree.Making)] = []
     }
@@ -425,6 +427,7 @@ extension TMDbWalk {
             throw AdminConsole.StoreRefused(reason: "\(stop.title)'s sidecar does not read as a container")
         }
         var change = Change(stop: stop, draft: draft, container: held)
+        change.titles = titles
         let groups = stop.groups.filter { taken.contains($0.tick) }
         for group in groups {
             for episode in group.episodes { change.grouped[String(episode)] = group }
@@ -501,7 +504,7 @@ extension TMDbWalk {
         case .reference(let item?, let ref): AdminConsole.add(ref, toItem: item, in: &change.container)
         case .episode(let episode, let after):
             AdminConsole.insert(
-                AdminConsole.leaf(episode, in: change.container),
+                AdminConsole.leaf(episode, in: change.container, title: change.titles[episode.id]),
                 after: Self.anchor(after, in: change),
                 into: &change.container
             )
@@ -545,7 +548,8 @@ extension TMDbWalk {
         }
         child.sequences = [Sequence(id: "parts", items: [])]
         for episode in episodes {
-            TMDbTree.insert(AdminConsole.leaf(episode, in: child), into: &child, sequence: nil, at: nil)
+            let leaf = AdminConsole.leaf(episode, in: child, title: change.titles[episode.id])
+            TMDbTree.insert(leaf, into: &child, sequence: nil, at: nil)
         }
         name(group, after: after, in: &change)
         change.children.append(child)

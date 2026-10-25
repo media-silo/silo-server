@@ -16,3 +16,5 @@ season itself or grouped into a new serial beside the one held. Proposal:
 - Its missing episodes may be put into one of them as into a group made there, taken out again, or
   grouped instead; put there, they are that container's own missing episodes, ticked, grouped and
   taken at its stop, and what TMDb puts after them follows the container.
+- A held stop's own story's parts are offered to be titled by their part numbers, as a draft's are,
+  and its children say what ticking does where a new stop's do.

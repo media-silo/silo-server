@@ -88,6 +88,16 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
 
     public var identified: [String: Int] { identifiedSeasons ?? [:] }
 
+    /// The operator's own titles for missing episodes of held stops, by TMDb id, as `Part 3`: what the
+    /// entries the walk adds for them are titled, in place of TMDb's. Absent from a walk kept before they
+    /// were asked.
+    private var episodeTitles: [Int: String]?
+
+    public var titles: [Int: String] {
+        get { episodeTitles ?? [:] }
+        set { episodeTitles = newValue.isEmpty ? nil : newValue }
+    }
+
     public init(library: String, root: Stop) {
         id = UUID()
         self.library = library
