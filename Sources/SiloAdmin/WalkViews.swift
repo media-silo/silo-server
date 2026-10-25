@@ -385,7 +385,7 @@ private struct DifferenceLabel: View {
                 }
             }
         case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
-        case .episode(let episode, _): Text("Episode \(episode.number): \(episode.title)")
+        case .episode(let episode, _): Text(episode.title)
         case .season(let season): Text(season.name)
         case .heldSeason(let season, let container, let suggested):
             let held = walk.stops[container]?.title ?? container
@@ -577,7 +577,7 @@ private struct WalkChildren: View {
     }
 
     private func member(_ episode: TMDb.Episode) -> GroupingMember {
-        GroupingMember(id: String(episode.id), title: "Episode \(episode.number): \(episode.title)")
+        GroupingMember(id: String(episode.id), title: episode.title)
     }
 
     /// The episodes not grouped, ticked as the stop has them.
