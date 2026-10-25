@@ -35,6 +35,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         /// The groups the operator made of a held stop's missing episodes; absent from a walk kept before
         /// they were asked.
         var episodeGroups: [EpisodeGroup]?
+        /// The missing episodes the operator added to containers a held stop holds beneath it, by each
+        /// container's id; absent from a walk kept before they were asked.
+        var episodesIntoHeld: [String: [Int]]?
 
         public init(id: String, title: String, type: String, parent: String? = nil) {
             self.id = id
@@ -140,6 +143,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
             stops[id]?.comparison = nil
             stops[id]?.taken = nil
             stops[id]?.groups = []
+            stops[id]?.intoHeld = [:]
         }
     }
 

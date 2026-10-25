@@ -48,6 +48,12 @@ extension TMDbWalk.Stop {
         get { episodeGroups ?? [] }
         set { episodeGroups = newValue.isEmpty ? nil : newValue }
     }
+
+    /// Absent from a walk kept before missing episodes could be added to a held container.
+    public var intoHeld: [String: [Int]] {
+        get { episodesIntoHeld ?? [:] }
+        set { episodesIntoHeld = newValue.isEmpty ? nil : newValue }
+    }
 }
 
 extension TMDbWalk {
@@ -62,6 +68,7 @@ extension TMDbWalk {
     /// parts of one story.
     public func suggestedGroups(at stop: String) -> [SuggestedEpisodes] {
         let grouped = Set((stops[stop]?.groups ?? []).flatMap(\.episodes))
+            .union((stops[stop]?.intoHeld ?? [:]).values.joined())
         // A run of the story the stop is titled as is its own parts, not a group to make of them.
         let own = stops[stop]?.title ?? ""
         return TMDbTree.runs(of: missingEpisodes(at: stop).map { ($0.id, grouped.contains($0.id) ? nil : $0.title) })
@@ -123,8 +130,51 @@ extension TMDbWalk {
         if ticked { stops[stop]?.chosen.formUnion(group.episodes.map { "episode:\($0)" }) }
     }
 
-    /// An episode out of whichever group of the stop holds it, and a group left with none gone.
+    /// The containers a held stop holds beneath it, as its reading found them, or, for a reading kept
+    /// before they were read, the held stops the walk found beneath it, placed by none of TMDb's episodes.
+    public func heldChildren(at stop: String) -> [AdminConsole.HeldChild] {
+        guard let comparison = stops[stop]?.comparison else { return [] }
+        if let held = comparison.heldChildren { return held }
+        return (stops[stop]?.children ?? []).filter { !isNew($0) }.compactMap { id in
+            stops[id].flatMap { child in
+                ContainerType(rawValue: child.type).map { AdminConsole.HeldChild(id: id, title: child.title, type: $0) }
+            }
+        }
+    }
+
+    /// Missing episodes of a held stop added to a container it holds beneath it, in TMDb's order after
+    /// any added already: taken whenever the stop is, as entries of that container, in place of entries
+    /// of the stop. Each leaves any group, or other container, it was in.
+    public mutating func add(_ episodes: [Int], toHeld child: String, at stop: String) {
+        guard heldChildren(at: stop).contains(where: { $0.id == child }), !episodes.isEmpty else { return }
+        let members = stops[stop]?.intoHeld[child] ?? []
+        for episode in episodes where !members.contains(episode) { leave(episode, at: stop) }
+        let ordered = inOrder(Set(members).union(episodes), at: stop)
+        stops[stop]?.intoHeld[child] = ordered
+        stops[stop]?.chosen.subtract(episodes.map { "episode:\($0)" })
+    }
+
+    /// One episode out of the held container it was added to, back among the stop's missing ones and
+    /// ticked, as everything added there was taken.
+    public mutating func remove(_ episode: Int, fromHeld child: String, at stop: String) {
+        guard stops[stop]?.intoHeld[child]?.contains(episode) == true else { return }
+        leave(episode, at: stop)
+        stops[stop]?.chosen.insert("episode:\(episode)")
+    }
+
+    /// The missing episodes a held stop's parent added to it, in TMDb's order: added here when the walk
+    /// is stored.
+    public func addedFromAbove(_ stop: String) -> [TMDb.Episode] {
+        guard let parent = stops[stop]?.parent, let added = stops[parent]?.intoHeld[stop] else { return [] }
+        return missingEpisodes(at: parent).filter { added.contains($0.id) }
+    }
+
+    /// An episode out of whichever group of the stop, or held container, holds it, and a group left with
+    /// none gone.
     private mutating func leave(_ episode: Int, at stop: String) {
+        if let intoHeld = stops[stop]?.intoHeld {
+            stops[stop]?.intoHeld = intoHeld.mapValues { $0.filter { $0 != episode } }.filter { !$0.value.isEmpty }
+        }
         guard var groups = stops[stop]?.groups else { return }
         for index in groups.indices { groups[index].episodes.removeAll { $0 == episode } }
         for emptied in groups where emptied.episodes.isEmpty { stops[stop]?.chosen.remove(emptied.tick) }

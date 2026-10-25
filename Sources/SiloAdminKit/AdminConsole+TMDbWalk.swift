@@ -304,6 +304,8 @@ extension TMDbWalk {
         var children: [Container] = []
         /// The groups of its missing episodes taken, by each episode's TMDb id.
         var grouped: [String: EpisodeGroup] = [:]
+        /// The containers held beneath it its missing episodes were added to, by each episode's TMDb id.
+        var intoHeld: [String: String] = [:]
         /// The new containers the walk makes beneath it, each with what is beneath it.
         var made: [(creating: ContainerDraft.Creating, making: TMDbTree.Making)] = []
     }
@@ -425,7 +427,22 @@ extension TMDbWalk {
         for group in groups {
             for episode in group.episodes { change.grouped[String(episode)] = group }
         }
+        for (child, episodes) in stop.intoHeld {
+            for episode in episodes { change.intoHeld[String(episode)] = child }
+        }
         for difference in comparison.differences {
+            // One added to a container held beneath is an entry of that container's edit instead.
+            if case .episode(let episode, _) = difference, let child = change.intoHeld[String(episode.id)] {
+                gathering.edits.append(
+                    .init(
+                        library: library,
+                        container: child,
+                        entry: Special(episode: episode),
+                        entryID: "\(Slug.make(from: episode.title))-\(episode.id)"
+                    )
+                )
+                continue
+            }
             // A group taken is made beneath the stop, named where its first episode would have gone.
             if case .episode(let episode, let after) = difference, let group = change.grouped[String(episode.id)] {
                 if Self.first(of: group, in: comparison) == episode.id {
@@ -543,11 +560,12 @@ extension TMDbWalk {
         change.children.append(child)
     }
 
-    /// What an entry TMDb puts after an episode goes after in the stop's container: the episode, or the
-    /// group taken in its place.
+    /// What an entry TMDb puts after an episode goes after in the stop's container: the episode, the
+    /// group taken in its place, or the container held beneath it was added to.
     private static func anchor(_ after: ExternalRef?, in change: Change) -> AdminConsole.Anchor? {
         guard let after else { return nil }
         if let group = change.grouped[after.value], let id = ContainerID(group.id) { return .child(id) }
+        if let child = change.intoHeld[after.value].flatMap(ContainerID.init) { return .child(child) }
         return .ref(after)
     }
 

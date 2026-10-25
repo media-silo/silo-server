@@ -167,6 +167,7 @@ struct WalkSheet: View {
             DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
             DifferenceGroup("Artwork", comparison.differences.filter(\.isArtwork), walk: walk, tick: tick)
             PlacedSpecials(walk: walk, model: model, stop: comparison.container)
+            AddedFromAbove(walk: walk, model: model, stop: comparison.container)
             if !comparison.heldOnly.isEmpty {
                 GroupBox("Held here, and nothing at TMDb: nothing is offered for removal") {
                     ForEach(comparison.heldOnly, id: \.self) { Text($0).font(.caption) }
@@ -176,6 +177,7 @@ struct WalkSheet: View {
             if !walk.differences(of: comparison.container).contains(where: {
                 !$0.isSpecial && !$0.isHeld && !$0.isUnmatched
             }),
+                walk.addedFromAbove(comparison.container).isEmpty,
                 current.progress[comparison.container] == nil
             {
                 Label("Nothing differs from TMDb's record", systemImage: "checkmark.seal").foregroundStyle(.green)
@@ -366,6 +368,33 @@ private struct PlacedSpecials: View {
     }
 }
 
+/// The missing episodes the stop above added to this held container, each with a way back among that
+/// stop's own.
+private struct AddedFromAbove: View {
+    let walk: TMDbWalk
+    let model: ConsoleModel
+    let stop: String
+
+    var body: some View {
+        let added = walk.addedFromAbove(stop)
+        if let parent = walk.stops[stop]?.parent, !added.isEmpty {
+            GroupBox("Added here from \(walk.stops[parent]?.title ?? parent) when the walk is stored") {
+                ForEach(added, id: \.id) { episode in
+                    HStack {
+                        Text("Episode \(episode.number): \(episode.title)")
+                        Spacer()
+                        Button("Take Out") {
+                            model.groupEpisodes { walk, _ in walk.remove(episode.id, fromHeld: stop, at: parent) }
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
 /// A difference as the walk says it, the same for a held container and a new one: a field TMDb's text
 /// is taken into with its attribution marked.
 private struct DifferenceLabel: View {
@@ -417,8 +446,9 @@ private struct DifferenceLabel: View {
 }
 
 /// A held stop's children: the seasons TMDb has, those the library holds shown ticked and never chosen,
-/// and the episodes it lacks, which may be grouped into new containers beneath it. What ticking each
-/// does is said once, above them.
+/// and the episodes it lacks, which may be grouped into new containers beneath it or added to one it
+/// holds beneath it, each held one shown in its place among them. What ticking each does is said once,
+/// above them.
 private struct WalkChildren: View {
     let current: ConsoleModel.Walking
     let model: ConsoleModel
@@ -428,7 +458,10 @@ private struct WalkChildren: View {
     private var walk: TMDbWalk { current.walk }
     private var stop: String { comparison.container }
     private var groups: [EpisodeGroup] { walk.stops[stop]?.groups ?? [] }
-    private var grouped: Set<Int> { Set(groups.flatMap(\.episodes)) }
+    private var held: [AdminConsole.HeldChild] { walk.heldChildren(at: stop) }
+    private var intoHeld: [String: [Int]] { walk.stops[stop]?.intoHeld ?? [:] }
+    /// The missing episodes grouped, or added to a container held beneath.
+    private var grouped: Set<Int> { Set(groups.flatMap(\.episodes)).union(intoHeld.values.joined()) }
     private var seasons: [AdminConsole.TMDbDifference] {
         walk.differences(of: stop).filter { $0.isChild && !$0.isEpisode }
     }
@@ -501,24 +534,43 @@ private struct WalkChildren: View {
                 }
             },
             add: { members, group in
-                model.groupEpisodes { $0.add(members.compactMap(Int.init), toGroup: group, at: $1) }
+                let episodes = members.compactMap(Int.init)
+                if held.contains(where: { $0.id == group }) {
+                    model.groupEpisodes { $0.add(episodes, toHeld: group, at: $1) }
+                } else {
+                    model.groupEpisodes { $0.add(episodes, toGroup: group, at: $1) }
+                }
             },
             remove: { member, group in
                 guard let episode = Int(member) else { return }
-                model.groupEpisodes { $0.remove(episode, fromGroup: group, at: $1) }
+                if held.contains(where: { $0.id == group }) {
+                    model.groupEpisodes { $0.remove(episode, fromHeld: group, at: $1) }
+                } else {
+                    model.groupEpisodes { $0.remove(episode, fromGroup: group, at: $1) }
+                }
             },
             ungroup: { group in model.groupEpisodes { $0.ungroup(group, at: $1) } },
             note:
-                "Ticked, each episode the library lacks is added here when the walk is stored. Grouped, they are added together as a new container beneath this one."
+                "Ticked, each episode the library lacks is added here when the walk is stored. Grouped, they are added together as a new container beneath this one; put into one held here, they are added to it."
         ) {
             heading(tickable)
         }
     }
 
-    /// The missing episodes in TMDb's order, each group at its first episode's place.
+    /// The missing episodes in TMDb's order, each group at its first episode's place, and each container
+    /// held beneath at the place of the first of TMDb's episodes it holds, or last when it holds none.
     private var rows: [GroupingRow] {
         var rows: [GroupingRow] = []
+        var waiting = held.enumerated().sorted {
+            ($0.element.number ?? .max, $0.offset) < ($1.element.number ?? .max, $1.offset)
+        }
+        .map(\.element)
         for episode in episodes {
+            while let next = waiting.first, (next.number ?? .max) < episode.number {
+                rows.append(heldRow(next))
+                waiting.removeFirst()
+            }
+            if intoHeld.values.contains(where: { $0.contains(episode.id) }) { continue }
             if let group = groups.first(where: { $0.episodes.contains(episode.id) }) {
                 guard group.episodes.first == episode.id else { continue }
                 let members = group.episodes.compactMap { id in episodes.first { $0.id == id } }
@@ -536,7 +588,21 @@ private struct WalkChildren: View {
                 rows.append(.member(member(episode)))
             }
         }
-        return rows
+        return rows + waiting.map(heldRow)
+    }
+
+    /// A container held beneath, with the missing episodes added to it.
+    private func heldRow(_ child: AdminConsole.HeldChild) -> GroupingRow {
+        let added = intoHeld[child.id] ?? []
+        return .group(
+            GroupingGroup(
+                id: child.id,
+                title: child.title,
+                kind: child.typeLabel ?? child.type.title,
+                members: episodes.filter { added.contains($0.id) }.map(member),
+                held: true
+            )
+        )
     }
 
     private func member(_ episode: TMDb.Episode) -> GroupingMember {
@@ -559,10 +625,7 @@ private struct WalkChildren: View {
 
     /// The kind the containers held beneath it and the groups made already are, mostly.
     private var defaultKind: ContainerType? {
-        let held = (walk.container(stop)?.childContainerIDs ?? []).compactMap { child in
-            walk.stops[child.value].flatMap { ContainerType(rawValue: $0.type) }
-        }
-        let kinds = held + groups.map(\.type)
+        let kinds = held.map(\.type) + groups.map(\.type)
         let counts = Dictionary(kinds.map { ($0, 1) }, uniquingKeysWith: +)
         return counts.max { $0.value < $1.value }?.key
     }

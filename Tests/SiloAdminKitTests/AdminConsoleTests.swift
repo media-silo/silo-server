@@ -4930,6 +4930,96 @@ extension AdminConsoleTests {
         )
     }
 
+    /// A container held beneath a held season is among its children, at the place of the first episode it
+    /// holds, and the season's missing episodes may be added to it, taken out of it again, or grouped
+    /// instead; storing the walk adds them to it, in its stop's edit once that is confirmed.
+    @Test func aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, episodes) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season.id.value, in: &walk)
+        walk.identify(season.id.value, as: 6981)
+        walk.read(
+            try await console.compare(
+                season.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        let (stop, held) = (season.id.value, serial.id.value)
+        #expect(
+            walk.heldChildren(at: stop) == [
+                AdminConsole.HeldChild(id: held, title: "Terror of the Zygons", type: .serial, number: 1)
+            ],
+            "placed by the first part it holds, found by TMDb's id"
+        )
+        let (evil, pyramids) = (Array(episodes[4..<8].map(\.id)), Array(episodes[8...].map(\.id)))
+        walk.stops[stop]?.chosen.formUnion((evil + pyramids).map { "episode:\($0)" })
+
+        walk.add([evil[1], evil[0]], toHeld: held, at: stop)
+        #expect(walk.stops[stop]?.intoHeld == [held: [evil[0], evil[1]]], "in TMDb's order")
+        #expect(walk.stops[stop]?.chosen.contains("episode:\(evil[0])") == false, "taken there, not here")
+        #expect(walk.suggestedGroups(at: stop).map(\.episodes) == [Array(evil[2...]), pyramids])
+        walk.add([evil[2]], toHeld: "00000000000009ff", at: stop)
+        #expect(walk.stops[stop]?.intoHeld == [held: [evil[0], evil[1]]], "nothing added to a container not held here")
+
+        walk.group([evil[1]], at: stop, into: "00000000000001d3", type: .serial, title: Title("Evil")!)
+        #expect(walk.stops[stop]?.intoHeld == [held: [evil[0]]], "grouped instead")
+        walk.add([evil[1]], toGroup: "00000000000001d3", at: stop)
+        walk.add([evil[1]], toHeld: held, at: stop)
+        #expect(walk.stops[stop]?.groups.isEmpty == true, "the group it left, emptied, is gone")
+        walk.remove(evil[0], fromHeld: held, at: stop)
+        walk.remove(evil[2], fromHeld: held, at: stop)
+        #expect(walk.stops[stop]?.chosen.contains("episode:\(evil[0])") == true, "ticked again here")
+        walk.add([evil[0]], toHeld: held, at: stop)
+
+        walk.stops[stop]?.chosen.subtract((evil[2...] + pyramids).map { "episode:\($0)" })
+        walk.stops[stop]?.chosen.insert("episode:\(evil[2])")
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        #expect(walk.addedFromAbove(held).map(\.id) == [evil[0], evil[1]])
+        #expect(walk.state(of: stop) == .changed)
+        var keptBefore = walk
+        keptBefore.stops[stop]?.comparison?.heldChildren = nil
+        #expect(
+            keptBefore.heldChildren(at: stop) == [
+                AdminConsole.HeldChild(id: held, title: "Terror of the Zygons", type: .serial)
+            ],
+            "a reading kept before they were read: the held stops found beneath it"
+        )
+
+        var plan = try walk.plan()
+        let added = plan.steps.compactMap { step -> Int? in
+            if case .held(let edit) = step.kind, edit.container == held { edit.entry?.id } else { nil }
+        }
+        #expect(added == [evil[0], evil[1]], "the serial's stop not confirmed, edits of it as it is then")
+        let edit = try #require(Self.edit(of: stop, in: plan)?.value)
+        #expect(
+            edit.sequences.first?.items.map { $0.childContainer?.value ?? $0.externalRefs.first?.value ?? "" } == [
+                held, String(evil[2]),
+            ],
+            "what TMDb puts after them following the serial they were added to"
+        )
+
+        walk.read(
+            try await console.compare(held, in: "tv", of: home, from: database, tmdb: tmdb, identified: walk.identified)
+        )
+        try await walking.confirm(held, in: &walk)
+        plan = try walk.plan()
+        #expect(!plan.steps.contains { if case .held = $0.kind { true } else { false } })
+        let serialEdit = try #require(Self.edit(of: held, in: plan)?.value)
+        #expect(
+            serialEdit.sequences.first?.items.suffix(2).map(\.externalRefs)
+                == [evil[0], evil[1]].map { [ExternalRef(provider: .tmdb, value: String($0))] },
+            "in the serial's own edit, after the parts it holds"
+        )
+    }
+
     /// A special is suggested here only on what ties it to the container: its title naming the container,
     /// an entry of it, the story an entry is a part of, or a container beneath it; or smddb filing it
     /// there. Suggested here on when it aired alone, it is not.

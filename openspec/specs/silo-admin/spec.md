@@ -1003,7 +1003,16 @@ as, which is its own parts. A group SHALL be chosen whole, its episodes shown in
 each only to be taken out of it or the group ungrouped, each episode then chosen as the group was. A
 group chosen SHALL be made, when the walk is stored, as a container beneath the held one holding its
 episodes in TMDb's order, named in the held container's edit where the first of them would have gone,
-and none of its episodes SHALL be added to the held container itself. Chosen artwork SHALL be put with its attribution when the walk is stored. The
+and none of its episodes SHALL be added to the held container itself. Each container the held one
+holds beneath it SHALL be shown among its children, at the place of the first of TMDb's episodes it
+holds, or after them when it holds none, and its missing episodes selected SHALL be addable to it as
+to a group made there, each only to be taken out of it again, chosen then, or grouped instead. One
+added there SHALL be taken whenever the held container's stop is confirmed, and storing the walk
+SHALL add it to that container after the entries it holds, in TMDb's order, in that container's own
+edit when its stop is confirmed and onto its sidecar as it is then when not; none of them SHALL be
+added to the held container itself, and an entry TMDb puts after one of them SHALL follow the
+container. That container's stop SHALL show what was added to it, each with a way to take it out.
+Chosen artwork SHALL be put with its attribution when the walk is stored. The
 console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
 opened.
 
@@ -1018,6 +1027,13 @@ opened.
   grouped as a serial, all five are chosen, and the walk is stored
 - **THEN** the serial is created beneath the season holding the four, the season's edit names it where
   the first part would have gone, and the next story's part follows it
+
+#### Scenario: missing parts added to a serial held beneath
+- **WHEN** a held season holds a serial beneath it holding the first story's parts, lacks two parts of
+  the next story, which are added to that serial, chooses the third part, and the walk is stored
+- **THEN** the serial is shown among the season's children before the missing parts, the serial gains
+  the two parts after its own, and the season's edit adds the third part after the serial and neither
+  of the two
 
 #### Scenario: an extra TMDb does not know
 - **WHEN** a container the library holds has an extra that TMDb's record has nothing for
@@ -1048,7 +1064,8 @@ opened.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`,
-`aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`). The list and its choosing are pinned by nothing
+`aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`,
+`aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`). The list and its choosing are pinned by nothing
 yet, as the rest of the shell is.
 
 ### Requirement: A reading against TMDb says each step as it goes, and shows what it has found

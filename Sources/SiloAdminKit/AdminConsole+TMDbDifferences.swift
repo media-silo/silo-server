@@ -76,6 +76,29 @@ extension AdminConsole {
         public var runtimes: [String: Int] = [:]
         /// The container as the reading found it, which its stop's edit is based on.
         public var opened: OpenedContainer
+        /// The containers held beneath it, in the order it holds them, read when its missing episodes are:
+        /// shown among its children, each one its missing episodes may be added to. Absent from a reading
+        /// kept before they were read.
+        public var heldChildren: [HeldChild]?
+    }
+
+    /// A container held beneath one read against TMDb, as the children of the one read show it.
+    public struct HeldChild: Hashable, Sendable, Codable, Identifiable {
+        public var id: String
+        public var title: String
+        public var type: ContainerType
+        public var typeLabel: String?
+        /// TMDb's number for the first of its episodes it holds, which places it among the missing ones;
+        /// nil when it holds none of them.
+        public var number: Int?
+
+        public init(id: String, title: String, type: ContainerType, typeLabel: String? = nil, number: Int? = nil) {
+            self.id = id
+            self.title = title
+            self.type = type
+            self.typeLabel = typeLabel
+            self.number = number
+        }
     }
 
     /// Why a container cannot be read against TMDb: it carries no reference TMDb can be asked by,
@@ -543,6 +566,15 @@ extension AdminConsole {
             return [.episode(episode, after: index > 0 ? episodes[index - 1].ref : nil)]
         }
         comparison.differences += found.flatMap { $0 }
+        if missing {
+            comparison.heldChildren = try await heldChildren(
+                of: container,
+                episodes: episodes,
+                byOtherIDs: byOtherIDs,
+                in: comparison.library,
+                of: silo
+            )
+        }
         for sequence in container.sequences {
             let carried = sequence.items.filter { $0.externalRefs.contains { tmdbIDs.contains($0) } }
             let order = episodes.map(\.ref)
@@ -560,6 +592,33 @@ extension AdminConsole {
                 !entry.externalRefs.contains(where: { tmdbIDs.contains($0) })
             else { return nil }
             return entry.title.map { "\(entry.id?.value ?? ""): \($0)" } ?? entry.id?.value
+        }
+    }
+
+    /// The containers held beneath one, each placed by the first of TMDb's episodes it holds, carrying
+    /// TMDb's id or found by its other ids.
+    private func heldChildren(
+        of container: Container,
+        episodes: [TMDb.Episode],
+        byOtherIDs: [ExternalRef: Entry],
+        in library: String,
+        of silo: Silo
+    ) async throws -> [HeldChild] {
+        try await Self.concurrently(container.childContainerIDs) { child in
+            let opened = try await self.open(container: child.value, in: library, of: silo)
+            let held = try SidecarFile.sidecar(from: opened.sidecar).container
+            let entries = held.sequences.flatMap(\.items) + held.extras
+            let first = episodes.first { episode in
+                entries.contains { $0.externalRefs.contains(episode.ref) }
+                    || (byOtherIDs[episode.ref].map(entries.contains) ?? false)
+            }
+            return HeldChild(
+                id: child.value,
+                title: held.displayTitle,
+                type: held.type,
+                typeLabel: held.typeLabel,
+                number: first?.number
+            )
         }
     }
 
