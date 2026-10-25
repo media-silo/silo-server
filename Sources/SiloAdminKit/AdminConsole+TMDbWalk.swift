@@ -304,6 +304,10 @@ extension TMDbWalk {
         var children: [Container] = []
         /// The groups of its missing episodes taken, by each episode's TMDb id.
         var grouped: [String: EpisodeGroup] = [:]
+        /// The containers held beneath it its missing episodes were handed to, by each episode's TMDb id.
+        var intoHeld: [String: String] = [:]
+        /// The operator's own titles for its missing episodes, by TMDb id.
+        var titles: [Int: String] = [:]
         /// The new containers the walk makes beneath it, each with what is beneath it.
         var made: [(creating: ContainerDraft.Creating, making: TMDbTree.Making)] = []
     }
@@ -414,22 +418,36 @@ extension TMDbWalk {
     /// A confirmed stop's change: its ticked differences and the specials placed in it, onto the sidecar
     /// its reading found.
     private func change(of id: String, gathering: inout Gathering) throws -> Change? {
-        guard let stop = stops[id], let taken = stop.taken, let comparison = stop.comparison else { return nil }
+        guard let stop = stops[id], let taken = stop.taken, var comparison = stop.comparison else { return nil }
+        // The missing episodes its parent handed to it are its own, as though its reading offered them.
+        comparison.differences += handed(to: id)
         let sidecar = try SidecarFile.sidecar(from: comparison.opened.sidecar)
         var draft = try ContainerDraft.change(comparison.opened.container, sidecar: comparison.opened.sidecar)
         guard let held = draft.value else {
             throw AdminConsole.StoreRefused(reason: "\(stop.title)'s sidecar does not read as a container")
         }
         var change = Change(stop: stop, draft: draft, container: held)
+        change.titles = titles
         let groups = stop.groups.filter { taken.contains($0.tick) }
         for group in groups {
             for episode in group.episodes { change.grouped[String(episode)] = group }
         }
+        for (child, episodes) in stop.intoHeld {
+            for episode in episodes { change.intoHeld[String(episode)] = child }
+        }
         for difference in comparison.differences {
+            // One handed to a container held beneath is that container's to take.
+            if case .episode(let episode, _) = difference, change.intoHeld[String(episode.id)] != nil { continue }
             // A group taken is made beneath the stop, named where its first episode would have gone.
             if case .episode(let episode, let after) = difference, let group = change.grouped[String(episode.id)] {
                 if Self.first(of: group, in: comparison) == episode.id {
-                    Self.make(group, after: after, into: &change, comparison: comparison)
+                    // Drafted as a stop and confirmed there, it is made from its draft, with what its
+                    // stop placed and shaped; named here all the same.
+                    if drafts[group.id] != nil, stops[group.id]?.taken != nil {
+                        Self.name(group, after: after, in: &change)
+                    } else {
+                        Self.make(group, after: after, into: &change, comparison: comparison)
+                    }
                 }
                 continue
             }
@@ -486,7 +504,7 @@ extension TMDbWalk {
         case .reference(let item?, let ref): AdminConsole.add(ref, toItem: item, in: &change.container)
         case .episode(let episode, let after):
             AdminConsole.insert(
-                AdminConsole.leaf(episode, in: change.container),
+                AdminConsole.leaf(episode, in: change.container, title: change.titles[episode.id]),
                 after: Self.anchor(after, in: change),
                 into: &change.container
             )
@@ -530,8 +548,16 @@ extension TMDbWalk {
         }
         child.sequences = [Sequence(id: "parts", items: [])]
         for episode in episodes {
-            TMDbTree.insert(AdminConsole.leaf(episode, in: child), into: &child, sequence: nil, at: nil)
+            let leaf = AdminConsole.leaf(episode, in: child, title: change.titles[episode.id])
+            TMDbTree.insert(leaf, into: &child, sequence: nil, at: nil)
         }
+        name(group, after: after, in: &change)
+        change.children.append(child)
+    }
+
+    /// A group's container named in the stop where the first of its episodes would have gone.
+    private static func name(_ group: EpisodeGroup, after: ExternalRef?, in change: inout Change) {
+        guard let id = ContainerID(group.id) else { return }
         let item = ItemID(
             Slug.unique(from: group.title.rawValue, avoiding: Set(change.container.itemIDs.map(\.value)))
         )!
@@ -540,14 +566,14 @@ extension TMDbWalk {
             after: anchor(after, in: change),
             into: &change.container
         )
-        change.children.append(child)
     }
 
-    /// What an entry TMDb puts after an episode goes after in the stop's container: the episode, or the
-    /// group taken in its place.
+    /// What an entry TMDb puts after an episode goes after in the stop's container: the episode, the
+    /// group taken in its place, or the container held beneath it was handed to.
     private static func anchor(_ after: ExternalRef?, in change: Change) -> AdminConsole.Anchor? {
         guard let after else { return nil }
         if let group = change.grouped[after.value], let id = ContainerID(group.id) { return .child(id) }
+        if let child = change.intoHeld[after.value].flatMap(ContainerID.init) { return .child(child) }
         return .ref(after)
     }
 

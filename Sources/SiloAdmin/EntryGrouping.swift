@@ -20,6 +20,9 @@ struct GroupingGroup: Identifiable {
     let title: String
     let kind: String
     let members: [GroupingMember]
+    /// Held already, beneath a held container: entries may be added to it and taken out again, and it is
+    /// neither ticked nor ungrouped.
+    var held = false
 }
 
 enum GroupingRow: Identifiable {
@@ -48,7 +51,8 @@ struct GroupingSuggestion: Hashable {
 /// one at a time, then, from the pinned menu or a right-click on the selection, made a new group of the kind chosen or put into a group made already, after which
 /// nothing is selected. A group is never selected, so groups are made of entries alone and a deeper
 /// shape is made a level at a time. A group is ticked whole, and its entries are shown in it, each only
-/// to be taken out of it. A group, and each run TMDb titles as one story's parts, is bracketed on the
+/// to be taken out of it. A container held beneath already is shown in its place, and entries may be put
+/// into it as into a group, each only to be taken out of it again. A group, and each run TMDb titles as one story's parts, is bracketed on the
 /// right of its entries' titles, its title or the suggestion beside the bracket's middle. No kind is
 /// assumed: the kind the container's own groups are is offered first, and the operator chooses. The
 /// heading and the actions are the header of a section, pinned while the list scrolls beneath them in a
@@ -68,8 +72,6 @@ struct GroupingList<Heading: View>: View {
     /// rather than grouped again.
     var renaming: GroupingSuggestion?
     var rename: (_ word: String) -> Void = { _ in }
-    /// What ticking does here, said above the entries.
-    var note: String?
     @ViewBuilder let heading: Heading
     /// The entries selected to be grouped.
     @State private var selected: Set<String> = []
@@ -84,7 +86,6 @@ struct GroupingList<Heading: View>: View {
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
-                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
                 ForEach(segments, id: \.id) { segment in view(of: segment) }
             }
             .padding(.leading, 4)
@@ -249,6 +250,9 @@ struct GroupingList<Heading: View>: View {
         case .row(.fixed(_, let title)):
             // Held already, it is part of the walk whatever is ticked.
             Toggle(isOn: .constant(true)) { Text(title) }.disabled(true)
+        case .row(.group(let group)) where group.held && group.members.isEmpty:
+            // Held already, it is part of the walk whatever is ticked, and entries may be put into it.
+            Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }.disabled(true)
         case .row(.group(let group)):
             Bracketed {
                 ForEach(group.members) { member in
@@ -266,11 +270,16 @@ struct GroupingList<Heading: View>: View {
                     .bracketRow()
                 }
             } label: {
-                HStack {
-                    Toggle(isOn: groupTick(group)) {
-                        Text("\(group.kind): \(group.title)").bold()
+                if group.held {
+                    Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }
+                        .disabled(true)
+                } else {
+                    HStack {
+                        Toggle(isOn: groupTick(group)) {
+                            Text("\(group.kind): \(group.title)").bold()
+                        }
+                        Button("Ungroup") { ungroup(group.id) }.buttonStyle(.borderless).font(.caption)
                     }
-                    Button("Ungroup") { ungroup(group.id) }.buttonStyle(.borderless).font(.caption)
                 }
             }
         case .suggested(_, let run, renaming: true):

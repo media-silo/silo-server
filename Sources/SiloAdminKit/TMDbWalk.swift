@@ -35,6 +35,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         /// The groups the operator made of a held stop's missing episodes; absent from a walk kept before
         /// they were asked.
         var episodeGroups: [EpisodeGroup]?
+        /// The missing episodes the operator added to containers a held stop holds beneath it, by each
+        /// container's id; absent from a walk kept before they were asked.
+        var episodesIntoHeld: [String: [Int]]?
 
         public init(id: String, title: String, type: String, parent: String? = nil) {
             self.id = id
@@ -84,6 +87,16 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     private var identifiedSeasons: [String: Int]?
 
     public var identified: [String: Int] { identifiedSeasons ?? [:] }
+
+    /// The operator's own titles for missing episodes of held stops, by TMDb id, as `Part 3`: what the
+    /// entries the walk adds for them are titled, in place of TMDb's. Absent from a walk kept before they
+    /// were asked.
+    private var episodeTitles: [Int: String]?
+
+    public var titles: [Int: String] {
+        get { episodeTitles ?? [:] }
+        set { episodeTitles = newValue.isEmpty ? nil : newValue }
+    }
 
     public init(library: String, root: Stop) {
         id = UUID()
@@ -140,13 +153,14 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
             stops[id]?.comparison = nil
             stops[id]?.taken = nil
             stops[id]?.groups = []
+            stops[id]?.intoHeld = [:]
         }
     }
 
     /// A stop's differences as the walk reads them now: a season a held child beneath it was said to be
     /// is held by that child, and one it was only suggested to be, said to be another, is missing again.
     public func differences(of stop: String) -> [AdminConsole.TMDbDifference] {
-        let differences = stops[stop]?.comparison?.differences ?? []
+        let differences = (stops[stop]?.comparison?.differences ?? []) + handed(to: stop)
         let said = identified.filter { stops[$0.key]?.parent == stop }
         guard !said.isEmpty else { return differences }
         return differences.map { difference in
@@ -227,7 +241,12 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
             drafts[tree.top] = tree
             stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
         }
-        for child in beneath where stops[child.id] == nil { stops[child.id] = child }
+        draftGroups(of: stop)
+        for var child in beneath where stops[child.id] == nil {
+            // Found once missing episodes were handed to it, they are ticked to begin with.
+            child.chosen.formUnion((stop.intoHeld[child.id] ?? []).map { "episode:\($0)" })
+            stops[child.id] = child
+        }
         let tops = drafts.values.filter { $0.creating.parent == id }.map(\.top).sorted()
         stop.children = beneath.map(\.id) + tops.filter { !beneath.map(\.id).contains($0) }
         stops[id] = stop
@@ -243,15 +262,18 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         .map(\.top).sorted()
     }
 
-    /// The difference a draft is the missing child of.
+    /// What chosen at its parent keeps a draft in the walk: the missing season it is, or, carrying no
+    /// TMDb id, the group of a held stop's missing episodes it was drafted from.
     static func missing(_ tree: TMDbTree) -> String {
-        let ref = tree.container(tree.top)?.externalRefs.first { $0.provider == .tmdb }
-        return "season:\(ref?.value ?? "")"
+        guard let ref = tree.container(tree.top)?.externalRefs.first(where: { $0.provider == .tmdb }) else {
+            return "group:\(tree.top)"
+        }
+        return "season:\(ref.value)"
     }
 
     /// A new stop and every container beneath it out of the walk, the specials placed in them unassigned
     /// again.
-    private mutating func remove(_ top: String) {
+    mutating func remove(_ top: String) {
         guard let tree = drafts.removeValue(forKey: top) else { return }
         let ids = Set(tree.containers.map(\.id.value))
         for id in ids { stops[id] = nil }
