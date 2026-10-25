@@ -30,12 +30,16 @@ enum GroupingRow: Identifiable {
     case group(GroupingGroup)
     /// An entry shown and never grouped, as a container held beneath already is.
     case fixed(id: String, String)
+    /// An entry another container's change adds here, taken with that change: never grouped here, only
+    /// to be taken out, back among that container's own.
+    case added(GroupingMember, from: String)
 
     var id: String {
         switch self {
         case .member(let member): "member:\(member.id)"
         case .group(let group): "group:\(group.id)"
         case .fixed(let id, _): "fixed:\(id)"
+        case .added(let member, _): "added:\(member.id)"
         }
     }
 }
@@ -72,6 +76,8 @@ struct GroupingList<Heading: View>: View {
     /// rather than grouped again.
     var renaming: GroupingSuggestion?
     var rename: (_ word: String) -> Void = { _ in }
+    /// Takes an entry another container's change adds here back out of it.
+    var takeOut: (_ member: String) -> Void = { _ in }
     /// What ticking does here, said above the entries.
     var note: String?
     @ViewBuilder let heading: Heading
@@ -96,7 +102,8 @@ struct GroupingList<Heading: View>: View {
         } header: {
             VStack(alignment: .leading, spacing: 6) {
                 heading.font(.headline)
-                actions
+                // Nothing to group, as when every entry is added here from above, offers no grouping.
+                if !members.isEmpty || !groups.isEmpty { actions }
                 Divider()
             }
             .padding(.top, 4)
@@ -253,6 +260,19 @@ struct GroupingList<Heading: View>: View {
         case .row(.fixed(_, let title)):
             // Held already, it is part of the walk whatever is ticked.
             Toggle(isOn: .constant(true)) { Text(title) }.disabled(true)
+        case .row(.added(let member, let from)):
+            HStack(spacing: 4) {
+                Button {
+                    takeOut(member.id)
+                } label: {
+                    Image(systemName: "minus.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("Take Out, back among \(from)'s own")
+                // Taken with the change that adds it: only to be taken out.
+                Toggle(isOn: .constant(true)) { Text(member.title) }.disabled(true)
+                Text("added from \(from)").font(.caption).foregroundStyle(.secondary)
+            }
         case .row(.group(let group)) where group.held && group.members.isEmpty:
             // Held already, it is part of the walk whatever is ticked, and entries may be put into it.
             Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }.disabled(true)
@@ -533,7 +553,7 @@ struct EntryGrouping: View {
                     switch row {
                     case .member(let member): member.id
                     case .group(let group): group.entry
-                    case .fixed: nil
+                    case .fixed, .added: nil
                     }
                 }
                 let count = tickable.filter { !isLeftOut($0) }.count

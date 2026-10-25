@@ -16,4 +16,5 @@ season itself or grouped into a new serial beside the one held. Proposal:
 - Its missing episodes may be added to one of them as to a group made there, taken out again, or
   grouped instead; storing the walk adds them to that container, in its own stop's edit once that is
   confirmed, and what TMDb puts after them follows the container.
-- The held container's stop lists what was added to it from above, each with a way to take it out.
+- The held container's stop lists what was added to it among its children, each only to be taken
+  out again.

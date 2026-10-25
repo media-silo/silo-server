@@ -55,7 +55,8 @@ added there SHALL be taken whenever the held container's stop is confirmed, and 
 SHALL add it to that container after the entries it holds, in TMDb's order, in that container's own
 edit when its stop is confirmed and onto its sidecar as it is then when not; none of them SHALL be
 added to the held container itself, and an entry TMDb puts after one of them SHALL follow the
-container. That container's stop SHALL show what was added to it, each with a way to take it out.
+container. That container's stop SHALL show what was added to it among its children, at TMDb's
+place for each, said to be from the held one, and each only to be taken out again.
 Chosen artwork SHALL be put with its attribution when the walk is stored. The
 console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
 opened.
