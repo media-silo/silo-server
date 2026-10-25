@@ -294,8 +294,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         let before = Set(tree.containers.map(\.id.value))
         change(&tree)
         drafts[top] = tree
-        // A group ungrouped leaves the walk, and the specials placed in it are unassigned again.
-        let gone = before.subtracting(tree.containers.map(\.id.value))
+        // A group ungrouped, or left out, leaves the walk, and the specials placed in it are unassigned
+        // again.
+        let gone = before.subtracting(tree.containers.map(\.id.value).filter(tree.isMade))
         for id in gone { stops[id] = nil }
         for (special, placement) in placements where home(of: placement).map(gone.contains) ?? false {
             placements[special] = nil

@@ -92,6 +92,9 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     /// top of the library before the tree, so the refs to it resolve when the tree arrives.
     public var breakouts: [String: String]
     public var edited: Date
+    /// The entries the operator unticked, to be left out when the tree is made, by the id of the
+    /// container holding them; absent from a draft kept before entries could be.
+    var leftOutEntries: [String: [String]]?
 
     public init(
         library: String,
@@ -204,6 +207,9 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     ) {
         guard var parent = container(parentID), !items.isEmpty else { return }
         let chosen = Set(items)
+        // Grouped, an entry is made with its group, and left out only with it.
+        let grouped = Set(items.map(\.value))
+        leftOutEntries?[parentID]?.removeAll(where: grouped.contains)
         var gathered: [Entry] = []
         var placedAt: (sequence: Int, item: Int)?
         for sequence in parent.sequences.indices {
@@ -288,8 +294,9 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
 
     /// The tree as creating it would make it, every placement applied.
     public var making: Making {
-        var byID = Dictionary(containers.map { ($0.id.value, $0) }, uniquingKeysWith: { first, _ in first })
-        var order = containers.map(\.id.value)
+        let made = containers.filter { isMade($0.id.value) }.map(leavingOut)
+        var byID = Dictionary(made.map { ($0.id.value, $0) }, uniquingKeysWith: { first, _ in first })
+        var order = made.map(\.id.value)
         var newBreakouts = Dictionary(
             breakouts.compactMap { id, _ in container(id).map { (id, $0) } },
             uniquingKeysWith: { first, _ in first }

@@ -15,8 +15,8 @@ struct GroupingMember: Identifiable, Hashable {
 /// A group made in a grouping list: the container its entries are to be in.
 struct GroupingGroup: Identifiable {
     let id: String
-    /// What it is selected by among the members, to be grouped itself; nil when it is not.
-    var key: String?
+    /// The entry naming it in the container, in a draft; nil when it has none yet.
+    var entry: String?
     let title: String
     let kind: String
     let members: [GroupingMember]
@@ -53,8 +53,6 @@ struct GroupingList: View {
     let rows: [GroupingRow]
     let suggestions: [GroupingSuggestion]
     let defaultKind: ContainerType?
-    /// The word for the members chosen: selected to be grouped, or ticked to be taken and grouped.
-    let chosenWord: String
     @Binding var chosen: Set<String>
     let groupTick: (GroupingGroup) -> Binding<Bool>
     let form: (_ members: [String], _ title: Title, _ type: ContainerType, _ label: String?) async -> Void
@@ -86,17 +84,8 @@ struct GroupingList: View {
         rows.compactMap { if case .group(let group) = $0 { group } else { nil } }
     }
 
-    /// The members chosen, and the groups selected among them, in the list's order.
-    private var chosenMembers: [String] {
-        rows.compactMap { row in
-            switch row {
-            case .member(let member): member.id
-            case .group(let group): group.key
-            case .fixed: nil
-            }
-        }
-        .filter(chosen.contains)
-    }
+    /// The members ticked, in the list's order.
+    private var chosenMembers: [String] { members.map(\.id).filter(chosen.contains) }
 
     /// Every kind a group may be, the one the container's own groups are first.
     private var kinds: [ContainerType] {
@@ -108,8 +97,8 @@ struct GroupingList: View {
     /// only while there are suggestions.
     @ViewBuilder
     private var actions: some View {
-        Menu("Group \(chosenWord.capitalized)") {
-            Section("\(chosenMembers.count) \(chosenWord)") {
+        Menu("Group Ticked") {
+            Section("\(chosenMembers.count) ticked") {
                 Menu("New Group") {
                     ForEach(kinds, id: \.self) { kind in Button(kind.title) { forming = kind } }
                 }
@@ -199,9 +188,10 @@ struct GroupingList: View {
         case .row(.member(let member)):
             Toggle(isOn: choosing(member.id)) { Text(member.title) }
         case .row(.fixed(_, let title)):
-            Text("↳ \(title)").foregroundStyle(.secondary)
+            // Held already, it is part of the walk whatever is ticked.
+            Toggle(isOn: .constant(true)) { Text(title) }.disabled(true)
         case .row(.group(let group)):
-            Bracketed(ids: group.members.map(\.id)) {
+            Bracketed {
                 ForEach(group.members) { member in
                     HStack(spacing: 4) {
                         Button {
@@ -214,7 +204,7 @@ struct GroupingList: View {
                         // Taken with the group: only to be taken out of it.
                         Toggle(isOn: .constant(true)) { Text(member.title) }.disabled(true)
                     }
-                    .bracketRow(member.id)
+                    .bracketRow()
                 }
             } label: {
                 HStack {
@@ -225,13 +215,13 @@ struct GroupingList: View {
                 }
             }
         case .suggested(let suggestion, let run):
-            Bracketed(ids: run.map(\.id)) {
+            Bracketed {
                 ForEach(run) { member in
-                    Toggle(isOn: choosing(member.id)) { Text(member.title) }.bracketRow(member.id)
+                    Toggle(isOn: choosing(member.id)) { Text(member.title) }.bracketRow()
                 }
             } label: {
                 HStack {
-                    Text("group as \(suggestion.title)").foregroundStyle(.tint)
+                    Text("\(suggestion.title)?").foregroundStyle(.tint)
                     Menu("Group") {
                         ForEach(kinds, id: \.self) { kind in
                             Button("As a \(kind.title)") { Task { await group(suggestion, as: kind) } }
@@ -254,71 +244,125 @@ struct GroupingList: View {
 }
 
 /// Rows bracketed on the right of their widest: a line from the middle of the first to the middle of
-/// the last, a stub from each row's middle to it, and the label beside the line's middle.
+/// the last, a stub from each row's middle to it, and the label beside the line's middle. The rows and
+/// the label are placed by one layout, and the bracket is drawn from the rows' frames as laid out, so it
+/// reaches every row however the titles wrap.
 private struct Bracketed<Rows: View, Label: View>: View {
-    let ids: [String]
     @ViewBuilder let rows: Rows
     @ViewBuilder let label: Label
-    @State private var middles: [String: CGFloat] = [:]
-
-    private var placed: [CGFloat] { ids.compactMap { middles[$0] } }
-    private var middle: CGFloat { ((placed.first ?? 0) + (placed.last ?? 0)) / 2 }
 
     var body: some View {
-        let middle = middle
-        HStack(alignment: .top, spacing: 6) {
-            VStack(alignment: .leading, spacing: 4) { rows }
-                .coordinateSpace(.named(BracketRow.space))
-                .onPreferenceChange(BracketRow.self) { middles = $0 }
-            BracketLine(middles: placed)
-                .stroke(.tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                .frame(width: 16, height: (placed.last ?? 0) + 1)
-            label.alignmentGuide(.top) { $0[VerticalAlignment.center] - middle }
+        BracketLayout {
+            rows
+            label
+        }
+        .backgroundPreferenceValue(BracketRow.self) { anchors in
+            GeometryReader { proxy in
+                BracketLine(frames: anchors.map { proxy[$0] })
+                    .stroke(.tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
         }
     }
 }
 
-/// The middle of each bracketed row, in the bracket's rows' space.
-private struct BracketRow: PreferenceKey {
-    static let space = "bracketed"
-    static let defaultValue: [String: CGFloat] = [:]
+/// The rows one under another, each given what width the label leaves, and the label, the last
+/// subview, past the bracket's room and centred on the middle between the first row's middle and the
+/// last's.
+private struct BracketLayout: Layout {
+    /// The room the bracket takes between the widest row and the label.
+    static let bracket: CGFloat = 24
+    let spacing: CGFloat = 4
 
-    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
-        value.merge(nextValue()) { $1 }
+    private struct Placed {
+        var rows: [CGRect]
+        var label: CGRect
+        var size: CGSize
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        placed(proposal, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let placed = placed(ProposedViewSize(bounds.size), subviews)
+        for (subview, frame) in zip(subviews.dropLast(), placed.rows) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
+        subviews.last?.place(
+            at: CGPoint(x: bounds.minX + placed.label.minX, y: bounds.minY + placed.label.minY),
+            proposal: ProposedViewSize(placed.label.size)
+        )
+    }
+
+    private func placed(_ proposal: ProposedViewSize, _ subviews: Subviews) -> Placed {
+        guard let label = subviews.last else { return Placed(rows: [], label: .zero, size: .zero) }
+        let rows = subviews.dropLast()
+        let width = proposal.width ?? .infinity
+        let ideal = label.sizeThatFits(.unspecified)
+        // The label takes what it would, up to half of what the rows and it share.
+        let labelWidth = min(ideal.width, max(0, (width - Self.bracket) / 2))
+        let labelSize = label.sizeThatFits(ProposedViewSize(width: labelWidth, height: nil))
+        let rowsWidth = width.isFinite ? max(0, width - Self.bracket - labelSize.width) : nil
+        var frames: [CGRect] = []
+        var top: CGFloat = 0
+        for row in rows {
+            let size = row.sizeThatFits(ProposedViewSize(width: rowsWidth, height: nil))
+            frames.append(CGRect(origin: CGPoint(x: 0, y: top), size: size))
+            top += size.height + spacing
+        }
+        let middle = ((frames.first?.midY ?? 0) + (frames.last?.midY ?? 0)) / 2
+        // A label taller than the rows above its middle pushes the rows down, never off the top.
+        let inset = max(0, labelSize.height / 2 - middle)
+        frames = frames.map { $0.offsetBy(dx: 0, dy: inset) }
+        let widest = frames.map(\.maxX).max() ?? 0
+        let labelFrame = CGRect(
+            origin: CGPoint(x: widest + Self.bracket, y: inset + middle - labelSize.height / 2),
+            size: labelSize
+        )
+        let height = max((frames.last?.maxY ?? 0), labelFrame.maxY)
+        return Placed(rows: frames, label: labelFrame, size: CGSize(width: labelFrame.maxX, height: height))
+    }
+}
+
+/// Each bracketed row's bounds, in the order the rows are.
+private struct BracketRow: PreferenceKey {
+    static let defaultValue: [Anchor<CGRect>] = []
+
+    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) {
+        value.append(contentsOf: nextValue())
     }
 }
 
 extension View {
-    /// Says where a bracketed row's middle is, for the bracket to reach.
-    fileprivate func bracketRow(_ id: String) -> some View {
-        background(
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: BracketRow.self,
-                    value: [id: proxy.frame(in: .named(BracketRow.space)).midY]
-                )
-            }
-        )
+    /// Says where a bracketed row is, for the bracket to reach.
+    fileprivate func bracketRow() -> some View {
+        anchorPreference(key: BracketRow.self, value: .bounds) { [$0] }
     }
 }
 
-/// A stub left from the line at each row's middle, the line from the first to the last, and a stub
-/// right at its middle, toward the label.
+/// A stub from the right of the widest row at each row's middle to the line, the line from the first
+/// row's middle to the last's, and a stub at its middle toward the label.
 private struct BracketLine: Shape {
-    let middles: [CGFloat]
+    let frames: [CGRect]
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        guard let first = middles.first, let last = middles.last else { return path }
-        let line = rect.maxX - 5
-        for middle in middles {
-            path.move(to: CGPoint(x: rect.minX, y: middle))
-            path.addLine(to: CGPoint(x: line, y: middle))
+        guard let first = frames.first, let last = frames.last, let widest = frames.map(\.maxX).max() else {
+            return path
         }
-        path.move(to: CGPoint(x: line, y: first))
-        path.addLine(to: CGPoint(x: line, y: last))
-        path.move(to: CGPoint(x: line, y: (first + last) / 2))
-        path.addLine(to: CGPoint(x: rect.maxX, y: (first + last) / 2))
+        let (start, line, end) = (widest + 4, widest + 14, widest + BracketLayout.bracket - 4)
+        for frame in frames {
+            path.move(to: CGPoint(x: start, y: frame.midY))
+            path.addLine(to: CGPoint(x: line, y: frame.midY))
+        }
+        path.move(to: CGPoint(x: line, y: first.midY))
+        path.addLine(to: CGPoint(x: line, y: last.midY))
+        let middle = (first.midY + last.midY) / 2
+        path.move(to: CGPoint(x: line, y: middle))
+        path.addLine(to: CGPoint(x: end, y: middle))
         return path
     }
 }
@@ -333,49 +377,81 @@ struct EntryGrouping: View {
     /// Changes the draft, as the sheet the grouping is in keeps it.
     let update: ((inout TMDbTree) -> Void) -> Void
     let provisionalID: () async -> ContainerID?
-    @State private var selected: Set<String> = []
 
     private var container: Container? { tree.container(parent) }
+    private var rows: [GroupingRow] { (container?.sequences.flatMap(\.items) ?? []).compactMap(row) }
 
     var body: some View {
-        if let container {
+        if container != nil {
             GroupBox {
                 GroupingList(
-                    rows: container.sequences.flatMap(\.items).compactMap(row),
+                    rows: rows,
                     suggestions: tree.suggestedGroups(in: parent).map {
                         GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
                     },
                     defaultKind: Self.kind(of: tree.groups(in: parent)),
-                    chosenWord: "selected",
-                    chosen: $selected,
-                    groupTick: { group in
-                        Binding(
-                            get: { group.key.map(selected.contains) ?? false },
-                            set: { on in
-                                guard let key = group.key else { return }
-                                if on { selected.insert(key) } else { selected.remove(key) }
-                            }
-                        )
-                    },
+                    chosen: ticked,
+                    groupTick: { group in group.entry.map(including) ?? .constant(true) },
                     form: formGroup,
                     add: { members, group in
-                        let leaves = Set(
-                            tree.container(parent)?.sequences.flatMap(\.items).filter { $0.childContainer == nil }
-                                .compactMap(\.id?.value) ?? []
-                        )
-                        change { $0.add(members.filter(leaves.contains).compactMap(ItemID.init), to: group) }
+                        update { $0.add(members.compactMap(ItemID.init), to: group) }
                     },
                     remove: { member, group in
                         guard let item = ItemID(member) else { return }
-                        change { $0.remove(item, from: group) }
+                        update { $0.remove(item, from: group) }
                     },
-                    ungroup: { group in change { $0.ungroup(group) } }
+                    ungroup: { group in update { $0.ungroup(group) } }
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                Text(selected.isEmpty ? "Its entries" : "Its entries, \(selected.count) selected")
+                // Ticks every child that may be ticked or none, a group as one, and shows as mixed while
+                // some are ticked.
+                let tickable = rows.compactMap { row -> String? in
+                    switch row {
+                    case .member(let member): member.id
+                    case .group(let group): group.entry
+                    case .fixed: nil
+                    }
+                }
+                let count = tickable.filter { !isLeftOut($0) }.count
+                if tickable.isEmpty {
+                    Text("Children, each held already")
+                } else {
+                    Toggle(sources: tickable.map(including), isOn: \.self) {
+                        Text("Children, \(count) of \(tickable.count) ticked")
+                    }
+                }
             }
         }
+    }
+
+    private func isLeftOut(_ item: String) -> Bool {
+        ItemID(item).map { tree.isLeftOut($0, in: parent) } ?? false
+    }
+
+    /// An entry ticked to be made with the container, or unticked to be left out.
+    private func including(_ item: String) -> Binding<Bool> {
+        let parent = parent
+        return Binding(
+            get: { !isLeftOut(item) },
+            set: { on in
+                guard let id = ItemID(item) else { return }
+                update { $0.include(id, in: parent, on) }
+            }
+        )
+    }
+
+    /// The entries grouped in none that are ticked.
+    private var ticked: Binding<Set<String>> {
+        let members = rows.compactMap { if case .member(let member) = $0 { member.id } else { nil } }
+        return Binding(
+            get: { Set(members.filter { !isLeftOut($0) }) },
+            set: { on in
+                for member in members where on.contains(member) == isLeftOut(member) {
+                    including(member).wrappedValue = on.contains(member)
+                }
+            }
+        )
     }
 
     private func row(_ entry: Entry) -> GroupingRow? {
@@ -389,7 +465,7 @@ struct EntryGrouping: View {
         return .group(
             GroupingGroup(
                 id: child.value,
-                key: item.value,
+                entry: item.value,
                 title: group.displayTitle,
                 kind: group.typeLabel ?? group.type.title,
                 members: group.sequences.flatMap(\.items).compactMap { member in
@@ -411,23 +487,12 @@ struct EntryGrouping: View {
         return tmdb.flatMap { tree.episodeTitles[$0.value] } ?? entry.title ?? entry.id?.value ?? "a reference"
     }
 
-    private func change(_ body: @escaping (inout TMDbTree) -> Void) {
-        update(body)
-        selected = []
-    }
-
     private func formGroup(_ members: [String], _ title: Title, _ type: ContainerType, _ label: String?) async {
         guard let id = await provisionalID() else { return }
         let order = (container?.sequences.flatMap(\.items) ?? []).compactMap(\.id).filter { members.contains($0.value) }
         let parent = parent
-        var made: String?
-        update { tree in
-            tree.regroup(order, in: parent, into: id, type: type, typeLabel: label, title: title)
-            made = tree.container(parent)?.sequences.flatMap(\.items).first { $0.childContainer == id }?.id?.value
-        }
-        // The group made is selected in its members' place, as a group made at a held stop is ticked.
-        selected.subtract(members)
-        if let made { selected.insert(made) }
+        // Made ticked, as its members were, in their place.
+        update { $0.regroup(order, in: parent, into: id, type: type, typeLabel: label, title: title) }
     }
 }
 #endif

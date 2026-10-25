@@ -321,7 +321,7 @@ private struct NewStop: View {
             group("References", offered.filter(\.isReference))
             if let container = walk.container(stop), let tree = walk.draft(holding: stop) {
                 Text(
-                    "Each group made here is a new container beneath this one, looked at in the walk once this is confirmed."
+                    "Ticked, each child is made with this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed."
                 )
                 .font(.caption).foregroundStyle(.secondary)
                 EntryGrouping(
@@ -451,20 +451,27 @@ private struct WalkChildren: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                // Ticks every child that may be chosen or none, and shows as mixed while some are ticked.
-                let tickable =
-                    seasons.filter { !$0.isHeld }.map(\.id)
-                    + episodes.filter { !grouped.contains($0.id) }.map { "episode:\($0.id)" } + groups.map(\.tick)
-                let ticked = tickable.filter { tick($0).wrappedValue }.count
+                // Ticks every child that may be chosen or none, a group as one, and shows as mixed while some
+                // are ticked.
                 if tickable.isEmpty {
-                    Text("Children")
+                    Text("Children, each held here")
                 } else {
-                    Toggle(sources: tickable.map(tick), isOn: \.self) {
-                        Text(ticked == 0 ? "Children" : "Children, \(ticked) ticked")
-                    }
+                    Toggle(sources: tickable.map(tick), isOn: \.self) { Text("Children, \(counted)") }
                 }
             }
         }
+    }
+
+    /// The children that may be ticked: each season the library lacks, each episode it lacks grouped in
+    /// none, and each group as one, which is what the heading's tick ticks.
+    private var tickable: [String] {
+        seasons.filter { !$0.isHeld }.map(\.id)
+            + episodes.filter { !grouped.contains($0.id) }.map { "episode:\($0.id)" } + groups.map(\.tick)
+    }
+
+    /// How many of the children that may be ticked are, always said.
+    private var counted: String {
+        "\(tickable.filter { tick($0).wrappedValue }.count) of \(tickable.count) ticked"
     }
 
     private var missing: some View {
@@ -474,7 +481,6 @@ private struct WalkChildren: View {
                 GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init))
             },
             defaultKind: defaultKind,
-            chosenWord: "ticked",
             chosen: ticked,
             groupTick: { tick("group:\($0.id)") },
             form: { members, title, type, label in

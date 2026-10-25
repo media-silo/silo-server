@@ -32,7 +32,7 @@ extension AdminConsole {
     public func stops(beneath id: String, in walk: TMDbWalk, of silo: Silo) async throws -> [TMDbWalk.Stop] {
         guard walk.stops[id] != nil else { return [] }
         if let tree = walk.draft(holding: id) {
-            return (tree.container(id)?.childContainerIDs ?? []).compactMap { child in
+            return (tree.container(id)?.childContainerIDs ?? []).filter { tree.isMade($0.value) }.compactMap { child in
                 walk.stops[child.value]
                     ?? tree.container(child.value).map { _ in
                         TMDbWalk.Stop(

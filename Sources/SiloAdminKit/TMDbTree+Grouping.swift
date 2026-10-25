@@ -80,6 +80,48 @@ extension TMDbTree {
         for (special, placement) in placements where placement.container == group { placements[special] = nil }
     }
 
+    // MARK: Entries left out
+
+    /// Whether an entry of a container is unticked, to be left out when the tree is made.
+    public func isLeftOut(_ item: ItemID, in container: String) -> Bool {
+        leftOutEntries?[container]?.contains(item.value) ?? false
+    }
+
+    /// An entry of a container ticked to be made with it, or unticked to be left out, a group with
+    /// everything in it.
+    public mutating func include(_ item: ItemID, in container: String, _ included: Bool) {
+        var left = leftOutEntries ?? [:]
+        var entries = left[container] ?? []
+        entries.removeAll { $0 == item.value }
+        if !included { entries.append(item.value) }
+        left[container] = entries.isEmpty ? nil : entries
+        leftOutEntries = left.isEmpty ? nil : left
+        edited = .now
+    }
+
+    /// Whether a container of the tree is made with it: the top, and each container whose entry in the
+    /// one holding it is ticked, all the way up.
+    public func isMade(_ id: String) -> Bool {
+        if id == top { return documents[id] != nil }
+        guard let parentID = parent(of: id), let parent = container(parentID),
+            let entry = (parent.sequences.flatMap(\.items) + parent.extras).first(where: {
+                $0.childContainer?.value == id
+            })
+        else { return false }
+        return !(entry.id.map { isLeftOut($0, in: parentID) } ?? false) && isMade(parentID)
+    }
+
+    /// A container as it is made, the entries left out of it gone.
+    func leavingOut(_ container: Container) -> Container {
+        guard let left = leftOutEntries?[container.id.value], !left.isEmpty else { return container }
+        var kept = container
+        for index in kept.sequences.indices {
+            kept.sequences[index].items.removeAll { $0.id.map { left.contains($0.value) } ?? false }
+        }
+        kept.extras.removeAll { $0.id.map { left.contains($0.value) } ?? false }
+        return kept
+    }
+
     private mutating func unfold(_ group: String, into parentID: String) {
         guard let held = container(group), var parent = container(parentID) else { return }
         let members = held.sequences.flatMap(\.items) + held.extras
@@ -91,6 +133,7 @@ extension TMDbTree {
         parent.extras.removeAll { $0.childContainer?.value == group }
         documents[group] = nil
         attributions[group] = nil
+        leftOutEntries?[group] = nil
         documents[parentID] = Self.text(parent)
         edited = .now
     }
