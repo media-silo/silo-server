@@ -38,6 +38,15 @@ public struct SuggestedEpisodes: Hashable, Sendable {
     }
 }
 
+/// One of a held stop's children besides its seasons, as its children list them.
+public enum HeldStopChild: Hashable, Sendable {
+    /// A missing episode grouped in none, and put into no container held beneath.
+    case episode(TMDb.Episode)
+    case group(EpisodeGroup)
+    /// A container held beneath, holding the missing episodes put into it.
+    case held(AdminConsole.HeldChild)
+}
+
 // MARK: - Grouping a held stop's missing episodes
 
 /// The missing episodes of a held stop grouped into new containers beneath it, and the groups TMDb's
@@ -213,6 +222,58 @@ extension TMDbWalk {
             drafts[group.id] = tree
             stops[group.id] = Stop(newIn: tree, group.id, parent: stop.id, offering: offered(group.id, in: tree))
         }
+    }
+
+    /// A held stop's missing episodes as its children list them, in TMDb's order: each group at its first
+    /// episode's place, each container held beneath at the place of the first of TMDb's episodes it
+    /// holds, or last when it holds none, and an episode put into one shown in it rather than here.
+    public func children(at stop: String) -> [HeldStopChild] {
+        let groups = stops[stop]?.groups ?? []
+        let handed = Set((stops[stop]?.intoHeld ?? [:]).values.joined())
+        var waiting = heldChildren(at: stop).enumerated().sorted {
+            ($0.element.number ?? .max, $0.offset) < ($1.element.number ?? .max, $1.offset)
+        }
+        .map(\.element)
+        var children: [HeldStopChild] = []
+        for episode in missingEpisodes(at: stop) {
+            while let next = waiting.first, (next.number ?? .max) < episode.number {
+                children.append(.held(next))
+                waiting.removeFirst()
+            }
+            if handed.contains(episode.id) { continue }
+            if let group = groups.first(where: { $0.episodes.contains(episode.id) }) {
+                if group.episodes.first == episode.id { children.append(.group(group)) }
+                continue
+            }
+            children.append(.episode(episode))
+        }
+        return children + waiting.map(HeldStopChild.held)
+    }
+
+    /// The stops beneath a held stop in the order its children list them: its seasons as its reading
+    /// lists them, held or drafted, then the containers held beneath it and the groups of its missing
+    /// episodes, each at its place.
+    public func listed(beneath stop: String) -> [String] {
+        let seasons = differences(of: stop).compactMap { difference -> String? in
+            switch difference {
+            case .heldSeason(_, let container, _):
+                return container
+            case .season(let season):
+                return drafts.values.first { $0.creating.parent == stop && Self.missing($0) == "season:\(season.id)" }?
+                    .top
+            default:
+                return nil
+            }
+        }
+        let others = children(at: stop).compactMap { child -> String? in
+            switch child {
+            case .group(let group): group.id
+            case .held(let held): held.id
+            case .episode: nil
+            }
+        }
+        var seen: Set<String> = []
+        return (seasons + others).filter { seen.insert($0).inserted }
     }
 
     /// The containers a held stop holds beneath it, as its reading found them, or, for a reading kept

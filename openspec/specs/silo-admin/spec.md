@@ -1118,8 +1118,10 @@ sheets' showing it is pinned by nothing yet, as the rest of the shell is.
 ### Requirement: A held container's tree is reviewed against TMDb as a walk, a container at a time
 Opening a held container's differences SHALL start a walk rooted at it, whose first stop is the
 container. Confirming a stop SHALL keep its chosen differences as the container's pending change, and
-SHALL add as pending stops beneath it each container the library holds beneath it, in the order its
-sequences hold them; confirming a stop with nothing chosen SHALL record it as looked at. Pending stops
+SHALL add as pending stops beneath it each container the library holds beneath it, and each new one,
+in the order its children list them, whatever their ids: a series' seasons in TMDb's order, a held
+container's other children each at its place among its missing episodes, and a new container's in
+its draft's order; a stop never read SHALL add them in the order its sequences hold them. Confirming a stop with nothing chosen SHALL record it as looked at. Pending stops
 SHALL be opened in the tree's order, depth first. The console SHALL show the walk's tree as far as the
 walk has found it, each stop with its state: pending, open, changed, or looked at. The operator SHALL
 be able to open any stop of the walk, and a confirmed stop SHALL open with its choices and placements
@@ -1174,8 +1176,13 @@ and the walk SHALL keep what was not.
 - **WHEN** the silo refuses the second of a walk's three edits
 - **THEN** the first is stored, the second and third are not, and the walk keeps the second and third
 
+#### Scenario: a held series' seasons in TMDb's order
+- **WHEN** a held series' sequence holds its seasons out of TMDb's order, and its stop is confirmed
+- **THEN** its seasons are queued beneath it in TMDb's order
+
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`confirmingAStopQueuesTheContainersBeneathItInTheTreesOrder`,
+`aStopsChildrenAreInTheOrderItsChildrenListThem`,
 `aSpecialPlacedAtAStopIsStoredInThatContainersEdit`, `aConfirmedStopOpenedAgainKeepsWhatWasChosen`,
 `aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`,
 `anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`). The walk's sheet is pinned by nothing yet, as the rest
@@ -1192,7 +1199,8 @@ the shaping ungroups, or unticks, SHALL leave the walk, and the specials placed 
 unassigned again; one ticked again SHALL be a new stop once the stop above it is confirmed again.
 Specials SHALL be placeable in a new stop as in a held one, and a new stop SHALL show the specials
 placed in it as a held stop does, each with how it was placed and a way to unassign it. A new stop
-SHALL be made only once it is confirmed: storing the walk SHALL create it through the create route,
+SHALL be made only once it is confirmed: storing the walk SHALL name it in its parent before the first child listed after it there that
+the parent names, or last when none is, and SHALL create it through the create route,
 with the containers beneath it in one creation, right after the edit of its parent that names it, since
 the create route makes a container beneath a parent only once the parent names it. Unchoosing a missing
 child and confirming its parent's stop again SHALL remove its new stop and every stop beneath it from
@@ -1238,11 +1246,16 @@ the walk, after the console says which, and the specials placed in them SHALL be
 - **THEN** the season's stop and its serials' stops leave the walk, and a special placed in one of them
   is unassigned again
 
+#### Scenario: a season TMDb puts between two the library holds
+- **WHEN** a held series holds TMDb's first and third seasons, the second is chosen, its stop and the
+  series' are confirmed, and the walk is stored
+- **THEN** the second season is queued between the two, and the series' edit names it between them
+
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMissingSeasonChosenInAWalkIsANewStop`,
 `aStopConfirmedTwiceAtOnceDraftsItsSeasonsOnce`, `aSpecialPlacedInANewSeasonIsCreatedWithIt`,
 `aNewSeasonsSerialsAreStopsBeneathIt`, `aGroupUngroupedInANewStopLeavesTheWalk`,
 `aGroupLeftOutOfANewStopLeavesTheWalkUntilTickedAgain`,
-`unchoosingAMissingSeasonRemovesItsStops`). The walk's sheet is
+`unchoosingAMissingSeasonRemovesItsStops`, `aStopsChildrenAreInTheOrderItsChildrenListThem`). The walk's sheet is
 pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A walk is kept on this Mac until it is stored or discarded

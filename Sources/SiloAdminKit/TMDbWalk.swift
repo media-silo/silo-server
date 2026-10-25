@@ -26,7 +26,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         public var title: String
         public var type: String
         public var parent: String?
-        /// The stops beneath it, in the order its sequences hold them, once it is confirmed.
+        /// The stops beneath it, once it is confirmed, in the order its children list them: a held stop's as
+        /// its reading lists them, a new stop's as its draft holds them, and one never read as its
+        /// sequences hold them.
         public var children: [String] = []
         public var comparison: AdminConsole.TMDbComparison?
         public var chosen: Set<String> = []
@@ -106,7 +108,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         edited = .now
     }
 
-    /// The walk's stops depth first, each container's children in the order its sequences hold them.
+    /// The walk's stops depth first, each container's children in the order its children list them.
     public var order: [String] {
         var ordered: [String] = []
         func visit(_ id: String) {
@@ -248,7 +250,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
             stops[child.id] = child
         }
         let tops = drafts.values.filter { $0.creating.parent == id }.map(\.top).sorted()
-        stop.children = beneath.map(\.id) + tops.filter { !beneath.map(\.id).contains($0) }
+        let found = beneath.map(\.id) + tops.filter { !beneath.map(\.id).contains($0) }
+        let listed = listed(beneath: id).filter(found.contains)
+        stop.children = listed + found.filter { !listed.contains($0) }
         stops[id] = stop
     }
 
