@@ -4893,6 +4893,12 @@ extension AdminConsoleTests {
         #expect(walk.stops[stop]?.groups.map(\.episodes) == [evil], "in TMDb's order")
         #expect(walk.stops[stop]?.chosen == ["ref::tmdb:6981", "group:\(group)", "episode:\(pyramids[0])"])
         #expect(walk.suggestedGroups(at: stop).map(\.title) == ["Pyramids of Mars"])
+        var fromUnticked = walk
+        fromUnticked.group([pyramids[1]], at: stop, into: "00000000000001d4", type: .serial, title: Title("Pyramids")!)
+        #expect(
+            fromUnticked.stops[stop]?.chosen.contains("group:00000000000001d4") == true,
+            "ticked, none of it ticked"
+        )
 
         walk.add([pyramids[1]], toGroup: group, at: stop)
         walk.remove(pyramids[0], fromGroup: group, at: stop)

@@ -69,8 +69,8 @@ extension TMDbWalk {
             .map { SuggestedEpisodes(title: $0.title, episodes: $0.ids) }
     }
 
-    /// Missing episodes of a held stop made a new group beneath it, taken in place of its episodes: each
-    /// leaves any group it was in.
+    /// Missing episodes of a held stop made a new group beneath it, taken in place of its episodes, and
+    /// ticked, since it was selected to be made: each leaves any group it was in.
     public mutating func group(
         _ episodes: [Int],
         at stop: String,

@@ -784,9 +784,15 @@ container, group entries into child containers, and drop what they will not hold
 group as one, SHALL be ticked to be made, all of them ticked to begin with; one unticked SHALL be left
 out when the tree is made, a group with everything in it, and an entry naming a container the library
 holds already SHALL be shown ticked and SHALL NOT be choosable. The container's heading SHALL say how
-many of its entries are ticked, and tick them all or none. Entries SHALL be
-ticked, and those ticked made a new group, of the kind, title and label the operator gives, at the
-first one's place, or added to a group the draft holds beneath the same container, the group's entries
+many of its entries are ticked, and tick them all or none. A tick SHALL only say whether a child is made or taken: grouping SHALL work on
+the entries the operator selects, each selected alone, a range of them, or one more at a time, and
+no group SHALL be selected, so that a group is made of entries alone. The grouping SHALL be offered
+both above the entries and on a right-click of the selection, or of the entry clicked when it is not
+selected. Once a group is made, nothing
+SHALL be selected. The heading and the grouping's actions SHALL stay in sight above the entries while
+the entries scroll, and choosing a new group's kind SHALL leave its title ready to be typed. Entries SHALL be
+selected, and those selected made a new group, of the kind, title and label the operator gives, at the
+first one's place, ticked, or added to a group the draft holds beneath the same container, the group's entries
 then in the container's order. A group SHALL be ticked whole; its entries SHALL be shown in it, none
 choosable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
@@ -839,6 +845,11 @@ request to the silo.
 - **WHEN** one of a drafted season's entries and a group of three others are unticked, and the tree is
   made
 - **THEN** the season is made without the entry, and neither the group nor its three entries are made
+
+#### Scenario: groups made one after another
+- **WHEN** the operator selects three entries, makes them a group, and selects the next two
+- **THEN** nothing is selected once the group is made, and only the two are selected for the next
+  group; the group is never among them
 
 #### Scenario: a group ungrouped
 - **WHEN** a group a special is placed in is ungrouped
@@ -986,7 +997,7 @@ placed in a duplicate's home or a breakout SHALL be an edit of that container to
 SHALL list every edit before it stores any. A chosen child container SHALL join the walk as a new stop
 beneath the container. The episodes a held container lacks SHALL be groupable into new containers
 beneath it as a draft's entries are, a group of the kind, title and label the operator gives, made
-of the episodes chosen, or added to a group made there already; runs TMDb titles as the parts of one
+of the episodes selected, as a draft's entries are, ticked, or added to a group made there already; runs TMDb titles as the parts of one
 story SHALL be suggested as a draft's are, but for a run of the story the held container is titled
 as, which is its own parts. A group SHALL be chosen whole, its episodes shown in it,
 each only to be taken out of it or the group ungrouped, each episode then chosen as the group was. A
@@ -1148,12 +1159,13 @@ references, and any artwork TMDb offers for it, SHALL be chosen to begin with. I
 draft from TMDb is shaped, and each container the shaping makes beneath it SHALL be a new stop; one
 the shaping ungroups, or unticks, SHALL leave the walk, and the specials placed in it SHALL be
 unassigned again; one ticked again SHALL be a new stop once the stop above it is confirmed again.
-Specials SHALL be placeable in a new stop as in a held one. A new stop SHALL be made only once it is
-confirmed: storing the walk SHALL create it through the create route, with the containers beneath it in
-one creation, right after the edit of its parent that names it, since the create route makes a
-container beneath a parent only once the parent names it. Unchoosing a missing child and confirming its
-parent's stop again SHALL remove its new stop and every stop beneath it from the walk, after the
-console says which, and the specials placed in them SHALL be unassigned again.
+Specials SHALL be placeable in a new stop as in a held one, and a new stop SHALL show the specials
+placed in it as a held stop does, each with how it was placed and a way to unassign it. A new stop
+SHALL be made only once it is confirmed: storing the walk SHALL create it through the create route,
+with the containers beneath it in one creation, right after the edit of its parent that names it, since
+the create route makes a container beneath a parent only once the parent names it. Unchoosing a missing
+child and confirming its parent's stop again SHALL remove its new stop and every stop beneath it from
+the walk, after the console says which, and the specials placed in them SHALL be unassigned again.
 
 #### Scenario: a season TMDb has that the library lacks
 - **WHEN** a missing season is chosen at a held series' stop, and the stop is confirmed
@@ -1168,6 +1180,12 @@ console says which, and the specials placed in them SHALL be unassigned again.
 #### Scenario: a special placed in a new season
 - **WHEN** a special is placed as an entry of a new season, and the walk is stored
 - **THEN** the season is created holding the entry, after the series' edit that names the season
+
+#### Scenario: a special placed as an extra of a new serial
+- **WHEN** a special is placed as an extra of a serial a new season's episodes were grouped into, while
+  the serial's stop is open
+- **THEN** the serial's stop shows the special among those placed there, as an extra of the serial, and
+  unassigning it there returns it to the unassigned specials
 
 #### Scenario: a new season regrouped
 - **WHEN** a new season's episodes are regrouped into two serials
