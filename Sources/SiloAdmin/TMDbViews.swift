@@ -260,9 +260,8 @@ struct ShapeTreeSheet: View {
     let model: ConsoleModel
     @Environment(\.dismiss) private var dismiss
     @State private var selected: String?
-    @State private var breakoutTitle = ""
-    @State private var breakoutListed = false
-    @State private var alternativeTitle = ""
+    /// What is being made for a special, asked as it is placed.
+    @State private var naming: SpecialNaming?
 
     private var current: ConsoleModel.ShapingTree { model.shapingTree ?? shaping }
     private var tree: TMDbTree { current.tree }
@@ -301,6 +300,29 @@ struct ShapeTreeSheet: View {
         }
         .padding()
         .frame(minWidth: 760, minHeight: 620)
+        .sheet(item: $naming) { naming in
+            SpecialNamingSheet(naming: naming) { title, listed in place(naming, titled: title, listed: listed) }
+        }
+    }
+
+    /// A special placed as what was named for it: another version of a container, or of one of its
+    /// items, titled as asked, or a new breakout of that title.
+    private func place(_ naming: SpecialNaming, titled title: Title, listed: Bool) {
+        switch naming {
+        case .edition(let special, let container, _):
+            model.updateTree { $0.place(special.id, .edition(of: container, title: title.rawValue)) }
+        case .version(let special, let container, let item, _):
+            model.updateTree { $0.place(special.id, .version(of: container, item: item, title: title.rawValue)) }
+        case .companion(let special, let container):
+            Task {
+                guard let id = try? await model.provisionalID() else { return }
+                var breakout = Container(id: id, type: .series, title: title, listed: listed)
+                breakout.sequences = [Sequence(id: "episodes", items: [])]
+                model.updateTree {
+                    $0.place(special.id, .breakout(id.value, from: container, asExtra: true), breakout: breakout)
+                }
+            }
+        }
     }
 
     private var isWouldWrite: Bool {
@@ -396,10 +418,6 @@ struct ShapeTreeSheet: View {
             .frame(maxHeight: 180)
             if let suggesting = current.suggesting { ReadingProgress(progress: suggesting) }
             HStack {
-                TextField("New breakout's title", text: $breakoutTitle).frame(maxWidth: 220)
-                Toggle("Listed", isOn: $breakoutListed)
-                TextField("A new alternative's title", text: $alternativeTitle).frame(maxWidth: 200)
-                Text("then file specials from their menus").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Suggest Again") { Task { await model.suggestSpecials() } }
                     .disabled(current.suggesting != nil)
@@ -468,23 +486,18 @@ struct ShapeTreeSheet: View {
         .fixedSize()
     }
 
-    /// Another way to play a container: a new edition of it, or a version of one of its items.
+    /// Another way to play a container: a new edition of it, or a version of one of its items, each
+    /// titled as it is placed.
     @ViewBuilder
     private func alternativesMenu(_ special: Special, of container: Container) -> some View {
-        let named = alternativeTitle.trimmingCharacters(in: .whitespaces)
         let id = container.id.value
-        Button("As a new edition, \(named.isEmpty ? "Omnibus" : named)") {
-            model.updateTree { $0.place(special.id, .edition(of: id, title: named.isEmpty ? "Omnibus" : named)) }
+        Button("As Another Version of \(container.displayTitle)…") {
+            naming = .edition(special, of: id, container.displayTitle)
         }
-        Menu("As a version of one of its items") {
+        Menu("In Place of One of Its Items, as Another Version") {
             ForEach(container.sequences.flatMap(\.items).compactMap(\.id), id: \.self) { item in
-                Button("\(entryTitle(item, in: container)), \(named.isEmpty ? "Special edition" : named)") {
-                    model.updateTree {
-                        $0.place(
-                            special.id,
-                            .version(of: id, item: item.value, title: named.isEmpty ? "Special edition" : named)
-                        )
-                    }
+                Button("\(entryTitle(item, in: container))…") {
+                    naming = .version(special, of: id, item: item.value, entryTitle(item, in: container))
                 }
             }
         }
@@ -511,23 +524,8 @@ struct ShapeTreeSheet: View {
                     }
                 }
             }
-            if let title = Title(breakoutTitle) {
-                Button("A new one, \(title.rawValue), \(breakoutListed ? "listed" : "unlisted")") {
-                    Task {
-                        guard let id = try? await model.provisionalID() else { return }
-                        var breakout = Container(id: id, type: .series, title: title, listed: breakoutListed)
-                        breakout.sequences = [Sequence(id: "episodes", items: [])]
-                        model.updateTree {
-                            $0.place(
-                                special.id,
-                                .breakout(id.value, from: container.id.value, asExtra: true),
-                                breakout: breakout
-                            )
-                        }
-                        breakoutTitle = ""
-                    }
-                }
-            }
+            Divider()
+            Button("A New One…") { naming = .companion(special, from: container.id.value) }
         }
     }
 
