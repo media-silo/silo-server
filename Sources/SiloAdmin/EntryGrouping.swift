@@ -59,6 +59,10 @@ struct GroupingList: View {
     let add: (_ members: [String], _ group: String) -> Void
     let remove: (_ member: String, _ group: String) -> Void
     let ungroup: (_ group: String) -> Void
+    /// The run of the container's own story's parts, already grouped, to be titled by its part numbers
+    /// rather than grouped again.
+    var renaming: GroupingSuggestion?
+    var rename: (_ word: String) -> Void = { _ in }
     /// The kind of the new group being titled, while it is.
     @State private var forming: ContainerType?
     @State private var groupTitle = ""
@@ -149,12 +153,12 @@ struct GroupingList: View {
 
     private enum Segment {
         case row(GroupingRow)
-        case suggested(GroupingSuggestion, [GroupingMember])
+        case suggested(GroupingSuggestion, [GroupingMember], renaming: Bool)
 
         var id: String {
             switch self {
             case .row(let row): row.id
-            case .suggested(let suggestion, _): "suggested:\(suggestion.members.first ?? suggestion.title)"
+            case .suggested(let suggestion, _, _): "suggested:\(suggestion.members.first ?? suggestion.title)"
             }
         }
     }
@@ -165,13 +169,15 @@ struct GroupingList: View {
         var index = rows.startIndex
         while index < rows.endIndex {
             if case .member(let member) = rows[index],
-                let suggestion = suggestions.first(where: { $0.members.first == member.id })
+                let suggestion = (suggestions + (renaming.map { [$0] } ?? [])).first(where: {
+                    $0.members.first == member.id
+                })
             {
                 let run = rows[index...].prefix(suggestion.members.count).compactMap { row -> GroupingMember? in
                     if case .member(let member) = row, suggestion.members.contains(member.id) { member } else { nil }
                 }
                 if run.count == suggestion.members.count {
-                    segments.append(.suggested(suggestion, run))
+                    segments.append(.suggested(suggestion, run, renaming: suggestion == renaming))
                     index += run.count
                     continue
                 }
@@ -214,7 +220,22 @@ struct GroupingList: View {
                     Button("Ungroup") { ungroup(group.id) }.buttonStyle(.borderless).font(.caption)
                 }
             }
-        case .suggested(let suggestion, let run):
+        case .suggested(_, let run, renaming: true):
+            Bracketed {
+                ForEach(run) { member in
+                    Toggle(isOn: choosing(member.id)) { Text(member.title) }.bracketRow()
+                }
+            } label: {
+                HStack {
+                    Text("Rename?").foregroundStyle(.tint)
+                    Menu("As") {
+                        Button("Episode 1 to \(run.count)") { rename("Episode") }
+                        Button("Part 1 to \(run.count)") { rename("Part") }
+                    }
+                    .menuStyle(.borderlessButton).font(.caption).fixedSize()
+                }
+            }
+        case .suggested(let suggestion, let run, renaming: false):
             Bracketed {
                 ForEach(run) { member in
                     Toggle(isOn: choosing(member.id)) { Text(member.title) }.bracketRow()
@@ -400,7 +421,15 @@ struct EntryGrouping: View {
                         guard let item = ItemID(member) else { return }
                         update { $0.remove(item, from: group) }
                     },
-                    ungroup: { group in update { $0.ungroup(group) } }
+                    ungroup: { group in update { $0.ungroup(group) } },
+                    renaming: tree.suggestedRenaming(in: parent).map {
+                        GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
+                    },
+                    rename: { word in
+                        let parent = parent
+                        guard let items = tree.suggestedRenaming(in: parent)?.items else { return }
+                        update { $0.title(items, in: parent, as: word) }
+                    }
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
@@ -483,8 +512,10 @@ struct EntryGrouping: View {
 
     private func title(of entry: Entry) -> String {
         if let child = entry.childContainer { return tree.container(child.value)?.displayTitle ?? child.value }
+        // The operator's own title, as a part renamed has, before TMDb's.
+        if let title = entry.title { return title }
         let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
-        return tmdb.flatMap { tree.episodeTitles[$0.value] } ?? entry.title ?? entry.id?.value ?? "a reference"
+        return tmdb.flatMap { tree.episodeTitles[$0.value] } ?? entry.id?.value ?? "a reference"
     }
 
     private func formGroup(_ members: [String], _ title: Title, _ type: ContainerType, _ label: String?) async {

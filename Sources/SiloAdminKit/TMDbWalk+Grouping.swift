@@ -62,7 +62,10 @@ extension TMDbWalk {
     /// parts of one story.
     public func suggestedGroups(at stop: String) -> [SuggestedEpisodes] {
         let grouped = Set((stops[stop]?.groups ?? []).flatMap(\.episodes))
+        // A run of the story the stop is titled as is its own parts, not a group to make of them.
+        let own = stops[stop]?.title ?? ""
         return TMDbTree.runs(of: missingEpisodes(at: stop).map { ($0.id, grouped.contains($0.id) ? nil : $0.title) })
+            .filter { $0.title.caseInsensitiveCompare(own) != .orderedSame }
             .map { SuggestedEpisodes(title: $0.title, episodes: $0.ids) }
     }
 

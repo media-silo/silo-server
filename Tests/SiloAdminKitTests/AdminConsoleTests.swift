@@ -4883,6 +4883,9 @@ extension AdminConsoleTests {
                 SuggestedEpisodes(title: "Pyramids of Mars", episodes: pyramids),
             ]
         )
+        walk.stops[stop]?.title = "Planet of Evil"
+        #expect(walk.suggestedGroups(at: stop).map(\.title) == ["Pyramids of Mars"], "its own story's parts, no group")
+        walk.stops[stop]?.title = "Season 13"
 
         let group = "00000000000001d3"
         walk.stops[stop]?.chosen.formUnion(["episode:\(evil[0])", "episode:\(pyramids[0])"])
@@ -5149,6 +5152,32 @@ extension AdminConsoleTests {
         )
         #expect(TMDbTree.story(of: "The Five Doctors") == nil && TMDbTree.story(of: "(1)") == nil)
         #expect(TMDbTree.story(of: "Dimensions in Time (2)") == "Dimensions in Time")
+    }
+
+    /// A group made of a story's parts is not suggested as a group of them again: its parts are
+    /// suggested to be titled by their numbers, as `Part 1` and on, and once titled are suggested as
+    /// nothing. A group of every part of a story, titled otherwise, is its parts too.
+    @Test func aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain() throws {
+        var (tree, season, items) = Self.storiedSeason()
+        let zygons = ContainerID("00000000000001e2")!
+        let evil = ContainerID("00000000000001e3")!
+        tree.regroup(
+            Array(items[0...2]),
+            in: season,
+            into: zygons,
+            type: .serial,
+            title: Title("Terror of the Zygons")!
+        )
+        tree.regroup(Array(items[3...4]), in: season, into: evil, type: .serial, title: Title("Evil")!)
+        #expect(tree.suggestedGroups(in: zygons.value).isEmpty && tree.suggestedGroups(in: evil.value).isEmpty)
+        #expect(tree.suggestedRenaming(in: zygons.value)?.items == Array(items[0...2]))
+        #expect(tree.suggestedRenaming(in: evil.value)?.items == Array(items[3...4]))
+        #expect(tree.suggestedRenaming(in: season) == nil)
+
+        tree.title(Array(items[0...2]), in: zygons.value, as: "Part")
+        #expect(tree.container(zygons.value)?.sequences[0].items.map(\.title) == ["Part 1", "Part 2", "Part 3"])
+        #expect(tree.suggestedRenaming(in: zygons.value) == nil, "titled, suggested as nothing")
+        #expect(TMDbTree.part(of: "Planet of Evil (2)") == 2 && TMDbTree.part(of: "Planet of Evil (+2)") == nil)
     }
 
     /// A group made of a draft's entries gains selected entries in the container's order, keeps what
