@@ -161,25 +161,12 @@ struct WalkSheet: View {
                         .buttonStyle(.borderless).font(.caption)
                 }
             }
-            group("Fields", comparison.differences.filter(\.isField), comparison)
-            group("References", comparison.differences.filter(\.isReference), comparison)
+            DifferenceGroup("Fields", comparison.differences.filter(\.isField), walk: walk, tick: tick)
+            DifferenceGroup("References", comparison.differences.filter(\.isReference), walk: walk, tick: tick)
             WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
-            group("Order", comparison.differences.filter(\.isOrder), comparison)
-            group("Artwork", comparison.differences.filter(\.isArtwork), comparison)
-            let placed = walk.placed(in: comparison.container)
-            if !placed.isEmpty {
-                GroupBox("Specials placed here") {
-                    ForEach(placed) { special in
-                        HStack {
-                            Text(special.episode.title)
-                            Text(walk.placements[special.id].map(describe) ?? "").font(.caption).foregroundStyle(.green)
-                            Spacer()
-                            Button("Unassign") { model.place(special.id, nil) }.buttonStyle(.borderless)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+            DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
+            DifferenceGroup("Artwork", comparison.differences.filter(\.isArtwork), walk: walk, tick: tick)
+            PlacedSpecials(walk: walk, model: model, stop: comparison.container)
             if !comparison.heldOnly.isEmpty {
                 GroupBox("Held here, and nothing at TMDb: nothing is offered for removal") {
                     ForEach(comparison.heldOnly, id: \.self) { Text($0).font(.caption) }
@@ -192,27 +179,6 @@ struct WalkSheet: View {
                 current.progress[comparison.container] == nil
             {
                 Label("Nothing differs from TMDb's record", systemImage: "checkmark.seal").foregroundStyle(.green)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func group(
-        _ title: String,
-        _ differences: [AdminConsole.TMDbDifference],
-        _ comparison: AdminConsole.TMDbComparison
-    ) -> some View {
-        if !differences.isEmpty {
-            GroupBox {
-                VStack(alignment: .leading) {
-                    ForEach(differences) { difference in
-                        Toggle(isOn: tick(difference.id)) { DifferenceLabel(difference: difference, walk: walk) }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } label: {
-                // Ticks the group's every difference or none, and shows as mixed while some are ticked.
-                Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
             }
         }
     }
@@ -230,10 +196,6 @@ struct WalkSheet: View {
                 model.keepWalk()
             }
         )
-    }
-
-    private func describe(_ placement: SpecialPlacement) -> String {
-        WalkSpecials.describe(placement, in: walk)
     }
 
     // MARK: The store
@@ -319,8 +281,8 @@ private struct NewStop: View {
         LazyVStack(alignment: .leading, spacing: 10, pinnedViews: [.sectionHeaders]) {
             Text("New: drafted from TMDb, and made when the walk is stored.").font(.caption).foregroundStyle(.secondary)
             let offered = walk.offered(stop)
-            group("Fields", offered.filter(\.isField))
-            group("References", offered.filter(\.isReference))
+            DifferenceGroup("Fields", offered.filter(\.isField), walk: walk, tick: tick)
+            DifferenceGroup("References", offered.filter(\.isReference), walk: walk, tick: tick)
             if let container = walk.container(stop), let tree = walk.draft(holding: stop) {
                 Text(
                     "Ticked, each child is made with this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed."
@@ -336,11 +298,32 @@ private struct NewStop: View {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
                 }
             }
+            PlacedSpecials(walk: walk, model: model, stop: stop)
         }
     }
+}
 
-    @ViewBuilder
-    private func group(_ title: String, _ differences: [AdminConsole.TMDbDifference]) -> some View {
+/// A stop's differences of one kind, each ticked to be taken, held or new alike; its heading ticks them
+/// all or none.
+private struct DifferenceGroup: View {
+    let title: String
+    let differences: [AdminConsole.TMDbDifference]
+    let walk: TMDbWalk
+    let tick: (String) -> Binding<Bool>
+
+    init(
+        _ title: String,
+        _ differences: [AdminConsole.TMDbDifference],
+        walk: TMDbWalk,
+        tick: @escaping (String) -> Binding<Bool>
+    ) {
+        self.title = title
+        self.differences = differences
+        self.walk = walk
+        self.tick = tick
+    }
+
+    var body: some View {
         if !differences.isEmpty {
             GroupBox {
                 VStack(alignment: .leading) {
@@ -350,11 +333,37 @@ private struct NewStop: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
+                // Ticks the group's every difference or none, and shows as mixed while some are ticked.
                 Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
             }
         }
     }
+}
 
+/// The specials placed as part of a stop's pending change, held or new, each with where it went and a way
+/// back among the unassigned.
+private struct PlacedSpecials: View {
+    let walk: TMDbWalk
+    let model: ConsoleModel
+    let stop: String
+
+    var body: some View {
+        let placed = walk.placed(in: stop)
+        if !placed.isEmpty {
+            GroupBox("Specials placed here") {
+                ForEach(placed) { special in
+                    HStack {
+                        Text(special.episode.title)
+                        Text(walk.placements[special.id].map { WalkSpecials.describe($0, in: walk) } ?? "")
+                            .font(.caption).foregroundStyle(.green)
+                        Spacer()
+                        Button("Unassign") { model.place(special.id, nil) }.buttonStyle(.borderless)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
 }
 
 /// A difference as the walk says it, the same for a held container and a new one: a field TMDb's text

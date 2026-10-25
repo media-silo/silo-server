@@ -70,7 +70,7 @@ extension TMDbWalk {
     }
 
     /// Missing episodes of a held stop made a new group beneath it, taken in place of its episodes, and
-    /// ticked unless none of them was: each leaves any group it was in.
+    /// ticked, since it was selected to be made: each leaves any group it was in.
     public mutating func group(
         _ episodes: [Int],
         at stop: String,
@@ -79,9 +79,7 @@ extension TMDbWalk {
         typeLabel: String? = nil,
         title: Title
     ) {
-        guard let chosen = stops[stop]?.chosen, !episodes.isEmpty else { return }
-        // Ticked to be taken unless none of its episodes was.
-        let ticked = episodes.contains { chosen.contains("episode:\($0)") }
+        guard stops[stop] != nil, !episodes.isEmpty else { return }
         for episode in episodes { leave(episode, at: stop) }
         let group = EpisodeGroup(
             id: id,
@@ -92,7 +90,7 @@ extension TMDbWalk {
         )
         stops[stop]?.groups.append(group)
         stops[stop]?.chosen.subtract(episodes.map { "episode:\($0)" })
-        if ticked { stops[stop]?.chosen.insert(group.tick) }
+        stops[stop]?.chosen.insert(group.tick)
     }
 
     /// Missing episodes of a held stop added to a group made there, in TMDb's order among its own.

@@ -13,6 +13,6 @@ sight. Proposal: [A held tree reviewed against TMDb](../../../Proposals/TmdbWalk
 - A tick only says whether a child is made or taken; grouping works on the entries selected, and
   nothing is selected once a group is made. A group is never selected. A right-click on the selection
   groups it where it is.
-- A group is ticked unless none of its entries was.
+- A group is made ticked, since it was selected to be made, whatever its entries were.
 - The heading and the grouping's actions stay in sight above a scrolling list, and choosing a new
   group's kind leaves its title ready to be typed.

@@ -604,13 +604,8 @@ struct EntryGrouping: View {
         guard let id = await provisionalID() else { return }
         let order = (container?.sequences.flatMap(\.items) ?? []).compactMap(\.id).filter { members.contains($0.value) }
         let parent = parent
-        // Made in their place, ticked unless none of them was.
-        let ticked = members.contains { !isLeftOut($0) }
-        update { tree in
-            tree.regroup(order, in: parent, into: id, type: type, typeLabel: label, title: title)
-            let entry = tree.container(parent)?.sequences.flatMap(\.items).first { $0.childContainer == id }?.id
-            if !ticked, let entry { tree.include(entry, in: parent, false) }
-        }
+        // Made in their place, and ticked.
+        update { $0.regroup(order, in: parent, into: id, type: type, typeLabel: label, title: title) }
     }
 }
 #endif
