@@ -274,6 +274,10 @@ extension TMDbWalk {
     /// and the artwork, each put with its attribution.
     public struct Plan: Hashable, Sendable {
         public var steps: [Step]
+        /// The containers storing makes, and those of the library it edits, by id, whether or not an
+        /// earlier store made the step already.
+        public var made: Set<String> = []
+        public var edited: Set<String> = []
     }
 
     /// One thing storing the walk makes, said in words.
@@ -367,7 +371,18 @@ extension TMDbWalk {
         for change in changes { steps += Self.steps(for: change) }
         if let decline { steps.append(decline) }
         steps += gathering.artwork
-        return Plan(steps: steps.filter { !stored.contains($0.id) })
+        var plan = Plan(steps: steps.filter { !stored.contains($0.id) })
+        for step in steps {
+            switch step.kind {
+            case .create(let containers, _, _): plan.made.formUnion(containers.map(\.id.value))
+            case .edit(let draft): plan.edited.insert(draft.container)
+            case .held(let edit) where edit.library == library: plan.edited.insert(edit.container)
+            case .held: break
+            case .decline(_, let series): plan.edited.insert(series)
+            case .artwork(_, _, _, let container): plan.edited.insert(container)
+            }
+        }
+        return plan
     }
 
     /// What a confirmed new stop's draft makes: each container of it as its own stop left it, with the
@@ -379,7 +394,15 @@ extension TMDbWalk {
     ) -> (creating: ContainerDraft.Creating, making: TMDbTree.Making)? {
         guard var tree = drafts[top], stops[top]?.taken != nil else { return nil }
         for container in tree.containers {
-            guard let taken = stops[container.id.value]?.taken else { continue }
+            guard let taken = stops[container.id.value]?.taken else {
+                // Not confirmed, it is not made, nor anything beneath it.
+                if let parent = tree.containers.first(where: { $0.childContainerIDs.contains(container.id) }),
+                    let item = parent.sequences.flatMap(\.items).first(where: { $0.childContainer == container.id })?.id
+                {
+                    tree.include(item, in: parent.id.value, false)
+                }
+                continue
+            }
             var kept = container
             for difference in offered(container.id.value, in: tree) where !taken.contains(difference.id) {
                 switch difference {
@@ -441,14 +464,12 @@ extension TMDbWalk {
             if case .episode(let episode, _) = difference, change.intoHeld[String(episode.id)] != nil { continue }
             // A group taken is made beneath the stop, named where its first episode would have gone.
             if case .episode(let episode, let after) = difference, let group = change.grouped[String(episode.id)] {
-                if Self.first(of: group, in: comparison) == episode.id {
-                    // Drafted as a stop and confirmed there, it is made from its draft, with what its
-                    // stop placed and shaped; named here all the same.
-                    if drafts[group.id] != nil, stops[group.id]?.taken != nil {
-                        Self.name(group, after: after, in: &change)
-                    } else {
-                        Self.make(group, after: after, into: &change, comparison: comparison)
-                    }
+                // Made from its stop's draft, with what was placed and shaped there, once that stop is
+                // confirmed, as every new container is; named here where its first episode would have gone.
+                if Self.first(of: group, in: comparison) == episode.id, drafts[group.id] != nil,
+                    stops[group.id]?.taken != nil
+                {
+                    Self.name(group, after: after, in: &change)
                 }
                 continue
             }
@@ -530,30 +551,6 @@ extension TMDbWalk {
             if case .episode(let episode, _) = difference { episode.id } else { nil }
         }
         return group.episodes.first(where: offered.contains)
-    }
-
-    /// A group of a stop's missing episodes as the container it makes beneath the stop, those its reading
-    /// still offers in it, named in the stop where the first of them would have gone.
-    private static func make(
-        _ group: EpisodeGroup,
-        after: ExternalRef?,
-        into change: inout Change,
-        comparison: AdminConsole.TMDbComparison
-    ) {
-        guard let id = ContainerID(group.id) else { return }
-        var child = Container(id: id, type: group.type, title: group.title)
-        child.typeLabel = group.typeLabel
-        let episodes = comparison.differences.compactMap { difference -> TMDb.Episode? in
-            guard case .episode(let episode, _) = difference, group.episodes.contains(episode.id) else { return nil }
-            return episode
-        }
-        child.sequences = [Sequence(id: "parts", items: [])]
-        for episode in episodes {
-            let leaf = AdminConsole.leaf(episode, in: child, title: change.titles[episode.id])
-            TMDbTree.insert(leaf, into: &child, sequence: nil, at: nil)
-        }
-        name(group, after: after, in: &change)
-        change.children.append(child)
     }
 
     /// A group's container named in the stop where the first of its episodes would have gone.

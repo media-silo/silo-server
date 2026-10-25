@@ -11,12 +11,18 @@ import Synchronization
 /// where each was placed. Nothing of it reaches the silo until the walk is stored, and then only what a
 /// confirmed stop took. `TmdbWalk.md`.
 public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
-    /// Where a stop stands: queued and not yet confirmed, confirmed with a change pending, or confirmed
-    /// with nothing taken.
+    /// Where a stop stands, as storing the walk would find it: not yet confirmed, or confirmed, said by
+    /// the operator to be as it should be, and then what storing does with its container.
     public enum StopState: Hashable, Sendable {
         case pending
-        case changed
-        case lookedAt
+        /// A new container storing makes.
+        case willCreate
+        /// A new container storing makes only once the stop above it named is confirmed too.
+        case waiting(on: String)
+        /// A held container storing edits.
+        case willEdit
+        /// A held container storing leaves as it is.
+        case unchanged
     }
 
     /// One container of the walk: its differences as last read, the ones ticked now, and the ones
@@ -123,9 +129,49 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     /// The first stop in the tree's order not yet confirmed.
     public var next: String? { order.first { stops[$0]?.taken == nil } }
 
-    public func state(of id: String) -> StopState {
-        guard let taken = stops[id]?.taken else { return .pending }
-        return taken.isEmpty && placed(in: id).isEmpty ? .lookedAt : .changed
+    public func state(of id: String) -> StopState { states()[id] ?? .pending }
+
+    /// Every stop's state, read from what storing the walk would do.
+    public func states() -> [String: StopState] {
+        let plan = try? plan()
+        var states: [String: StopState] = [:]
+        for id in stops.keys {
+            guard stops[id]?.taken != nil else {
+                states[id] = .pending
+                continue
+            }
+            if plan?.made.contains(id) == true {
+                states[id] = .willCreate
+            } else if isNew(id) {
+                states[id] = .waiting(on: pendingAbove(id) ?? stops[id]?.parent ?? id)
+            } else {
+                states[id] = plan?.edited.contains(id) == true ? .willEdit : .unchanged
+            }
+        }
+        return states
+    }
+
+    /// The nearest stop above one that is not confirmed.
+    private func pendingAbove(_ id: String) -> String? {
+        var parent = stops[id]?.parent
+        while let above = parent, stops[above] != nil {
+            if stops[above]?.taken == nil { return above }
+            parent = stops[above]?.parent
+        }
+        return nil
+    }
+
+    /// A confirmed stop pending again, its choices kept: what any change to its choices does, so a
+    /// confirmed stop is always one nothing has changed at since it was confirmed.
+    public mutating func unconfirm(_ id: String) {
+        stops[id]?.taken = nil
+    }
+
+    /// One of a stop's differences ticked or not, the stop pending again if that changes anything.
+    public mutating func choose(_ difference: String, _ chosen: Bool, at stop: String) {
+        guard let was = stops[stop]?.chosen.contains(difference), was != chosen else { return }
+        if chosen { stops[stop]?.chosen.insert(difference) } else { stops[stop]?.chosen.remove(difference) }
+        unconfirm(stop)
     }
 
     /// The container whose pending change a placement is part of: the one the special goes in, the one
@@ -317,6 +363,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     /// confirmed.
     public mutating func shape(_ id: String, _ change: (inout TMDbTree) -> Void) {
         guard let top = draft(holding: id)?.top, var tree = drafts[top] else { return }
+        unconfirm(id)
         let before = Set(tree.containers.map(\.id.value))
         change(&tree)
         drafts[top] = tree
@@ -337,6 +384,8 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     /// Puts a special where the operator says, or, with nil, back among the unassigned. A new companion
     /// series it names is kept with the walk until the walk is stored.
     public mutating func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
+        // Where it was and where it goes are each pending again.
+        for home in [placements[special], placement].compactMap({ $0.flatMap(home) }) { unconfirm(home) }
         placements[special] = placement
         if let companion { companions[companion.id.value] = TMDbTree.text(companion) }
     }

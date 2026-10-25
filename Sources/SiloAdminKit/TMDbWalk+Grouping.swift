@@ -105,6 +105,7 @@ extension TMDbWalk {
     /// Missing episodes of a held stop titled by the word given and each one's part number at TMDb, as
     /// `Part 3`: the titles the entries the walk adds for them carry.
     public mutating func title(_ episodes: [Int], at stop: String, as word: String) {
+        unconfirm(stop)
         for episode in missingEpisodes(at: stop) where episodes.contains(episode.id) {
             guard let number = TMDbTree.part(of: episode.title) else { continue }
             titles[episode.id] = "\(word) \(number)"
@@ -142,6 +143,7 @@ extension TMDbWalk {
         title: Title
     ) {
         guard stops[stop] != nil, !episodes.isEmpty else { return }
+        unconfirm(stop)
         for episode in episodes { leave(episode, at: stop) }
         let group = EpisodeGroup(
             id: id,
@@ -158,6 +160,7 @@ extension TMDbWalk {
     /// Missing episodes of a held stop added to a group made there, in TMDb's order among its own.
     public mutating func add(_ episodes: [Int], toGroup id: String, at stop: String) {
         guard let index = stops[stop]?.groups.firstIndex(where: { $0.id == id }) else { return }
+        unconfirm(stop)
         let members = stops[stop]?.groups[index].episodes ?? []
         for episode in episodes where !members.contains(episode) { leave(episode, at: stop) }
         guard let index = stops[stop]?.groups.firstIndex(where: { $0.id == id }) else { return }
@@ -172,6 +175,7 @@ extension TMDbWalk {
             return
         }
         let ticked = stops[stop]?.chosen.contains(group.tick) ?? false
+        unconfirm(stop)
         leave(episode, at: stop)
         if ticked { stops[stop]?.chosen.insert("episode:\(episode)") }
     }
@@ -180,6 +184,7 @@ extension TMDbWalk {
     public mutating func ungroup(_ id: String, at stop: String) {
         guard let group = stops[stop]?.groups.first(where: { $0.id == id }) else { return }
         let ticked = stops[stop]?.chosen.contains(group.tick) ?? false
+        unconfirm(stop)
         stops[stop]?.groups.removeAll { $0.id == id }
         stops[stop]?.chosen.remove(group.tick)
         if ticked { stops[stop]?.chosen.formUnion(group.episodes.map { "episode:\($0)" }) }
@@ -293,6 +298,8 @@ extension TMDbWalk {
     /// none of the held stop's. Each leaves any group, or other container, it was in.
     public mutating func add(_ episodes: [Int], toHeld child: String, at stop: String) {
         guard heldChildren(at: stop).contains(where: { $0.id == child }), !episodes.isEmpty else { return }
+        unconfirm(stop)
+        unconfirm(child)
         let members = stops[stop]?.intoHeld[child] ?? []
         for episode in episodes where !members.contains(episode) { leave(episode, at: stop) }
         let ordered = inOrder(Set(members).union(episodes), at: stop)
@@ -305,6 +312,7 @@ extension TMDbWalk {
     /// ticked, as it was there to begin with.
     public mutating func remove(_ episode: Int, fromHeld child: String, at stop: String) {
         guard stops[stop]?.intoHeld[child]?.contains(episode) == true else { return }
+        unconfirm(stop)
         leave(episode, at: stop)
         stops[stop]?.chosen.insert("episode:\(episode)")
     }
@@ -316,6 +324,7 @@ extension TMDbWalk {
             for (child, handed) in intoHeld where handed.contains(episode) {
                 leave(episode, at: child)
                 stops[child]?.chosen.remove("episode:\(episode)")
+                unconfirm(child)
             }
             stops[stop]?.intoHeld = intoHeld.mapValues { $0.filter { $0 != episode } }.filter { !$0.value.isEmpty }
         }
