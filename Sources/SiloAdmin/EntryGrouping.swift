@@ -43,16 +43,21 @@ struct GroupingSuggestion: Hashable {
     let members: [String]
 }
 
-/// Entries grouped into containers by the operator, the actions first, in one menu: the entries chosen
-/// made a new group of the kind chosen, or put into a group made already. A group is ticked whole, and
-/// its entries are shown in it, each only to be taken out of it. A group, and each run TMDb titles as
-/// one story's parts, is bracketed on the right of its entries' titles, its title or the suggestion
-/// beside the bracket's middle. No kind is assumed: the kind the container's own groups are is offered
-/// first, and the operator chooses. How many are chosen is said by the list's heading.
-struct GroupingList: View {
+/// Entries grouped into containers by the operator. A tick only says whether an entry is taken, or
+/// made: grouping works on the entries selected, clicked, shift-clicked to a range or command-clicked
+/// one at a time, then, from the pinned menu or a right-click on the selection, made a new group of the kind chosen or put into a group made already, after which
+/// nothing is selected. A group is never selected, so groups are made of entries alone and a deeper
+/// shape is made a level at a time. A group is ticked whole, and its entries are shown in it, each only
+/// to be taken out of it. A group, and each run TMDb titles as one story's parts, is bracketed on the
+/// right of its entries' titles, its title or the suggestion beside the bracket's middle. No kind is
+/// assumed: the kind the container's own groups are is offered first, and the operator chooses. The
+/// heading and the actions are the header of a section, pinned while the list scrolls beneath them in a
+/// lazy stack that pins its sections' headers.
+struct GroupingList<Heading: View>: View {
     let rows: [GroupingRow]
     let suggestions: [GroupingSuggestion]
     let defaultKind: ContainerType?
+    /// The entries grouped in none that are ticked.
     @Binding var chosen: Set<String>
     let groupTick: (GroupingGroup) -> Binding<Bool>
     let form: (_ members: [String], _ title: Title, _ type: ContainerType, _ label: String?) async -> Void
@@ -63,18 +68,36 @@ struct GroupingList: View {
     /// rather than grouped again.
     var renaming: GroupingSuggestion?
     var rename: (_ word: String) -> Void = { _ in }
+    /// What ticking does here, said above the entries.
+    var note: String?
+    @ViewBuilder let heading: Heading
+    /// The entries selected to be grouped.
+    @State private var selected: Set<String> = []
+    /// Where a shift-click's range runs from.
+    @State private var anchor: String?
     /// The kind of the new group being titled, while it is.
     @State private var forming: ContainerType?
     @State private var groupTitle = ""
     @State private var groupLabel = ""
+    @FocusState private var titling: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            actions
-            Divider()
+        Section {
             VStack(alignment: .leading, spacing: 4) {
+                if let note { Text(note).font(.caption).foregroundStyle(.secondary) }
                 ForEach(segments, id: \.id) { segment in view(of: segment) }
             }
+            .padding(.leading, 4)
+            .padding(.bottom, 8)
+        } header: {
+            VStack(alignment: .leading, spacing: 6) {
+                heading.font(.headline)
+                actions
+                Divider()
+            }
+            .padding(.top, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background)
         }
     }
 
@@ -88,32 +111,31 @@ struct GroupingList: View {
         rows.compactMap { if case .group(let group) = $0 { group } else { nil } }
     }
 
-    /// The members ticked, in the list's order.
-    private var chosenMembers: [String] { members.map(\.id).filter(chosen.contains) }
+    /// The entries selected, in the list's order; only entries grouped in none are ever selected.
+    private var selectedMembers: [String] { members.map(\.id).filter(selected.contains) }
 
     /// Every kind a group may be, the one the container's own groups are first.
     private var kinds: [ContainerType] {
         (defaultKind.map { [$0] } ?? []) + ContainerType.allCases.filter { $0 != defaultKind }
     }
 
-    /// One menu, so the row holds at any width: the members chosen made a new group of a kind, or put
+    /// One menu, so the row holds at any width: the entries selected made a new group of a kind, or put
     /// into a group made already. Every suggestion grouped at once is a menu on a row of its own, there
     /// only while there are suggestions.
     @ViewBuilder
     private var actions: some View {
-        Menu("Group Ticked") {
-            Section("\(chosenMembers.count) ticked") {
-                Menu("New Group") {
-                    ForEach(kinds, id: \.self) { kind in Button(kind.title) { forming = kind } }
-                }
-                ForEach(groups) { group in
-                    Button("Into \(group.title)") { add(chosenMembers, group.id) }
-                }
+        HStack {
+            Menu("Group Selected") { grouping(selectedMembers) }
+                .fixedSize()
+                .disabled(selectedMembers.isEmpty)
+            if selectedMembers.isEmpty {
+                Text(
+                    "Click entries to select them, ⇧-click for a range or ⌘-click for one more, then right-click to group."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .fixedSize()
-        .disabled(chosenMembers.isEmpty)
-        // The suggestions on a row of their own, so accepting them is not hidden among the chosen's actions.
+        // The suggestions on a row of their own, so accepting them is not hidden among the selection's.
         if !suggestions.isEmpty {
             Menu(suggestions.count == 1 ? "Group the Suggested, as" : "Group All \(suggestions.count) Suggested, as") {
                 ForEach(kinds, id: \.self) { kind in
@@ -128,9 +150,36 @@ struct GroupingList: View {
             HStack {
                 Text("New \(forming.title)").font(.caption)
                 TextField("Title", text: $groupTitle)
+                    .focused($titling)
+                    .onSubmit { Task { await formGroup(as: forming) } }
                 TextField("Label", text: $groupLabel).frame(maxWidth: 100)
                 Button("Group") { Task { await formGroup(as: forming) } }.disabled(Title(groupTitle) == nil)
                 Button("Cancel") { self.forming = nil }
+            }
+            // Ready to type the title once the kind is chosen.
+            .task(id: forming) { titling = true }
+        }
+    }
+
+    /// What may be done with the entries given: made a new group of a kind, titled in the header, or put
+    /// into a group made already. The pinned menu offers it for the selection, and a right-click for the
+    /// entry clicked, with the selection when the entry is part of it.
+    @ViewBuilder
+    private func grouping(_ entries: [String]) -> some View {
+        Section("\(entries.count) selected") {
+            Menu("New Group") {
+                ForEach(kinds, id: \.self) { kind in
+                    Button(kind.title) {
+                        selected = Set(entries)
+                        forming = kind
+                    }
+                }
+            }
+            ForEach(groups) { group in
+                Button("Into \(group.title)") {
+                    add(entries, group.id)
+                    selected = []
+                }
             }
         }
     }
@@ -138,14 +187,18 @@ struct GroupingList: View {
     private func formGroup(as kind: ContainerType) async {
         guard let title = Title(groupTitle) else { return }
         let label = groupLabel.trimmingCharacters(in: .whitespaces)
-        await form(chosenMembers, title, kind, label.isEmpty ? nil : label)
+        let members = selectedMembers
+        // Nothing selected once a group is made, for the next to be selected.
+        selected = []
         forming = nil
         groupTitle = ""
         groupLabel = ""
+        await form(members, title, kind, label.isEmpty ? nil : label)
     }
 
     private func group(_ suggestion: GroupingSuggestion, as kind: ContainerType) async {
         guard let title = Title(suggestion.title) else { return }
+        selected.subtract(suggestion.members)
         await form(suggestion.members, title, kind, nil)
     }
 
@@ -192,7 +245,7 @@ struct GroupingList: View {
     private func view(of segment: Segment) -> some View {
         switch segment {
         case .row(.member(let member)):
-            Toggle(isOn: choosing(member.id)) { Text(member.title) }
+            entry(member)
         case .row(.fixed(_, let title)):
             // Held already, it is part of the walk whatever is ticked.
             Toggle(isOn: .constant(true)) { Text(title) }.disabled(true)
@@ -222,9 +275,7 @@ struct GroupingList: View {
             }
         case .suggested(_, let run, renaming: true):
             Bracketed {
-                ForEach(run) { member in
-                    Toggle(isOn: choosing(member.id)) { Text(member.title) }.bracketRow()
-                }
+                ForEach(run) { member in entry(member).bracketRow() }
             } label: {
                 HStack {
                     Text("Rename?").foregroundStyle(.tint)
@@ -237,9 +288,7 @@ struct GroupingList: View {
             }
         case .suggested(let suggestion, let run, renaming: false):
             Bracketed {
-                ForEach(run) { member in
-                    Toggle(isOn: choosing(member.id)) { Text(member.title) }.bracketRow()
-                }
+                ForEach(run) { member in entry(member).bracketRow() }
             } label: {
                 HStack {
                     Text("\(suggestion.title)?").foregroundStyle(.tint)
@@ -254,7 +303,43 @@ struct GroupingList: View {
         }
     }
 
-    private func choosing(_ member: String) -> Binding<Bool> {
+    /// An entry grouped in none: its tick, and its title, clicked to select it.
+    private func entry(_ member: GroupingMember) -> some View {
+        HStack(spacing: 6) {
+            Toggle("Ticked", isOn: ticking(member.id)).labelsHidden()
+            Text(member.title)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(
+                    selected.contains(member.id) ? Color.accentColor.opacity(0.25) : .clear,
+                    in: RoundedRectangle(cornerRadius: 4)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { select(member.id) }
+        }
+        // A right-click groups the selection when the entry is part of it, and the entry alone when not.
+        .contextMenu { grouping(selected.contains(member.id) ? selectedMembers : [member.id]) }
+    }
+
+    /// A click selects the entry alone, a command-click adds or takes it out, and a shift-click selects
+    /// the range from the last one clicked.
+    private func select(_ member: String) {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.shift), let anchor, let from = members.firstIndex(where: { $0.id == anchor }),
+            let to = members.firstIndex(where: { $0.id == member })
+        {
+            selected.formUnion(members[min(from, to)...max(from, to)].map(\.id))
+            return
+        }
+        if flags.contains(.command) {
+            if selected.remove(member) == nil { selected.insert(member) }
+        } else {
+            selected = selected == [member] ? [] : [member]
+        }
+        anchor = member
+    }
+
+    private func ticking(_ member: String) -> Binding<Bool> {
         Binding(
             get: { chosen.contains(member) },
             set: { on in
@@ -404,35 +489,32 @@ struct EntryGrouping: View {
 
     var body: some View {
         if container != nil {
-            GroupBox {
-                GroupingList(
-                    rows: rows,
-                    suggestions: tree.suggestedGroups(in: parent).map {
-                        GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
-                    },
-                    defaultKind: Self.kind(of: tree.groups(in: parent)),
-                    chosen: ticked,
-                    groupTick: { group in group.entry.map(including) ?? .constant(true) },
-                    form: formGroup,
-                    add: { members, group in
-                        update { $0.add(members.compactMap(ItemID.init), to: group) }
-                    },
-                    remove: { member, group in
-                        guard let item = ItemID(member) else { return }
-                        update { $0.remove(item, from: group) }
-                    },
-                    ungroup: { group in update { $0.ungroup(group) } },
-                    renaming: tree.suggestedRenaming(in: parent).map {
-                        GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
-                    },
-                    rename: { word in
-                        let parent = parent
-                        guard let items = tree.suggestedRenaming(in: parent)?.items else { return }
-                        update { $0.title(items, in: parent, as: word) }
-                    }
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } label: {
+            GroupingList(
+                rows: rows,
+                suggestions: tree.suggestedGroups(in: parent).map {
+                    GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
+                },
+                defaultKind: Self.kind(of: tree.groups(in: parent)),
+                chosen: ticked,
+                groupTick: { group in group.entry.map(including) ?? .constant(true) },
+                form: formGroup,
+                add: { members, group in
+                    update { $0.add(members.compactMap(ItemID.init), to: group) }
+                },
+                remove: { member, group in
+                    guard let item = ItemID(member) else { return }
+                    update { $0.remove(item, from: group) }
+                },
+                ungroup: { group in update { $0.ungroup(group) } },
+                renaming: tree.suggestedRenaming(in: parent).map {
+                    GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
+                },
+                rename: { word in
+                    let parent = parent
+                    guard let items = tree.suggestedRenaming(in: parent)?.items else { return }
+                    update { $0.title(items, in: parent, as: word) }
+                }
+            ) {
                 // Ticks every child that may be ticked or none, a group as one, and shows as mixed while
                 // some are ticked.
                 let tickable = rows.compactMap { row -> String? in
@@ -522,8 +604,13 @@ struct EntryGrouping: View {
         guard let id = await provisionalID() else { return }
         let order = (container?.sequences.flatMap(\.items) ?? []).compactMap(\.id).filter { members.contains($0.value) }
         let parent = parent
-        // Made ticked, as its members were, in their place.
-        update { $0.regroup(order, in: parent, into: id, type: type, typeLabel: label, title: title) }
+        // Made in their place, ticked unless none of them was.
+        let ticked = members.contains { !isLeftOut($0) }
+        update { tree in
+            tree.regroup(order, in: parent, into: id, type: type, typeLabel: label, title: title)
+            let entry = tree.container(parent)?.sequences.flatMap(\.items).first { $0.childContainer == id }?.id
+            if !ticked, let entry { tree.include(entry, in: parent, false) }
+        }
     }
 }
 #endif

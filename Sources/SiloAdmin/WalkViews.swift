@@ -145,7 +145,8 @@ struct WalkSheet: View {
 
     @ViewBuilder
     private func differences(_ comparison: AdminConsole.TMDbComparison) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
+        LazyVStack(alignment: .leading, spacing: 10, pinnedViews: [.sectionHeaders]) {
             ForEach(comparison.differences.filter(\.isUnmatched)) { unmatched in
                 if case .unmatchedSeason(_, let seasons, let suggested) = unmatched {
                     UnmatchedSeason(title: comparison.title, seasons: seasons, suggested: suggested) { season in
@@ -314,7 +315,8 @@ private struct NewStop: View {
     private var walk: TMDbWalk { current.walk }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
+        LazyVStack(alignment: .leading, spacing: 10, pinnedViews: [.sectionHeaders]) {
             Text("New: drafted from TMDb, and made when the walk is stored.").font(.caption).foregroundStyle(.secondary)
             let offered = walk.offered(stop)
             group("Fields", offered.filter(\.isField))
@@ -424,54 +426,47 @@ private struct WalkChildren: View {
     private var episodes: [TMDb.Episode] { walk.missingEpisodes(at: stop) }
 
     var body: some View {
-        if !seasons.isEmpty || !episodes.isEmpty {
+        if !seasons.isEmpty {
             GroupBox {
                 VStack(alignment: .leading, spacing: 6) {
-                    if !seasons.isEmpty {
-                        Text(
-                            "Ticked, each season the library lacks is drafted from TMDb when this is confirmed, and looked at in the walk after it. Those it holds are looked at whatever is ticked."
-                        )
-                        .font(.caption).foregroundStyle(.secondary)
-                        ForEach(seasons) { season in
-                            if season.isHeld {
-                                Toggle(isOn: .constant(true)) { DifferenceLabel(difference: season, walk: walk) }
-                                    .disabled(true)
-                            } else {
-                                Toggle(isOn: tick(season.id)) { DifferenceLabel(difference: season, walk: walk) }
-                            }
+                    Text(
+                        "Ticked, each season the library lacks is drafted from TMDb when this is confirmed, and looked at in the walk after it. Those it holds are looked at whatever is ticked."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
+                    ForEach(seasons) { season in
+                        if season.isHeld {
+                            Toggle(isOn: .constant(true)) { DifferenceLabel(difference: season, walk: walk) }
+                                .disabled(true)
+                        } else {
+                            Toggle(isOn: tick(season.id)) { DifferenceLabel(difference: season, walk: walk) }
                         }
-                    }
-                    if !episodes.isEmpty {
-                        Text(
-                            "Ticked, each episode the library lacks is added here when the walk is stored. Grouped, they are added together as a new container beneath this one."
-                        )
-                        .font(.caption).foregroundStyle(.secondary)
-                        missing
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                // Ticks every child that may be chosen or none, a group as one, and shows as mixed while some
-                // are ticked.
-                if tickable.isEmpty {
-                    Text("Children, each held here")
-                } else {
-                    Toggle(sources: tickable.map(tick), isOn: \.self) { Text("Children, \(counted)") }
-                }
+                heading(seasons.filter { !$0.isHeld }.map(\.id))
             }
         }
+        if !episodes.isEmpty { missing }
     }
 
-    /// The children that may be ticked: each season the library lacks, each episode it lacks grouped in
-    /// none, and each group as one, which is what the heading's tick ticks.
+    /// The children that may be ticked: each episode the library lacks grouped in none, and each group as
+    /// one, which is what the heading's tick ticks.
     private var tickable: [String] {
-        seasons.filter { !$0.isHeld }.map(\.id)
-            + episodes.filter { !grouped.contains($0.id) }.map { "episode:\($0.id)" } + groups.map(\.tick)
+        episodes.filter { !grouped.contains($0.id) }.map { "episode:\($0.id)" } + groups.map(\.tick)
     }
 
-    /// How many of the children that may be ticked are, always said.
-    private var counted: String {
-        "\(tickable.filter { tick($0).wrappedValue }.count) of \(tickable.count) ticked"
+    /// Ticks every child that may be ticked or none, and shows as mixed while some are; how many are is
+    /// always said.
+    @ViewBuilder
+    private func heading(_ tickable: [String]) -> some View {
+        if tickable.isEmpty {
+            Text("Children, each held here")
+        } else {
+            Toggle(sources: tickable.map(tick), isOn: \.self) {
+                Text("Children, \(tickable.filter { tick($0).wrappedValue }.count) of \(tickable.count) ticked")
+            }
+        }
     }
 
     private var missing: some View {
@@ -503,8 +498,12 @@ private struct WalkChildren: View {
                 guard let episode = Int(member) else { return }
                 model.groupEpisodes { $0.remove(episode, fromGroup: group, at: $1) }
             },
-            ungroup: { group in model.groupEpisodes { $0.ungroup(group, at: $1) } }
-        )
+            ungroup: { group in model.groupEpisodes { $0.ungroup(group, at: $1) } },
+            note:
+                "Ticked, each episode the library lacks is added here when the walk is stored. Grouped, they are added together as a new container beneath this one."
+        ) {
+            heading(tickable)
+        }
     }
 
     /// The missing episodes in TMDb's order, each group at its first episode's place.

@@ -355,24 +355,32 @@ struct ShapeTreeSheet: View {
     @ViewBuilder
     private var detail: some View {
         ScrollView {
-            if let selected, let container = tree.container(selected) {
-                EntryGrouping(
-                    tree: tree,
-                    parent: selected,
-                    update: { model.updateTree($0) },
-                    provisionalID: { try? await model.provisionalID() }
-                )
-                AttributionsLine(attributions: tree.attributions[selected] ?? []) { subject in
-                    model.updateTree { $0.removeAttribution(of: subject, from: selected) }
-                }
-                ContainerForm(container: container) { changed in model.updateTree { $0.set(changed) } }
-            } else {
-                ContentUnavailableView(
-                    "Nothing Chosen",
-                    systemImage: "square.stack.3d.up",
-                    description: Text("Choose a container to shape it and group its entries.")
-                )
+            // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
+            LazyVStack(alignment: .leading, spacing: 8, pinnedViews: [.sectionHeaders]) {
+                detailContent
             }
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if let selected, let container = tree.container(selected) {
+            EntryGrouping(
+                tree: tree,
+                parent: selected,
+                update: { model.updateTree($0) },
+                provisionalID: { try? await model.provisionalID() }
+            )
+            AttributionsLine(attributions: tree.attributions[selected] ?? []) { subject in
+                model.updateTree { $0.removeAttribution(of: subject, from: selected) }
+            }
+            ContainerForm(container: container) { changed in model.updateTree { $0.set(changed) } }
+        } else {
+            ContentUnavailableView(
+                "Nothing Chosen",
+                systemImage: "square.stack.3d.up",
+                description: Text("Choose a container to shape it and group its entries.")
+            )
         }
     }
 
