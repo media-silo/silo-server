@@ -43,16 +43,98 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
     /// holding the special in that item's place and referring to each of the sequence's other items,
     /// named by a new alternative with the title given.
     case version(of: String, item: String, title: String)
+    /// Another special in an alternative of a container, one it holds or one another special's placement
+    /// makes: last in the alternative's sequence, or in that sequence in the place of an item it refers
+    /// to.
+    case joining(of: String, alternative: JoinedAlternative, item: String? = nil)
     /// Not held: the series' sidecar declines it.
     case declined
 
     /// The container a placement puts the special in, or refers to it from; none for a decline.
     public var container: String? {
         switch self {
-        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _), .edition(let id, _), .version(let id, _, _):
+        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _), .edition(let id, _), .version(let id, _, _),
+            .joining(let id, _, _):
             id
         case .duplicate(_, _, _, let from, _), .breakout(_, let from, _): from
         case .declined: nil
+        }
+    }
+
+    /// Whether it makes an alternative of its own, which other specials may join.
+    public var makesAlternative: Bool {
+        switch self {
+        case .edition, .version: true
+        default: false
+        }
+    }
+
+    /// Whether it joins the alternative a special's placement makes.
+    public func joins(_ special: Int) -> Bool {
+        if case .joining(_, .made(by: special), _) = self { true } else { false }
+    }
+}
+
+/// The alternative a special joins: one its container holds, by id, or the one another special's placement
+/// as an edition or a version makes, by that special's TMDb id, whatever id making gives it.
+public enum JoinedAlternative: Hashable, Sendable, Codable {
+    case held(String)
+    case made(by: Int)
+}
+
+/// One way a container is played, as making or storing leaves it.
+public struct ContainerAlternative: Hashable, Sendable, Identifiable {
+    public let id: String
+    public let title: String
+    /// What it plays, in order, each by its title.
+    public let plays: [String]
+    /// The special whose placement makes it, for one a placed special makes rather than one held or
+    /// drafted already.
+    public let madeBy: Int?
+    /// The container's items its sequence refers to, in order, which a special joining it may stand in
+    /// place of.
+    public let standingIn: [String]
+
+    public init(id: String, title: String, plays: [String], madeBy: Int? = nil, standingIn: [String] = []) {
+        self.id = id
+        self.title = title
+        self.plays = plays
+        self.madeBy = madeBy
+        self.standingIn = standingIn
+    }
+
+    /// Made by a placed special, rather than held or drafted there already.
+    public var isPlaced: Bool { madeBy != nil }
+
+    /// How a special joins it.
+    public var joined: JoinedAlternative { madeBy.map { .made(by: $0) } ?? .held(id) }
+
+    /// A container's alternatives as making leaves it, those it had first; each made by a special named
+    /// by the placement of `placements` that made it.
+    static func shown(
+        before: Container,
+        after: Container,
+        placements: [Int: SpecialPlacement],
+        title: (Entry) -> String
+    ) -> [ContainerAlternative] {
+        let makers = placements.filter { $0.value.makesAlternative && $0.value.container == after.id.value }.keys
+        return after.alternatives.compactMap { alternative in
+            guard let sequence = after.sequences.first(where: { $0.id == alternative.sequence }) else { return nil }
+            let held = before.alternatives.contains { $0.id == alternative.id }
+            let maker = makers.sorted().first { special in
+                sequence.items.contains {
+                    $0.externalRefs.contains(ExternalRef(provider: .tmdb, value: String(special)))
+                }
+            }
+            return ContainerAlternative(
+                id: alternative.id,
+                title: alternative.title ?? alternative.id,
+                plays: sequence.items.map(title),
+                madeBy: held ? nil : maker,
+                standingIn: sequence.items.compactMap { entry in
+                    entry.reference.flatMap { $0.container == nil || $0.container == after.id ? $0.item.value : nil }
+                }
+            )
         }
     }
 }
@@ -240,6 +322,12 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     /// Puts a special where the operator says, or, with nil, makes it unassigned again. A new breakout
     /// it names is kept with the tree until it is made.
     public mutating func place(_ special: Int, _ placement: SpecialPlacement?, breakout: Container? = nil) {
+        // The specials joining the alternative it made are unassigned once it makes none in that container.
+        if let was = placements[special], was.makesAlternative,
+            placement?.makesAlternative != true || placement?.container != was.container
+        {
+            for (joiner, joining) in placements where joining.joins(special) { placements[joiner] = nil }
+        }
         placements[special] = placement
         if let breakout { breakouts[breakout.id.value] = Self.text(breakout) }
         edited = .now
@@ -304,7 +392,7 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         var heldEdits: [Making.HeldEdit] = []
         var declined: [ExternalRef] = []
 
-        for special in specials {
+        for special in Self.joiningLast(specials, placements) {
             guard let placement = placements[special.id] else { continue }
             switch placement {
             case .entry(let id, let sequence, let position):
@@ -385,6 +473,10 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
                 guard var container = byID[id] else { continue }
                 Self.version(special, of: item, titled: title, in: &container)
                 byID[id] = container
+            case .joining(let id, let alternative, let item):
+                guard var container = byID[id] else { continue }
+                Self.join(special, alternative, inPlaceOf: item, in: &container)
+                byID[id] = container
             case .declined:
                 declined += special.refs.filter { $0.provider == .tmdb }
             }
@@ -452,6 +544,68 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
             return other.id.map { .ref(EntryRef(item: $0)) } ?? other
         }
         alternative(titled: title, playing: items, in: &container)
+    }
+
+    /// A special in an alternative of a container, its sequence found by the alternative's id or by the
+    /// special that made it: in the place of an item the sequence refers to, or last.
+    static func join(
+        _ special: Special,
+        _ alternative: JoinedAlternative,
+        inPlaceOf item: String?,
+        in container: inout Container
+    ) {
+        let sequence: String? =
+            switch alternative {
+            case .held(let id): container.alternatives.first { $0.id == id }?.sequence
+            case .made(let maker):
+                container.alternatives.map(\.sequence).first { id in
+                    container.sequences.first { $0.id == id }?.items.contains {
+                        $0.externalRefs.contains(ExternalRef(provider: .tmdb, value: String(maker)))
+                    } ?? false
+                }
+            }
+        guard let index = container.sequences.firstIndex(where: { $0.id != nil && $0.id == sequence }) else { return }
+        let entry = leaf(special, type: .episode, in: container)
+        let id = container.id
+        if let item,
+            let position = container.sequences[index].items.firstIndex(where: { entry in
+                entry.reference.map { ($0.container == nil || $0.container == id) && $0.item.value == item } ?? false
+            })
+        {
+            container.sequences[index].items[position] = entry
+        } else {
+            container.sequences[index].items.append(entry)
+        }
+    }
+
+    /// Specials in the order making places them: those joining an alternative after those that make one.
+    static func joiningLast(_ specials: [Special], _ placements: [Int: SpecialPlacement]) -> [Special] {
+        func joining(_ special: Special) -> Bool {
+            if case .joining? = placements[special.id] { true } else { false }
+        }
+        return specials.filter { !joining($0) } + specials.filter(joining)
+    }
+
+    /// A container's alternatives as making the tree leaves it, those the draft has first.
+    public func alternatives(of id: String) -> [ContainerAlternative] {
+        guard let before = container(id), let after = making.documents.first(where: { $0.id.value == id }) else {
+            return []
+        }
+        func title(_ entry: Entry) -> String {
+            if let title = entry.title { return title }
+            if let ref = entry.externalRefs.first(where: { $0.provider == .tmdb }) {
+                if let title = episodeTitles[ref.value] { return title }
+                if let special = specials.first(where: { $0.episode.ref == ref }) { return special.episode.title }
+            }
+            if let ref = entry.reference, ref.container == nil || ref.container == after.id,
+                let referred = after.sequences.flatMap(\.items).first(where: { $0.id == ref.item }),
+                referred.reference == nil
+            {
+                return title(referred)
+            }
+            return entry.id?.value ?? "an item"
+        }
+        return ContainerAlternative.shown(before: before, after: after, placements: placements, title: title)
     }
 
     private static func alternative(titled title: String, playing items: [Entry], in container: inout Container) {

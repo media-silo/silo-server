@@ -4686,11 +4686,11 @@ extension AdminConsoleTests {
 
         var walk = try await walkToTheSerial(walking, series, serial)
         let id = serial.id.value
-        let broadcast = TMDbWalk.StopAlternative(
+        let broadcast = ContainerAlternative(
             id: "broadcast",
             title: "As broadcast",
             plays: ["The Dead Planet"],
-            isPlaced: false
+            standingIn: ["part-1"]
         )
         #expect(walk.alternatives(at: id) == [broadcast])
         walk.place(pilot.id, .version(of: id, item: "part-1", title: "Pilot"))
@@ -4700,17 +4700,18 @@ extension AdminConsoleTests {
         #expect(
             shown == [
                 broadcast,
-                TMDbWalk.StopAlternative(
+                ContainerAlternative(
                     id: "pilot",
                     title: "Pilot",
                     plays: ["The Dead Planet (Unaired Pilot)", "The Survivors", "The Escape", "The Ambush"],
-                    isPlaced: true
+                    madeBy: pilot.id,
+                    standingIn: ["part-2", "part-3", "part-4"]
                 ),
-                TMDbWalk.StopAlternative(
+                ContainerAlternative(
                     id: "in-colour",
                     title: "In colour",
                     plays: ["The Daleks in Colour"],
-                    isPlaced: true
+                    madeBy: colour.id
                 ),
             ],
             "shown while the stop is pending"
@@ -4724,6 +4725,83 @@ extension AdminConsoleTests {
         let made = try #require(held.container(serial.id))
         #expect(made.alternatives.map(\.id) == shown.map(\.id))
         #expect(made.alternatives.map(\.title) == shown.map(\.title))
+    }
+
+    /// Specials join an alternative another special's placement makes, whichever comes first in TMDb's
+    /// order: one in the place of an item the alternative refers to, another last. Placing the special
+    /// that made it elsewhere returns those joining it to the unassigned. A draft's specials join the same
+    /// way.
+    @Test func specialsJoinAnAlternativeAnotherSpecialMakes() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let second = Self.episode(3751, 0, 1, "The Survivors (Unaired)", runtime: 25)
+        let pilot = Self.episode(3752, 0, 2, "The Dead Planet (Unaired Pilot)", runtime: 25)
+        let coda = Self.episode(3753, 0, 3, "A Pilot Coda", runtime: 5)
+        let (series, contents, serial, parts, tmdb) = Self.daleks([second, pilot, coda])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        // The two joining come either side of the special that makes the alternative in TMDb's order.
+        walk.place(second.id, .joining(of: id, alternative: .made(by: pilot.id), item: "part-2"))
+        walk.place(pilot.id, .version(of: id, item: "part-1", title: "Pilot"))
+        walk.place(coda.id, .joining(of: id, alternative: .made(by: pilot.id)))
+        let expected = ContainerAlternative(
+            id: "pilot",
+            title: "Pilot",
+            plays: [
+                "The Dead Planet (Unaired Pilot)", "The Survivors (Unaired)", "The Escape", "The Ambush",
+                "A Pilot Coda",
+            ],
+            madeBy: pilot.id,
+            standingIn: ["part-3", "part-4"]
+        )
+        #expect(walk.alternatives(at: id).last == expected)
+
+        // Placed elsewhere, the special that made it takes those joining it back to the unassigned.
+        var again = walk
+        again.place(pilot.id, .version(of: id, item: "part-1", title: "The pilot"))
+        #expect(again.placements[coda.id] != nil, "still made there, retitled")
+        again.place(pilot.id, .extra(of: id, type: "featurette"))
+        #expect(again.placements[coda.id] == nil)
+        #expect(again.unassigned.map(\.id).contains(coda.id))
+
+        try await walking.confirm(id, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(serial.id))
+        let sequence = try #require(made.sequences.last)
+        #expect(made.alternatives.last == Alternative(id: "pilot", sequence: "pilot", title: "Pilot"))
+        #expect(sequence.id == "pilot")
+        #expect(sequence.items.map(\.externalRefs) == [[pilot.ref], [second.ref], [], [], [coda.ref]])
+        #expect(sequence.items.map(\.reference?.item.value) == [nil, nil, "part-3", "part-4", nil])
+        #expect(made.itemIDs.count == 7, "one entry for each episode, and each special's")
+
+        // A draft's specials join the same way.
+        var tree = TMDbTree(
+            library: "tv",
+            record: TMDb.Record(.series, 121),
+            creating: ContainerDraft.Creating(),
+            containers: [serial],
+            top: serial.id,
+            episodeTitles: Dictionary(uniqueKeysWithValues: parts.map { (String($0.id), $0.title) }),
+            specials: [Special(episode: second), Special(episode: pilot), Special(episode: coda)]
+        )
+        tree.place(second.id, .joining(of: id, alternative: .made(by: pilot.id), item: "part-2"))
+        tree.place(pilot.id, .version(of: id, item: "part-1", title: "Pilot"))
+        tree.place(coda.id, .joining(of: id, alternative: .made(by: pilot.id)))
+        #expect(tree.alternatives(of: id).last == expected)
+        #expect(tree.alternatives(of: id).map(\.joined) == [.held("broadcast"), .made(by: pilot.id)])
+        tree.place(coda.id, .joining(of: id, alternative: .held("broadcast")))
+        #expect(
+            tree.alternatives(of: id).first?.plays == ["The Dead Planet", "A Pilot Coda"],
+            "one the container holds, joined by its id"
+        )
+        tree.place(pilot.id, .extra(of: id, type: "featurette"))
+        #expect(tree.placements[second.id] == nil, "the draft's joiner unassigned with it")
+        #expect(tree.placements[coda.id] != nil, "one joining a held alternative stays")
+        #expect(tree.alternatives(of: "no-such-container").isEmpty)
     }
 
     /// A special whose title names a serial beside "Omnibus", one that runs as long as the serial's

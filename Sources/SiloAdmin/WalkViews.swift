@@ -818,18 +818,41 @@ private struct WalkSpecials: View {
         .disabled(walk.container(current.open) == nil)
     }
 
-    /// Another way to play the open stop: a new edition of it, or a version of one of its items.
+    /// Another way to play the open stop: a new edition of it, or a version of one of its items, or the
+    /// special joining one of its alternatives, held or made by another special, last or in an item's
+    /// place.
     @ViewBuilder
     private func alternativesMenu(_ special: Special, of held: Container) -> some View {
         let open = current.open
-        Button("As Another Version of \(held.displayTitle)…") {
-            naming = .edition(special, of: open, held.displayTitle)
+        let alternatives = walk.alternatives(at: open).filter { $0.madeBy != special.id }
+        Menu("As Another Version of \(held.displayTitle)") {
+            ForEach(alternatives) { alternative in
+                Button("Joining \(alternative.title), Last") {
+                    model.place(special.id, .joining(of: open, alternative: alternative.joined))
+                }
+            }
+            if !alternatives.isEmpty { Divider() }
+            Button("A New One…") { naming = .edition(special, of: open, held.displayTitle) }
         }
         Menu("In Place of One of Its Items, as Another Version") {
-            ForEach(held.sequences.flatMap(\.items).filter { $0.id != nil }, id: \.self) { entry in
-                Button("\(itemTitle(entry))…") {
-                    guard let item = entry.id?.value else { return }
-                    naming = .version(special, of: open, item: item, itemTitle(entry))
+            ForEach(held.sequences.flatMap(\.items).compactMap(\.id), id: \.self) { item in
+                let title = walk.title(ofItem: item.value, at: open)
+                let joinable = alternatives.filter { $0.standingIn.contains(item.value) }
+                if joinable.isEmpty {
+                    Button("\(title)…") { naming = .version(special, of: open, item: item.value, title) }
+                } else {
+                    Menu(title) {
+                        ForEach(joinable) { alternative in
+                            Button("Joining \(alternative.title)") {
+                                model.place(
+                                    special.id,
+                                    .joining(of: open, alternative: alternative.joined, item: item.value)
+                                )
+                            }
+                        }
+                        Divider()
+                        Button("A New One…") { naming = .version(special, of: open, item: item.value, title) }
+                    }
                 }
             }
         }
@@ -895,6 +918,10 @@ private struct WalkSpecials: View {
         case .edition(let id, let alternative): return "\(alternative), another version of \(title(id))"
         case .version(let id, let item, let alternative):
             return "\(alternative), another version, in place of \(walk.title(ofItem: item, at: id)) of \(title(id))"
+        case .joining(let id, let joined, let item):
+            let alternative = walk.alternatives(at: id).first { $0.joined == joined }?.title ?? "an alternative"
+            let place = item.map { " in place of \(walk.title(ofItem: $0, at: id))" } ?? ""
+            return "joining \(alternative), another version of \(title(id))\(place)"
         case .declined: return "declined"
         }
     }

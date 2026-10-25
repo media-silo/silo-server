@@ -386,6 +386,15 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     public mutating func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
         // Where it was and where it goes are each pending again.
         for home in [placements[special], placement].compactMap({ $0.flatMap(home) }) { unconfirm(home) }
+        // The specials joining the alternative it made are unassigned once it makes none in that container.
+        if let was = placements[special], was.makesAlternative,
+            placement?.makesAlternative != true || placement?.container != was.container
+        {
+            for (joiner, joining) in placements where joining.joins(special) {
+                placements[joiner] = nil
+                if let home = home(of: joining) { unconfirm(home) }
+            }
+        }
         placements[special] = placement
         if let companion { companions[companion.id.value] = TMDbTree.text(companion) }
     }

@@ -487,20 +487,50 @@ struct ShapeTreeSheet: View {
     }
 
     /// Another way to play a container: a new edition of it, or a version of one of its items, each
-    /// titled as it is placed.
+    /// titled as it is placed, or the special joining one of its alternatives, the draft's or made by
+    /// another special, last or in an item's place.
     @ViewBuilder
     private func alternativesMenu(_ special: Special, of container: Container) -> some View {
         let id = container.id.value
-        Button("As Another Version of \(container.displayTitle)…") {
-            naming = .edition(special, of: id, container.displayTitle)
+        let alternatives = tree.alternatives(of: id).filter { $0.madeBy != special.id }
+        Menu("As Another Version of \(container.displayTitle)") {
+            ForEach(alternatives) { alternative in
+                Button("Joining \(alternative.title), Last") {
+                    model.updateTree { $0.place(special.id, .joining(of: id, alternative: alternative.joined)) }
+                }
+            }
+            if !alternatives.isEmpty { Divider() }
+            Button("A New One…") { naming = .edition(special, of: id, container.displayTitle) }
         }
         Menu("In Place of One of Its Items, as Another Version") {
             ForEach(container.sequences.flatMap(\.items).compactMap(\.id), id: \.self) { item in
-                Button("\(entryTitle(item, in: container))…") {
-                    naming = .version(special, of: id, item: item.value, entryTitle(item, in: container))
+                let title = entryTitle(item, in: container)
+                let joinable = alternatives.filter { $0.standingIn.contains(item.value) }
+                if joinable.isEmpty {
+                    Button("\(title)…") { naming = .version(special, of: id, item: item.value, title) }
+                } else {
+                    Menu(title) {
+                        ForEach(joinable) { alternative in
+                            Button("Joining \(alternative.title)") {
+                                model.updateTree {
+                                    $0.place(
+                                        special.id,
+                                        .joining(of: id, alternative: alternative.joined, item: item.value)
+                                    )
+                                }
+                            }
+                        }
+                        Divider()
+                        Button("A New One…") { naming = .version(special, of: id, item: item.value, title) }
+                    }
                 }
             }
         }
+    }
+
+    private func itemTitle(_ item: String, of id: String) -> String {
+        guard let container = tree.container(id), let item = ItemID(item) else { return item }
+        return entryTitle(item, in: container)
     }
 
     private func entryTitle(_ item: ItemID, in container: Container) -> String {
@@ -537,8 +567,13 @@ struct ShapeTreeSheet: View {
         case .child(let id, _, let type): return "a \(type) of its own beneath \(title(id))"
         case .duplicate(let home, let item, let library, _, _): return "the same as \(home)#\(item) in \(library)"
         case .breakout(let id, let from, _): return "in \(title(id)), referred to from \(title(from))"
-        case .edition(let id, let alternative): return "a new edition of \(title(id)), \(alternative)"
-        case .version(let id, let item, let alternative): return "a version of \(item) of \(title(id)), \(alternative)"
+        case .edition(let id, let alternative): return "\(alternative), another version of \(title(id))"
+        case .version(let id, let item, let alternative):
+            return "\(alternative), another version, in place of \(itemTitle(item, of: id)) of \(title(id))"
+        case .joining(let id, let joined, let item):
+            let alternative = tree.alternatives(of: id).first { $0.joined == joined }?.title ?? "an alternative"
+            let place = item.map { " in place of \(itemTitle($0, of: id))" } ?? ""
+            return "joining \(alternative), another version of \(title(id))\(place)"
         case .declined: return "declined"
         }
     }

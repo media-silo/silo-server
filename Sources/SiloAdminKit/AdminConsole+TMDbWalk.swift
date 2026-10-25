@@ -258,6 +258,8 @@ extension AdminConsole {
             TMDbTree.edition(special, titled: title, in: &container)
         case .version(_, let item, let title):
             TMDbTree.version(special, of: item, titled: title, in: &container)
+        case .joining(_, let alternative, let item):
+            TMDbTree.join(special, alternative, inPlaceOf: item, in: &container)
         case .declined:
             if !declined.contains(special.episode.ref) { declined.append(special.episode.ref) }
         }
@@ -477,7 +479,7 @@ extension TMDbWalk {
             Self.take(difference, into: &change, comparison: comparison, gathering: &gathering)
         }
         var declined = sidecar.declined
-        for special in placed(in: id) {
+        for special in TMDbTree.joiningLast(placed(in: id), placements) {
             guard let placement = placements[special.id] else { continue }
             AdminConsole.place(
                 special,
@@ -707,35 +709,12 @@ extension TMDbTree.Making.HeldEdit {
 // MARK: - What a stop is stored as
 
 extension TMDbWalk {
-    /// One way a stop's container is played, as storing the walk would leave it.
-    public struct StopAlternative: Hashable, Sendable, Identifiable {
-        public let id: String
-        public let title: String
-        /// What it plays, in order, each by its title.
-        public let plays: [String]
-        /// Made by a special placed at the stop, rather than held or drafted there already.
-        public let isPlaced: Bool
-
-        public init(id: String, title: String, plays: [String], isPlaced: Bool) {
-            self.id = id
-            self.title = title
-            self.plays = plays
-            self.isPlaced = isPlaced
-        }
-    }
-
     /// A stop's alternatives as storing would leave its container, were the stop confirmed with what is
     /// chosen and placed there now: those it holds or its draft has, then those its placed specials make.
-    public func alternatives(at id: String) -> [StopAlternative] {
+    public func alternatives(at id: String) -> [ContainerAlternative] {
         guard let (before, after) = stored(id) else { return [] }
-        return after.alternatives.compactMap { alternative in
-            guard let sequence = after.sequences.first(where: { $0.id == alternative.sequence }) else { return nil }
-            return StopAlternative(
-                id: alternative.id,
-                title: alternative.title ?? alternative.id,
-                plays: sequence.items.map { title(of: $0, in: after, at: id) },
-                isPlaced: !before.alternatives.contains { $0.id == alternative.id }
-            )
+        return ContainerAlternative.shown(before: before, after: after, placements: placements) {
+            title(of: $0, in: after, at: id)
         }
     }
 

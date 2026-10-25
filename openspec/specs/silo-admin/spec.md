@@ -887,7 +887,12 @@ draft of the series as unassigned. The operator SHALL place each special, or not
   alternate sequence the container has, at a position; the only entry of a new sequence, named by a
   new alternative with the title the operator gives it, as an omnibus edition is; or an entry in a new
   sequence that holds the special in place of one item of another sequence and refers to each of that
-  sequence's other items, named by a new alternative, as a version of one episode is;
+  sequence's other items, named by a new alternative, as a version of one episode is; or an entry
+  joining an alternative the container holds or another special's placement makes, last in its
+  sequence or in the place of an item the sequence refers to. Specials joining an alternative SHALL be
+  placed after those that make one, whatever order TMDb lists them in, and a special that made an
+  alternative SHALL, when placed so it makes none in that container, return those joining it to the
+  unassigned;
 - declined, which SHALL record the special's ref as declined in the series' sidecar.
 
 For each special the console SHALL pre-fill a suggestion and the reason for it, and SHALL take none
@@ -940,6 +945,16 @@ and the console SHALL list every edit and creation the placements make before it
 - **THEN** the serial gains a sequence holding the special's entry first and referring to the other
   three episodes, and an alternative naming it, and the serial still holds one entry for each episode
 
+#### Scenario: two specials in one alternative
+- **WHEN** one special is placed as a version of a serial's first episode, a special TMDb lists before
+  it joins that alternative in the place of the second episode, and a third joins it last
+- **THEN** the serial gains one sequence, playing the three specials in those places and the serial's
+  third and fourth episodes between them, named by one alternative
+
+#### Scenario: an alternative's maker placed elsewhere
+- **WHEN** a special that made an alternative another special joins is placed as an extra
+- **THEN** the special that joined it is unassigned again
+
 #### Scenario: an alternative suggested
 - **WHEN** a special's title names a serial beside the word "Omnibus", and another's names one of the
   serial's episodes beside the words "Special Edition"
@@ -961,6 +976,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aSeriesSpecialsAr
 `aSpecialIsSuggestedAsAMoviesDuplicate`, `aSpecialPlacedAsANewEditionIsASequenceOfItsOwn`,
 `aSpecialPlacedAsAVersionOfAnEpisodeRefersToTheRest`,
 `anOmnibusAndASpecialEditionAreSuggestedAsAlternatives`,
+`specialsJoinAnAlternativeAnotherSpecialMakes`,
 `aSpecialIsPlacedInACompanionSeriesTheLibraryHolds`,
 `aNewCompanionSeriesIsCreatedListedWhenTheOperatorSays`). The pool and its choosing are pinned by
 nothing yet, as the rest of the shell is.
