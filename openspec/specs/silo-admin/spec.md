@@ -1003,7 +1003,13 @@ as, which is its own parts. A group SHALL be chosen whole, its episodes shown in
 each only to be taken out of it or the group ungrouped, each episode then chosen as the group was. A
 group chosen SHALL be made, when the walk is stored, as a container beneath the held one holding its
 episodes in TMDb's order, named in the held container's edit where the first of them would have gone,
-and none of its episodes SHALL be added to the held container itself. Each container the held one
+and none of its episodes SHALL be added to the held container itself. Confirming the held
+container's stop SHALL add each group it takes to the walk as a new stop beneath it, holding its
+episodes, where specials SHALL be placeable and its parts shaped as in a new stop drafted from TMDb;
+storing the walk SHALL make it from that stop once the stop is confirmed, with what was placed and
+shaped there, and as the group otherwise. A group whose episodes change SHALL be a new stop again,
+the specials placed in it unassigned, once the held container's stop is confirmed again, and one
+ungrouped or unchosen SHALL leave the walk then. Each container the held one
 holds beneath it SHALL be shown among its children, at the place of the first of TMDb's episodes it
 holds, or after them when it holds none, and its missing episodes selected SHALL be addable to it as
 to a group made there, each only to be taken out of it again, chosen then, or grouped instead. One
@@ -1027,6 +1033,13 @@ opened.
   grouped as a serial, all five are chosen, and the walk is stored
 - **THEN** the serial is created beneath the season holding the four, the season's edit names it where
   the first part would have gone, and the next story's part follows it
+
+#### Scenario: a group of missing episodes as a new stop
+- **WHEN** a held season's missing parts of one story are grouped as a serial and chosen, the season's
+  stop is confirmed, a special is placed as an extra of the serial at its stop, that stop is confirmed,
+  and the walk is stored
+- **THEN** the serial is a new stop beneath the season, created holding the parts with the special as
+  its extra, and the season's edit names it where the first part would have gone
 
 #### Scenario: missing parts added to a serial held beneath
 - **WHEN** a held season holds a serial beneath it holding the first story's parts, lacks two parts of
@@ -1065,7 +1078,8 @@ opened.
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`,
 `aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`,
-`aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`). The list and its choosing are pinned by nothing
+`aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`,
+`aHeldSeasonsGroupsAreNewStopsBeneathItOnceConfirmed`). The list and its choosing are pinned by nothing
 yet, as the rest of the shell is.
 
 ### Requirement: A reading against TMDb says each step as it goes, and shows what it has found

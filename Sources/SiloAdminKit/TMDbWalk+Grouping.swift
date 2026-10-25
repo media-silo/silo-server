@@ -130,6 +130,40 @@ extension TMDbWalk {
         if ticked { stops[stop]?.chosen.formUnion(group.episodes.map { "episode:\($0)" }) }
     }
 
+    /// Each group a confirmed held stop takes, drafted as a new stop beneath it, as a draft's groups are
+    /// new stops: its specials placed and its parts shaped there, made from the draft once its own stop
+    /// is confirmed. A group whose episodes have changed since it was drafted is drafted again.
+    mutating func draftGroups(of stop: Stop) {
+        guard !isNew(stop.id), let taken = stop.taken, let comparison = stop.comparison else { return }
+        let missing = missingEpisodes(at: stop.id)
+        for group in stop.groups where taken.contains(group.tick) {
+            let episodes = group.episodes.compactMap { id in missing.first { $0.id == id } }
+            let titles = Dictionary(episodes.map { (String($0.id), $0.title) }, uniquingKeysWith: { first, _ in first })
+            if let drafted = drafts[group.id] {
+                guard Set(drafted.episodeTitles.keys) != Set(titles.keys) else { continue }
+                remove(group.id)
+            }
+            guard let id = ContainerID(group.id), !episodes.isEmpty else { continue }
+            var child = Container(id: id, type: group.type, title: group.title)
+            child.typeLabel = group.typeLabel
+            child.sequences = [Sequence(id: "parts", items: [])]
+            for episode in episodes {
+                TMDbTree.insert(AdminConsole.leaf(episode, in: child), into: &child, sequence: nil, at: nil)
+            }
+            let tree = TMDbTree(
+                library: library,
+                record: TMDb.Record(.series, comparison.series ?? 0),
+                creating: ContainerDraft.Creating(parent: stop.id),
+                containers: [child],
+                top: id,
+                episodeTitles: titles,
+                runtimes: comparison.runtimes.filter { titles[$0.key] != nil }
+            )
+            drafts[group.id] = tree
+            stops[group.id] = Stop(newIn: tree, group.id, parent: stop.id, offering: offered(group.id, in: tree))
+        }
+    }
+
     /// The containers a held stop holds beneath it, as its reading found them, or, for a reading kept
     /// before they were read, the held stops the walk found beneath it, placed by none of TMDb's episodes.
     public func heldChildren(at stop: String) -> [AdminConsole.HeldChild] {

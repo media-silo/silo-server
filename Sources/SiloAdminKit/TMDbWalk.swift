@@ -231,6 +231,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
             drafts[tree.top] = tree
             stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
         }
+        draftGroups(of: stop)
         for child in beneath where stops[child.id] == nil { stops[child.id] = child }
         let tops = drafts.values.filter { $0.creating.parent == id }.map(\.top).sorted()
         stop.children = beneath.map(\.id) + tops.filter { !beneath.map(\.id).contains($0) }
@@ -247,15 +248,18 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         .map(\.top).sorted()
     }
 
-    /// The difference a draft is the missing child of.
+    /// What chosen at its parent keeps a draft in the walk: the missing season it is, or, carrying no
+    /// TMDb id, the group of a held stop's missing episodes it was drafted from.
     static func missing(_ tree: TMDbTree) -> String {
-        let ref = tree.container(tree.top)?.externalRefs.first { $0.provider == .tmdb }
-        return "season:\(ref?.value ?? "")"
+        guard let ref = tree.container(tree.top)?.externalRefs.first(where: { $0.provider == .tmdb }) else {
+            return "group:\(tree.top)"
+        }
+        return "season:\(ref.value)"
     }
 
     /// A new stop and every container beneath it out of the walk, the specials placed in them unassigned
     /// again.
-    private mutating func remove(_ top: String) {
+    mutating func remove(_ top: String) {
         guard let tree = drafts.removeValue(forKey: top) else { return }
         let ids = Set(tree.containers.map(\.id.value))
         for id in ids { stops[id] = nil }

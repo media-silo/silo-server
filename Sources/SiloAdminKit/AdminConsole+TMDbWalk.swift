@@ -446,7 +446,13 @@ extension TMDbWalk {
             // A group taken is made beneath the stop, named where its first episode would have gone.
             if case .episode(let episode, let after) = difference, let group = change.grouped[String(episode.id)] {
                 if Self.first(of: group, in: comparison) == episode.id {
-                    Self.make(group, after: after, into: &change, comparison: comparison)
+                    // Drafted as a stop and confirmed there, it is made from its draft, with what its
+                    // stop placed and shaped; named here all the same.
+                    if drafts[group.id] != nil, stops[group.id]?.taken != nil {
+                        Self.name(group, after: after, in: &change)
+                    } else {
+                        Self.make(group, after: after, into: &change, comparison: comparison)
+                    }
                 }
                 continue
             }
@@ -549,6 +555,13 @@ extension TMDbWalk {
         for episode in episodes {
             TMDbTree.insert(AdminConsole.leaf(episode, in: child), into: &child, sequence: nil, at: nil)
         }
+        name(group, after: after, in: &change)
+        change.children.append(child)
+    }
+
+    /// A group's container named in the stop where the first of its episodes would have gone.
+    private static func name(_ group: EpisodeGroup, after: ExternalRef?, in change: inout Change) {
+        guard let id = ContainerID(group.id) else { return }
         let item = ItemID(
             Slug.unique(from: group.title.rawValue, avoiding: Set(change.container.itemIDs.map(\.value)))
         )!
@@ -557,7 +570,6 @@ extension TMDbWalk {
             after: anchor(after, in: change),
             into: &change.container
         )
-        change.children.append(child)
     }
 
     /// What an entry TMDb puts after an episode goes after in the stop's container: the episode, the

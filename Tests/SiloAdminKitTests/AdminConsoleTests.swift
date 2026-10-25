@@ -4930,6 +4930,71 @@ extension AdminConsoleTests {
         )
     }
 
+    /// A group a held season takes is a new stop beneath it once the season is confirmed: specials placed
+    /// there are made with it, it is named where its first part would have gone, and it is drafted again
+    /// when its parts change, and leaves the walk when it is ungrouped.
+    @Test func aHeldSeasonsGroupsAreNewStopsBeneathItOnceConfirmed() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, episodes) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season.id.value, in: &walk)
+        walk.identify(season.id.value, as: 6981)
+        walk.read(
+            try await console.compare(
+                season.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        let (stop, group) = (season.id.value, "00000000000001d3")
+        let (evil, pyramids) = (Array(episodes[4..<8].map(\.id)), Array(episodes[8...].map(\.id)))
+        walk.group(evil, at: stop, into: group, type: .serial, title: Title("Planet of Evil")!)
+        walk.stops[stop]?.chosen.insert("episode:\(pyramids[0])")
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        #expect(walk.stops[stop]?.children == [serial.id.value, group])
+        #expect(walk.isNew(group) && walk.stops[group]?.title == "Planet of Evil" && walk.next == serial.id.value)
+        let refs = { (ids: [Int]) in ids.map { [ExternalRef(provider: .tmdb, value: String($0))] } }
+        #expect(walk.container(group)?.sequences.first?.items.map(\.externalRefs) == refs(evil))
+
+        let special = Special(episode: Self.episode(9100, 0, 1, "The Making of Planet of Evil"))
+        walk.specials.append(special)
+        walk.place(special.id, .extra(of: group, type: "featurette"))
+        try await walking.confirm(group, in: &walk)
+        let plan = try walk.plan()
+        let edit = try #require(Self.edit(of: stop, in: plan)?.value)
+        #expect(
+            edit.sequences.first?.items.map { $0.childContainer?.value ?? $0.externalRefs.first?.value ?? "" } == [
+                serial.id.value, group, String(pyramids[0]),
+            ],
+            "named where its first part would have gone"
+        )
+        let made = plan.steps.compactMap { step -> Container? in
+            if case .create(let containers, let parent, _) = step.kind, parent == stop { containers.first } else { nil }
+        }
+        #expect(made.map(\.id.value) == [group], "made once, from its draft")
+        #expect(made.first?.sequences.first?.items.map(\.externalRefs) == refs(evil))
+        #expect(made.first?.extras.map(\.externalRefs) == [[special.episode.ref]], "with the special placed there")
+
+        let drafted = walk.drafts[group]?.id
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        #expect(walk.drafts[group]?.id == drafted, "not drafted again while its parts are the same")
+        walk.remove(evil[3], fromGroup: group, at: stop)
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        #expect(walk.container(group)?.sequences.first?.items.map(\.externalRefs) == refs(Array(evil.prefix(3))))
+        #expect(walk.placements[special.id] == nil, "drafted again, what was placed in it unassigned")
+
+        walk.ungroup(group, at: stop)
+        #expect(walk.leaving(confirming: stop) == [group])
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        #expect(walk.stops[group] == nil && walk.stops[stop]?.children == [serial.id.value])
+    }
+
     /// A container held beneath a held season is among its children, at the place of the first episode it
     /// holds, and the season's missing episodes may be added to it, taken out of it again, or grouped
     /// instead; storing the walk adds them to it, in its stop's edit once that is confirmed.
