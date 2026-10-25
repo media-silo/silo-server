@@ -4116,7 +4116,7 @@ extension AdminConsoleTests {
         try await walking.read(home14, in: &walk)
         for (special, placement) in atTheSeason { walk.place(special, placement) }
         try await walking.confirm(home14, in: &walk)
-        #expect(walk.unassigned.isEmpty && walk.state(of: home14) == .changed)
+        #expect(walk.unassigned.isEmpty && walk.state(of: home14) == .willEdit)
 
         let plan = try walk.plan()
         #expect(
@@ -4261,7 +4261,7 @@ extension AdminConsoleTests {
         #expect(walk.order == [series.id.value] && walk.state(of: series.id.value) == .pending)
         #expect(walk.series == series.id.value)
         try await walking.confirm(series.id.value, in: &walk)
-        #expect(walk.state(of: series.id.value) == .lookedAt)
+        #expect(walk.state(of: series.id.value) == .unchanged)
         let held = seasons.map(\.id.value)
         #expect(series.childContainerIDs.map(\.value) == [held[2], held[0], held[1]], "its sequence holds 3, 1, 2")
         #expect(walk.order == [series.id.value] + held, "as its children list them, in TMDb's order")
@@ -4281,9 +4281,67 @@ extension AdminConsoleTests {
 
         // A stop TMDb never read, confirmed as it is, takes nothing and still queues what is beneath it.
         walk.confirm(held[2], beneath: try await console.stops(beneath: held[2], in: walk, of: home))
-        #expect(walk.stops[held[2]]?.comparison == nil && walk.state(of: held[2]) == .lookedAt)
+        #expect(walk.stops[held[2]]?.comparison == nil && walk.state(of: held[2]) == .unchanged)
         #expect(walk.order.last == serials[3].id.value)
         #expect(try walk.plan().steps.isEmpty)
+    }
+
+    /// Confirming a stop says it is as it should be, so any change to its choices makes it pending again,
+    /// with the choices kept; one that changes nothing leaves it confirmed, and unconfirming it does what
+    /// a change would. A change made at a held season to what it hands a serial beneath makes both pending.
+    @Test func anyChangeToAConfirmedStopMakesItPendingAgain() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, episodes) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season.id.value, in: &walk)
+        walk.identify(season.id.value, as: 6981)
+        walk.read(
+            try await console.compare(
+                season.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        let (stop, held) = (season.id.value, serial.id.value)
+        let evil = Array(episodes[4..<8].map(\.id))
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        #expect(walk.state(of: stop) == .willEdit, "its TMDb id taken")
+
+        walk.choose("ref::tmdb:6981", true, at: stop)
+        #expect(walk.state(of: stop) == .willEdit, "ticked as it was, nothing changes")
+        walk.choose("episode:\(evil[0])", true, at: stop)
+        #expect(walk.state(of: stop) == .pending && walk.stops[stop]?.chosen.contains("episode:\(evil[0])") == true)
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        walk.unconfirm(stop)
+        #expect(walk.state(of: stop) == .pending && walk.stops[stop]?.chosen.contains("episode:\(evil[0])") == true)
+
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        walk.group(evil, at: stop, into: "00000000000001d3", type: .serial, title: Title("Planet of Evil")!)
+        #expect(walk.state(of: stop) == .pending, "grouped")
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        walk.title(evil, at: stop, as: "Part")
+        #expect(walk.state(of: stop) == .pending, "titled")
+
+        walk.ungroup("00000000000001d3", at: stop)
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        walk.read(
+            try await console.compare(held, in: "tv", of: home, from: database, tmdb: tmdb, identified: walk.identified)
+        )
+        try await walking.confirm(held, in: &walk)
+        #expect(walk.state(of: held) == .unchanged)
+        walk.add([evil[1]], toHeld: held, at: stop)
+        #expect(walk.state(of: stop) == .pending && walk.state(of: held) == .pending, "handed: both")
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        try await walking.confirm(held, choosing: ["episode:\(evil[1])"], in: &walk)
+        #expect(walk.state(of: held) == .willEdit)
+        walk.group([evil[1]], at: stop, into: "00000000000001d4", type: .serial, title: Title("Evil")!)
+        #expect(walk.state(of: held) == .pending, "taken back from it to be grouped")
     }
 
     /// A stop's children are queued, and a new season named in its series, in the order the stop's
@@ -4357,10 +4415,14 @@ extension AdminConsoleTests {
         walk.place(k9.id, .entry(in: season, sequence: "stories", position: 1))
         #expect(walk.unassigned.isEmpty && walk.placed(in: season).map(\.id) == [k9.id])
         try await walking.confirm(season, in: &walk)
-        #expect(walk.state(of: season) == .changed, "a placement is a change")
+        #expect(walk.state(of: season) == .willEdit, "a placement is an edit")
         walk.place(k9.id, nil)
-        #expect(walk.unassigned.map(\.id) == [k9.id] && walk.state(of: season) == .lookedAt, "and unplaced, it is back")
+        #expect(walk.unassigned.map(\.id) == [k9.id], "and unplaced, it is back")
+        #expect(walk.state(of: season) == .pending, "and the season pending again, as any change makes it")
         walk.place(k9.id, .entry(in: season, sequence: "stories", position: 1))
+        #expect(Self.edit(of: season, in: try walk.plan()) == nil, "nothing of it stored until confirmed again")
+        try await walking.confirm(season, in: &walk)
+        #expect(walk.state(of: season) == .willEdit)
 
         let stored = try await console.store(walk, of: home, tmdb: tmdb)
         #expect(stored.refusal == nil && stored.stored.map(\.id) == ["edit:\(season)"])
@@ -4491,6 +4553,8 @@ extension AdminConsoleTests {
             omnibus.id,
             .duplicate(home: serial, item: "part-one", library: "tv", from: season, asExtra: true)
         )
+        #expect(walk.state(of: season) == .pending, "placed there, the season is pending again")
+        try await walking.confirm(season, in: &walk)
         let plan = try walk.plan()
         #expect(plan.steps.map(\.id) == ["edit:\(season)", "edit:\(serial)"], "no edit of the serial of its own")
         let refs = Self.edit(of: serial, in: plan)?.value?.sequences[0].items[0].externalRefs
@@ -4973,6 +5037,11 @@ extension AdminConsoleTests {
         walk.group(evil, at: stop, into: group, type: .serial, title: Title("Planet of Evil")!)
         walk.stops[stop]?.chosen.remove("episode:\(pyramids[1])")
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        let unmade = try walk.plan()
+        #expect(walk.state(of: group) == .pending && !unmade.made.contains(group), "not made until confirmed")
+        #expect(Self.edit(of: stop, in: unmade)?.value?.childContainerIDs.map(\.value) == [serial.id.value])
+        try await walking.confirm(group, choosing: walk.stops[group]?.chosen ?? [], in: &walk)
+        #expect(walk.state(of: group) == .willCreate && walk.state(of: stop) == .willEdit)
         let plan = try walk.plan()
         let edit = try #require(Self.edit(of: stop, in: plan)?.value)
         #expect(
@@ -5113,7 +5182,7 @@ extension AdminConsoleTests {
         #expect(walk.missingEpisodes(at: held).map(\.id) == [evil[0], evil[1]], "the serial's own now")
         #expect(walk.stops[held]?.chosen == ticks([evil[0], evil[1]]), "ticked there to begin with")
         #expect(walk.differences(of: stop).count == walk.stops[stop]?.comparison?.differences.count)
-        #expect(walk.state(of: stop) == .changed)
+        #expect(walk.state(of: stop) == .willEdit)
         var keptBefore = walk
         keptBefore.stops[stop]?.comparison?.heldChildren = nil
         #expect(
@@ -5302,8 +5371,20 @@ extension AdminConsoleTests {
         #expect([first, second].allSatisfy { walk.isNew($0.value) && walk.state(of: $0.value) == .pending })
         try await walking.confirm(second.value, in: &walk)
         walk.place(special.id, .extra(of: second.value, type: EntryType.featurette.rawValue))
-        try await walking.confirm(first.value, in: &walk)
+        #expect(walk.state(of: second.value) == .pending, "placed there after it was confirmed, pending again")
+        try await walking.confirm(second.value, in: &walk)
         walk.place(concert.id, .breakout(proms.id.value, from: first.value, asExtra: true), companion: proms)
+        try await walking.confirm(first.value, in: &walk)
+        #expect([first, second].allSatisfy { walk.state(of: $0.value) == .willCreate })
+        #expect(walk.state(of: new) == .willCreate)
+
+        var unconfirmed = walk
+        unconfirmed.unconfirm(first.value)
+        let without = try unconfirmed.plan()
+        #expect(!without.made.contains(first.value) && without.made.contains(second.value), "a serial not confirmed")
+        #expect(unconfirmed.state(of: first.value) == .pending)
+        unconfirmed.unconfirm(new)
+        #expect(unconfirmed.state(of: second.value) == .waiting(on: new), "waiting on the season above it")
 
         let plan = try walk.plan()
         #expect(plan.steps.map(\.id) == ["create:\(proms.id)", "edit:\(series.id)", "create:\(new)"])

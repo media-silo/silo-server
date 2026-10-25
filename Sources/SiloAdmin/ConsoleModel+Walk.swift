@@ -215,8 +215,9 @@ extension ConsoleModel {
         walking?.walk.pool(found)
     }
 
-    /// Confirms the open stop: what is ticked is kept as its pending change, the containers beneath it
-    /// join the walk, and the next stop is read while the operator looks at this one.
+    /// Confirms the open stop: the operator saying it is as it should be, so what is ticked is kept as
+    /// its pending change, the containers beneath it join the walk, and the next stop is read while the
+    /// operator looks at this one. Any change to it afterwards makes it pending again.
     /// A missing child no longer chosen takes its new stops out of the walk, so the console says which
     /// first, and confirms only once the operator says so.
     func confirmStop(leavingSaid: Bool = false) async {
@@ -246,6 +247,14 @@ extension ConsoleModel {
             return
         }
         if let next = walking?.walk.next, next != current.open { Task { await read(next) } }
+    }
+
+    /// The open stop pending again, its choices kept, as though nothing were confirmed there.
+    func unconfirmStop() {
+        guard let open = walking?.open else { return }
+        walking?.walk.unconfirm(open)
+        walking?.plan = nil
+        keepWalk()
     }
 
     /// Puts a special where the operator says, or back among the unassigned; a new companion series it

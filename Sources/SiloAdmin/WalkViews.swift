@@ -76,7 +76,7 @@ struct WalkSheet: View {
 
     private var counts: String {
         let stops = walk.order
-        let confirmed = stops.filter { walk.state(of: $0) != .pending }.count
+        let confirmed = stops.filter { walk.stops[$0]?.taken != nil }.count
         return "\(confirmed) of \(stops.count) containers confirmed"
     }
 
@@ -95,11 +95,8 @@ struct WalkSheet: View {
             Spacer()
             if current.plan == nil {
                 Button("Store the Walk…") { model.listStore() }
-                    .disabled(walk.order.allSatisfy { walk.state(of: $0) == .pending })
+                    .disabled(walk.order.allSatisfy { walk.stops[$0]?.taken == nil })
             }
-            Button("Confirm") { Task { await model.confirmStop() } }
-                .disabled(current.resuming || current.confirming)
-                .disabled(current.stop == nil || current.progress[current.open] != nil)
             Button("Next") { Task { await model.nextStop() } }
                 .buttonStyle(.borderedProminent)
                 .disabled(walk.next == nil || walk.next == current.open)
@@ -116,7 +113,15 @@ struct WalkSheet: View {
                     Text(stop.title).font(.headline)
                     Text(stop.type).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    StopState(state: walk.state(of: stop.id))
+                    StopState(state: walk.state(of: stop.id), walk: walk)
+                    if walk.stops[stop.id]?.taken == nil {
+                        Button("Confirm") { Task { await model.confirmStop() } }
+                            .help("Says this is as it should be, so the walk need not come back to it before storing.")
+                            .disabled(current.resuming || current.confirming || current.progress[stop.id] != nil)
+                    } else {
+                        Button("Unconfirm") { model.unconfirmStop() }
+                            .help("Pending again, with its choices as they are. Changing anything here does the same.")
+                    }
                 }
                 if let progress = current.progress[stop.id] { ReadingProgress(progress: progress) }
                 if let failure = current.failures[stop.id] {
@@ -188,11 +193,8 @@ struct WalkSheet: View {
         return Binding(
             get: { current.walk.stops[open]?.chosen.contains(id) ?? false },
             set: { on in
-                if on {
-                    model.walking?.walk.stops[open]?.chosen.insert(id)
-                } else {
-                    model.walking?.walk.stops[open]?.chosen.remove(id)
-                }
+                model.walking?.walk.choose(id, on, at: open)
+                model.walking?.plan = nil
                 model.keepWalk()
             }
         )
@@ -216,6 +218,13 @@ struct WalkSheet: View {
                     }
                 }
                 ForEach(plan.steps) { step in Text("• \(step.described)").font(.caption) }
+                let pending = walk.order.filter { walk.stops[$0]?.taken == nil }.count
+                if pending > 0 {
+                    Text(
+                        "\(pending) of \(walk.order.count) containers are pending: nothing of them is stored, nor of a new container beneath one."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     if plan.steps.isEmpty {
                         Label(current.stored == nil ? "Nothing to store" : "Stored", systemImage: "checkmark.circle")
@@ -240,10 +249,11 @@ private struct WalkTree: View {
     let opening: (String) -> Void
 
     var body: some View {
+        let states = walk.states()
         List(walk.order, id: \.self, selection: Binding(get: { open }, set: { $0.map(opening) })) { id in
             if let stop = walk.stops[id] {
                 HStack(spacing: 6) {
-                    StopState(state: walk.state(of: id), compact: true)
+                    StopState(state: states[id] ?? .pending, walk: walk, compact: true)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(stop.title).lineLimit(1)
                         Text(walk.isNew(id) ? "\(stop.type), new" : stop.type).font(.caption2)
@@ -602,9 +612,10 @@ private struct WalkChildren: View {
     }
 }
 
-/// A stop's state in the walk: pending, changed, or looked at.
+/// A stop's state in the walk: pending, or confirmed and what storing does with its container.
 private struct StopState: View {
     let state: TMDbWalk.StopState
+    let walk: TMDbWalk
     var compact = false
 
     var body: some View {
@@ -617,25 +628,30 @@ private struct StopState: View {
 
     private var word: String {
         switch state {
-        case .pending: "pending"
-        case .changed: "changed"
-        case .lookedAt: "looked at"
+        case .pending: "Pending"
+        case .willCreate: "Confirmed (will create)"
+        case .waiting(let above): "Confirmed (will create once \(walk.stops[above]?.title ?? above) is confirmed)"
+        case .willEdit: "Confirmed (will edit)"
+        case .unchanged: "Confirmed (unchanged)"
         }
     }
 
     private var symbol: String {
         switch state {
         case .pending: "circle.dotted"
-        case .changed: "pencil.circle.fill"
-        case .lookedAt: "checkmark.circle"
+        case .willCreate: "plus.circle.fill"
+        case .waiting: "clock.badge.checkmark"
+        case .willEdit: "pencil.circle.fill"
+        case .unchanged: "checkmark.circle"
         }
     }
 
     private var color: Color {
         switch state {
-        case .pending: .secondary
-        case .changed: .orange
-        case .lookedAt: .green
+        case .pending, .waiting: .secondary
+        case .willCreate: .blue
+        case .willEdit: .orange
+        case .unchanged: .green
         }
     }
 }
