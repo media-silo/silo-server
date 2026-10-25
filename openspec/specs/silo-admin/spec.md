@@ -773,7 +773,7 @@ of a series' episode groups as its shape, each group as a child container of the
 picks, holding the group's episodes as entries in the group's order. Each container SHALL carry the
 record's title, its year where its type has one, a `tmdb` reference, and a reference for each other
 provider's id TMDb holds for it. Each episode's entry SHALL carry its references and no title or
-outline. A container's outline SHALL be TMDb's overview, attributed to `tmdb` with the record's id.
+outline, until the operator titles it. A container's outline SHALL be TMDb's overview, attributed to `tmdb` with the record's id.
 
 Each container SHALL be a draft of a new container with an id from the clone's `provisionalID()`,
 kept on this Mac as a new container's draft is. The top SHALL be filed beneath the container of the
@@ -794,7 +794,11 @@ with nothing SHALL be ungrouped. A run of two or more entries in one sequence wh
 titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be bracketed and
 suggested as a group titled by the story, to be grouped one at a time or all at once. No kind SHALL be
 assumed for a group: the kind the container's groups mostly are SHALL be chosen to begin with, when
-it has any, and otherwise the operator SHALL choose one before any group is made. The
+it has any, and otherwise the operator SHALL choose one before any group is made. A run that is the
+parts of the story the container is titled as, or that is every entry the container holds, as a
+group made of a story's parts holds them, SHALL NOT be suggested as a group: it SHALL be suggested
+instead to be titled by its parts' numbers, as `Episode 1` and on or `Part 1` and on, as the operator
+chooses, and once titled SHALL be suggested as nothing. The
 console SHALL show the dry run of the whole tree as they shape it. Creating SHALL store the parent's edit
 naming the top, as creating a child does, and then make the tree, with its attributions, in one
 request to the silo.
@@ -820,6 +824,12 @@ request to the silo.
 - **THEN** the first three are suggested as a group titled by the first story, the next two as one
   titled by the second, and the last as none
 
+#### Scenario: a serial's own parts
+- **WHEN** a drafted season's three parts of one story are grouped as a serial titled by the story,
+  and the serial is opened
+- **THEN** its parts are not suggested as a group, and are suggested to be titled by their numbers;
+  titled as parts, they are `Part 1` to `Part 3`, and are suggested as nothing
+
 #### Scenario: a group added to and taken from
 - **WHEN** an entry before a group is added to it, and its last entry is then taken out of it
 - **THEN** the group holds its entries in the season's order at the first one's place, and the entry
@@ -841,7 +851,8 @@ request to the silo.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraftedFromTMDb`,
 `aRecordSmddbHoldsIsImportedRatherThanDrafted`, `serialsAreSuggestedFromTMDbsTitlesForTheirParts`,
-`aDraftsGroupIsAddedToTakenFromAndUngrouped`, `aDraftsEntryUntickedIsLeftOutOfWhatIsMade`). The search, the shaping's sheet and the dry run as the
+`aDraftsGroupIsAddedToTakenFromAndUngrouped`, `aDraftsEntryUntickedIsLeftOutOfWhatIsMade`,
+`aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`). The search, the shaping's sheet and the dry run as the
 operator shapes are pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each
@@ -976,7 +987,8 @@ SHALL list every edit before it stores any. A chosen child container SHALL join 
 beneath the container. The episodes a held container lacks SHALL be groupable into new containers
 beneath it as a draft's entries are, a group of the kind, title and label the operator gives, made
 of the episodes chosen, or added to a group made there already; runs TMDb titles as the parts of one
-story SHALL be suggested as a draft's are. A group SHALL be chosen whole, its episodes shown in it,
+story SHALL be suggested as a draft's are, but for a run of the story the held container is titled
+as, which is its own parts. A group SHALL be chosen whole, its episodes shown in it,
 each only to be taken out of it or the group ungrouped, each episode then chosen as the group was. A
 group chosen SHALL be made, when the walk is stored, as a container beneath the held one holding its
 episodes in TMDb's order, named in the held container's edit where the first of them would have gone,

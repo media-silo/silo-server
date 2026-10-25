@@ -141,12 +141,51 @@ extension TMDbTree {
     /// The runs of a container's entries TMDb titles as the parts of one story, `Title (1)`, `Title (2)`
     /// and on, two or more running together in one sequence.
     public func suggestedGroups(in parentID: String) -> [SuggestedGroup] {
+        storyRuns(in: parentID).filter { !isOwnParts($0, parentID) }
+    }
+
+    /// The run of a container's entries TMDb titles as the parts of the story the container is titled
+    /// as, or that is every entry it holds, as a serial grouped from `Planet of Evil (1)` to `(4)` holds
+    /// them: already grouped, they are suggested to be titled by their part numbers rather than grouped
+    /// again.
+    public func suggestedRenaming(in parentID: String) -> SuggestedGroup? {
+        storyRuns(in: parentID).first { isOwnParts($0, parentID) }
+    }
+
+    /// Entries titled by the word given and each one's part number at TMDb, as `Part 1` and on: the
+    /// operator's own titles, which TMDb's no longer stand for.
+    public mutating func title(_ items: [ItemID], in parentID: String, as word: String) {
+        guard var parent = container(parentID) else { return }
+        for sequence in parent.sequences.indices {
+            for index in parent.sequences[sequence].items.indices {
+                guard case .leaf(var leaf) = parent.sequences[sequence].items[index], items.contains(leaf.id),
+                    let tmdb = leaf.externalRefs.first(where: { $0.provider == .tmdb }),
+                    let number = episodeTitles[tmdb.value].flatMap(Self.part(of:))
+                else { continue }
+                leaf.title = "\(word) \(number)"
+                parent.sequences[sequence].items[index] = .leaf(leaf)
+            }
+        }
+        documents[parentID] = Self.text(parent)
+        edited = .now
+    }
+
+    private func isOwnParts(_ run: SuggestedGroup, _ parentID: String) -> Bool {
+        guard let parent = container(parentID) else { return false }
+        return parent.title.rawValue.caseInsensitiveCompare(run.title) == .orderedSame
+            || run.items.count == parent.sequences.flatMap(\.items).count
+    }
+
+    /// The runs of a container's entries whose TMDb titles name the parts of one story; an entry titled
+    /// by the operator ends a run.
+    private func storyRuns(in parentID: String) -> [SuggestedGroup] {
         (container(parentID)?.sequences ?? []).flatMap { sequence in
             Self.runs(
                 of: sequence.items.compactMap { entry -> (ItemID, String?)? in
                     guard let item = entry.id else { return nil }
                     let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
-                    return (item, entry.childContainer == nil ? tmdb.flatMap { episodeTitles[$0.value] } : nil)
+                    guard entry.childContainer == nil, entry.title == nil else { return (item, nil) }
+                    return (item, tmdb.flatMap { episodeTitles[$0.value] })
                 }
             )
             .map { SuggestedGroup(title: $0.title, items: $0.ids) }
@@ -181,10 +220,21 @@ extension TMDbTree {
     /// The story an episode's title names it a part of, as `Terror of the Zygons (1)` names `Terror of the
     /// Zygons`.
     public static func story(of title: String) -> String? {
+        parts(of: title)?.story
+    }
+
+    /// The part number an episode's title gives it, as `Terror of the Zygons (2)` gives 2.
+    public static func part(of title: String) -> Int? {
+        parts(of: title)?.number
+    }
+
+    private static func parts(of title: String) -> (story: String, number: Int)? {
         guard title.hasSuffix(")"), let open = title.lastIndex(of: "(") else { return nil }
         let number = title[title.index(after: open)..<title.index(before: title.endIndex)]
         let story = title[..<open].trimmingCharacters(in: .whitespaces)
-        guard !number.isEmpty, number.allSatisfy(\.isNumber), !story.isEmpty else { return nil }
-        return story
+        guard number.allSatisfy({ $0.isASCII && $0.isNumber }), let part = Int(number), !story.isEmpty else {
+            return nil
+        }
+        return (story, part)
     }
 }
