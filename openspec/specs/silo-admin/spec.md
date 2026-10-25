@@ -1007,8 +1007,8 @@ episodes in TMDb's order, named in the held container's edit where the first of 
 and none of its episodes SHALL be added to the held container itself. Confirming the held
 container's stop SHALL add each group it takes to the walk as a new stop beneath it, holding its
 episodes, where specials SHALL be placeable and its parts shaped as in a new stop drafted from TMDb;
-storing the walk SHALL make it from that stop once the stop is confirmed, with what was placed and
-shaped there, and as the group otherwise. A group whose episodes change SHALL be a new stop again,
+storing the walk SHALL make it from that stop, with what was placed and shaped there, only once that
+stop is confirmed, as every new container is, and not otherwise. A group whose episodes change SHALL be a new stop again,
 the specials placed in it unassigned, once the held container's stop is confirmed again, and one
 ungrouped or unchosen SHALL leave the walk then. Each container the held one
 holds beneath it SHALL be shown among its children, at the place of the first of TMDb's episodes it
@@ -1029,7 +1029,8 @@ opened.
 
 #### Scenario: missing episodes grouped
 - **WHEN** a held season lacks four parts of one story and the first part of the next, the four are
-  grouped as a serial, all five are chosen, and the walk is stored
+  grouped as a serial, all five are chosen, the season's stop and then the serial's are confirmed, and
+  the walk is stored
 - **THEN** the serial is created beneath the season holding the four, the season's edit names it where
   the first part would have gone, and the next story's part follows it
 
@@ -1117,15 +1118,22 @@ sheets' showing it is pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A held container's tree is reviewed against TMDb as a walk, a container at a time
 Opening a held container's differences SHALL start a walk rooted at it, whose first stop is the
-container. Confirming a stop SHALL keep its chosen differences as the container's pending change, and
+container. Confirming a stop SHALL be the operator saying it is as it should be, so that the walk need not come
+back to it before it is stored: it SHALL keep its chosen differences as the container's pending change, and
 SHALL add as pending stops beneath it each container the library holds beneath it, and each new one,
 in the order its children list them, whatever their ids: a series' seasons in TMDb's order, a held
 container's other children each at its place among its missing episodes, and a new container's in
-its draft's order; a stop never read SHALL add them in the order its sequences hold them. Confirming a stop with nothing chosen SHALL record it as looked at. Pending stops
+its draft's order; a stop never read SHALL add them in the order its sequences hold them. A stop confirmed with nothing chosen and nothing placed in it SHALL be confirmed and unchanged. Pending stops
 SHALL be opened in the tree's order, depth first. The console SHALL show the walk's tree as far as the
-walk has found it, each stop with its state: pending, open, changed, or looked at. The operator SHALL
+walk has found it, each stop with its state, which SHALL say what storing the walk would do: pending, not confirmed; or
+confirmed, and then that storing creates its container, creates it only once a stop above it named
+there is confirmed, edits it, or leaves it unchanged, as the store would find it. The operator SHALL
 be able to open any stop of the walk, and a confirmed stop SHALL open with its choices and placements
-as they were left; confirming it again SHALL replace its pending change. When the walk's root is a
+as they were left. Any change to a confirmed stop's choices, a difference ticked or unticked, its
+missing episodes grouped, ungrouped, titled or put into a container held beneath it, a special placed
+in it or taken from it, or its draft shaped, SHALL make it pending again with its choices kept, and so
+SHALL unconfirming it; a change to the missing episodes put into a held container SHALL make that
+container's stop pending too. Confirming a stop again SHALL replace its pending change. When the walk's root is a
 series, or is beneath one, the series' unassigned specials SHALL be shown beside every stop with their
 suggestions. A special suggested for the open stop SHALL be marked as suggested there only on
 something that ties it there: its title naming the stop, an entry of it, the story TMDb titles an
@@ -1134,7 +1142,7 @@ of its specials may carry, SHALL tie nothing. A special SHALL be
 placeable in the open stop, as an entry in a sequence of it at a position or as one of its extras, and
 anywhere a draft's specials may be placed. A placed special SHALL leave the unassigned specials and
 become part of the pending change of the container it was placed in, and removing it from that change
-SHALL return it. A stop never opened, and a special never placed, SHALL change nothing.
+SHALL return it. A stop never opened or left pending, and a special never placed, SHALL change nothing.
 
 Nothing SHALL be stored until the operator stores the walk. Before storing, the console SHALL list
 every creation, edit and artwork put the walk makes, in the order it will make them: the companion
@@ -1148,8 +1156,8 @@ and the walk SHALL keep what was not.
 
 #### Scenario: a series confirmed with nothing chosen
 - **WHEN** a held series holding three seasons, each holding serials, is confirmed with nothing chosen
-- **THEN** the series is looked at, its three seasons are pending in the order its sequence holds them,
-  and confirming the first season makes its serials pending ahead of the second season
+- **THEN** the series is confirmed and unchanged, its three seasons are pending in TMDb's order, and
+  confirming the first season makes its serials pending ahead of the second season
 
 #### Scenario: a special placed where it belongs
 - **WHEN** one of a series' unassigned specials is placed as an entry of a season while the season's
@@ -1180,9 +1188,18 @@ and the walk SHALL keep what was not.
 - **WHEN** a held series' sequence holds its seasons out of TMDb's order, and its stop is confirmed
 - **THEN** its seasons are queued beneath it in TMDb's order
 
+#### Scenario: a confirmed stop changed
+- **WHEN** a confirmed season's stop has a special placed in it
+- **THEN** the stop is pending again with the special placed, and storing the walk stores nothing of
+  it until it is confirmed again
+
+#### Scenario: a ticked difference ticked again
+- **WHEN** a difference a confirmed stop has ticked is ticked again
+- **THEN** the stop stays confirmed
+
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`confirmingAStopQueuesTheContainersBeneathItInTheTreesOrder`,
-`aStopsChildrenAreInTheOrderItsChildrenListThem`,
+`aStopsChildrenAreInTheOrderItsChildrenListThem`, `anyChangeToAConfirmedStopMakesItPendingAgain`,
 `aSpecialPlacedAtAStopIsStoredInThatContainersEdit`, `aConfirmedStopOpenedAgainKeepsWhatWasChosen`,
 `aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`,
 `anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`). The walk's sheet is pinned by nothing yet, as the rest
@@ -1199,7 +1216,9 @@ the shaping ungroups, or unticks, SHALL leave the walk, and the specials placed 
 unassigned again; one ticked again SHALL be a new stop once the stop above it is confirmed again.
 Specials SHALL be placeable in a new stop as in a held one, and a new stop SHALL show the specials
 placed in it as a held stop does, each with how it was placed and a way to unassign it. A new stop
-SHALL be made only once it is confirmed: storing the walk SHALL name it in its parent before the first child listed after it there that
+SHALL be made only once it, and every new stop above it, is confirmed; one beneath a pending new stop
+SHALL be said to be waiting on it, and one not confirmed SHALL be left out of what is made above it.
+Once made, storing the walk SHALL name it in its parent before the first child listed after it there that
 the parent names, or last when none is, and SHALL create it through the create route,
 with the containers beneath it in one creation, right after the edit of its parent that names it, since
 the create route makes a container beneath a parent only once the parent names it. Unchoosing a missing
@@ -1250,6 +1269,15 @@ the walk, after the console says which, and the specials placed in them SHALL be
 - **WHEN** a held series holds TMDb's first and third seasons, the second is chosen, its stop and the
   series' are confirmed, and the walk is stored
 - **THEN** the second season is queued between the two, and the series' edit names it between them
+
+#### Scenario: a new season's serial not confirmed
+- **WHEN** a new season's episodes are regrouped into two serials, the season and one serial are
+  confirmed, and the walk is stored
+- **THEN** the season is made with the confirmed serial and without the other
+
+#### Scenario: a new season not confirmed
+- **WHEN** a new season's serial is confirmed and the season is not
+- **THEN** the serial's stop says it is created once the season is confirmed
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMissingSeasonChosenInAWalkIsANewStop`,
 `aStopConfirmedTwiceAtOnceDraftsItsSeasonsOnce`, `aSpecialPlacedInANewSeasonIsCreatedWithIt`,

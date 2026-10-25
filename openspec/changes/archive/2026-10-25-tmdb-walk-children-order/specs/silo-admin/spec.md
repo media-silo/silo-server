@@ -9,7 +9,7 @@ container. Confirming a stop SHALL keep its chosen differences as the container'
 SHALL add as pending stops beneath it each container the library holds beneath it, and each new one,
 in the order its children list them, whatever their ids: a series' seasons in TMDb's order, a held
 container's other children each at its place among its missing episodes, and a new container's in
-its draft's order; a stop never read SHALL add them in the order its sequences hold them. Confirming a stop with nothing chosen SHALL record it as looked at. Pending stops
+its draft's order; a stop never read SHALL add them in the order its sequences hold them. A stop confirmed with nothing chosen and nothing placed in it SHALL be confirmed and unchanged. Pending stops
 SHALL be opened in the tree's order, depth first. The console SHALL show the walk's tree as far as the
 walk has found it, each stop with its state: pending, open, changed, or looked at. The operator SHALL
 be able to open any stop of the walk, and a confirmed stop SHALL open with its choices and placements
@@ -36,8 +36,8 @@ and the walk SHALL keep what was not.
 
 #### Scenario: a series confirmed with nothing chosen
 - **WHEN** a held series holding three seasons, each holding serials, is confirmed with nothing chosen
-- **THEN** the series is looked at, its three seasons are pending in the order its sequence holds them,
-  and confirming the first season makes its serials pending ahead of the second season
+- **THEN** the series is confirmed and unchanged, its three seasons are pending in TMDb's order, and
+  confirming the first season makes its serials pending ahead of the second season
 
 #### Scenario: a special placed where it belongs
 - **WHEN** one of a series' unassigned specials is placed as an entry of a season while the season's
