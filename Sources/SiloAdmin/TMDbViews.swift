@@ -539,6 +539,9 @@ struct ShapeTreeSheet: View {
         case .breakout(let id, let from, _): return "in \(title(id)), referred to from \(title(from))"
         case .edition(let id, let alternative): return "a new edition of \(title(id)), \(alternative)"
         case .version(let id, let item, let alternative): return "a version of \(item) of \(title(id)), \(alternative)"
+        case .alternative(let id, let draft):
+            let alternative = tree.alternatives(draftedAt: id).first { $0.id == draft }?.title ?? "an alternative"
+            return "in \(alternative), another version of \(title(id))"
         case .declined: return "declined"
         }
     }

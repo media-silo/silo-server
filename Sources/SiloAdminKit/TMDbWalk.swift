@@ -10,7 +10,7 @@ import Synchronization
 /// each with its reading and what the operator chose, the series' specials beside every stop, and
 /// where each was placed. Nothing of it reaches the silo until the walk is stored, and then only what a
 /// confirmed stop took. `TmdbWalk.md`.
-public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
+public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDrafting {
     /// Where a stop stands, as storing the walk would find it: not yet confirmed, or confirmed, said by
     /// the operator to be as it should be, and then what storing does with its container.
     public enum StopState: Hashable, Sendable {
@@ -104,6 +104,15 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     public var titles: [Int: String] {
         get { episodeTitles ?? [:] }
         set { episodeTitles = newValue.isEmpty ? nil : newValue }
+    }
+
+    /// The alternatives drafted for the walk's containers, by id. Absent from a walk kept before they
+    /// were drafted.
+    private var alternativeDrafts: [String: [DraftAlternative]]?
+
+    public var draftedAlternatives: [String: [DraftAlternative]] {
+        get { alternativeDrafts ?? [:] }
+        set { alternativeDrafts = newValue.isEmpty ? nil : newValue }
     }
 
     public init(library: String, root: Stop) {
@@ -327,6 +336,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         guard let tree = drafts.removeValue(forKey: top) else { return }
         let ids = Set(tree.containers.map(\.id.value))
         for id in ids { stops[id] = nil }
+        discardAlternatives(of: ids)
         for (special, placement) in placements where home(of: placement).map(ids.contains) ?? false {
             placements[special] = nil
         }
@@ -371,6 +381,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
         // again.
         let gone = before.subtracting(tree.containers.map(\.id.value).filter(tree.isMade))
         for id in gone { stops[id] = nil }
+        discardAlternatives(of: gone)
         for (special, placement) in placements where home(of: placement).map(gone.contains) ?? false {
             placements[special] = nil
         }
@@ -386,7 +397,8 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable {
     public mutating func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
         // Where it was and where it goes are each pending again.
         for home in [placements[special], placement].compactMap({ $0.flatMap(home) }) { unconfirm(home) }
-        placements[special] = placement
+        unplace(special)
+        placements[special] = settle(special, placement)
         if let companion { companions[companion.id.value] = TMDbTree.text(companion) }
     }
 
@@ -461,6 +473,19 @@ public final class TMDbWalkStore: Sendable {
     }
 
     private static func read(_ file: URL) -> [String: [TMDbWalk]] {
-        (try? JSONDecoder().decode([String: [TMDbWalk]].self, from: Data(contentsOf: file))) ?? [:]
+        let read = (try? JSONDecoder().decode([String: [TMDbWalk]].self, from: Data(contentsOf: file))) ?? [:]
+        return read.mapValues { walks in
+            walks.map { walk in
+                var settled = walk
+                settled.settlingVersions()
+                return settled
+            }
+        }
     }
+}
+
+extension TMDbWalk {
+    public var placeable: [Special] { specials + declined }
+
+    public mutating func alternativesChanged(at container: String) { unconfirm(container) }
 }

@@ -43,13 +43,17 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
     /// holding the special in that item's place and referring to each of the sequence's other items,
     /// named by a new alternative with the title given.
     case version(of: String, item: String, title: String)
+    /// In an alternative drafted for a container, by the draft's id: what the alternative plays is the
+    /// draft's, and placing a special as an edition or a version drafts one.
+    case alternative(of: String, draft: String)
     /// Not held: the series' sidecar declines it.
     case declined
 
     /// The container a placement puts the special in, or refers to it from; none for a decline.
     public var container: String? {
         switch self {
-        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _), .edition(let id, _), .version(let id, _, _):
+        case .entry(let id, _, _), .extra(let id, _), .child(let id, _, _), .edition(let id, _), .version(let id, _, _),
+            .alternative(let id, _):
             id
         case .duplicate(_, _, _, let from, _), .breakout(_, let from, _): from
         case .declined: nil
@@ -61,7 +65,7 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
 /// kept on this Mac as a new container's draft is. Its containers are documents, as a draft's are; the
 /// outline of each is attributed to TMDb; and a series' specials wait in it, unassigned, until the
 /// operator places them. `Tmdb.md`, *A draft from TMDb* and *Specials*.
-public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
+public struct TMDbTree: Hashable, Sendable, Codable, Identifiable, AlternativeDrafting {
     public let id: UUID
     public var library: String
     public var record: TMDb.Record
@@ -95,6 +99,29 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     /// The entries the operator unticked, to be left out when the tree is made, by the id of the
     /// container holding them; absent from a draft kept before entries could be.
     var leftOutEntries: [String: [String]]?
+    /// The alternatives drafted for the tree's containers, by id; absent from a draft kept before they
+    /// were drafted.
+    private var alternativeDrafts: [String: [DraftAlternative]]?
+
+    public var draftedAlternatives: [String: [DraftAlternative]] {
+        get { alternativeDrafts ?? [:] }
+        set { alternativeDrafts = newValue.isEmpty ? nil : newValue }
+    }
+
+    public var placeable: [Special] { specials }
+
+    public mutating func alternativesChanged(at container: String) { edited = .now }
+
+    /// The title of one of a container's items, by its id: its own, or TMDb's for the episode it carries.
+    public func title(ofItem item: String, at id: String) -> String {
+        guard let entry = container(id)?.sequences.flatMap(\.items).first(where: { $0.id?.value == item }) else {
+            return item
+        }
+        if let title = entry.title { return title }
+        let ref = entry.externalRefs.first { $0.provider == .tmdb }
+        return ref.flatMap { episodeTitles[$0.value] } ?? specials.first { $0.episode.ref == ref }?.episode.title
+            ?? item
+    }
 
     public init(
         library: String,
@@ -240,7 +267,8 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     /// Puts a special where the operator says, or, with nil, makes it unassigned again. A new breakout
     /// it names is kept with the tree until it is made.
     public mutating func place(_ special: Int, _ placement: SpecialPlacement?, breakout: Container? = nil) {
-        placements[special] = placement
+        unplace(special)
+        placements[special] = settle(special, placement)
         if let breakout { breakouts[breakout.id.value] = Self.text(breakout) }
         edited = .now
     }
@@ -385,9 +413,17 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
                 guard var container = byID[id] else { continue }
                 Self.version(special, of: item, titled: title, in: &container)
                 byID[id] = container
+            case .alternative:
+                // Made with the alternative it is in, below.
+                continue
             case .declined:
                 declined += special.refs.filter { $0.provider == .tmdb }
             }
+        }
+        for (id, drafts) in draftedAlternatives {
+            guard var container = byID[id] else { continue }
+            DraftAlternative.make(drafts, specials: specials, in: &container)
+            byID[id] = container
         }
 
         let documents = order.compactMap { byID[$0] }
@@ -539,6 +575,13 @@ public final class TMDbDraftStore: Sendable {
     private static func read(_ file: URL) -> [String: [TMDbTree]] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode([String: [TMDbTree]].self, from: Data(contentsOf: file))) ?? [:]
+        let read = (try? decoder.decode([String: [TMDbTree]].self, from: Data(contentsOf: file))) ?? [:]
+        return read.mapValues { trees in
+            trees.map { tree in
+                var settled = tree
+                settled.settlingVersions()
+                return settled
+            }
+        }
     }
 }

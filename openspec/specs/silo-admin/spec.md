@@ -884,10 +884,21 @@ draft of the series as unassigned. The operator SHALL place each special, or not
   the top of the library before anything that refers to it; the series SHALL refer to the entry in
   it, from its extras or a sequence;
 - an alternative of the container it is placed in, a cut naming the sequence it plays: an entry in an
-  alternate sequence the container has, at a position; the only entry of a new sequence, named by a
-  new alternative with the title the operator gives it, as an omnibus edition is; or an entry in a new
-  sequence that holds the special in place of one item of another sequence and refers to each of that
-  sequence's other items, named by a new alternative, as a version of one episode is;
+  alternate sequence the container has, at a position; or an entry in an alternative drafted for the
+  container. The operator SHALL be able to draft an alternative of a container with a title, playing
+  one special or nothing yet, or cloned from one of the container's sequences, playing each item the
+  sequence declares or refers to of the container's own, by reference. The operator SHALL be able to
+  place a special in a drafted alternative at a position or in place of one of its entries, move its
+  entries, take entries out of it, retitle it and discard it. A special SHALL be in at most one drafted
+  alternative, and one replaced, taken out, placed elsewhere or in a discarded alternative SHALL leave
+  it. Placing a special as a new edition of a container SHALL draft an alternative playing it alone,
+  as an omnibus edition is, and placing it as a version of one item SHALL draft one cloned from the
+  sequence holding the item with the special in the item's place, as a version of one episode is.
+  Making or storing the container SHALL make each drafted alternative that plays anything as a new
+  sequence holding its entries in order, each special as an entry carrying its references and each item
+  as a reference to it, named by a new alternative with its title. A walk or draft kept with a special
+  as a new edition or a version SHALL be read with that drafted as an alternative the special is placed
+  in;
 - declined, which SHALL record the special's ref as declined in the series' sidecar.
 
 For each special the console SHALL pre-fill a suggestion and the reason for it, and SHALL take none
@@ -940,6 +951,17 @@ and the console SHALL list every edit and creation the placements make before it
 - **THEN** the serial gains a sequence holding the special's entry first and referring to the other
   three episodes, and an alternative naming it, and the serial still holds one entry for each episode
 
+#### Scenario: an alternative drafted from a sequence
+- **WHEN** a serial's sequence of four episodes is cloned as a new alternative, and one special is put
+  in place of the first episode, another added last, the third episode taken out and the fourth moved
+  before the second
+- **THEN** storing makes one sequence, playing the first special, the fourth and second episodes by
+  reference, then the second special, named by an alternative with the alternative's title
+
+#### Scenario: a version kept before alternatives were drafted
+- **WHEN** a walk kept with a special as a version of a serial's first episode is read
+- **THEN** the special is in a drafted alternative that plays it, then the serial's other episodes
+
 #### Scenario: an alternative suggested
 - **WHEN** a special's title names a serial beside the word "Omnibus", and another's names one of the
   serial's episodes beside the words "Special Edition"
@@ -961,6 +983,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aSeriesSpecialsAr
 `aSpecialIsSuggestedAsAMoviesDuplicate`, `aSpecialPlacedAsANewEditionIsASequenceOfItsOwn`,
 `aSpecialPlacedAsAVersionOfAnEpisodeRefersToTheRest`,
 `anOmnibusAndASpecialEditionAreSuggestedAsAlternatives`,
+`anAlternativeDraftedFromASequenceIsEditedAndStoredAsLeft`,
+`versionsKeptBeforeAlternativesWereDraftedAreReadAsDrafts`, `aNewStopsDraftedAlternativesLeaveWithIt`,
 `aSpecialIsPlacedInACompanionSeriesTheLibraryHolds`,
 `aNewCompanionSeriesIsCreatedListedWhenTheOperatorSays`). The pool and its choosing are pinned by
 nothing yet, as the rest of the shell is.
@@ -1131,7 +1155,7 @@ there is confirmed, edits it, or leaves it unchanged, as the store would find it
 be able to open any stop of the walk, and a confirmed stop SHALL open with its choices and placements
 as they were left. Any change to a confirmed stop's choices, a difference ticked or unticked, its
 missing episodes grouped, ungrouped, titled or put into a container held beneath it, a special placed
-in it or taken from it, or its draft shaped, SHALL make it pending again with its choices kept, and so
+in it or taken from it, an alternative drafted for it changed, or its draft shaped, SHALL make it pending again with its choices kept, and so
 SHALL unconfirming it; a change to the missing episodes put into a held container SHALL make that
 container's stop pending too. Confirming a stop again SHALL replace its pending change. When the walk's root is a
 series, or is beneath one, the series' unassigned specials SHALL be shown beside every stop with their

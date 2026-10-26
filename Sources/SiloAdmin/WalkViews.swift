@@ -895,6 +895,9 @@ private struct WalkSpecials: View {
         case .edition(let id, let alternative): return "\(alternative), another version of \(title(id))"
         case .version(let id, let item, let alternative):
             return "\(alternative), another version, in place of \(walk.title(ofItem: item, at: id)) of \(title(id))"
+        case .alternative(let id, let draft):
+            let alternative = walk.alternatives(draftedAt: id).first { $0.id == draft }?.title ?? "an alternative"
+            return "in \(alternative), another version of \(title(id))"
         case .declined: return "declined"
         }
     }

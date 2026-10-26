@@ -5423,6 +5423,158 @@ extension AdminConsoleTests {
         #expect(made.alternatives.map(\.title) == shown.map(\.title))
     }
 
+    /// An alternative drafted by cloning a serial's sequence plays what it does, by reference, until it is
+    /// edited: a special in place of an item, another inserted, an item dropped, two moved; a special
+    /// replaced, unassigned elsewhere, or in a discarded alternative is unassigned again; each change
+    /// makes the stop pending; and storing makes the alternative as it was left.
+    @Test func anAlternativeDraftedFromASequenceIsEditedAndStoredAsLeft() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pilot = Self.episode(3761, 0, 1, "The Dead Planet (Unaired Pilot)", runtime: 25)
+        let coda = Self.episode(3762, 0, 2, "A Pilot Coda", runtime: 5)
+        let stray = Self.episode(3763, 0, 3, "A Stray Trailer", runtime: 2)
+        let colour = Self.episode(3764, 0, 4, "The Daleks in Colour", runtime: 75)
+        let (series, contents, serial, _, tmdb) = Self.daleks([pilot, coda, stray, colour])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        try await walking.confirm(id, in: &walk)
+        let cloned = walk.cloneSequence(0, of: id, titled: "Pilot")
+        let draft = try #require(cloned)
+        #expect(walk.state(of: id) == .pending, "cloning makes the stop pending")
+        #expect(
+            walk.alternatives(draftedAt: id).first?.entries
+                == ["part-1", "part-2", "part-3", "part-4"].map {
+                    .item($0)
+                }
+        )
+        #expect(
+            walk.alternatives(at: id).last?.plays == ["The Dead Planet", "The Survivors", "The Escape", "The Ambush"]
+        )
+
+        walk.replace(0, in: draft, with: stray.id, of: id)
+        walk.replace(0, in: draft, with: pilot.id, of: id)
+        #expect(walk.placements[stray.id] == nil, "the special it replaced is unassigned")
+        walk.insert(coda.id, into: draft, at: 4, of: id)
+        walk.removeEntry(2, from: draft, of: id)
+        walk.moveEntries([2], to: 1, in: draft, of: id)
+        walk.retitle(draft, to: "The pilot", of: id)
+        walk.insert(pilot.id, into: draft, at: 2, of: id)
+        walk.insert(pilot.id, into: draft, at: 0, of: id)
+        #expect(walk.alternatives(draftedAt: id).first?.entries.first == .special(pilot.id), "moved, and back")
+        #expect(walk.placements[pilot.id] == .alternative(of: id, draft: draft))
+        #expect(walk.title(of: .special(pilot.id), at: id) == pilot.title)
+        #expect(walk.title(of: .item("part-2"), at: id) == "The Survivors")
+        #expect(
+            walk.alternatives(at: id).last
+                == TMDbWalk.StopAlternative(
+                    id: "the-pilot",
+                    title: "The pilot",
+                    plays: ["The Dead Planet (Unaired Pilot)", "The Ambush", "The Survivors", "A Pilot Coda"],
+                    isPlaced: true
+                )
+        )
+
+        // A special moved elsewhere leaves the alternative; one in a discarded alternative is unassigned.
+        walk.insert(stray.id, into: draft, at: 0, of: id)
+        walk.place(stray.id, .extra(of: id, type: "trailer"))
+        #expect(walk.alternatives(draftedAt: id).first?.entries.contains(.special(stray.id)) == false)
+        let colourDraft = walk.draftAlternative(at: id, titled: "In colour", playing: colour.id)
+        walk.discard(colourDraft, of: id)
+        #expect(walk.placements[colour.id] == nil && walk.alternatives(draftedAt: id).count == 1)
+        walk.place(stray.id, nil)
+        // A clone of a sequence that refers to the serial's items plays them, and one left empty is not
+        // made.
+        let broadcast = walk.cloneSequence(1, of: id, titled: "Empty")
+        #expect(walk.alternatives(draftedAt: id).last?.entries == [.item("part-1")])
+        walk.removeEntry(0, from: try #require(broadcast), of: id)
+
+        try await walking.confirm(id, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(serial.id))
+        #expect(made.alternatives.last == Alternative(id: "the-pilot", sequence: "the-pilot", title: "The pilot"))
+        #expect(!made.sequences.contains { $0.id == "empty" }, "the empty one is not made")
+        let sequence = try #require(made.sequences.last)
+        #expect(sequence.items.map(\.externalRefs) == [[pilot.ref], [], [], [coda.ref]])
+        #expect(sequence.items.map(\.reference?.item.value) == [nil, "part-4", "part-2", nil])
+    }
+
+    /// A walk and a draft from TMDb kept with a special as another version of an item, or of a container,
+    /// are read with each drafted as an alternative the special is placed in, which makes what the
+    /// version did.
+    @Test func versionsKeptBeforeAlternativesWereDraftedAreReadAsDrafts() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pilot = Self.episode(3771, 0, 1, "The Dead Planet (Unaired Pilot)", runtime: 25)
+        let colour = Self.episode(3772, 0, 2, "The Daleks in Colour", runtime: 75)
+        let (series, contents, serial, parts, tmdb) = Self.daleks([pilot, colour])
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let id = serial.id.value
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        walk.placements[pilot.id] = .version(of: id, item: "part-1", title: "Pilot")
+        walk.placements[colour.id] = .edition(of: id, title: "In colour")
+        let file = folder.appendingPathComponent("walks.json")
+        try TMDbWalkStore(file: file).save(walk, for: "silo")
+        let read = try #require(TMDbWalkStore(file: file).walk(rootedAt: walk.root, in: walk.library, of: "silo"))
+        let drafts = read.alternatives(draftedAt: id)
+        #expect(drafts.map(\.title) == ["Pilot", "In colour"])
+        #expect(drafts.first?.entries == [.special(pilot.id), .item("part-2"), .item("part-3"), .item("part-4")])
+        #expect(drafts.last?.entries == [.special(colour.id)])
+        #expect(read.placements[pilot.id] == .alternative(of: id, draft: drafts[0].id))
+
+        var tree = TMDbTree(
+            library: "tv",
+            record: TMDb.Record(.series, 121),
+            creating: ContainerDraft.Creating(),
+            containers: [serial],
+            top: serial.id,
+            episodeTitles: Dictionary(uniqueKeysWithValues: parts.map { (String($0.id), $0.title) }),
+            specials: [Special(episode: pilot), Special(episode: colour)]
+        )
+        tree.placements[pilot.id] = .version(of: id, item: "part-1", title: "Pilot")
+        tree.placements[colour.id] = .version(of: id, item: "no-such-part", title: "Lost")
+        let trees = folder.appendingPathComponent("trees.json")
+        try TMDbDraftStore(file: trees).save(tree, for: "silo")
+        let kept = try #require(TMDbDraftStore(file: trees).drafts(of: "silo").first)
+        #expect(kept.alternatives(draftedAt: id).map(\.title) == ["Pilot"])
+        #expect(kept.title(of: .item("part-1"), at: id) == "The Dead Planet")
+        #expect(
+            kept.placements[colour.id] == .version(of: id, item: "no-such-part", title: "Lost"),
+            "kept, making nothing"
+        )
+        var edited = kept
+        let pilotDraft = try #require(edited.alternatives(draftedAt: id).first?.id)
+        edited.insert(colour.id, into: pilotDraft, at: 4, of: id)
+        #expect(edited.title(of: .special(colour.id), at: id) == colour.title)
+        #expect(edited.title(of: .item("no-such-part"), at: id) == "no-such-part")
+        #expect(edited.edited >= kept.edited)
+        let made = try #require(edited.making.documents.first)
+        #expect(made.alternatives.map(\.title) == ["As broadcast", "Pilot"])
+        #expect(made.sequences.last?.items.last?.externalRefs == [colour.ref])
+    }
+
+    /// A new stop leaving the walk takes the alternatives drafted for it.
+    @Test func aNewStopsDraftedAlternativesLeaveWithIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, special) = Self.missingSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        walk.draftAlternative(at: new, titled: "Extended", playing: special.id)
+        #expect(walk.unassigned.isEmpty)
+        walk.stops[series.id.value]?.chosen.remove("season:904")
+        try await walking.confirm(series.id.value, in: &walk)
+        #expect(walk.draftedAlternatives.isEmpty && walk.unassigned.map(\.id) == [special.id])
+    }
+
     /// A new season's episodes regrouped into two serials make each serial a new stop beneath it, made
     /// with it in one creation, a special placed in one held in its sidecar.
     @Test func aNewSeasonsSerialsAreStopsBeneathIt() async throws {
