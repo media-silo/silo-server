@@ -49,24 +49,49 @@ enum SpecialNaming: Identifiable {
 struct SpecialNamingSheet: View {
     let naming: SpecialNaming
     let done: (Title, Bool) -> Void
+
+    var body: some View {
+        TitlePrompt(
+            question: naming.question,
+            initial: naming.isCompanion ? "" : naming.special.episode.title,
+            asksListed: naming.isCompanion,
+            done: done
+        )
+    }
+}
+
+/// Asks what something is called, and, for a series, whether the household finds it listed.
+struct TitlePrompt: View {
+    let question: String
+    var action = "Place"
+    let asksListed: Bool
+    let done: (Title, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var listed = false
     @FocusState private var titling: Bool
 
-    init(naming: SpecialNaming, done: @escaping (Title, Bool) -> Void) {
-        self.naming = naming
+    init(
+        question: String,
+        initial: String,
+        action: String = "Place",
+        asksListed: Bool = false,
+        done: @escaping (Title, Bool) -> Void
+    ) {
+        self.question = question
+        self.action = action
+        self.asksListed = asksListed
         self.done = done
-        _title = State(initialValue: naming.isCompanion ? "" : naming.special.episode.title)
+        _title = State(initialValue: initial)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(naming.question).font(.headline).fixedSize(horizontal: false, vertical: true)
+            Text(question).font(.headline).fixedSize(horizontal: false, vertical: true)
             TextField("Title", text: $title)
                 .focused($titling)
-                .onSubmit(place)
-            if naming.isCompanion {
+                .onSubmit(finish)
+            if asksListed {
                 Toggle("Listed", isOn: $listed)
                     .help(
                         "Unlisted, it is browsed to only through what refers to it; listed, the household finds it too."
@@ -75,7 +100,7 @@ struct SpecialNamingSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Place", action: place).keyboardShortcut(.defaultAction).disabled(named == nil)
+                Button(action, action: finish).keyboardShortcut(.defaultAction).disabled(named == nil)
             }
         }
         .padding()
@@ -85,7 +110,7 @@ struct SpecialNamingSheet: View {
 
     private var named: Title? { Title(title.trimmingCharacters(in: .whitespaces)) }
 
-    private func place() {
+    private func finish() {
         guard let named else { return }
         done(named, listed)
         dismiss()

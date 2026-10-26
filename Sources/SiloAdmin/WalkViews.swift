@@ -171,7 +171,7 @@ struct WalkSheet: View {
             WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
             DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
             DifferenceGroup("Artwork", comparison.differences.filter(\.isArtwork), walk: walk, tick: tick)
-            StopAlternatives(walk: walk, stop: comparison.container)
+            StopAlternatives(walk: walk, model: model, stop: comparison.container)
             PlacedSpecials(walk: walk, model: model, stop: comparison.container)
             if !comparison.heldOnly.isEmpty {
                 GroupBox("Held here, and nothing at TMDb: nothing is offered for removal") {
@@ -309,7 +309,7 @@ private struct NewStop: View {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
                 }
             }
-            StopAlternatives(walk: walk, stop: stop)
+            StopAlternatives(walk: walk, model: model, stop: stop)
             PlacedSpecials(walk: walk, model: model, stop: stop)
         }
     }
@@ -352,30 +352,21 @@ private struct DifferenceGroup: View {
     }
 }
 
-/// The ways a stop's container is played, as storing the walk would leave it: those it holds or its draft
-/// has, then those the specials placed in it make, each with what it plays.
+/// A stop's alternatives, edited by dragging specials onto them, and its extras, dropped onto by kind.
 private struct StopAlternatives: View {
     let walk: TMDbWalk
+    let model: ConsoleModel
     let stop: String
 
     var body: some View {
-        let alternatives = walk.alternatives(at: stop)
-        if !alternatives.isEmpty {
-            GroupBox("Alternatives") {
-                ForEach(alternatives) { alternative in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(alternative.title)
-                            if alternative.isPlaced {
-                                Text("new, made by a special placed here").font(.caption).foregroundStyle(.green)
-                            }
-                        }
-                        Text("Plays \(alternative.plays.joined(separator: ", "))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        if let container = walk.container(stop) {
+            AlternativesEditor(drafting: walk, container: container, change: model.draftAlternatives)
+            ExtrasDropZones(
+                container: stop,
+                placements: walk.placements,
+                place: { model.place($0, $1) },
+                declines: stop == walk.series
+            )
         }
     }
 }
@@ -394,6 +385,7 @@ private struct PlacedSpecials: View {
                 ForEach(placed) { special in
                     HStack {
                         Text(special.episode.title)
+                            .draggable(special: special.id, title: special.episode.title)
                         Text(walk.placements[special.id].map { WalkSpecials.describe($0, in: walk) } ?? "")
                             .font(.caption).foregroundStyle(.green)
                         Spacer()
@@ -751,6 +743,8 @@ private struct WalkSpecials: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 Text(special.episode.title).lineLimit(2)
+                    .draggable(special: special.id, title: special.episode.title)
+                    .help("Drag onto the open stop's alternatives or extras.")
                 TMDbMark()
                 if isSuggestedHere(special) {
                     Text("suggested here").font(.caption2.bold()).foregroundStyle(.orange)
