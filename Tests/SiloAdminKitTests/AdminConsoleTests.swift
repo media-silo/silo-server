@@ -5502,6 +5502,52 @@ extension AdminConsoleTests {
         #expect(sequence.items.map(\.reference?.item.value) == [nil, "part-4", "part-2", nil])
     }
 
+    /// A drafted alternative cloned plays what it does, its specials included: each an entry of the first
+    /// alternative that plays it, and referred to from the clone. Taken out of the first, a special is
+    /// placed in the clone; taken out of both, or placed elsewhere, out of every one.
+    @Test func aDraftedAlternativeClonedSharesItsSpecials() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pilot = Self.episode(3781, 0, 1, "The Dead Planet (Unaired Pilot)", runtime: 25)
+        let coda = Self.episode(3782, 0, 2, "A Pilot Coda", runtime: 5)
+        let (series, contents, serial, _, tmdb) = Self.daleks([pilot, coda])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        walk.place(pilot.id, .version(of: id, item: "part-1", title: "Pilot"))
+        let first = try #require(walk.alternatives(draftedAt: id).first?.id)
+        walk.insert(coda.id, into: first, at: 4, of: id)
+        let cloned = walk.cloneDraft(first, of: id, titled: "Pilot, short")
+        let clone = try #require(cloned)
+        #expect(walk.cloneDraft("no-such-draft", of: id, titled: "Nothing") == nil)
+        walk.removeEntry(2, from: clone, of: id)
+        #expect(walk.alternatives(draftedAt: id).last?.entries.contains(.special(pilot.id)) == true)
+
+        // Taken out of the first, the coda is the clone's; taken out of the clone too, it is unassigned.
+        walk.removeEntry(4, from: first, of: id)
+        #expect(walk.placements[coda.id] == .alternative(of: id, draft: clone))
+        let copy = walk
+        walk.discard(clone, of: id)
+        #expect(walk.placements[coda.id] == nil)
+        walk = copy
+        var elsewhere = copy
+        elsewhere.place(pilot.id, .extra(of: id, type: "featurette"))
+        #expect(elsewhere.alternatives(draftedAt: id).allSatisfy { !$0.entries.contains(.special(pilot.id)) })
+
+        try await walking.confirm(id, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(serial.id))
+        #expect(made.alternatives.suffix(2).map(\.title) == ["Pilot", "Pilot, short"])
+        let pilotItem = try #require(made.sequences[made.sequences.count - 2].items.first?.id)
+        let short = try #require(made.sequences.last)
+        #expect(short.items.first?.reference?.item == pilotItem, "the clone refers to the first's entry")
+        #expect(short.items.map(\.reference?.item.value) == [pilotItem.value, "part-2", "part-4", nil])
+        #expect(short.items.last?.externalRefs == [coda.ref], "the coda's entry is the clone's")
+    }
+
     /// A walk and a draft from TMDb kept with a special as another version of an item, or of a container,
     /// are read with each drafted as an alternative the special is placed in, which makes what the
     /// version did.
