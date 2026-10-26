@@ -282,6 +282,15 @@ extension ConsoleModel {
         keepWalk()
     }
 
+    /// Drafts the walk's alternatives, or edits those drafted.
+    func draftAlternatives(_ change: (inout TMDbWalk) -> Void) {
+        guard var walk = walking?.walk else { return }
+        change(&walk)
+        walking?.walk = walk
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// Lists everything storing the walk will do, before any of it is done.
     func listStore() {
         do {

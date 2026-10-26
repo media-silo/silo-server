@@ -397,6 +397,13 @@ struct ShapeTreeSheet: View {
                 model.updateTree { $0.removeAttribution(of: subject, from: selected) }
             }
             ContainerForm(container: container) { changed in model.updateTree { $0.set(changed) } }
+            AlternativesEditor(drafting: tree, container: container) { change in model.updateTree(change) }
+            ExtrasDropZones(
+                container: selected,
+                placements: tree.placements,
+                place: { special, placement in model.updateTree { $0.place(special, placement) } },
+                declines: selected == tree.top
+            )
         } else {
             ContentUnavailableView(
                 "Nothing Chosen",
@@ -431,6 +438,8 @@ struct ShapeTreeSheet: View {
             VStack(alignment: .leading) {
                 HStack(spacing: 4) {
                     Text(special.episode.title)
+                        .draggable(special: special.id, title: special.episode.title)
+                        .help("Drag onto the chosen container's alternatives or extras.")
                     TMDbMark()
                     if let aired = special.episode.airDate { Text(aired).font(.caption).foregroundStyle(.secondary) }
                 }
