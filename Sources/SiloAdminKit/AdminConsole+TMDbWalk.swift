@@ -455,6 +455,7 @@ extension TMDbWalk {
             throw AdminConsole.StoreRefused(reason: "\(stop.title)'s sidecar does not read as a container")
         }
         var change = Change(stop: stop, draft: draft, container: held)
+        for (sequence, name) in renamedSequences[id] ?? [:] { change.container.renameSequence(sequence, to: name) }
         change.titles = titles
         let groups = stop.groups.filter { taken.contains($0.tick) }
         for group in groups {
@@ -690,6 +691,9 @@ extension TMDbWalk {
         }
         let alternatives = after.alternatives.count - before.alternatives.count
         if alternatives > 0 { parts.append(alternatives == 1 ? "1 alternative" : "\(alternatives) alternatives") }
+        if before.sequences.map(\.id) != after.sequences.prefix(before.sequences.count).map(\.id) {
+            parts.append("a sequence's name")
+        }
         if draft.declined != nil { parts.append("what it declines") }
         return parts.isEmpty ? "edit \(stop.title)" : "edit \(stop.title): \(parts.joined(separator: ", "))"
     }

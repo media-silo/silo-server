@@ -5548,6 +5548,71 @@ extension AdminConsoleTests {
         #expect(short.items.last?.externalRefs == [coda.ref], "the coda's entry is the clone's")
     }
 
+    /// A held stop's sequences renamed are renamed when the walk is stored, with the alternatives and the
+    /// placed specials naming them; a name another sequence has is refused; and the stop is pending again.
+    @Test func aHeldStopsSequencesAreRenamedWhenStored() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let trailer = Self.episode(3791, 0, 1, "The Daleks: Trailer", runtime: 2)
+        let (series, contents, serial, _, tmdb) = Self.daleks([trailer])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        walk.place(trailer.id, .entry(in: id, sequence: "parts", position: 1))
+        try await walking.confirm(id, in: &walk)
+        let primary = walk.renameSequence(0, at: id, to: "Episodes")
+        #expect(primary)
+        #expect(walk.state(of: id) == .pending)
+        #expect(walk.sequenceName(0, at: id) == "episodes")
+        #expect(walk.placements[trailer.id] == .entry(in: id, sequence: "episodes", position: 1))
+        let taken = walk.renameSequence(1, at: id, to: "episodes")
+        #expect(!taken, "the primary sequence has it")
+        let missing = walk.renameSequence(5, at: id, to: "spare")
+        #expect(!missing, "no such sequence")
+        let alternate = walk.renameSequence(1, at: id, to: "As broadcast")
+        #expect(alternate)
+        #expect(walk.sequenceName(1, at: id) == "as-broadcast")
+
+        try await walking.confirm(id, in: &walk)
+        #expect(try walk.plan().steps.first { $0.id == "edit:\(id)" }?.described.contains("a sequence's name") == true)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(serial.id))
+        #expect(made.sequences.map(\.id) == ["episodes", "as-broadcast"])
+        #expect(made.alternatives == [Alternative(id: "broadcast", sequence: "as-broadcast", title: "As broadcast")])
+        #expect(made.sequences[0].items[1].externalRefs == [trailer.ref], "placed in it, renamed")
+    }
+
+    /// A new stop's sequence renamed is shaped in its draft, the specials placed in it with it.
+    @Test func aNewStopsSequenceIsRenamedInItsDraft() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, special) = Self.missingSeason()
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        let old = try #require(walk.sequenceName(0, at: new))
+        walk.place(special.id, .entry(in: new, sequence: old, position: 1))
+        let newPrimary = walk.renameSequence(0, at: new, to: "Broadcast order")
+        #expect(newPrimary)
+        let newMissing = walk.renameSequence(3, at: new, to: "Spare")
+        #expect(!newMissing)
+        #expect(walk.container(new)?.sequences.first?.id == "broadcast-order")
+        #expect(walk.placements[special.id] == .entry(in: new, sequence: "broadcast-order", position: 1))
+        #expect(walk.sequenceName(9, at: new) == nil)
+
+        try await walking.confirm(new, choosing: ["ref::tmdb:904"], in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(ContainerID(new)!))
+        #expect(made.sequences.first?.id == "broadcast-order")
+        #expect(made.sequences.first?.items[1].externalRefs == [special.ref])
+    }
+
     /// A walk and a draft from TMDb kept with a special as another version of an item, or of a container,
     /// are read with each drafted as an alternative the special is placed in, which makes what the
     /// version did.

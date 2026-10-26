@@ -115,6 +115,15 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         set { alternativeDrafts = newValue.isEmpty ? nil : newValue }
     }
 
+    /// The new ids the operator gave held stops' sequences, by stop and the sequence's position. Absent
+    /// from a walk kept before sequences could be renamed.
+    private var sequenceRenames: [String: [Int: String]]?
+
+    public var renamedSequences: [String: [Int: String]] {
+        get { sequenceRenames ?? [:] }
+        set { sequenceRenames = newValue.isEmpty ? nil : newValue }
+    }
+
     public init(library: String, root: Stop) {
         id = UUID()
         self.library = library
