@@ -5585,6 +5585,92 @@ extension AdminConsoleTests {
         #expect(made.sequences[0].items[1].externalRefs == [trailer.ref], "placed in it, renamed")
     }
 
+    /// A group made of a held stop's missing episodes has its primary sequence go by the stop's, as the
+    /// stop's is renamed; renamed beneath, the stop's sequence and each container's beneath it the walk
+    /// knows are renamed, a held one not yet read as its edit is made.
+    @Test func aStopsPrimarySequenceIsRenamedBeneathItAndGivenToItsGroups() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, episodes) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season.id.value, in: &walk)
+        walk.identify(season.id.value, as: 6981)
+        walk.read(
+            try await console.compare(
+                season.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        let (stop, group) = (season.id.value, "00000000000001d3")
+        let renamed = walk.renameSequence(0, at: stop, to: "Serials")
+        #expect(renamed)
+        walk.group(
+            Array(episodes[4..<8].map(\.id)),
+            at: stop,
+            into: group,
+            type: .serial,
+            title: Title("Planet of Evil")!
+        )
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        #expect(walk.container(group)?.sequences.first?.id == "serials", "the group's goes by the stop's")
+
+        #expect(walk.containers(beneath: stop) == [serial.id.value, group])
+        #expect(walk.container(serial.id.value) == nil, "the held serial not read yet")
+        let beneath = walk.renameSequence(0, at: stop, to: "Chapters", beneath: true)
+        #expect(beneath)
+        #expect(
+            [stop, serial.id.value, group].map { walk.sequenceName(0, at: $0) } == ["chapters", "chapters", "chapters"]
+        )
+        #expect(walk.state(of: serial.id.value) == .pending)
+
+        walk.read(
+            try await console.compare(
+                serial.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        try await walking.confirm(serial.id.value, in: &walk)
+        let plan = try walk.plan()
+        #expect(Self.edit(of: serial.id.value, in: plan)?.value?.sequences.first?.id == "chapters")
+    }
+
+    /// Entries regrouped into a new container make its primary sequence go by the id of the container's
+    /// they were made out of; a draft's container renamed beneath renames the containers beneath it.
+    @Test func aRegroupedContainersPrimarySequenceIsItsParentsAndRenamedBeneathIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, _) = Self.missingSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        let walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        var tree = try #require(walk.drafts[new])
+        let drafted = try #require(tree.container(new))
+        let items = drafted.sequences[0].items.compactMap(\.id)
+        let primary = tree.container(new)?.sequences.first?.id
+        let serial = try await database.provisionalID()
+        tree.regroup(items, in: new, into: serial, type: .serial, title: Title("The Smugglers")!)
+        #expect(tree.container(serial.value)?.sequences.first?.id == primary)
+
+        let renamed = tree.renameSequence(0, of: new, to: "Broadcast", beneath: true)
+        #expect(renamed)
+        #expect(tree.container(new)?.sequences.first?.id == "broadcast")
+        #expect(tree.container(serial.value)?.sequences.first?.id == "broadcast")
+        let refused = tree.renameSequence(4, of: new, to: "Spare", beneath: true)
+        #expect(!refused)
+    }
+
     /// A new stop's sequence renamed is shaped in its draft, the specials placed in it with it.
     @Test func aNewStopsSequenceIsRenamedInItsDraft() async throws {
         let (database, folder) = Self.clone()

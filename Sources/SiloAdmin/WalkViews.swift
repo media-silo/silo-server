@@ -305,7 +305,9 @@ private struct NewStop: View {
                     update: { model.shapeNewStop($0) },
                     provisionalID: { try? await model.provisionalID() },
                     clone: { title in model.draftAlternatives { $0.cloneSequence(0, of: stop, titled: title) } },
-                    rename: { name in model.draftAlternatives { $0.renameSequence(0, at: stop, to: name) } }
+                    rename: { name, beneath in
+                        model.draftAlternatives { $0.renameSequence(0, at: stop, to: name, beneath: beneath) }
+                    }
                 )
                 DisclosureGroup("Its form") {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
@@ -519,7 +521,9 @@ private struct WalkChildren: View {
                 PrimarySequence(
                     name: walk.sequenceName(0, at: stop),
                     clone: { title in model.draftAlternatives { $0.cloneSequence(0, of: stop, titled: title) } },
-                    rename: { name in model.draftAlternatives { $0.renameSequence(0, at: stop, to: name) } }
+                    rename: { name, beneath in
+                        model.draftAlternatives { $0.renameSequence(0, at: stop, to: name, beneath: beneath) }
+                    }
                 )
             }
         }

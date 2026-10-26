@@ -54,33 +54,44 @@ struct SpecialNamingSheet: View {
         TitlePrompt(
             question: naming.question,
             initial: naming.isCompanion ? "" : naming.special.episode.title,
-            asksListed: naming.isCompanion,
+            option: naming.isCompanion
+                ? TitlePrompt.Option(
+                    label: "Listed",
+                    help:
+                        "Unlisted, it is browsed to only through what refers to it; listed, the household finds it too."
+                ) : nil,
             done: done
         )
     }
 }
 
-/// Asks what something is called, and, for a series, whether the household finds it listed.
+/// Asks what something is called, and, when there is one, whether to do what its option says.
 struct TitlePrompt: View {
+    /// Something to do besides, ticked or not: a series listed, or the containers beneath renamed too.
+    struct Option {
+        let label: String
+        let help: String
+    }
+
     let question: String
     var action = "Place"
-    let asksListed: Bool
+    let option: Option?
     let done: (Title, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
-    @State private var listed = false
+    @State private var ticked = false
     @FocusState private var titling: Bool
 
     init(
         question: String,
         initial: String,
         action: String = "Place",
-        asksListed: Bool = false,
+        option: Option? = nil,
         done: @escaping (Title, Bool) -> Void
     ) {
         self.question = question
         self.action = action
-        self.asksListed = asksListed
+        self.option = option
         self.done = done
         _title = State(initialValue: initial)
     }
@@ -91,11 +102,8 @@ struct TitlePrompt: View {
             TextField("Title", text: $title)
                 .focused($titling)
                 .onSubmit(finish)
-            if asksListed {
-                Toggle("Listed", isOn: $listed)
-                    .help(
-                        "Unlisted, it is browsed to only through what refers to it; listed, the household finds it too."
-                    )
+            if let option {
+                Toggle(option.label, isOn: $ticked).help(option.help)
             }
             HStack {
                 Spacer()
@@ -112,7 +120,7 @@ struct TitlePrompt: View {
 
     private func finish() {
         guard let named else { return }
-        done(named, listed)
+        done(named, ticked)
         dismiss()
     }
 }
