@@ -664,7 +664,12 @@ extension TMDbWalk {
         if before.outline != after.outline { parts.append("its outline") }
         let refs = Set(after.externalRefs).subtracting(before.externalRefs).count
         if refs > 0 { parts.append(refs == 1 ? "1 reference" : "\(refs) references") }
-        func entries(_ container: Container) -> [Entry] { container.sequences.flatMap(\.items) + container.extras }
+        // A reference to an item of the container itself, as an alternative plays one, is no entry more.
+        func entries(_ container: Container) -> [Entry] {
+            (container.sequences.flatMap(\.items) + container.extras).filter { entry in
+                entry.reference.map { $0.container != nil && $0.container != container.id } ?? true
+            }
+        }
         let added = entries(after).count - entries(before).count
         if added > 0 { parts.append(added == 1 ? "1 entry" : "\(added) entries") }
         let itemRefs =
@@ -678,6 +683,8 @@ extension TMDbWalk {
         {
             parts.append("its order")
         }
+        let alternatives = after.alternatives.count - before.alternatives.count
+        if alternatives > 0 { parts.append(alternatives == 1 ? "1 alternative" : "\(alternatives) alternatives") }
         if draft.declined != nil { parts.append("what it declines") }
         return parts.isEmpty ? "edit \(stop.title)" : "edit \(stop.title): \(parts.joined(separator: ", "))"
     }
@@ -694,5 +701,99 @@ extension TMDbTree.Making.HeldEdit {
         if refer != nil { return "refer to a special from \(container) in \(library)" }
         if entryType != nil { return "add an extra to \(container) in \(library)" }
         return "add an entry to \(container) in \(library)"
+    }
+}
+
+// MARK: - What a stop is stored as
+
+extension TMDbWalk {
+    /// One way a stop's container is played, as storing the walk would leave it.
+    public struct StopAlternative: Hashable, Sendable, Identifiable {
+        public let id: String
+        public let title: String
+        /// What it plays, in order, each by its title.
+        public let plays: [String]
+        /// Made by a special placed at the stop, rather than held or drafted there already.
+        public let isPlaced: Bool
+
+        public init(id: String, title: String, plays: [String], isPlaced: Bool) {
+            self.id = id
+            self.title = title
+            self.plays = plays
+            self.isPlaced = isPlaced
+        }
+    }
+
+    /// A stop's alternatives as storing would leave its container, were the stop confirmed with what is
+    /// chosen and placed there now: those it holds or its draft has, then those its placed specials make.
+    public func alternatives(at id: String) -> [StopAlternative] {
+        guard let (before, after) = stored(id) else { return [] }
+        return after.alternatives.compactMap { alternative in
+            guard let sequence = after.sequences.first(where: { $0.id == alternative.sequence }) else { return nil }
+            return StopAlternative(
+                id: alternative.id,
+                title: alternative.title ?? alternative.id,
+                plays: sequence.items.map { title(of: $0, in: after, at: id) },
+                isPlaced: !before.alternatives.contains { $0.id == alternative.id }
+            )
+        }
+    }
+
+    /// The title of one of a stop's items, by its id.
+    public func title(ofItem item: String, at id: String) -> String {
+        guard let container = container(id),
+            let entry = container.sequences.flatMap(\.items).first(where: { $0.id?.value == item })
+        else { return item }
+        return title(of: entry, in: container, at: id)
+    }
+
+    /// An entry by its title: its own, TMDb's for the episode or special it carries, the operator's for a
+    /// missing episode, the stop's beneath it for a child, or the title of the item it refers to.
+    private func title(of entry: Entry, in container: Container, at id: String) -> String {
+        if let title = entry.title { return title }
+        if let ref = entry.externalRefs.first(where: { $0.provider == .tmdb }) {
+            if let episode = Int(ref.value), let title = titles[episode] { return title }
+            let episodes = stops[id]?.comparison?.episodeTitles ?? draft(holding: id)?.episodeTitles ?? [:]
+            if let title = episodes[ref.value] { return title }
+            if let special = (specials + declined).first(where: { $0.episode.ref == ref }) {
+                return special.episode.title
+            }
+        }
+        if let child = entry.childContainer { return stops[child.value]?.title ?? child.value }
+        if let ref = entry.reference, ref.container == nil || ref.container == container.id,
+            let referred = container.sequences.flatMap(\.items).first(where: { $0.id == ref.item }),
+            referred.reference == nil
+        {
+            return title(of: referred, in: container, at: id)
+        }
+        return entry.id?.value ?? entry.reference.map { "\($0.container?.value ?? "")#\($0.item)" } ?? "an item"
+    }
+
+    /// A stop's container before the walk, and as storing would make it, were the stop, and for a new
+    /// stop every container of its draft, confirmed with what is chosen now: made by the store's own
+    /// plan, so it is what storing creates.
+    private func stored(_ id: String) -> (before: Container, after: Container)? {
+        var walk = self
+        let new = Dictionary(
+            companions.keys.compactMap { id in companion(id).map { (id, $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var gathering = Gathering(made: new)
+        if let (top, tree) = drafts.first(where: { $0.value.documents[id] != nil }) {
+            for container in tree.containers.map(\.id.value) {
+                walk.stops[container]?.taken = stops[container]?.taken ?? stops[container]?.chosen
+            }
+            guard let before = tree.container(id),
+                let after = walk.making(of: top, gathering: &gathering)?.making.documents.first(where: {
+                    $0.id.value == id
+                })
+            else { return nil }
+            return (before, after)
+        }
+        walk.stops[id]?.taken = stops[id]?.taken ?? stops[id]?.chosen
+        guard let before = container(id),
+            let change = try? walk.change(of: id, gathering: &gathering)
+        else { return nil }
+        return (before, change.container)
     }
 }

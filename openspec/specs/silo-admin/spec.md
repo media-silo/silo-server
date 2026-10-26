@@ -1142,7 +1142,9 @@ of its specials may carry, SHALL tie nothing. A special SHALL be
 placeable in the open stop, as an entry in a sequence of it at a position or as one of its extras, and
 anywhere a draft's specials may be placed. A placed special SHALL leave the unassigned specials and
 become part of the pending change of the container it was placed in, and removing it from that change
-SHALL return it. A stop never opened or left pending, and a special never placed, SHALL change nothing.
+SHALL return it. A stop SHALL show, pending or confirmed, the alternatives storing the walk would
+leave its container with: those it holds or its draft has, then those the specials placed in it make,
+each with its title and what it plays, in order, by title. What it shows SHALL be what storing creates. A stop never opened or left pending, and a special never placed, SHALL change nothing.
 
 Nothing SHALL be stored until the operator stores the walk. Before storing, the console SHALL list
 every creation, edit and artwork put the walk makes, in the order it will make them: the companion
@@ -1193,6 +1195,13 @@ and the walk SHALL keep what was not.
 - **THEN** the stop is pending again with the special placed, and storing the walk stores nothing of
   it until it is confirmed again
 
+#### Scenario: alternatives a placed special makes
+- **WHEN** a serial's stop holding one alternative has one special placed as another version of its
+  first episode and another as another version of the serial, before the stop is confirmed
+- **THEN** the stop shows the alternative it holds, then one playing the first special in place of the
+  first episode followed by the serial's other episodes, then one playing the second special alone,
+  each marked as made by a placed special, and storing the walk makes those alternatives
+
 #### Scenario: a ticked difference ticked again
 - **WHEN** a difference a confirmed stop has ticked is ticked again
 - **THEN** the stop stays confirmed
@@ -1202,7 +1211,9 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 `aStopsChildrenAreInTheOrderItsChildrenListThem`, `anyChangeToAConfirmedStopMakesItPendingAgain`,
 `aSpecialPlacedAtAStopIsStoredInThatContainersEdit`, `aConfirmedStopOpenedAgainKeepsWhatWasChosen`,
 `aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`,
-`anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`). The walk's sheet is pinned by nothing yet, as the rest
+`anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`,
+`aStopShowsTheAlternativesItsPlacedSpecialsMake`,
+`aNewStopShowsTheAlternativesItsPlacedSpecialsMake`). The walk's sheet is pinned by nothing yet, as the rest
 of the shell is.
 
 ### Requirement: A missing child chosen in a walk is a new container, created when the walk is stored
