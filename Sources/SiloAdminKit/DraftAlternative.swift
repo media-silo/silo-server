@@ -254,3 +254,25 @@ extension AlternativeDrafting {
         draftedAlternatives[container]?.firstIndex { $0.id == draft }
     }
 }
+
+extension TMDbTree: AlternativeDrafting {
+    public var draftedAlternatives: [String: [DraftAlternative]] {
+        get { alternativeDrafts ?? [:] }
+        set { alternativeDrafts = newValue.isEmpty ? nil : newValue }
+    }
+
+    public var placeable: [Special] { specials }
+
+    public mutating func alternativesChanged(at container: String) { edited = .now }
+
+    /// The title of one of a container's items, by its id: its own, or TMDb's for the episode it carries.
+    public func title(ofItem item: String, at id: String) -> String {
+        guard let entry = container(id)?.sequences.flatMap(\.items).first(where: { $0.id?.value == item }) else {
+            return item
+        }
+        if let title = entry.title { return title }
+        let ref = entry.externalRefs.first { $0.provider == .tmdb }
+        return ref.flatMap { episodeTitles[$0.value] } ?? specials.first { $0.episode.ref == ref }?.episode.title
+            ?? item
+    }
+}

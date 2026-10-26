@@ -65,7 +65,7 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
 /// kept on this Mac as a new container's draft is. Its containers are documents, as a draft's are; the
 /// outline of each is attributed to TMDb; and a series' specials wait in it, unassigned, until the
 /// operator places them. `Tmdb.md`, *A draft from TMDb* and *Specials*.
-public struct TMDbTree: Hashable, Sendable, Codable, Identifiable, AlternativeDrafting {
+public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     public let id: UUID
     public var library: String
     public var record: TMDb.Record
@@ -101,27 +101,7 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable, AlternativeDr
     var leftOutEntries: [String: [String]]?
     /// The alternatives drafted for the tree's containers, by id; absent from a draft kept before they
     /// were drafted.
-    private var alternativeDrafts: [String: [DraftAlternative]]?
-
-    public var draftedAlternatives: [String: [DraftAlternative]] {
-        get { alternativeDrafts ?? [:] }
-        set { alternativeDrafts = newValue.isEmpty ? nil : newValue }
-    }
-
-    public var placeable: [Special] { specials }
-
-    public mutating func alternativesChanged(at container: String) { edited = .now }
-
-    /// The title of one of a container's items, by its id: its own, or TMDb's for the episode it carries.
-    public func title(ofItem item: String, at id: String) -> String {
-        guard let entry = container(id)?.sequences.flatMap(\.items).first(where: { $0.id?.value == item }) else {
-            return item
-        }
-        if let title = entry.title { return title }
-        let ref = entry.externalRefs.first { $0.provider == .tmdb }
-        return ref.flatMap { episodeTitles[$0.value] } ?? specials.first { $0.episode.ref == ref }?.episode.title
-            ?? item
-    }
+    var alternativeDrafts: [String: [DraftAlternative]]?
 
     public init(
         library: String,
