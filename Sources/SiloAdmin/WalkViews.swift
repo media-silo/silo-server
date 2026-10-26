@@ -303,7 +303,8 @@ private struct NewStop: View {
                     tree: tree,
                     parent: stop,
                     update: { model.shapeNewStop($0) },
-                    provisionalID: { try? await model.provisionalID() }
+                    provisionalID: { try? await model.provisionalID() },
+                    clone: { title in model.draftAlternatives { $0.cloneSequence(0, of: stop, titled: title) } }
                 )
                 DisclosureGroup("Its form") {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
@@ -505,11 +506,16 @@ private struct WalkChildren: View {
     /// always said.
     @ViewBuilder
     private func heading(_ tickable: [String]) -> some View {
-        if tickable.isEmpty {
-            Text("Children, each held here")
-        } else {
-            Toggle(sources: tickable.map(tick), isOn: \.self) {
-                Text("Children, \(tickable.filter { tick($0).wrappedValue }.count) of \(tickable.count) ticked")
+        VStack(alignment: .leading, spacing: 4) {
+            if tickable.isEmpty {
+                Text("Children, each held here")
+            } else {
+                Toggle(sources: tickable.map(tick), isOn: \.self) {
+                    Text("Children, \(tickable.filter { tick($0).wrappedValue }.count) of \(tickable.count) ticked")
+                }
+            }
+            if walk.container(stop)?.sequences.isEmpty == false {
+                ChildrenActions { title in model.draftAlternatives { $0.cloneSequence(0, of: stop, titled: title) } }
             }
         }
     }

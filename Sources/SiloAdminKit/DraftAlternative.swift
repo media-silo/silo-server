@@ -45,6 +45,8 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
     /// with its title naming that sequence. An item the container no longer holds, or a special not
     /// among those given, is left out, and an alternative left with nothing to play is not made.
     static func make(_ drafts: [DraftAlternative], specials: [Special], in container: inout Container) {
+        // A special in more than one is an entry in the first, and referred to from the rest.
+        var made: [Int: ItemID] = [:]
         for draft in drafts {
             let held = container.itemIDs
             let sequence = Slug.unique(from: draft.title, avoiding: Set(container.sequences.compactMap(\.id)))
@@ -56,8 +58,14 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
                     guard let id = ItemID(item), held.contains(id) else { continue }
                     container.sequences[index].items.append(.ref(EntryRef(item: id)))
                 case .special(let id):
+                    if let item = made[id] {
+                        container.sequences[index].items.append(.ref(EntryRef(item: item)))
+                        continue
+                    }
                     guard let special = specials.first(where: { $0.id == id }) else { continue }
-                    container.sequences[index].items.append(TMDbTree.leaf(special, type: .episode, in: container))
+                    let leaf = TMDbTree.leaf(special, type: .episode, in: container)
+                    made[id] = leaf.id
+                    container.sequences[index].items.append(leaf)
                 }
             }
             guard !container.sequences[index].items.isEmpty else {
@@ -76,7 +84,8 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
 }
 
 /// What places a series' specials and drafts alternatives of its containers: a walk, or a draft from
-/// TMDb. A special in a drafted alternative is placed in it, and in none other.
+/// TMDb. A special in a drafted alternative is placed in the first of its container's that plays it; a
+/// clone of an alternative plays its specials too, referring to them where the first does.
 public protocol AlternativeDrafting {
     var placements: [Int: SpecialPlacement] { get set }
     /// The alternatives drafted for each container, by its id, in the order they are made.
@@ -134,7 +143,19 @@ extension AlternativeDrafting {
         return draft.id
     }
 
-    /// A special placed in a drafted alternative at a position, out of wherever it was placed before.
+    /// A new alternative of a container, titled as given, playing what one drafted for it does, its
+    /// specials included.
+    @discardableResult
+    public mutating func cloneDraft(_ draft: String, of container: String, titled title: String) -> String? {
+        guard let index = index(of: draft, at: container) else { return nil }
+        let clone = DraftAlternative(title: title, entries: draftedAlternatives[container]![index].entries)
+        draftedAlternatives[container]!.append(clone)
+        alternativesChanged(at: container)
+        return clone.id
+    }
+
+    /// A special placed in a drafted alternative at a position, out of wherever it was placed before,
+    /// every drafted alternative it was in included.
     public mutating func insert(_ special: Int, into draft: String, at position: Int, of container: String) {
         guard let index = index(of: draft, at: container) else { return }
         var position = position
@@ -179,7 +200,7 @@ extension AlternativeDrafting {
             draftedAlternatives[container]![index].entries.indices.contains(position)
         else { return }
         let removed = draftedAlternatives[container]![index].entries.remove(at: position)
-        if case .special(let special) = removed { placements[special] = nil }
+        if case .special(let special) = removed { placeInFirst(special, at: container) }
         alternativesChanged(at: container)
     }
 
@@ -193,7 +214,7 @@ extension AlternativeDrafting {
     public mutating func discard(_ draft: String, of container: String) {
         guard let index = index(of: draft, at: container) else { return }
         let removed = draftedAlternatives[container]!.remove(at: index)
-        for special in removed.specials { placements[special] = nil }
+        for special in removed.specials { placeInFirst(special, at: container) }
         if draftedAlternatives[container]?.isEmpty == true { draftedAlternatives[container] = nil }
         alternativesChanged(at: container)
     }
@@ -203,16 +224,22 @@ extension AlternativeDrafting {
         for container in containers { draftedAlternatives[container] = nil }
     }
 
-    /// A special out of any drafted alternative it is in, and unassigned.
+    /// A special out of every drafted alternative it is in, and unassigned.
     mutating func unplace(_ special: Int) {
         if let home = placements[special]?.container { alternativesChanged(at: home) }
-        if case .alternative(let container, let draft)? = placements[special],
-            let index = index(of: draft, at: container)
-        {
-            draftedAlternatives[container]![index].entries.removeAll { $0 == .special(special) }
+        if case .alternative(let container, _)? = placements[special], var drafts = draftedAlternatives[container] {
+            for index in drafts.indices { drafts[index].entries.removeAll { $0 == .special(special) } }
+            draftedAlternatives[container] = drafts
             alternativesChanged(at: container)
         }
         placements[special] = nil
+    }
+
+    /// A special taken out of one of a container's drafted alternatives placed in the first that still
+    /// plays it, or unassigned when none does.
+    private mutating func placeInFirst(_ special: Int, at container: String) {
+        placements[special] = draftedAlternatives[container]?.first { $0.entries.contains(.special(special)) }
+            .map { .alternative(of: container, draft: $0.id) }
     }
 
     /// A placement as it is kept: another version of a container, or of one of its items, as a drafted

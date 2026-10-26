@@ -62,7 +62,8 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 newAlternativeTarget
-                ForEach(container.sequences.indices, id: \.self) { index in sequence(index) }
+                // The first is the container's children, cloned from their heading.
+                ForEach(container.sequences.indices.dropFirst(), id: \.self) { index in sequence(index) }
                 ForEach(drafts) { draft in drafted(draft) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -82,6 +83,8 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
             change { $0.draftAlternative(at: id, titled: title, playing: special) }
         case .cloning(let index, _):
             change { $0.cloneSequence(index, of: id, titled: title) }
+        case .cloningDraft(let draft, _):
+            change { $0.cloneDraft(draft, of: id, titled: title) }
         case .retitling(let draft, _):
             change { $0.retitle(draft, to: title, of: id) }
         }
@@ -90,7 +93,7 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
     // MARK: A new alternative
 
     private var newAlternativeTarget: some View {
-        Text("Drop a special here for a new alternative playing it, or clone a sequence below to edit")
+        Text("Drop a special here for a new alternative playing it, or clone the children from their heading")
             .font(.caption).foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 28)
             .background(marked("new"), in: .rect(cornerRadius: 6))
@@ -118,12 +121,16 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
             }
             .padding(.leading, 8)
         } label: {
-            HStack {
-                Text(title)
-                Text("\(sequence.items.count) items").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Clone…") { naming = .cloning(index, title) }
-                    .help("A new alternative playing what this sequence plays, to edit before it is stored.")
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(title)
+                    Text("\(sequence.items.count) items").font(.caption).foregroundStyle(.secondary)
+                }
+                Menu("Actions") {
+                    Button("Clone…") { naming = .cloning(index, title) }
+                        .help("A new alternative playing what this sequence plays, to edit before it is stored.")
+                }
+                .fixedSize()
             }
         }
     }
@@ -151,12 +158,16 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
             HStack {
                 Text(draft.title).bold()
                 Text("new, made when stored").font(.caption).foregroundStyle(.green)
-                Spacer()
-                Button("Rename…") { naming = .retitling(draft.id, draft.title) }
-                Button("Discard", role: .destructive) { change { $0.discard(draft.id, of: id) } }
-                    .help("Its specials go back among the unassigned.")
             }
-            .padding(.bottom, 4)
+            Menu("Actions") {
+                Button("Clone…") { naming = .cloningDraft(draft.id, draft.title) }
+                Button("Rename…") { naming = .retitling(draft.id, draft.title) }
+                Divider()
+                Button("Discard", role: .destructive) { change { $0.discard(draft.id, of: id) } }
+            }
+            .fixedSize()
+            .help("Discarded, its specials go back among the unassigned, but for those a clone of it plays.")
+            .padding(.vertical, 4)
             gap(0, in: draft)
             ForEach(draft.entries.indices, id: \.self) { position in
                 entry(position, in: draft)
@@ -249,6 +260,8 @@ private enum AlternativeNaming: Identifiable {
     case playing(Int, String)
     /// A new alternative cloned from one of the container's sequences.
     case cloning(Int, String)
+    /// A new alternative cloned from one drafted already, its specials included.
+    case cloningDraft(String, String)
     /// A drafted alternative titled again.
     case retitling(String, String)
 
@@ -256,6 +269,7 @@ private enum AlternativeNaming: Identifiable {
         switch self {
         case .playing(let special, _): "playing:\(special)"
         case .cloning(let index, _): "cloning:\(index)"
+        case .cloningDraft(let draft, _): "cloning-draft:\(draft)"
         case .retitling(let draft, _): "retitling:\(draft)"
         }
     }
@@ -263,7 +277,8 @@ private enum AlternativeNaming: Identifiable {
     var question: String {
         switch self {
         case .playing(_, let title): "A new alternative playing \(title): what is it called?"
-        case .cloning(_, let title): "A new alternative playing what \(title) does: what is it called?"
+        case .cloning(_, let title), .cloningDraft(_, let title):
+            "A new alternative playing what \(title) does: what is it called?"
         case .retitling(_, let title): "What is \(title) called?"
         }
     }
@@ -271,91 +286,40 @@ private enum AlternativeNaming: Identifiable {
     var initial: String {
         switch self {
         case .playing(_, let title), .retitling(_, let title): title
-        case .cloning: ""
+        case .cloning, .cloningDraft: ""
         }
     }
 
     var action: String {
         switch self {
         case .playing: "Place"
-        case .cloning: "Clone"
+        case .cloning, .cloningDraft: "Clone"
         case .retitling: "Rename"
         }
     }
 }
 
-/// A container's extras as places to drop a special: one for each type an extra may be, and one to
-/// decline it, each with how many specials are placed there.
-struct ExtrasDropZones: View {
-    let container: String
-    let placements: [Int: SpecialPlacement]
-    let place: (Int, SpecialPlacement) -> Void
-    /// Whether a special may be declined from here: for a series' own container.
-    var declines = false
-    @State private var targeted: String?
+/// The actions of a container's first sequence, under its children's heading: cloned into a new
+/// alternative, once it is titled.
+struct ChildrenActions: View {
+    let clone: (String) -> Void
+    @State private var cloning = false
 
     var body: some View {
-        GroupBox("Extras: drop a special on its kind") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 6)], alignment: .leading, spacing: 6) {
-                ForEach(EntryType.extraTypes, id: \.self) { type in
-                    zone(
-                        type.rawValue,
-                        title: Self.title(of: type),
-                        count: count { $0 == .extra(of: container, type: type.rawValue) }
-                    ) {
-                        .extra(of: container, type: type.rawValue)
-                    }
-                }
-                if declines {
-                    zone("declined", title: "Declined", count: count { $0 == .declined }) { .declined }
-                }
-            }
+        Menu("Actions") {
+            Button("Clone…") { cloning = true }
+                .help("A new alternative playing these children, to edit before it is stored.")
         }
-    }
-
-    private func count(_ matching: (SpecialPlacement) -> Bool) -> Int {
-        placements.values.filter(matching).count
-    }
-
-    private func zone(
-        _ key: String,
-        title: String,
-        count: Int,
-        placement: @escaping () -> SpecialPlacement
-    )
-        -> some View
-    {
-        HStack {
-            Text(title)
-            Spacer()
-            if count > 0 { Text("\(count)").foregroundStyle(.secondary) }
+        .fixedSize()
+        .font(.body)
+        .sheet(isPresented: $cloning) {
+            TitlePrompt(
+                question: "A new alternative playing these children: what is it called?",
+                initial: "",
+                action: "Clone",
+                done: { title, _ in clone(title.rawValue) }
+            )
         }
-        .font(.caption)
-        .padding(6)
-        .background(
-            targeted == key ? AnyShapeStyle(Color.accentColor.opacity(0.25)) : AnyShapeStyle(.quaternary.opacity(0.4)),
-            in: .rect(cornerRadius: 6)
-        )
-        .dropDestination(for: String.self) { payloads, _ in
-            guard case .special(let special)? = payloads.first.flatMap(AlternativeDrag.init) else { return false }
-            place(special, placement())
-            return true
-        } isTargeted: { isTargeted in
-            if isTargeted {
-                targeted = key
-            } else if targeted == key {
-                targeted = nil
-            }
-        }
-    }
-
-    /// An extra's type in words: `behindTheScenes` as "Behind the scenes".
-    static func title(of type: EntryType) -> String {
-        let words = type.rawValue.reduce(into: "") { words, character in
-            if character.isUppercase { words += " " }
-            words += String(character).lowercased()
-        }
-        return words.prefix(1).uppercased() + words.dropFirst()
     }
 }
 

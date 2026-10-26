@@ -886,12 +886,14 @@ draft of the series as unassigned. The operator SHALL place each special, or not
 - an alternative of the container it is placed in, a cut naming the sequence it plays: an entry in an
   alternate sequence the container has, at a position; or an entry in an alternative drafted for the
   container. The operator SHALL be able to draft an alternative of a container with a title, playing
-  one special or nothing yet, or cloned from one of the container's sequences, playing each item the
-  sequence declares or refers to of the container's own, by reference. The operator SHALL be able to
-  place a special in a drafted alternative at a position or in place of one of its entries, move its
-  entries, take entries out of it, retitle it and discard it. A special SHALL be in at most one drafted
-  alternative, and one replaced, taken out, placed elsewhere or in a discarded alternative SHALL leave
-  it. Placing a special as a new edition of a container SHALL draft an alternative playing it alone,
+  one special or nothing yet; cloned from one of the container's sequences, playing each item the
+  sequence declares or refers to of the container's own, by reference; or cloned from another drafted
+  alternative, playing what it plays, its specials included. The operator SHALL be able to place a
+  special in a drafted alternative at a position or in place of one of its entries, move its entries,
+  take entries out of it, retitle it and discard it. A special in more than one of a container's
+  drafted alternatives SHALL be an entry of the first that plays it and referred to from the rest. A
+  special replaced, taken out, or in a discarded alternative SHALL leave that alternative, staying placed
+  while another still plays it, and a special placed elsewhere SHALL leave every one. Placing a special as a new edition of a container SHALL draft an alternative playing it alone,
   as an omnibus edition is, and placing it as a version of one item SHALL draft one cloned from the
   sequence holding the item with the special in the item's place, as a version of one episode is.
   Making or storing the container SHALL make each drafted alternative that plays anything as a new
@@ -958,6 +960,12 @@ and the console SHALL list every edit and creation the placements make before it
 - **THEN** storing makes one sequence, playing the first special, the fourth and second episodes by
   reference, then the second special, named by an alternative with the alternative's title
 
+#### Scenario: a drafted alternative cloned
+- **WHEN** a drafted alternative playing a special in place of a serial's first episode is cloned, and
+  the clone has one of the serial's episodes taken out
+- **THEN** storing makes both alternatives, the first holding the special's entry and the clone
+  referring to it
+
 #### Scenario: a version kept before alternatives were drafted
 - **WHEN** a walk kept with a special as a version of a serial's first episode is read
 - **THEN** the special is in a drafted alternative that plays it, then the serial's other episodes
@@ -984,6 +992,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aSeriesSpecialsAr
 `aSpecialPlacedAsAVersionOfAnEpisodeRefersToTheRest`,
 `anOmnibusAndASpecialEditionAreSuggestedAsAlternatives`,
 `anAlternativeDraftedFromASequenceIsEditedAndStoredAsLeft`,
+`aDraftedAlternativeClonedSharesItsSpecials`,
 `versionsKeptBeforeAlternativesWereDraftedAreReadAsDrafts`, `aNewStopsDraftedAlternativesLeaveWithIt`,
 `aSpecialIsPlacedInACompanionSeriesTheLibraryHolds`,
 `aNewCompanionSeriesIsCreatedListedWhenTheOperatorSays`). The pool and its choosing are pinned by
@@ -1166,8 +1175,9 @@ of its specials may carry, SHALL tie nothing. A special SHALL be
 placeable in the open stop, as an entry in a sequence of it at a position or as one of its extras, and
 anywhere a draft's specials may be placed. A special SHALL be draggable onto the open stop's alternatives: onto
 their heading, to draft an alternative playing it alone; onto an entry of a drafted alternative, to
-play in its place; or between two of its entries, to be added there. Each of the stop's sequences SHALL
-offer to be cloned into a drafted alternative, a drafted alternative's entries SHALL be reordered by
+play in its place; or between two of its entries, to be added there. Each of the stop's sequences, the first from
+its children's heading, and each drafted alternative SHALL offer to be cloned into a drafted
+alternative, a drafted alternative's entries SHALL be reordered by
 dragging them, and a special SHALL be draggable onto the stop's extras by kind. A placed special SHALL leave the unassigned specials and
 become part of the pending change of the container it was placed in, and removing it from that change
 SHALL return it. A stop SHALL show, pending or confirmed, the alternatives storing the walk would
