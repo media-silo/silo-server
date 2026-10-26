@@ -362,7 +362,7 @@ struct GroupingList<Heading: View>: View {
 /// the last, a stub from each row's middle to it, and the label beside the line's middle. The rows and
 /// the label are placed by one layout, and the bracket is drawn from the rows' frames as laid out, so it
 /// reaches every row however the titles wrap.
-private struct Bracketed<Rows: View, Label: View>: View {
+struct Bracketed<Rows: View, Label: View>: View {
     @ViewBuilder let rows: Rows
     @ViewBuilder let label: Label
 
@@ -399,7 +399,9 @@ private struct BracketLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let placed = placed(ProposedViewSize(bounds.size), subviews)
+        // Laid out as it was sized, from what was proposed: the bounds are the narrower size it gave,
+        // and the label laid out in them wraps taller than it was sized, over what is beneath.
+        let placed = placed(proposal, subviews)
         for (subview, frame) in zip(subviews.dropLast(), placed.rows) {
             subview.place(
                 at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
