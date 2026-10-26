@@ -780,7 +780,7 @@ kept on this Mac as a new container's draft is. The top SHALL be filed beneath t
 library that carries the reference of the record above it, when there is one, or at the top of the
 library. The form SHALL show each episode's title from TMDb beside its entry, marked as TMDb's, and
 SHALL store none. The operator SHALL be able to shape the tree before it is created: re-type a
-container, group entries into child containers, and drop what they will not hold. Each entry, and each
+container, rename its primary sequence with the alternatives and placed specials naming it, group entries into child containers, and drop what they will not hold. Each entry, and each
 group as one, SHALL be ticked to be made, all of them ticked to begin with; one unticked SHALL be left
 out when the tree is made, a group with everything in it, and an entry naming a container the library
 holds already SHALL be shown ticked and SHALL NOT be choosable. The container's heading SHALL say how
@@ -1178,7 +1178,10 @@ their heading, to draft an alternative playing it alone; onto an entry of a draf
 play in its place; or between two of its entries, to be added there. Each of the stop's sequences, the first from
 its children's heading, and each drafted alternative SHALL offer to be cloned into a drafted
 alternative, a drafted alternative's entries SHALL be reordered by
-dragging them, and a special SHALL be draggable onto the stop's extras by kind. A placed special SHALL leave the unassigned specials and
+dragging them, and a special SHALL be draggable onto the stop's extras by kind. The operator SHALL be able to rename a stop's primary
+sequence, the name kept as a sequence id and refused when another of its sequences has it; the
+alternatives naming it and the specials placed in it SHALL be renamed with it, a new stop's draft
+SHALL be shaped with it, and a held stop's SHALL be renamed by its edit when the walk is stored. A placed special SHALL leave the unassigned specials and
 become part of the pending change of the container it was placed in, and removing it from that change
 SHALL return it. A stop SHALL show, pending or confirmed, the alternatives storing the walk would
 leave its container with: those it holds or its draft has, then those the specials placed in it make,
@@ -1240,6 +1243,11 @@ and the walk SHALL keep what was not.
   first episode followed by the serial's other episodes, then one playing the second special alone,
   each marked as made by a placed special, and storing the walk makes those alternatives
 
+#### Scenario: a primary sequence renamed
+- **WHEN** a held serial's primary sequence, which a special is placed in, is renamed, and the walk is
+  stored
+- **THEN** the serial's edit renames the sequence, and the special's entry is in it
+
 #### Scenario: a ticked difference ticked again
 - **WHEN** a difference a confirmed stop has ticked is ticked again
 - **THEN** the stop stays confirmed
@@ -1251,6 +1259,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 `aWalkStoresOnlyWhatWasConfirmed`, `aWalksStoreStopsAtTheFirstRefusal`,
 `anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`,
 `aStopShowsTheAlternativesItsPlacedSpecialsMake`,
+`aHeldStopsSequencesAreRenamedWhenStored`, `aNewStopsSequenceIsRenamedInItsDraft`,
 `aNewStopShowsTheAlternativesItsPlacedSpecialsMake`). The walk's sheet is pinned by nothing yet, as the rest
 of the shell is, but for what its alternatives read from a drop: `Tests/SiloAdminTests/AlternativesEditorTests.swift`
 (`aDragIsReadBackFromItsText`).

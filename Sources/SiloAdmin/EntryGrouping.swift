@@ -492,8 +492,10 @@ struct EntryGrouping: View {
     /// Changes the draft, as the sheet the grouping is in keeps it.
     let update: ((inout TMDbTree) -> Void) -> Void
     let provisionalID: () async -> ContainerID?
-    /// Clones the container's first sequence into a new alternative of the title given.
+    /// Clones the container's primary sequence into a new alternative of the title given.
     let clone: (String) -> Void
+    /// Renames the container's primary sequence.
+    let rename: (String) -> Void
 
     private var container: Container? { tree.container(parent) }
     private var rows: [GroupingRow] { (container?.sequences.flatMap(\.items) ?? []).compactMap(row) }
@@ -544,7 +546,9 @@ struct EntryGrouping: View {
                             Text("Children, \(count) of \(tickable.count) ticked")
                         }
                     }
-                    ChildrenActions(clone: clone)
+                    if let container, !container.sequences.isEmpty {
+                        PrimarySequence(name: container.sequences[0].id, clone: clone, rename: rename)
+                    }
                 }
             }
         }

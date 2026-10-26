@@ -121,16 +121,14 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
             }
             .padding(.leading, 8)
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(title)
-                    Text("\(sequence.items.count) items").font(.caption).foregroundStyle(.secondary)
-                }
-                Menu("Actions") {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                Text("\(sequence.items.count) items").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                ActionsMenu {
                     Button("Clone…") { naming = .cloning(index, title) }
                         .help("A new alternative playing what this sequence plays, to edit before it is stored.")
                 }
-                .fixedSize()
             }
         }
     }
@@ -155,19 +153,19 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
     @ViewBuilder
     private func drafted(_ draft: DraftAlternative) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text(draft.title).bold()
                 Text("new, made when stored").font(.caption).foregroundStyle(.green)
+                Spacer()
+                ActionsMenu {
+                    Button("Clone…") { naming = .cloningDraft(draft.id, draft.title) }
+                    Button("Rename…") { naming = .retitling(draft.id, draft.title) }
+                    Divider()
+                    Button("Discard", role: .destructive) { change { $0.discard(draft.id, of: id) } }
+                        .help("Its specials go back among the unassigned, but for those a clone of it plays.")
+                }
             }
-            Menu("Actions") {
-                Button("Clone…") { naming = .cloningDraft(draft.id, draft.title) }
-                Button("Rename…") { naming = .retitling(draft.id, draft.title) }
-                Divider()
-                Button("Discard", role: .destructive) { change { $0.discard(draft.id, of: id) } }
-            }
-            .fixedSize()
-            .help("Discarded, its specials go back among the unassigned, but for those a clone of it plays.")
-            .padding(.vertical, 4)
+            .padding(.bottom, 4)
             gap(0, in: draft)
             ForEach(draft.entries.indices, id: \.self) { position in
                 entry(position, in: draft)
@@ -299,27 +297,66 @@ private enum AlternativeNaming: Identifiable {
     }
 }
 
-/// The actions of a container's first sequence, under its children's heading: cloned into a new
-/// alternative, once it is titled.
-struct ChildrenActions: View {
+/// A container's primary sequence, under its children's heading: by the id it goes by, cloned into a
+/// new alternative, or renamed, each once it is titled.
+struct PrimarySequence: View {
+    let name: String?
     let clone: (String) -> Void
-    @State private var cloning = false
+    let rename: (String) -> Void
+    @State private var asking: Asking?
+
+    private enum Asking: String, Identifiable {
+        case cloning, renaming
+        var id: String { rawValue }
+    }
 
     var body: some View {
-        Menu("Actions") {
-            Button("Clone…") { cloning = true }
-                .help("A new alternative playing these children, to edit before it is stored.")
+        HStack {
+            Text("Primary sequence: \(name ?? "unnamed")").font(.callout).foregroundStyle(.secondary)
+            Spacer()
+            ActionsMenu {
+                Button("Clone…") { asking = .cloning }
+                    .help("A new alternative playing these children, to edit before it is stored.")
+                Button("Rename…") { asking = .renaming }
+            }
         }
-        .fixedSize()
         .font(.body)
-        .sheet(isPresented: $cloning) {
-            TitlePrompt(
-                question: "A new alternative playing these children: what is it called?",
-                initial: "",
-                action: "Clone",
-                done: { title, _ in clone(title.rawValue) }
-            )
+        .sheet(item: $asking) { asking in
+            switch asking {
+            case .cloning:
+                TitlePrompt(
+                    question: "A new alternative playing these children: what is it called?",
+                    initial: "",
+                    action: "Clone",
+                    done: { title, _ in clone(title.rawValue) }
+                )
+            case .renaming:
+                TitlePrompt(
+                    question:
+                        "What is the primary sequence called? It is kept as an id: lower case, words joined by hyphens.",
+                    initial: name ?? "",
+                    action: "Rename",
+                    done: { title, _ in rename(title.rawValue) }
+                )
+            }
         }
+    }
+}
+
+/// A row's actions, behind an icon in its top right corner.
+struct ActionsMenu<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Menu {
+            content
+        } label: {
+            Image(systemName: "line.3.horizontal")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Actions")
     }
 }
 
