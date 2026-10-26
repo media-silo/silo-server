@@ -258,6 +258,9 @@ extension AdminConsole {
             TMDbTree.edition(special, titled: title, in: &container)
         case .version(_, let item, let title):
             TMDbTree.version(special, of: item, titled: title, in: &container)
+        case .alternative:
+            // Made with the alternative it is in, once the stop's specials are placed.
+            break
         case .declined:
             if !declined.contains(special.episode.ref) { declined.append(special.episode.ref) }
         }
@@ -420,6 +423,7 @@ extension TMDbWalk {
         }
         tree.specials = placed
         tree.placements = placements.filter { id, _ in placed.contains { $0.id == id } }
+        tree.draftedAlternatives = draftedAlternatives.filter { confirmed.contains($0.key) }
         for special in placed {
             guard case .breakout(let id, _, _)? = placements[special.id], var companion = gathering.made[id] else {
                 continue
@@ -490,6 +494,7 @@ extension TMDbWalk {
                 children: &change.children
             )
         }
+        DraftAlternative.make(alternatives(draftedAt: id), specials: placed(in: id), in: &change.container)
         // A declined special placed after all, wherever it went, is no longer declined.
         if id == series {
             for special in self.declined where placements[special.id].map({ $0 != .declined }) ?? false {
