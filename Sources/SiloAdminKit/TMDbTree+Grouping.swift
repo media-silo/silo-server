@@ -8,10 +8,13 @@ import SmdKit
 public struct SuggestedGroup: Hashable, Sendable {
     public var title: String
     public var items: [ItemID]
+    /// The part number TMDb gives each, in the items' order.
+    public var parts: [Int]
 
-    public init(title: String, items: [ItemID]) {
+    public init(title: String, items: [ItemID], parts: [Int]) {
         self.title = title
         self.items = items
+        self.parts = parts
     }
 }
 
@@ -188,29 +191,42 @@ extension TMDbTree {
                     return (item, tmdb.flatMap { episodeTitles[$0.value] })
                 }
             )
-            .map { SuggestedGroup(title: $0.title, items: $0.ids) }
+            .map { SuggestedGroup(title: $0.title, items: $0.ids, parts: $0.parts) }
         }
     }
 
     /// The runs of two or more titles together that name the parts of one story, each with what it was
-    /// told of each; a nil title ends a run.
-    static func runs<ID>(of titled: [(ID, String?)]) -> [(title: String, ids: [ID])] {
-        var runs: [(title: String, ids: [ID])] = []
-        var run: (title: String, ids: [ID])?
+    /// told of each and its part number; a nil title ends a run. A part numbered after the last continues
+    /// the run though TMDb names its story otherwise, as `Invasion (1)` is followed by `Invasion of the
+    /// Dinosaurs (2)`, and the run is titled by the story most of its parts name, the later on a tie.
+    static func runs<ID>(of titled: [(ID, String?)]) -> [(title: String, ids: [ID], parts: [Int])] {
+        var runs: [(title: String, ids: [ID], parts: [Int])] = []
+        var run: (stories: [String], ids: [ID], parts: [Int])?
         func end() {
-            if let ended = run, ended.ids.count > 1 { runs.append(ended) }
+            if let ended = run, ended.ids.count > 1 {
+                let named = ended.stories.enumerated().max { first, second in
+                    let counts = (
+                        ended.stories.count(where: { $0 == first.element }),
+                        ended.stories.count(where: { $0 == second.element })
+                    )
+                    return counts.0 == counts.1 ? first.offset < second.offset : counts.0 < counts.1
+                }
+                runs.append((named?.element ?? "", ended.ids, ended.parts))
+            }
             run = nil
         }
         for (id, title) in titled {
-            guard let story = title.flatMap(story(of:)) else {
+            guard let (story, number) = title.flatMap(parts(of:)) else {
                 end()
                 continue
             }
-            if run?.title == story {
+            if let current = run, current.stories.contains(story) || current.parts.last.map({ $0 + 1 }) == number {
+                run?.stories.append(story)
                 run?.ids.append(id)
+                run?.parts.append(number)
             } else {
                 end()
-                run = (story, [id])
+                run = ([story], [id], [number])
             }
         }
         end()

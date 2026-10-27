@@ -31,10 +31,13 @@ public struct EpisodeGroup: Hashable, Sendable, Codable, Identifiable {
 public struct SuggestedEpisodes: Hashable, Sendable {
     public var title: String
     public var episodes: [Int]
+    /// The part number TMDb gives each, in the episodes' order.
+    public var parts: [Int]
 
-    public init(title: String, episodes: [Int]) {
+    public init(title: String, episodes: [Int], parts: [Int]) {
         self.title = title
         self.episodes = episodes
+        self.parts = parts
     }
 }
 
@@ -125,7 +128,7 @@ extension TMDbWalk {
                 ($0.id, grouped.contains($0.id) || titles[$0.id] != nil ? nil : $0.title)
             }
         )
-        return runs.map { SuggestedEpisodes(title: $0.title, episodes: $0.ids) }
+        return runs.map { SuggestedEpisodes(title: $0.title, episodes: $0.ids, parts: $0.parts) }
     }
 
     private func isOwn(_ run: SuggestedEpisodes, at stop: String) -> Bool {

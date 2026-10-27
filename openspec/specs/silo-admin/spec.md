@@ -799,13 +799,17 @@ choosable, each only to be taken out of it, back beside the group; and the group
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
 with nothing SHALL be ungrouped. A run of two or more entries in one sequence whose episodes TMDb
 titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be bracketed and
-suggested as a group titled by the story, to be grouped one at a time or all at once. No kind SHALL be
+suggested as a group titled by the story, to be grouped one at a time or all at once. A part numbered
+one after the part before it SHALL be one of that story's parts though TMDb titles its story otherwise,
+as `Invasion (1)` is followed by `Invasion of the Dinosaurs (2)`, and the run SHALL be titled by the
+story most of its parts name, the later on a tie. No kind SHALL be
 assumed for a group: the kind the container's groups mostly are SHALL be chosen to begin with, when
 it has any, and otherwise the operator SHALL choose one before any group is made. A run that is the
 parts of the story the container is titled as, or that is every entry the container holds, as a
 group made of a story's parts holds them, SHALL NOT be suggested as a group: it SHALL be suggested
 instead to be titled by its parts' numbers, as `Episode 1` and on or `Part 1` and on, as the operator
-chooses, and once titled SHALL be suggested as nothing. The
+chooses, the choice worded by the first and last of those numbers, and once titled SHALL be suggested
+as nothing. The
 console SHALL show the dry run of the whole tree as they shape it. Creating SHALL store the parent's edit
 naming the top, as creating a child does, and then make the tree, with its attributions, in one
 request to the silo.
@@ -837,6 +841,12 @@ request to the silo.
 - **THEN** its parts are not suggested as a group, and are suggested to be titled by their numbers;
   titled as parts, they are `Part 1` to `Part 3`, and are suggested as nothing
 
+#### Scenario: a story's first part titled otherwise
+- **WHEN** a drafted season's first episode is titled at TMDb as the first part of one story, and the
+  next five as its second to sixth parts under a longer title
+- **THEN** all six are suggested as one group titled by the longer title; grouped as a serial and
+  titled as parts, they are `Part 1` to `Part 6`
+
 #### Scenario: a group added to and taken from
 - **WHEN** an entry before a group is added to it, and its last entry is then taken out of it
 - **THEN** the group holds its entries in the season's order at the first one's place, and the entry
@@ -864,7 +874,8 @@ request to the silo.
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraftedFromTMDb`,
 `aRecordSmddbHoldsIsImportedRatherThanDrafted`, `serialsAreSuggestedFromTMDbsTitlesForTheirParts`,
 `aDraftsGroupIsAddedToTakenFromAndUngrouped`, `aDraftsEntryUntickedIsLeftOutOfWhatIsMade`,
-`aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`). The search, the shaping's sheet and the dry run as the
+`aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`,
+`aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`). The search, the shaping's sheet and the dry run as the
 operator shapes are pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each

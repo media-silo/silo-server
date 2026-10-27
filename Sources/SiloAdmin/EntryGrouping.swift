@@ -44,6 +44,13 @@ enum GroupingRow: Identifiable {
 struct GroupingSuggestion: Hashable {
     let title: String
     let members: [String]
+    /// The part number TMDb gives each member, in their order.
+    let parts: [Int]
+
+    /// The parts a renaming titles, by their numbers, as `Part 1 to 6`.
+    func renamed(as word: String) -> String {
+        "\(word) \(parts.first ?? 1) to \(parts.last ?? members.count)"
+    }
 }
 
 /// Entries grouped into containers by the operator. A tick only says whether an entry is taken, or
@@ -282,15 +289,15 @@ struct GroupingList<Heading: View>: View {
                     }
                 }
             }
-        case .suggested(_, let run, renaming: true):
+        case .suggested(let suggestion, let run, renaming: true):
             Bracketed {
                 ForEach(run) { member in entry(member).bracketRow() }
             } label: {
                 HStack {
                     Text("Rename?").foregroundStyle(.tint)
                     Menu("As") {
-                        Button("Episode 1 to \(run.count)") { rename("Episode") }
-                        Button("Part 1 to \(run.count)") { rename("Part") }
+                        Button(suggestion.renamed(as: "Episode")) { rename("Episode") }
+                        Button(suggestion.renamed(as: "Part")) { rename("Part") }
                     }
                     .menuStyle(.borderlessButton).font(.caption).fixedSize()
                 }
@@ -507,7 +514,7 @@ struct EntryGrouping: View {
             GroupingList(
                 rows: rows,
                 suggestions: tree.suggestedGroups(in: parent).map {
-                    GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
+                    GroupingSuggestion(title: $0.title, members: $0.items.map(\.value), parts: $0.parts)
                 },
                 defaultKind: Self.kind(of: tree.groups(in: parent)),
                 chosen: ticked,
@@ -522,7 +529,7 @@ struct EntryGrouping: View {
                 },
                 ungroup: { group in update { $0.ungroup(group) } },
                 renaming: tree.suggestedRenaming(in: parent).map {
-                    GroupingSuggestion(title: $0.title, members: $0.items.map(\.value))
+                    GroupingSuggestion(title: $0.title, members: $0.items.map(\.value), parts: $0.parts)
                 },
                 rename: { word in
                     let parent = parent

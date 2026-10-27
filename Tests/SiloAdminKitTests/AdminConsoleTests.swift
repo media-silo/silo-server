@@ -5051,14 +5051,15 @@ extension AdminConsoleTests {
         let (evil, pyramids) = (Array(episodes[4..<8].map(\.id)), Array(episodes[8...].map(\.id)))
         #expect(
             walk.suggestedGroups(at: stop) == [
-                SuggestedEpisodes(title: "Planet of Evil", episodes: evil),
-                SuggestedEpisodes(title: "Pyramids of Mars", episodes: pyramids),
+                SuggestedEpisodes(title: "Planet of Evil", episodes: evil, parts: [1, 2, 3, 4]),
+                SuggestedEpisodes(title: "Pyramids of Mars", episodes: pyramids, parts: [1, 2]),
             ]
         )
         walk.stops[stop]?.title = "Planet of Evil"
         #expect(walk.suggestedGroups(at: stop).map(\.title) == ["Pyramids of Mars"], "its own story's parts, no group")
         #expect(
-            walk.suggestedRenaming(at: stop) == SuggestedEpisodes(title: "Planet of Evil", episodes: evil),
+            walk.suggestedRenaming(at: stop)
+                == SuggestedEpisodes(title: "Planet of Evil", episodes: evil, parts: [1, 2, 3, 4]),
             "titled by their numbers instead"
         )
         walk.title(evil, at: stop, as: "Part")
@@ -5854,13 +5855,14 @@ extension AdminConsoleTests {
         #expect(!walk.order.contains(new) && walk.unassigned.map(\.id) == [special.id])
     }
 
-    /// A season drafted from TMDb whose episodes TMDb titles as the parts of stories: three of
+    /// A season drafted from TMDb whose episodes TMDb titles as the parts of stories: by default three of
     /// Terror of the Zygons, two of Planet of Evil, and one standing alone.
-    private static func storiedSeason() -> (TMDbTree, season: String, items: [ItemID]) {
-        let titles = [
+    private static func storiedSeason(
+        _ titles: [String] = [
             "Terror of the Zygons (1)", "Terror of the Zygons (2)", "Terror of the Zygons (3)", "Planet of Evil (1)",
             "Planet of Evil (2)", "Pyramids of Mars",
         ]
+    ) -> (TMDbTree, season: String, items: [ItemID]) {
         let items = titles.indices.map { ItemID("e\($0 + 1)")! }
         var season = Container(id: ContainerID("00000000000001e1")!, type: .season, title: Title("Season 13")!)
         season.sequences = [
@@ -5894,8 +5896,8 @@ extension AdminConsoleTests {
         let (tree, season, items) = Self.storiedSeason()
         #expect(
             tree.suggestedGroups(in: season) == [
-                SuggestedGroup(title: "Terror of the Zygons", items: Array(items[0...2])),
-                SuggestedGroup(title: "Planet of Evil", items: Array(items[3...4])),
+                SuggestedGroup(title: "Terror of the Zygons", items: Array(items[0...2]), parts: [1, 2, 3]),
+                SuggestedGroup(title: "Planet of Evil", items: Array(items[3...4]), parts: [1, 2]),
             ]
         )
         #expect(TMDbTree.story(of: "The Five Doctors") == nil && TMDbTree.story(of: "(1)") == nil)
@@ -5926,6 +5928,35 @@ extension AdminConsoleTests {
         #expect(tree.container(zygons.value)?.sequences[0].items.map(\.title) == ["Part 1", "Part 2", "Part 3"])
         #expect(tree.suggestedRenaming(in: zygons.value) == nil, "titled, suggested as nothing")
         #expect(TMDbTree.part(of: "Planet of Evil (2)") == 2 && TMDbTree.part(of: "Planet of Evil (+2)") == nil)
+    }
+
+    /// A part TMDb names by another title than the rest of its story's, numbered after the part before
+    /// it, is one of the story's parts: suggested with them, titled by the story most of them name, and
+    /// titled by its number with them once they are grouped. A story whose numbers start again is a story
+    /// of its own.
+    @Test func aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts() throws {
+        var (tree, season, items) = Self.storiedSeason(
+            ["Invasion (1)"] + (2...6).map { "Invasion of the Dinosaurs (\($0))" } + [
+                "Death to the Daleks (1)", "Death to the Daleks (2)",
+            ]
+        )
+        #expect(
+            tree.suggestedGroups(in: season) == [
+                SuggestedGroup(title: "Invasion of the Dinosaurs", items: Array(items[0...5]), parts: Array(1...6)),
+                SuggestedGroup(title: "Death to the Daleks", items: Array(items[6...7]), parts: [1, 2]),
+            ]
+        )
+        let serial = ContainerID("00000000000001e4")!
+        tree.regroup(
+            Array(items[0...5]),
+            in: season,
+            into: serial,
+            type: .serial,
+            title: Title("Invasion of the Dinosaurs")!
+        )
+        #expect(tree.suggestedRenaming(in: serial.value)?.parts == Array(1...6))
+        tree.title(Array(items[0...5]), in: serial.value, as: "Part")
+        #expect(tree.container(serial.value)?.sequences[0].items.map(\.title) == (1...6).map { "Part \($0)" })
     }
 
     /// A group made of a draft's entries gains selected entries in the container's order, keeps what
