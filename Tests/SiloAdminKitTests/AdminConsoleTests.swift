@@ -5586,6 +5586,66 @@ extension AdminConsoleTests {
         #expect(made.sequences[0].items[1].externalRefs == [trailer.ref], "placed in it, renamed")
     }
 
+    /// A held stop's entries are listed as storing will leave them, a special placed there among them,
+    /// and moved: the order is kept with the walk and gives the stop's edit its primary sequence, and an
+    /// entry the order does not name, as a special placed after it was given, keeps its place. Undone,
+    /// the entries are listed as they were.
+    @Test func aHeldStopsEntriesMovedAreStoredInTheirNewOrder() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let trailer = Self.episode(3791, 0, 1, "The Daleks: Trailer", runtime: 2)
+        let teaser = Self.episode(3792, 0, 2, "The Daleks: Teaser", runtime: 1)
+        let (series, contents, serial, _, tmdb) = Self.daleks([trailer, teaser])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        let entries = try #require(walk.container(id)?.sequences.first?.items)
+        let parts = entries.compactMap(\.id)
+        try #require(parts.count > 2)
+        let keys = parts.map { "item:\($0.value)" }
+        walk.place(trailer.id, .entry(in: id, sequence: "parts", position: 1))
+        let listed = walk.storedEntries(at: id)
+        #expect(listed.map(\.id) == [keys[0], "tmdb:3791"] + keys.dropFirst())
+        #expect(listed[1].isAdded && listed[1].title == "The Daleks: Trailer" && !listed[0].isAdded)
+        try await walking.confirm(id, in: &walk)
+
+        let first = walk.arrange(keys[0], at: id, before: nil)
+        #expect(first)
+        #expect(walk.state(of: id) == .pending)
+        #expect(walk.storedEntries(at: id).map(\.id) == ["tmdb:3791"] + keys.dropFirst() + [keys[0]])
+        var back = walk
+        let backFirst = back.arrange(keys[0], at: id, before: "tmdb:3791")
+        #expect(backFirst && back.storedEntries(at: id).map(\.id) == [keys[0], "tmdb:3791"] + keys.dropFirst())
+        let nowhere = walk.arrange("item:nothing", at: id, before: nil)
+        let unmoved = walk.arrange(keys[0], at: id, before: nil)
+        let beforeNothing = walk.arrange(keys[1], at: id, before: "item:nothing")
+        #expect(!nowhere && !unmoved && !beforeNothing)
+        walk.place(teaser.id, .entry(in: id, sequence: "parts", position: 0))
+        #expect(walk.storedEntries(at: id).map(\.id) == ["tmdb:3792", "tmdb:3791"] + keys.dropFirst() + [keys[0]])
+
+        let file = folder.appendingPathComponent("walks.json")
+        try TMDbWalkStore(file: file).save(walk, for: "silo")
+        walk = try #require(TMDbWalkStore(file: file).walk(rootedAt: walk.root, in: walk.library, of: "silo"))
+        #expect(walk.arrangedEntries[id]?.last == keys[0], "kept with the walk")
+        var undone = walk
+        undone.unarrange(id)
+        #expect(undone.storedEntries(at: id).map(\.id) == ["tmdb:3792", keys[0], "tmdb:3791"] + keys.dropFirst())
+
+        try await walking.confirm(id, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(serial.id)?.sequences.first?.items)
+        #expect(made.prefix(2).map(\.externalRefs) == [[teaser.ref], [trailer.ref]])
+        #expect(made.dropFirst(2).compactMap(\.id) == Array(parts.dropFirst()) + [parts[0]])
+
+        // An entry new to it carrying no TMDb record goes by its id, and a reference by what it refers to.
+        let added = Entry.leaf(Entry.Leaf(id: ItemID("extra-1")!, type: .episode))
+        #expect(AdminConsole.key(of: added, held: []) == "item:extra-1")
+        #expect(AdminConsole.key(of: .ref(EntryRef(item: parts[0])), held: []) == "ref::\(parts[0].value)")
+    }
+
     /// A group made of a held stop's missing episodes has its primary sequence go by the stop's, as the
     /// stop's is renamed; renamed beneath, the stop's sequence and each container's beneath it the walk
     /// knows are renamed, a held one not yet read as its edit is made.
@@ -5722,6 +5782,7 @@ extension AdminConsoleTests {
         #expect(walk.placements[special.id] == .entry(in: new, position: items.count), "after the entry still")
         let unmoved = walk.move(items[0], at: new, before: nil)
         #expect(!unmoved, "last already")
+        #expect(walk.storedEntries(at: new).isEmpty, "moved in its draft instead")
 
         try await walking.confirm(new, choosing: ["ref::tmdb:904"], in: &walk)
         #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)

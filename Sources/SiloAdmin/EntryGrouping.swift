@@ -53,20 +53,6 @@ struct GroupingSuggestion: Hashable {
     }
 }
 
-/// A grouping list's child dragged to be moved, as text: the key its row goes by.
-enum ChildDrag {
-    /// Where a child dragged past the last goes, marked while it is over it.
-    static let end = "silo-child-end"
-    private static let prefix = "silo-child:"
-
-    static func payload(_ key: String) -> String { prefix + key }
-
-    /// The key a drag's text carries, or nil when it is no child's.
-    static func child(_ payload: String) -> String? {
-        payload.hasPrefix(prefix) ? String(payload.dropFirst(prefix.count)) : nil
-    }
-}
-
 /// Entries grouped into containers by the operator. A tick only says whether an entry is taken, or
 /// made: grouping works on the entries selected, clicked, shift-clicked to a range or command-clicked
 /// one at a time, then, from the pinned menu or a right-click on the selection, made a new group of the kind chosen or put into a group made already, after which
@@ -113,7 +99,7 @@ struct GroupingList<Heading: View>: View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(segments, id: \.id) { segment in view(of: segment) }
-                if move != nil { end }
+                end
             }
             .padding(.leading, 4)
             .padding(.bottom, 8)
@@ -385,69 +371,20 @@ struct GroupingList<Heading: View>: View {
         }
     }
 
-    /// A child dragged onto another goes before it.
-    @ViewBuilder
+    private var mover: ChildMoving? { move.map { ChildMoving(order: order, move: $0, dropping: $dropping) } }
+
     private func movable(_ row: some View, _ key: String?, titled title: String) -> some View {
-        if move != nil, let key {
-            row
-                .draggable(ChildDrag.payload(key)) {
-                    Text(title).padding(6).background(.regularMaterial, in: .rect(cornerRadius: 6))
-                }
-                .dropDestination(for: String.self) { payloads, _ in
-                    drop(payloads, before: key)
-                } isTargeted: {
-                    target(key, $0)
-                }
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Color.accentColor).frame(height: 2).offset(y: -3)
-                        .opacity(dropping == key ? 1 : 0)
-                }
-        } else {
-            row
-        }
+        row.movable(key, titled: title, by: mover)
     }
 
-    /// After the last child: one dragged here goes last.
+    @ViewBuilder
     private var end: some View {
-        Rectangle()
-            .fill(dropping == ChildDrag.end ? Color.accentColor : .clear)
-            .frame(height: dropping == ChildDrag.end ? 2 : 10)
-            .frame(maxWidth: .infinity)
-            .contentShape(.rect)
-            .dropDestination(for: String.self) { payloads, _ in
-                drop(payloads, before: nil)
-            } isTargeted: {
-                target(ChildDrag.end, $0)
-            }
+        if let mover { ChildEnd(mover: mover) }
     }
 
-    private func drop(_ payloads: [String], before key: String?) -> Bool {
-        guard let move, let moved = payloads.first.flatMap(ChildDrag.child), moved != key else { return false }
-        move(moved, key)
-        return true
-    }
-
-    private func target(_ key: String, _ targeted: Bool) {
-        if targeted {
-            dropping = key
-        } else if dropping == key {
-            dropping = nil
-        }
-    }
-
-    /// A child moved from its right-click menu, a place at a time or to either end.
     @ViewBuilder
     private func moving(_ key: String) -> some View {
-        let order = order
-        if let move, let index = order.firstIndex(of: key) {
-            Section("Move") {
-                Button("Move Up") { move(key, order[index - 1]) }.disabled(index == 0)
-                Button("Move Down") { move(key, order.indices.contains(index + 2) ? order[index + 2] : nil) }
-                    .disabled(index == order.count - 1)
-                Button("Move to Top") { move(key, order.first) }.disabled(index == 0)
-                Button("Move to Bottom") { move(key, nil) }.disabled(index == order.count - 1)
-            }
-        }
+        if let mover { mover.menu(key) }
     }
 
     /// A click selects the entry alone, a command-click adds or takes it out, and a shift-click selects

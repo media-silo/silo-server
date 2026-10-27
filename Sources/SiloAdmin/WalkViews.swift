@@ -170,6 +170,7 @@ struct WalkSheet: View {
             DifferenceGroup("References", comparison.differences.filter(\.isReference), walk: walk, tick: tick)
             WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
             DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
+            StoredOrder(walk: walk, model: model, stop: comparison.container)
             DifferenceGroup("Artwork", comparison.differences.filter(\.isArtwork), walk: walk, tick: tick)
             StopAlternatives(walk: walk, model: model, stop: comparison.container)
             PlacedSpecials(walk: walk, model: model, stop: comparison.container)

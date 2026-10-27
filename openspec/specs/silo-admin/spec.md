@@ -1074,9 +1074,22 @@ to a group made there, each only to be taken out of it again, chosen then, or gr
 put there SHALL be one of that container's own missing episodes from then on, chosen at its stop to
 begin with, and grouped and taken there as any of its own are; none of them SHALL be added to the held
 container itself, and an entry TMDb puts after one of them SHALL follow the container.
+A held stop SHALL list its primary sequence as storing would leave it, were the stop confirmed with what
+is chosen and placed there now: what it holds, each episode and group taken, each container held
+beneath, and each special placed in it, those storing adds marked. Each SHALL be movable before another,
+or last, by dragging it or from its right-click menu, as a draft's entries are. The order SHALL be kept
+with the walk, the stop pending again, and SHALL give the stop's edit its primary sequence; an entry the
+order does not name, as a special placed after the order was given, SHALL keep its place. The moves SHALL
+be undoable at once, the entries then listed as they would have been.
 Chosen artwork SHALL be put with its attribution when the walk is stored. The
 console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
 opened.
+
+#### Scenario: a held stop's entries moved
+- **WHEN** a held serial's first part is moved last at its stop, with a special placed in it before
+  the move and another placed first after it, and the walk is stored
+- **THEN** the serial's primary sequence holds the special placed after the move first, then the
+  other special, the rest of its parts, and the first part last
 
 #### Scenario: an episode TMDb has gained
 - **WHEN** a season the library holds lacks an episode TMDb's record of the season has, and the
@@ -1134,7 +1147,7 @@ opened.
 - **THEN** the breakout's differences list that IMDb id against the entry
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
-(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`,
+(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`, `aHeldStopsEntriesMovedAreStoredInTheirNewOrder`,
 `aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`,
 `aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`,
 `aHeldSeasonsGroupsAreNewStopsBeneathItOnceConfirmed`). The list and its choosing are pinned by nothing

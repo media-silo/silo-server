@@ -495,6 +495,13 @@ extension TMDbWalk {
                 children: &change.children
             )
         }
+        if let order = arrangedEntries[id], !change.container.sequences.isEmpty {
+            change.container.sequences[0].items = AdminConsole.arranged(
+                change.container.sequences[0].items,
+                by: order,
+                held: Set(held.itemIDs)
+            )
+        }
         DraftAlternative.make(alternatives(draftedAt: id), specials: placed(in: id), in: &change.container)
         // A declined special placed after all, wherever it went, is no longer declined.
         if id == series {
@@ -758,7 +765,7 @@ extension TMDbWalk {
 
     /// An entry by its title: its own, TMDb's for the episode or special it carries, the operator's for a
     /// missing episode, the stop's beneath it for a child, or the title of the item it refers to.
-    private func title(of entry: Entry, in container: Container, at id: String) -> String {
+    func title(of entry: Entry, in container: Container, at id: String) -> String {
         if let title = entry.title { return title }
         if let ref = entry.externalRefs.first(where: { $0.provider == .tmdb }) {
             if let episode = Int(ref.value), let title = titles[episode] { return title }
@@ -781,7 +788,7 @@ extension TMDbWalk {
     /// A stop's container before the walk, and as storing would make it, were the stop, and for a new
     /// stop every container of its draft, confirmed with what is chosen now: made by the store's own
     /// plan, so it is what storing creates.
-    private func stored(_ id: String) -> (before: Container, after: Container)? {
+    func stored(_ id: String) -> (before: Container, after: Container)? {
         var walk = self
         let new = Dictionary(
             companions.keys.compactMap { id in companion(id).map { (id, $0) } },
