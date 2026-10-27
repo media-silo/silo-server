@@ -499,7 +499,34 @@ private struct WalkChildren: View {
             }
         }
         if !episodes.isEmpty { missing }
+        if seasons.isEmpty && episodes.isEmpty {
+            // Its heading still, for what its primary sequence's menu does.
+            heading([])
+        }
+        if !added.isEmpty {
+            GroupBox("Added here") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(
+                        "Ticked, each is made beneath this one, holding what is placed and shaped at its own stop, once both are confirmed. Unticked, it leaves the walk once this is confirmed."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
+                    ForEach(added, id: \.self) { id in
+                        Toggle(isOn: tick("group:\(id)")) {
+                            Text(
+                                walk.stops[id].map {
+                                    "\(ContainerType(rawValue: $0.type)?.title ?? $0.type): \($0.title)"
+                                } ?? id
+                            )
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
+
+    /// The containers the operator added beneath it.
+    private var added: [String] { walk.addedContainers(at: stop) }
 
     /// The children that may be ticked: each episode the library lacks grouped in none, and each group as
     /// one, which is what the heading's tick ticks.
@@ -525,7 +552,8 @@ private struct WalkChildren: View {
                     clone: { title in model.draftAlternatives { $0.cloneSequence(0, of: stop, titled: title) } },
                     rename: { name, beneath in
                         model.draftAlternatives { $0.renameSequence(0, at: stop, to: name, beneath: beneath) }
-                    }
+                    },
+                    add: { type, title in await model.addContainer(type, title: title) }
                 )
             }
         }
