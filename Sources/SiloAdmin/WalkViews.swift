@@ -539,7 +539,7 @@ private struct WalkChildren: View {
         GroupingList(
             rows: rows,
             suggestions: walk.suggestedGroups(at: stop).map {
-                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init))
+                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init), parts: $0.parts)
             },
             defaultKind: defaultKind,
             chosen: ticked,
@@ -575,7 +575,7 @@ private struct WalkChildren: View {
             },
             ungroup: { group in model.groupEpisodes { $0.ungroup(group, at: $1) } },
             renaming: walk.suggestedRenaming(at: stop).map {
-                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init))
+                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init), parts: $0.parts)
             },
             rename: { word in
                 guard let episodes = walk.suggestedRenaming(at: stop)?.episodes else { return }
