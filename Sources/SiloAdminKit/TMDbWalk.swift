@@ -112,7 +112,15 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     public var draftedAlternatives: [String: [DraftAlternative]] {
         get { alternativeDrafts ?? [:] }
-        set { alternativeDrafts = newValue.isEmpty ? nil : newValue }
+        set {
+            alternativeDrafts = newValue.isEmpty ? nil : newValue
+            // A new stop's draft knows its containers' alternatives, so the new containers they play are
+            // its own.
+            for (top, tree) in drafts {
+                let own = newValue.filter { tree.documents[$0.key] != nil }
+                if tree.draftedAlternatives != own { drafts[top]?.draftedAlternatives = own }
+            }
+        }
     }
 
     /// The new ids the operator gave held stops' sequences, by stop and the sequence's position. Absent

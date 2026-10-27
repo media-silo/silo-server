@@ -923,15 +923,21 @@ draft of the series as unassigned. The operator SHALL place each special, or not
   sequence declares or refers to of the container's own, by reference; or cloned from another drafted
   alternative, playing what it plays, its specials included. The operator SHALL be able to place a
   special in a drafted alternative at a position or in place of one of its entries, move its entries,
-  take entries out of it, retitle it and discard it. A special in more than one of a container's
-  drafted alternatives SHALL be an entry of the first that plays it and referred to from the rest. A
+  take entries out of it, retitle it and discard it. From a drafted alternative's menu, the operator
+  SHALL be able to add to it a new container of the kind and title given, holding nothing yet, beneath
+  the container and played in its alternatives alone: in a draft, a container of the draft; in a walk, a
+  new stop, ticked at a held stop among what was added there, or a container of a new stop's draft and
+  a stop once that one is confirmed. Taken out of every alternative playing it, it SHALL leave the draft
+  or the walk. A special or a new container in more than one of a container's drafted alternatives
+  SHALL be an entry of the first that plays it and referred to from the rest. A
   special replaced, taken out, or in a discarded alternative SHALL leave that alternative, staying placed
   while another still plays it, and a special placed elsewhere SHALL leave every one. Placing a special as a new edition of a container SHALL draft an alternative playing it alone,
   as an omnibus edition is, and placing it as a version of one item SHALL draft one cloned from the
   sequence holding the item with the special in the item's place, as a version of one episode is.
   Making or storing the container SHALL make each drafted alternative that plays anything as a new
-  sequence holding its entries in order, each special as an entry carrying its references and each item
-  as a reference to it, named by a new alternative with its title. A walk or draft kept with a special
+  sequence holding its entries in order, each special as an entry carrying its references, each item
+  as a reference to it, and each new container made with it as the entry naming it, which none of the
+  container's own sequences does, named by a new alternative with its title. A walk or draft kept with a special
   as a new edition or a version SHALL be read with that drafted as an alternative the special is placed
   in;
 - declined, which SHALL record the special's ref as declined in the series' sidecar.
@@ -986,6 +992,12 @@ and the console SHALL list every edit and creation the placements make before it
 - **THEN** the serial gains a sequence holding the special's entry first and referring to the other
   three episodes, and an alternative naming it, and the serial still holds one entry for each episode
 
+#### Scenario: a container added to a drafted alternative
+- **WHEN** a new collection is added to an alternative drafted for a season, the alternative is cloned,
+  and the draft is made
+- **THEN** the collection is made beneath the season, the alternative's sequence names it, the clone's
+  refers to it, and the season's own sequence names it nowhere
+
 #### Scenario: an alternative drafted from a sequence
 - **WHEN** a serial's sequence of four episodes is cloned as a new alternative, and one special is put
   in place of the first episode, another added last, the third episode taken out and the fourth moved
@@ -1021,6 +1033,8 @@ and the console SHALL list every edit and creation the placements make before it
   refers to it
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aSeriesSpecialsArePlacedFromThePool`,
+`aContainerAddedToADraftedAlternativeIsNamedInItAlone`,
+`aContainerAddedToAStopsDraftedAlternativeIsMadeInItAlone`,
 `aSpecialIsSuggestedAsAMoviesDuplicate`, `aSpecialPlacedAsANewEditionIsASequenceOfItsOwn`,
 `aSpecialPlacedAsAVersionOfAnEpisodeRefersToTheRest`,
 `anOmnibusAndASpecialEditionAreSuggestedAsAlternatives`,

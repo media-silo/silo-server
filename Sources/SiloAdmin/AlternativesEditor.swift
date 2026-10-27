@@ -51,6 +51,8 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
     let drafting: Drafting
     let container: Container
     let change: ((inout Drafting) -> Void) -> Void
+    /// A new container's id, from smddb's client.
+    let provisionalID: () async -> ContainerID?
     @State private var naming: AlternativeNaming?
     /// The drop target being dragged over, to mark it.
     @State private var targeted: String?
@@ -87,6 +89,12 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
             change { $0.cloneDraft(draft, of: id, titled: title) }
         case .retitling(let draft, _):
             change { $0.retitle(draft, to: title, of: id) }
+        case .containing(let draft, let type, _):
+            guard let title = Title(title) else { return }
+            Task {
+                guard let new = await provisionalID() else { return }
+                change { $0.addContainer(new, type: type, title: title, toAlternative: draft, of: id) }
+            }
         }
     }
 
@@ -160,6 +168,12 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
                 ActionsMenu {
                     Button("Clone…") { naming = .cloningDraft(draft.id, draft.title) }
                     Button("Rename…") { naming = .retitling(draft.id, draft.title) }
+                    Menu("New Container") {
+                        ForEach(ContainerType.allCases, id: \.self) { type in
+                            Button("\(type.title)…") { naming = .containing(draft.id, type, draft.title) }
+                        }
+                    }
+                    .help("A new container of the kind chosen, holding nothing yet, played in this alternative alone.")
                     Divider()
                     Button("Discard", role: .destructive) { change { $0.discard(draft.id, of: id) } }
                         .help("Its specials go back among the unassigned, but for those a clone of it plays.")
@@ -183,7 +197,7 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
         let entry = draft.entries[position]
         let key = "\(draft.id):\(position)"
         return HStack {
-            Image(systemName: entry.isSpecial ? "film" : "arrow.turn.down.right").foregroundStyle(.secondary)
+            Image(systemName: entry.symbol).foregroundStyle(.secondary)
             Text(drafting.title(of: entry, at: id))
             Spacer()
             Button {
@@ -192,7 +206,7 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
                 Image(systemName: "xmark.circle")
             }
             .buttonStyle(.borderless)
-            .help(entry.isSpecial ? "Out of the alternative, and unassigned." : "Not played by the alternative.")
+            .help(entry.removal)
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 4)
@@ -262,6 +276,8 @@ private enum AlternativeNaming: Identifiable {
     case cloningDraft(String, String)
     /// A drafted alternative titled again.
     case retitling(String, String)
+    /// A new container of a kind, played in a drafted alternative alone.
+    case containing(String, ContainerType, String)
 
     var id: String {
         switch self {
@@ -269,6 +285,7 @@ private enum AlternativeNaming: Identifiable {
         case .cloning(let index, _): "cloning:\(index)"
         case .cloningDraft(let draft, _): "cloning-draft:\(draft)"
         case .retitling(let draft, _): "retitling:\(draft)"
+        case .containing(let draft, let type, _): "containing:\(type.rawValue):\(draft)"
         }
     }
 
@@ -278,13 +295,15 @@ private enum AlternativeNaming: Identifiable {
         case .cloning(_, let title), .cloningDraft(_, let title):
             "A new alternative playing what \(title) does: what is it called?"
         case .retitling(_, let title): "What is \(title) called?"
+        case .containing(_, let type, let title):
+            "A new \(type.title.lowercased()) played in \(title): what is it called?"
         }
     }
 
     var initial: String {
         switch self {
         case .playing(_, let title), .retitling(_, let title): title
-        case .cloning, .cloningDraft: ""
+        case .cloning, .cloningDraft, .containing: ""
         }
     }
 
@@ -293,6 +312,7 @@ private enum AlternativeNaming: Identifiable {
         case .playing: "Place"
         case .cloning, .cloningDraft: "Clone"
         case .retitling: "Rename"
+        case .containing: "Add"
         }
     }
 }
@@ -390,6 +410,23 @@ struct ActionsMenu<Content: View>: View {
 
 extension DraftAlternative.Entry {
     var isSpecial: Bool { if case .special = self { true } else { false } }
+
+    var symbol: String {
+        switch self {
+        case .item: "arrow.turn.down.right"
+        case .special: "film"
+        case .container: "folder"
+        }
+    }
+
+    /// What taking it out of the alternative does.
+    var removal: String {
+        switch self {
+        case .item: "Not played by the alternative."
+        case .special: "Out of the alternative, and unassigned."
+        case .container: "Out of the alternative, and gone unless another alternative plays it."
+        }
+    }
 }
 
 extension Array {

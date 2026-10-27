@@ -149,7 +149,8 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         (documents[id] ?? breakouts[id]).flatMap { try? ContainerFile.container(from: Data($0.utf8)) }
     }
 
-    /// The tree's containers from the top down, each before its children.
+    /// The tree's containers from the top down, each before its children: those it names, then the new
+    /// ones its drafted alternatives play.
     public var containers: [Container] {
         var ordered: [Container] = []
         var queue = [top]
@@ -158,7 +159,7 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
             let next = queue.removeFirst()
             guard seen.insert(next).inserted, documents[next] != nil, let container = container(next) else { continue }
             ordered.append(container)
-            queue += container.childContainerIDs.map(\.value)
+            queue += container.childContainerIDs.map(\.value) + alternativeChildren(of: next).map(\.value)
         }
         return ordered
     }
@@ -401,9 +402,10 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
                 declined += special.refs.filter { $0.provider == .tmdb }
             }
         }
+        let titles = Dictionary(byID.values.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
         for (id, drafts) in draftedAlternatives {
             guard var container = byID[id] else { continue }
-            DraftAlternative.make(drafts, specials: specials, in: &container)
+            DraftAlternative.make(drafts, specials: specials, containers: titles, in: &container)
             byID[id] = container
         }
 

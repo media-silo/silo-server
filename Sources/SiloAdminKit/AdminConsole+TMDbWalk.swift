@@ -32,7 +32,8 @@ extension AdminConsole {
     public func stops(beneath id: String, in walk: TMDbWalk, of silo: Silo) async throws -> [TMDbWalk.Stop] {
         guard walk.stops[id] != nil else { return [] }
         if let tree = walk.draft(holding: id) {
-            return (tree.container(id)?.childContainerIDs ?? []).filter { tree.isMade($0.value) }.compactMap { child in
+            let beneath = (tree.container(id)?.childContainerIDs ?? []) + tree.alternativeChildren(of: id)
+            return beneath.filter { tree.isMade($0.value) }.compactMap { child in
                 walk.stops[child.value]
                     ?? tree.container(child.value).map { _ in
                         TMDbWalk.Stop(
@@ -403,6 +404,9 @@ extension TMDbWalk {
                     let item = parent.sequences.flatMap(\.items).first(where: { $0.childContainer == container.id })?.id
                 {
                     tree.include(item, in: parent.id.value, false)
+                } else if tree.alternativeParent(of: container.id.value) != nil {
+                    // Played in an alternative alone, it is left out of the tree.
+                    tree.drop(container.id.value)
                 }
                 continue
             }
@@ -502,7 +506,12 @@ extension TMDbWalk {
                 held: Set(held.itemIDs)
             )
         }
-        DraftAlternative.make(alternatives(draftedAt: id), specials: placed(in: id), in: &change.container)
+        DraftAlternative.make(
+            alternatives(draftedAt: id),
+            specials: placed(in: id),
+            containers: containers(madeBeneath: id, taking: taken),
+            in: &change.container
+        )
         // A declined special placed after all, wherever it went, is no longer declined.
         if id == series {
             for special in self.declined where placements[special.id].map({ $0 != .declined }) ?? false {
