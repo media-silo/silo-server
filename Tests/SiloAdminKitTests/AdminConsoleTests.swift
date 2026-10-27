@@ -5700,6 +5700,36 @@ extension AdminConsoleTests {
         #expect(made.sequences.first?.items[1].externalRefs == [special.ref])
     }
 
+    /// A new stop's entry moved is stored where it was moved to, and a special placed after it is
+    /// stored after it still.
+    @Test func aNewStopsEntryMovedIsStoredWhereItWasMovedWithWhatFollowedIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, special) = Self.missingSeason()
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.drafts.keys.first)
+        let entries = try #require(walk.container(new)?.sequences.first?.items)
+        let items = entries.compactMap(\.id)
+        try #require(items.count > 1)
+        walk.place(special.id, .entry(in: new, position: 1))
+        let moved = walk.move(items[0], at: new, before: nil)
+        #expect(moved)
+        #expect(walk.container(new)?.sequences.first?.items.compactMap(\.id) == Array(items[1...]) + [items[0]])
+        #expect(walk.placements[special.id] == .entry(in: new, position: items.count), "after the entry still")
+        let unmoved = walk.move(items[0], at: new, before: nil)
+        #expect(!unmoved, "last already")
+
+        try await walking.confirm(new, choosing: ["ref::tmdb:904"], in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(ContainerID(new)!)?.sequences.first?.items)
+        #expect(made.compactMap(\.id).filter(items.contains) == Array(items[1...]) + [items[0]])
+        #expect(made.last?.externalRefs == [special.ref])
+    }
+
     /// A walk and a draft from TMDb kept with a special as another version of an item, or of a container,
     /// are read with each drafted as an alternative the special is placed in, which makes what the
     /// version did.
@@ -5928,6 +5958,34 @@ extension AdminConsoleTests {
         #expect(tree.container(zygons.value)?.sequences[0].items.map(\.title) == ["Part 1", "Part 2", "Part 3"])
         #expect(tree.suggestedRenaming(in: zygons.value) == nil, "titled, suggested as nothing")
         #expect(TMDbTree.part(of: "Planet of Evil (2)") == 2 && TMDbTree.part(of: "Planet of Evil (+2)") == nil)
+    }
+
+    /// A draft's entries are moved one at a time, a group as the entry naming it, each before another or
+    /// last; the specials placed among them keep after the entries they followed, and one placed first
+    /// stays first. An entry is moved only within its container, and to nowhere it is already.
+    @Test func aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem() throws {
+        var (tree, season, items) = Self.storiedSeason()
+        let zygons = ContainerID("00000000000001e5")!
+        tree.regroup(Array(items[0...2]), in: season, into: zygons, type: .serial, title: Title("Zygons")!)
+        let group = try #require(tree.container(season)?.sequences[0].items.first?.id)
+        tree.placements = [1: .entry(in: season, position: 1), 2: .entry(in: season, position: 0)]
+
+        let pyramidsFirst = tree.move(items[5], in: season, before: group)
+        #expect(pyramidsFirst)
+        #expect(tree.container(season)?.sequences[0].items.compactMap(\.id) == [items[5], group, items[3], items[4]])
+        #expect(tree.placements == [1: .entry(in: season, position: 2), 2: .entry(in: season, position: 0)])
+        let groupLast = tree.move(group, in: season, before: nil)
+        #expect(groupLast)
+        #expect(tree.container(season)?.sequences[0].items.compactMap(\.id) == [items[5], items[3], items[4], group])
+        #expect(tree.placements[1] == .entry(in: season, position: 4), "after the group still")
+
+        let intoAnother = tree.move(items[0], in: season, before: nil)
+        let ontoItself = tree.move(items[3], in: season, before: items[3])
+        let beforeTheNext = tree.move(items[3], in: season, before: items[4])
+        #expect(!intoAnother && !ontoItself && !beforeTheNext)
+        let unknown = tree.move(items[3], in: season, before: ItemID("nowhere")!)
+        #expect(!unknown)
+        #expect(tree.container(zygons.value)?.sequences[0].items.compactMap(\.id) == Array(items[0...2]))
     }
 
     /// A part TMDb names by another title than the rest of its story's, numbered after the part before

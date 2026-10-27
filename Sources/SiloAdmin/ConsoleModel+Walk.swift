@@ -273,6 +273,15 @@ extension ConsoleModel {
         keepWalk()
     }
 
+    /// Moves one of the open new stop's entries before another, or last, the specials placed after it
+    /// kept after it.
+    func moveNewStopEntry(_ item: ItemID, before target: ItemID?) {
+        guard let open = walking?.open else { return }
+        walking?.walk.move(item, at: open, before: target)
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// Groups the open held stop's missing episodes, or changes the groups made of them.
     func groupEpisodes(_ change: (inout TMDbWalk, String) -> Void) {
         guard let open = walking?.open, var walk = walking?.walk else { return }
