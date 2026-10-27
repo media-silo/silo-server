@@ -206,7 +206,8 @@ extension TMDbWalk {
             guard let id = ContainerID(group.id), !episodes.isEmpty else { continue }
             var child = Container(id: id, type: group.type, title: group.title)
             child.typeLabel = group.typeLabel
-            child.sequences = [Sequence(id: "parts", items: [])]
+            // Its primary sequence goes by the id of the stop's it was made out of.
+            child.sequences = [Sequence(id: sequenceName(0, at: stop.id), items: [])]
             for episode in episodes {
                 TMDbTree.insert(
                     AdminConsole.leaf(episode, in: child, title: self.titles[episode.id]),

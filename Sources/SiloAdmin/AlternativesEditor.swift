@@ -302,7 +302,8 @@ private enum AlternativeNaming: Identifiable {
 struct PrimarySequence: View {
     let name: String?
     let clone: (String) -> Void
-    let rename: (String) -> Void
+    /// Renames it, and with true the primary sequence of each container beneath it too.
+    let rename: (String, Bool) -> Void
     @State private var asking: Asking?
 
     private enum Asking: String, Identifiable {
@@ -336,7 +337,11 @@ struct PrimarySequence: View {
                         "What is the primary sequence called? It is kept as an id: lower case, words joined by hyphens.",
                     initial: name ?? "",
                     action: "Rename",
-                    done: { title, _ in rename(title.rawValue) }
+                    option: TitlePrompt.Option(
+                        label: "Also rename the primary sequence of each container beneath it",
+                        help: "Each one refuses the name alone when another of its sequences has it."
+                    ),
+                    done: { title, beneath in rename(title.rawValue, beneath) }
                 )
             }
         }

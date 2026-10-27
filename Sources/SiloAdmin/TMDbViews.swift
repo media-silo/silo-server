@@ -393,7 +393,9 @@ struct ShapeTreeSheet: View {
                 update: { model.updateTree($0) },
                 provisionalID: { try? await model.provisionalID() },
                 clone: { title in model.updateTree { $0.cloneSequence(0, of: selected, titled: title) } },
-                rename: { name in model.updateTree { $0.renameSequence(0, of: selected, to: name) } }
+                rename: { name, beneath in
+                    model.updateTree { $0.renameSequence(0, of: selected, to: name, beneath: beneath) }
+                }
             )
             AttributionsLine(attributions: tree.attributions[selected] ?? []) { subject in
                 model.updateTree { $0.removeAttribution(of: subject, from: selected) }

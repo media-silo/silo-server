@@ -780,7 +780,8 @@ kept on this Mac as a new container's draft is. The top SHALL be filed beneath t
 library that carries the reference of the record above it, when there is one, or at the top of the
 library. The form SHALL show each episode's title from TMDb beside its entry, marked as TMDb's, and
 SHALL store none. The operator SHALL be able to shape the tree before it is created: re-type a
-container, rename its primary sequence with the alternatives and placed specials naming it, group entries into child containers, and drop what they will not hold. Each entry, and each
+container, rename its primary sequence with the alternatives and placed specials naming it, and, when the
+operator says, the primary sequence of each container beneath it, group entries into child containers, and drop what they will not hold. Each entry, and each
 group as one, SHALL be ticked to be made, all of them ticked to begin with; one unticked SHALL be left
 out when the tree is made, a group with everything in it, and an entry naming a container the library
 holds already SHALL be shown ticked and SHALL NOT be choosable. The container's heading SHALL say how
@@ -791,8 +792,8 @@ both above the entries and on a right-click of the selection, or of the entry cl
 selected. Once a group is made, nothing
 SHALL be selected. The heading and the grouping's actions SHALL stay in sight above the entries while
 the entries scroll, and choosing a new group's kind SHALL leave its title ready to be typed. Entries SHALL be
-selected, and those selected made a new group, of the kind, title and label the operator gives, at the
-first one's place, ticked, or added to a group the draft holds beneath the same container, the group's entries
+selected, and those selected made a new group, of the kind, title and label the operator gives, its
+primary sequence going by the id of the container's it is made out of, at the first one's place, ticked, or added to a group the draft holds beneath the same container, the group's entries
 then in the container's order. A group SHALL be ticked whole; its entries SHALL be shown in it, none
 choosable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
@@ -1030,7 +1031,8 @@ placed in a duplicate's home or a breakout SHALL be an edit of that container to
 SHALL list every edit before it stores any. A chosen child container SHALL join the walk as a new stop
 beneath the container. The episodes a held container lacks SHALL be groupable into new containers
 beneath it as a draft's entries are, a group of the kind, title and label the operator gives, made
-of the episodes selected, as a draft's entries are, ticked, or added to a group made there already; runs TMDb titles as the parts of one
+of the episodes selected, its primary sequence going by the id of the held container's as the walk
+leaves it, as a draft's entries are, ticked, or added to a group made there already; runs TMDb titles as the parts of one
 story SHALL be suggested as a draft's are, but for a run of the story the held container is titled
 as, which is its own parts, and SHALL instead be offered to be titled by its part numbers, as a
 draft's own parts are, the entries the walk adds for them carrying those titles. A group SHALL be chosen whole, its episodes shown in it,
@@ -1181,7 +1183,10 @@ alternative, a drafted alternative's entries SHALL be reordered by
 dragging them, and a special SHALL be draggable onto the stop's extras by kind. The operator SHALL be able to rename a stop's primary
 sequence, the name kept as a sequence id and refused when another of its sequences has it; the
 alternatives naming it and the specials placed in it SHALL be renamed with it, a new stop's draft
-SHALL be shaped with it, and a held stop's SHALL be renamed by its edit when the walk is stored. A placed special SHALL leave the unassigned specials and
+SHALL be shaped with it, and a held stop's SHALL be renamed by its edit when the walk is stored. When
+the operator says, the primary sequence of each container beneath the stop the walk knows, those its
+container lists and the stops beneath it at any depth, SHALL be renamed too, a held one not yet read
+when its edit is made, and each SHALL refuse the name alone when another of its sequences has it. A placed special SHALL leave the unassigned specials and
 become part of the pending change of the container it was placed in, and removing it from that change
 SHALL return it. A stop SHALL show, pending or confirmed, the alternatives storing the walk would
 leave its container with: those it holds or its draft has, then those the specials placed in it make,
@@ -1260,6 +1265,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 `anEditOfAConfirmedStopIsPartOfThatStopsEdit`, `aSpecialIsSuggestedHereOnlyWhenItsTitleTiesItThere`,
 `aStopShowsTheAlternativesItsPlacedSpecialsMake`,
 `aHeldStopsSequencesAreRenamedWhenStored`, `aNewStopsSequenceIsRenamedInItsDraft`,
+`aStopsPrimarySequenceIsRenamedBeneathItAndGivenToItsGroups`,
+`aRegroupedContainersPrimarySequenceIsItsParentsAndRenamedBeneathIt`,
 `aNewStopShowsTheAlternativesItsPlacedSpecialsMake`). The walk's sheet is pinned by nothing yet, as the rest
 of the shell is, but for what its alternatives read from a drop: `Tests/SiloAdminTests/AlternativesEditorTests.swift`
 (`aDragIsReadBackFromItsText`).

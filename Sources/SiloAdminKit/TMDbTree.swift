@@ -233,7 +233,8 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         }
         guard let placedAt else { return }
         var child = Container(id: id, type: type, typeLabel: typeLabel, title: title)
-        child.sequences = [Sequence(id: "parts", items: gathered)]
+        // Its primary sequence goes by the id of the container's it was made out of.
+        child.sequences = [Sequence(id: parent.sequences.first?.id, items: gathered)]
         let item = ItemID(Slug.unique(from: title.rawValue, avoiding: Set(parent.itemIDs.map(\.value))))!
         parent.sequences[placedAt.sequence].items.insert(
             .child(Entry.Child(id: item, container: id)),

@@ -494,8 +494,8 @@ struct EntryGrouping: View {
     let provisionalID: () async -> ContainerID?
     /// Clones the container's primary sequence into a new alternative of the title given.
     let clone: (String) -> Void
-    /// Renames the container's primary sequence.
-    let rename: (String) -> Void
+    /// Renames the container's primary sequence, and with true each container's beneath it.
+    let rename: (String, Bool) -> Void
 
     private var container: Container? { tree.container(parent) }
     private var rows: [GroupingRow] { (container?.sequences.flatMap(\.items) ?? []).compactMap(row) }
