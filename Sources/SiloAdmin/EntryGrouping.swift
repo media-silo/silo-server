@@ -94,6 +94,8 @@ struct GroupingList<Heading: View>: View {
     @FocusState private var titling: Bool
     /// The child a dragged one is over, to go before it, or the end of the list.
     @State private var dropping: String?
+    /// The child whose grab handle the pointer is on.
+    @State private var grabbing: String?
 
     var body: some View {
         Section {
@@ -266,9 +268,15 @@ struct GroupingList<Heading: View>: View {
                 .contextMenu { moving(id) }
         case .row(.group(let group)) where group.held && group.members.isEmpty:
             // Held already, it is part of the walk whatever is ticked, and entries may be put into it.
-            Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }.disabled(true)
+            movable(
+                Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }
+                    .disabled(true),
+                group.entry,
+                titled: group.title
+            )
+            .contextMenu { group.entry.map(moving) }
         case .row(.group(let group)):
-            movable(bracketed(group), group.entry, titled: group.title)
+            movable(bracketed(group), group.entry, titled: group.title, group: true)
                 .contextMenu { group.entry.map(moving) }
         case .suggested(let suggestion, let run, renaming: true):
             Bracketed {
@@ -371,10 +379,12 @@ struct GroupingList<Heading: View>: View {
         }
     }
 
-    private var mover: ChildMoving? { move.map { ChildMoving(order: order, move: $0, dropping: $dropping) } }
+    private var mover: ChildMoving? {
+        move.map { ChildMoving(order: order, move: $0, dropping: $dropping, grabbing: $grabbing) }
+    }
 
-    private func movable(_ row: some View, _ key: String?, titled title: String) -> some View {
-        row.movable(key, titled: title, by: mover)
+    private func movable(_ row: some View, _ key: String?, titled title: String, group: Bool = false) -> some View {
+        row.movable(key, titled: title, by: mover, group: group)
     }
 
     @ViewBuilder
