@@ -77,4 +77,14 @@ extension TMDbWalk {
             return Self.missing(tree) == "group:\(id)" && !groups.contains(id)
         }
     }
+
+    /// A container added beneath a held stop, gone from the walk with its own stop and draft and the stops
+    /// beneath it, the held stop pending again.
+    public mutating func dropContainer(_ id: String) {
+        guard let parent = drafts[id]?.creating.parent else { return }
+        remove(id)
+        stops[parent]?.chosen.remove("group:\(id)")
+        stops[parent]?.children.removeAll { $0 == id }
+        unconfirm(parent)
+    }
 }

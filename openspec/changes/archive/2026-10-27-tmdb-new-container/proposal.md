@@ -15,6 +15,7 @@ for a series' extras, to fill with specials or entries afterwards. Proposal:
   one it is beneath.
 - In a draft, or a new stop, it is named last in the primary sequence and made with the draft. Entries
   are added to it, and it is removed, as a group's are.
-- Beneath a held stop it is a new stop of the walk, ticked there among what was added. Specials are
+- Beneath a held stop it is a new stop of the walk, listed last among the held stop's children,
+  ticked there and removable there at once. Specials are
   placed in it and its children shaped at its own stop. It is made beneath the held container when the
   walk is stored, once both are confirmed. Unticked, it leaves the walk once the held stop is confirmed.

@@ -5672,6 +5672,17 @@ extension AdminConsoleTests {
         let spare = ContainerID("00000000000001f2")!
         walk.addContainer(spare, type: .collection, title: Title("Spare")!, beneath: id)
         walk.stops[id]?.chosen.remove("group:\(spare.value)")
+        #expect(walk.sequence(at: id).suffix(2) == [.added(extras.value), .added(spare.value)], "listed last, unticked or not")
+        let dropped = ContainerID("00000000000001f4")!
+        walk.addContainer(dropped, type: .collection, title: Title("Dropped")!, beneath: id)
+        walk.dropContainer(dropped.value)
+        #expect(walk.stops[dropped.value] == nil && walk.drafts[dropped.value] == nil, "removed at once")
+        #expect(walk.stops[id]?.children.contains(dropped.value) == false)
+        #expect(walk.stops[id]?.chosen.contains("group:\(dropped.value)") == false)
+        let moved = walk.arrange("child:\(spare.value)", at: id, before: "child:\(extras.value)")
+        #expect(moved)
+        #expect(walk.sequence(at: id).suffix(2) == [.added(spare.value), .added(extras.value)])
+        walk.unarrange(id)
 
         try await walking.confirm(id, choosing: walk.stops[id]?.chosen ?? [], in: &walk)
         #expect(walk.stops[spare.value] == nil && walk.drafts[spare.value] == nil, "unticked, it leaves")
@@ -5685,6 +5696,67 @@ extension AdminConsoleTests {
         let made = try #require(held.container(extras))
         #expect(made.title.rawValue == "Extras" && made.type == .collection)
         #expect(held.container(serial.id)?.sequences.first?.items.last?.childContainer == extras)
+    }
+
+    /// A held stop's children list what it holds already among what storing adds, in the order storing
+    /// leaves them, an unticked child in its place to be ticked there, and are moved there as it is.
+    @Test func aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, season, serial, tmdb, episodes) = Self.unmatchedSeason()
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial]))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        var walk = try await walking.walk(series.id.value)
+        try await walking.confirm(season.id.value, in: &walk)
+        walk.identify(season.id.value, as: 6981)
+        walk.read(
+            try await console.compare(
+                season.id.value,
+                in: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb,
+                identified: walk.identified
+            )
+        )
+        let (stop, held) = (season.id.value, serial.id.value)
+        let (evil, pyramids) = (Array(episodes[4..<8].map(\.id)), Array(episodes[8...].map(\.id)))
+        walk.stops[stop]?.chosen.formUnion(evil.map { "episode:\($0)" })
+        walk.group(pyramids, at: stop, into: "00000000000001d3", type: .serial, title: Title("Pyramids")!)
+        walk.stops[stop]?.chosen.remove("episode:\(evil[1])")
+        let keys = { (children: [HeldStopChild]) in children.map(\.key) }
+        let listed = ["child:\(held)"] + evil.map { "tmdb:\($0)" } + ["child:00000000000001d3"]
+        #expect(keys(walk.sequence(at: stop)) == listed, "the unticked episode and the group in their places")
+        let heldChild = try #require(walk.heldChildren(at: stop).first)
+        #expect(walk.sequence(at: stop).first == .held(heldChild))
+
+        let moved = walk.arrange("child:00000000000001d3", at: stop, before: "child:\(held)")
+        #expect(moved)
+        #expect(keys(walk.sequence(at: stop)) == [listed.last!] + listed.dropLast())
+        walk.stops[stop]?.chosen.insert("episode:\(evil[1])")
+        #expect(keys(walk.sequence(at: stop)) == [listed.last!] + listed.dropLast(), "ticked where it was")
+
+        // At the serial's own stop, the parts it holds are listed before the missing parts put into it.
+        walk.add([evil[0]], toHeld: held, at: stop)
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        walk.read(
+            try await console.compare(held, in: "tv", of: home, from: database, tmdb: tmdb, identified: walk.identified)
+        )
+        let items = try #require(walk.container(held)?.sequences.first?.items)
+        let parts = items.compactMap(\.id)
+        let serialListed = walk.sequence(at: held)
+        #expect(keys(serialListed) == parts.map { "item:\($0.value)" } + ["tmdb:\(evil[0])"])
+        let holding = serialListed.dropLast().allSatisfy { child in
+            if case .entry(let entry) = child { !entry.isAdded } else { false }
+        }
+        #expect(holding, "what it holds, shown as held")
+        #expect(serialListed.last.map { if case .episode = $0 { true } else { false } } == true)
+
+        // The group, moved before its stop was drafted, is named where it was moved once it is made.
+        try await walking.confirm("00000000000001d3", in: &walk)
+        let edit = try #require(Self.edit(of: stop, in: try walk.plan())?.value)
+        #expect(edit.sequences.first?.items.first?.childContainer?.value == "00000000000001d3")
+        #expect(keys(walk.sequence(at: stop)).first == "child:00000000000001d3")
     }
 
     /// A group made of a held stop's missing episodes has its primary sequence go by the stop's, as the

@@ -198,17 +198,19 @@ to a group made there, each only to be taken out of it again, chosen then, or gr
 put there SHALL be one of that container's own missing episodes from then on, chosen at its stop to
 begin with, and grouped and taken there as any of its own are; none of them SHALL be added to the held
 container itself, and an entry TMDb puts after one of them SHALL follow the container.
-A held stop SHALL list its primary sequence as storing would leave it, were the stop confirmed with what
-is chosen and placed there now: what it holds, each episode and group taken, each container held
-beneath, and each special placed in it, those storing adds marked. Each SHALL be movable before another,
-or last, by dragging it or from its right-click menu, as a draft's entries are. The order SHALL be kept
+A held stop's children SHALL be listed in one list, in its primary sequence's order as storing would
+leave it were every child listed ticked: what it holds already and each special placed in it, those
+storing adds marked, among its missing episodes, its groups and the containers held beneath it, an
+unticked child in its place to be ticked there, and a group whose own stop is not yet drafted after
+the child it follows. Each SHALL be movable before another, or last, by its grab handle or from its
+right-click menu, as a draft's entries are. The order SHALL be kept
 with the walk, the stop pending again, and SHALL give the stop's edit its primary sequence; an entry the
 order does not name, as a special placed after the order was given, SHALL keep its place. The moves SHALL
 be undoable at once, the entries then listed as they would have been. From the primary sequence's menu,
 a new container of the kind and title the operator gives SHALL be added beneath a held stop, holding
-nothing yet, its primary sequence going by the held stop's id: a new stop of the walk, ticked at the
-held stop among what was added there, where specials SHALL be placeable and its own children shaped as
-in any new stop. It SHALL be made beneath the held container when the walk is stored, once both are
+nothing yet, its primary sequence going by the held stop's id: a new stop of the walk, listed among the
+held stop's children, last to begin with, ticked there and removable there at once, where specials
+SHALL be placeable and its own children shaped as in any new stop. It SHALL be made beneath the held container when the walk is stored, once both are
 confirmed, named in it where a new container is; unticked, it SHALL leave the walk once the held stop
 is confirmed. Added beneath a new stop, it SHALL be a container of that stop's draft, as one added to a
 draft is.
@@ -227,6 +229,12 @@ opened.
   the move and another placed first after it, and the walk is stored
 - **THEN** the serial's primary sequence holds the special placed after the move first, then the
   other special, the rest of its parts, and the first part last
+
+#### Scenario: a held stop's children listed in order
+- **WHEN** a held season holds a serial and lacks four episodes, one of them unticked, and the parts of
+  the next story grouped, and the group is moved before the serial
+- **THEN** its children list the group, the serial, then the four episodes, the unticked one in its
+  place; once the season and the group are confirmed, storing names the group first
 
 #### Scenario: an episode TMDb has gained
 - **WHEN** a season the library holds lacks an episode TMDb's record of the season has, and the
@@ -284,7 +292,8 @@ opened.
 - **THEN** the breakout's differences list that IMDb id against the entry
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
-(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`, `aHeldStopsEntriesMovedAreStoredInTheirNewOrder`, `aContainerAddedBeneathAStopIsMadeBeneathIt`,
+(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`, `aHeldStopsEntriesMovedAreStoredInTheirNewOrder`,
+`aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem`, `aContainerAddedBeneathAStopIsMadeBeneathIt`,
 `aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`,
 `aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`,
 `aHeldSeasonsGroupsAreNewStopsBeneathItOnceConfirmed`). The list and its choosing are pinned by nothing

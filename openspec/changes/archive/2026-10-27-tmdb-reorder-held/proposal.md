@@ -10,9 +10,11 @@ TMDb's order or the placement put it. Nothing let the operator put a held contai
 order of their own. Proposal: [A held tree reviewed against TMDb](../../../Proposals/TmdbWalk.md).
 
 ## What Changes
-- A held stop lists its primary sequence as storing would leave it: what it holds, each episode and
-  group taken, each container held beneath, and each special placed in it, those storing adds marked.
-- Each entry can be moved before another, or last, by dragging it or from its right-click menu. The
+- A held stop's children are one list in its primary sequence's order as storing would leave it: what
+  it holds already and each special placed in it, those storing adds marked, among its missing
+  episodes, groups and the containers held beneath it. An unticked child keeps its place, to be ticked
+  there, and a group whose own stop is not drafted yet is listed after the child it follows.
+- Each child can be moved before another, or last, by its grab handle or from its right-click menu. The
   order is kept with the walk, the stop is pending again, and the stop's edit gets its primary sequence
   in that order.
 - An entry the order does not name, as a special placed after the order was given, keeps its place.
