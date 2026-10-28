@@ -798,8 +798,9 @@ then in the container's order. A group SHALL be ticked whole; its entries SHALL 
 choosable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
 with nothing SHALL be ungrouped. Each of the container's entries, an episode or the entry naming a group,
-SHALL be movable before another entry of its sequence, or last, by dragging it onto the entry it is to
-go before or past the last, or from its right-click menu, a place up or down or to either end. A
+SHALL be movable before another entry of its sequence, or last, by dragging its grab handle onto the entry it is to
+go before or past the last, or from its right-click menu, a place up or down or to either end. A group's handle SHALL run beside all
+its entries, and while the pointer is on a handle what it moves SHALL be shaded. A
 special placed in the sequence SHALL keep after the entry it followed, and one placed first SHALL stay
 first. A run of two or more entries in one sequence whose episodes TMDb
 titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be bracketed and
