@@ -30,7 +30,7 @@ draft of the series as unassigned. The operator SHALL place each special, or not
   take entries out of it, retitle it and discard it. From a drafted alternative's menu, the operator
   SHALL be able to add to it a new container of the kind and title given, holding nothing yet, beneath
   the container and played in its alternatives alone: in a draft, a container of the draft; in a walk, a
-  new stop, ticked at a held stop among what was added there, or a container of a new stop's draft and
+  new stop beneath a held stop, not listed among its children since only the alternative plays it, or a container of a new stop's draft and
   a stop once that one is confirmed. Taken out of every alternative playing it, it SHALL leave the draft
   or the walk. A special or a new container in more than one of a container's drafted alternatives
   SHALL be an entry of the first that plays it and referred to from the rest. A

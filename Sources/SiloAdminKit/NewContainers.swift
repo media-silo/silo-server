@@ -138,6 +138,8 @@ extension TMDbWalk {
         return draftContainer(id, type: type, title: title, beneath: stop)
     }
 
+    /// A container added beneath a stop, gone from the walk: beneath a held stop, its own stop and draft
+    /// with the stops beneath it, the held stop pending again; otherwise from the draft holding it.
     public mutating func dropContainer(_ id: String) {
         if let parent = drafts[id]?.creating.parent {
             remove(id)

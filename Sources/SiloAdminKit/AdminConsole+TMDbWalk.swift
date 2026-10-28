@@ -795,9 +795,27 @@ extension TMDbWalk {
     }
 
     /// A stop's container before the walk, and as storing would make it, were the stop, and for a new
-    /// stop every container of its draft, confirmed with what is chosen now: made by the store's own
-    /// plan, so it is what storing creates.
-    func stored(_ id: String) -> (before: Container, after: Container)? {
+    /// stop every container of its draft, confirmed with what is chosen now, or with every child its
+    /// children list taken, each new one confirmed: made by the store's own plan, so it is what storing
+    /// creates.
+    /// Every child a held stop's children list taken, each drafted beneath it confirmed.
+    private mutating func takeEveryChild(of id: String) {
+        let drafted = drafts.values.filter { $0.creating.parent == id }
+        let missing = differences(of: id).filter { difference in
+            switch difference {
+            case .episode, .season: true
+            default: false
+            }
+        }
+        let children = missing.map(\.id) + (stops[id]?.groups ?? []).map(\.tick) + drafted.map(Self.missing)
+        stops[id]?.taken?.formUnion(children)
+        for container in drafted.flatMap(\.containers) {
+            guard let stop = stops[container.id.value] else { continue }
+            stops[container.id.value]?.taken = stop.taken ?? stop.chosen
+        }
+    }
+
+    func stored(_ id: String, takingEveryChild: Bool = false) -> (before: Container, after: Container)? {
         var walk = self
         let new = Dictionary(
             companions.keys.compactMap { id in companion(id).map { (id, $0) } },
@@ -816,6 +834,7 @@ extension TMDbWalk {
             return (before, after)
         }
         walk.stops[id]?.taken = stops[id]?.taken ?? stops[id]?.chosen
+        if takingEveryChild { walk.takeEveryChild(of: id) }
         guard let before = container(id),
             let change = try? walk.change(of: id, gathering: &gathering)
         else { return nil }

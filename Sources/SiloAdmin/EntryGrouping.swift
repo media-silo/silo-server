@@ -10,6 +10,10 @@ import SwiftUI
 struct GroupingMember: Identifiable, Hashable {
     let id: String
     let title: String
+    /// The key it is moved by, when that is not the one it is selected by.
+    var key: String?
+
+    var moveKey: String { key ?? id }
 }
 
 /// A group made in a grouping list: the container its entries are to be in.
@@ -23,6 +27,8 @@ struct GroupingGroup: Identifiable {
     /// Held already, beneath a held container: entries may be added to it and taken out again, and it is
     /// neither ticked nor ungrouped.
     var held = false
+    /// Whether entries may be put into it here; one shaped at a stop of its own takes none.
+    var accepts = true
 }
 
 enum GroupingRow: Identifiable {
@@ -94,6 +100,8 @@ struct GroupingList<Heading: View>: View {
     @FocusState private var titling: Bool
     /// The child a dragged one is over, to go before it, or the end of the list.
     @State private var dropping: String?
+    /// The child whose grab handle the pointer is on.
+    @State private var grabbing: String?
 
     var body: some View {
         Section {
@@ -189,7 +197,7 @@ struct GroupingList<Heading: View>: View {
                     }
                 }
             }
-            ForEach(groups) { group in
+            ForEach(groups.filter(\.accepts)) { group in
                 Button("Into \(group.title)") {
                     add(entries, group.id)
                     selected = []
@@ -266,13 +274,20 @@ struct GroupingList<Heading: View>: View {
                 .contextMenu { moving(id) }
         case .row(.group(let group)) where group.held && group.members.isEmpty:
             // Held already, it is part of the walk whatever is ticked, and entries may be put into it.
-            Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }.disabled(true)
+            movable(
+                Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }
+                    .disabled(true),
+                group.entry,
+                titled: group.title
+            )
+            .contextMenu { group.entry.map(moving) }
         case .row(.group(let group)) where group.members.isEmpty:
             // Added holding nothing yet: entries are put into it as into any group.
             movable(
                 HStack {
                     Toggle(isOn: groupTick(group)) { Text("\(group.kind): \(group.title)").bold() }
-                    Text("holds nothing yet").font(.caption).foregroundStyle(.secondary)
+                    Text(group.accepts ? "holds nothing yet" : "new, shaped at its own stop")
+                        .font(.caption).foregroundStyle(.secondary)
                     Button("Remove") { ungroup(group.id) }.buttonStyle(.borderless).font(.caption)
                 },
                 group.entry,
@@ -280,7 +295,7 @@ struct GroupingList<Heading: View>: View {
             )
             .contextMenu { group.entry.map(moving) }
         case .row(.group(let group)):
-            movable(bracketed(group), group.entry, titled: group.title)
+            movable(bracketed(group), group.entry, titled: group.title, group: true)
                 .contextMenu { group.entry.map(moving) }
         case .suggested(let suggestion, let run, renaming: true):
             Bracketed {
@@ -346,7 +361,7 @@ struct GroupingList<Heading: View>: View {
 
     /// An entry grouped in none: its tick, and its title, clicked to select it, dragged to move it.
     private func entry(_ member: GroupingMember) -> some View {
-        movable(selectable(member), member.id, titled: member.title)
+        movable(selectable(member), member.moveKey, titled: member.title)
     }
 
     private func selectable(_ member: GroupingMember) -> some View {
@@ -365,7 +380,7 @@ struct GroupingList<Heading: View>: View {
         .contextMenu {
             // A right-click groups the selection when the entry is part of it, and the entry alone when not.
             grouping(selected.contains(member.id) ? selectedMembers : [member.id])
-            moving(member.id)
+            moving(member.moveKey)
         }
     }
 
@@ -376,17 +391,19 @@ struct GroupingList<Heading: View>: View {
     private var order: [String] {
         rows.compactMap { row in
             switch row {
-            case .member(let member): member.id
+            case .member(let member): member.moveKey
             case .group(let group): group.entry
             case .fixed(let id, _): id
             }
         }
     }
 
-    private var mover: ChildMoving? { move.map { ChildMoving(order: order, move: $0, dropping: $dropping) } }
+    private var mover: ChildMoving? {
+        move.map { ChildMoving(order: order, move: $0, dropping: $dropping, grabbing: $grabbing) }
+    }
 
-    private func movable(_ row: some View, _ key: String?, titled title: String) -> some View {
-        row.movable(key, titled: title, by: mover)
+    private func movable(_ row: some View, _ key: String?, titled title: String, group: Bool = false) -> some View {
+        row.movable(key, titled: title, by: mover, group: group)
     }
 
     @ViewBuilder
