@@ -36,12 +36,16 @@ enum GroupingRow: Identifiable {
     case group(GroupingGroup)
     /// An entry shown and never grouped, as a container held beneath already is.
     case fixed(id: String, String)
+    /// A child ticked on its own and never grouped, as a series' season is, shown by its label; held
+    /// already, with no tick, it is shown ticked and is never unticked.
+    case toggled(id: String, title: String, tick: Binding<Bool>?, label: AnyView)
 
     var id: String {
         switch self {
         case .member(let member): "member:\(member.id)"
         case .group(let group): "group:\(group.id)"
         case .fixed(let id, _): "fixed:\(id)"
+        case .toggled(let id, _, _, _): "toggled:\(id)"
         }
     }
 }
@@ -272,6 +276,9 @@ struct GroupingList<Heading: View>: View {
             // Held already, it is part of the walk whatever is ticked.
             movable(Toggle(isOn: .constant(true)) { Text(title) }.disabled(true), id, titled: title)
                 .contextMenu { moving(id) }
+        case .row(.toggled(let id, let title, let tick, let label)):
+            movable(Toggle(isOn: tick ?? .constant(true)) { label }.disabled(tick == nil), id, titled: title)
+                .contextMenu { moving(id) }
         case .row(.group(let group)) where group.held && group.members.isEmpty:
             // Held already, it is part of the walk whatever is ticked, and entries may be put into it.
             movable(
@@ -394,6 +401,7 @@ struct GroupingList<Heading: View>: View {
             case .member(let member): member.moveKey
             case .group(let group): group.entry
             case .fixed(let id, _): id
+            case .toggled(let id, _, _, _): id
             }
         }
     }
@@ -628,7 +636,7 @@ struct EntryGrouping: View {
                     switch row {
                     case .member(let member): member.id
                     case .group(let group): group.entry
-                    case .fixed: nil
+                    case .fixed, .toggled: nil
                     }
                 }
                 let count = tickable.filter { !isLeftOut($0) }.count

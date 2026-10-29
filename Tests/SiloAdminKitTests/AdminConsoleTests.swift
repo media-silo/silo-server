@@ -4897,6 +4897,42 @@ extension AdminConsoleTests {
         #expect(again.isEmpty, "drafted once")
     }
 
+    /// A series' seasons are among its children, held and missing alike, and are moved there: a held one by
+    /// its entry in the series' sequence, and a missing one, which no sequence names until it is drafted
+    /// and made, by its place among the stops beneath, where it is named when it is made.
+    @Test func aSeriesSeasonsAreMovedAmongItsChildren() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, _) = Self.missingSeason()
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let stop = series.id.value
+        let seasons = series.childContainerIDs.map(\.value)
+        try #require(seasons.count == 3)
+
+        var walk = try await console.startWalk(at: stop, in: "tv", of: home)
+        try await walking.read(stop, in: &walk)
+        walk.stops[stop]?.chosen = ["season:904"]
+        let keys = { walk.sequence(at: stop).map(\.key) }
+        let byEntry = seasons.map { "child:\($0)" }
+        #expect(keys().filter { $0 != "season:904" } == byEntry, "held ones as its sequence holds them")
+        #expect(keys().contains("season:904"), "a missing one listed too, to be ticked and moved")
+        let missingFirst = walk.arrange("season:904", at: stop, before: byEntry[0])
+        let lastLast = walk.arrange(byEntry[1], at: stop, before: nil)
+        #expect(missingFirst && lastLast)
+        #expect(keys() == ["season:904", byEntry[0], byEntry[2], byEntry[1]])
+
+        try await walking.confirm(stop, choosing: ["season:904"], in: &walk)
+        let new = try #require(walk.drafts.keys.first)
+        #expect(walk.stops[stop]?.children == [new, seasons[0], seasons[2], seasons[1]], "the walk takes them so")
+        #expect(Array(walk.order.prefix(2)) == [stop, new])
+        try await walking.confirm(new, choosing: walk.stops[new]?.chosen ?? [], in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(series.id))
+        #expect(made.childContainerIDs.map(\.value) == [new, seasons[0], seasons[2], seasons[1]])
+    }
+
     /// A series holding a season that carries no TMDb id, with one serial of TMDb's three beneath it: two
     /// of its parts carry TMDb's ids, and two only TheTVDB's, which TMDb finds.
     private static func unmatchedSeason() -> (
