@@ -278,6 +278,27 @@ extension ConsoleModel {
         keepWalk()
     }
 
+    /// A new companion series of the operator's own beside the walked one, holding nothing yet, opened as
+    /// a stop of its own.
+    func addCompanion(_ title: Title, listed: Bool) async {
+        guard walking != nil, let id = try? await provisionalID() else { return }
+        var series = Container(id: id, type: .series, title: title, listed: listed)
+        series.sequences = [Sequence(id: "episodes", items: [])]
+        guard walking?.walk.addCompanion(series) == true else { return }
+        walking?.plan = nil
+        keepWalk()
+        await openStop(id.value)
+    }
+
+    /// A companion series out of the walk, with the stops beneath it; the root is opened if it was open.
+    func dropCompanion(_ id: String) {
+        guard let root = walking?.walk.root else { return }
+        walking?.walk.dropCompanion(id)
+        if let open = walking?.open, walking?.walk.stops[open] == nil { walking?.open = root }
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// Shapes the open new stop's draft as a draft from TMDb is shaped.
     func shapeNewStop(_ change: (inout TMDbTree) -> Void) {
         guard let open = walking?.open else { return }
