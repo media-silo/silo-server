@@ -159,10 +159,14 @@ struct ChildEnd: View {
 
     var body: some View {
         let over = mover.dropping == ChildDrag.end
-        Rectangle()
-            .fill(over ? Color.accentColor : .clear)
-            .frame(height: over ? 2 : 10)
+        // The line drawn in the target's room, which keeps its height: one that shrank as a drag came over
+        // it would leave the pointer off it, grow back, and move what is beneath up and down.
+        Color.clear
+            .frame(height: 10)
             .frame(maxWidth: .infinity)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.accentColor).frame(height: 2).opacity(over ? 1 : 0)
+            }
             .contentShape(.rect)
             .dropDestination(for: String.self) { payloads, _ in
                 mover.drop(payloads, before: nil)

@@ -228,10 +228,13 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
     /// Between two of a draft's entries: a special dropped here is added, an entry dragged here moved.
     private func gap(_ position: Int, in draft: DraftAlternative) -> some View {
         let key = "\(draft.id):gap:\(position)"
-        return Rectangle()
-            .fill(targeted == key ? Color.accentColor : .clear)
-            .frame(height: targeted == key ? 4 : 6)
+        // The line drawn in the gap's room, which keeps its height, so a drag over it moves nothing beneath.
+        return Color.clear
+            .frame(height: 6)
             .frame(maxWidth: .infinity)
+            .overlay {
+                Rectangle().fill(Color.accentColor).frame(height: 4).opacity(targeted == key ? 1 : 0)
+            }
             .contentShape(.rect)
             .dropDestination(for: String.self) { payloads, _ in
                 switch payloads.first.flatMap(AlternativeDrag.init) {
