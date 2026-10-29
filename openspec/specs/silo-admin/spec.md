@@ -797,7 +797,12 @@ primary sequence going by the id of the container's it is made out of, at the fi
 then in the container's order. A group SHALL be ticked whole; its entries SHALL be shown in it, none
 choosable, each only to be taken out of it, back beside the group; and the group SHALL be able to be
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
-with nothing SHALL be ungrouped. A run of two or more entries in one sequence whose episodes TMDb
+with nothing SHALL be ungrouped. Each of the container's entries, an episode or the entry naming a group,
+SHALL be movable before another entry of its sequence, or last, by dragging its grab handle onto the entry it is to
+go before or past the last, or from its right-click menu, a place up or down or to either end. A group's handle SHALL run beside all
+its entries, and while the pointer is on a handle what it moves SHALL be shaded. A
+special placed in the sequence SHALL keep after the entry it followed, and one placed first SHALL stay
+first. A run of two or more entries in one sequence whose episodes TMDb
 titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be bracketed and
 suggested as a group titled by the story, to be grouped one at a time or all at once. A part numbered
 one after the part before it SHALL be one of that story's parts though TMDb titles its story otherwise,
@@ -847,6 +852,12 @@ request to the silo.
 - **THEN** all six are suggested as one group titled by the longer title; grouped as a serial and
   titled as parts, they are `Part 1` to `Part 6`
 
+#### Scenario: entries moved
+- **WHEN** a drafted season's last episode is moved before the group its first episodes were made, and
+  the group is then moved last, with one special placed after the group and one placed first
+- **THEN** the season holds the episode first and the group last, the special placed after the group
+  still follows it, and the one placed first is still first
+
 #### Scenario: a group added to and taken from
 - **WHEN** an entry before a group is added to it, and its last entry is then taken out of it
 - **THEN** the group holds its entries in the season's order at the first one's place, and the entry
@@ -875,7 +886,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraft
 `aRecordSmddbHoldsIsImportedRatherThanDrafted`, `serialsAreSuggestedFromTMDbsTitlesForTheirParts`,
 `aDraftsGroupIsAddedToTakenFromAndUngrouped`, `aDraftsEntryUntickedIsLeftOutOfWhatIsMade`,
 `aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`,
-`aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`). The search, the shaping's sheet and the dry run as the
+`aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`,
+`aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`). The search, the shaping's sheet and the dry run as the
 operator shapes are pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each
@@ -1288,7 +1300,8 @@ stop beneath it: a draft from TMDb, read as a draft from TMDb reads it, with ids
 It SHALL be drafted once, however many times the stop is confirmed, and the console SHALL take no
 second confirm of a stop while one is under way. The walk's tree SHALL show it as new. Its fields and
 references, and any artwork TMDb offers for it, SHALL be chosen to begin with. It SHALL be shaped as a
-draft from TMDb is shaped, and each container the shaping makes beneath it SHALL be a new stop; one
+draft from TMDb is shaped, its entries moved as a draft's are, each special the walk places among them
+keeping after the entry it followed, and each container the shaping makes beneath it SHALL be a new stop; one
 the shaping ungroups, or unticks, SHALL leave the walk, and the specials placed in it SHALL be
 unassigned again; one ticked again SHALL be a new stop once the stop above it is confirmed again.
 Specials SHALL be placeable in a new stop as in a held one, and a new stop SHALL show the specials
@@ -1301,6 +1314,11 @@ with the containers beneath it in one creation, right after the edit of its pare
 the create route makes a container beneath a parent only once the parent names it. Unchoosing a missing
 child and confirming its parent's stop again SHALL remove its new stop and every stop beneath it from
 the walk, after the console says which, and the specials placed in them SHALL be unassigned again.
+
+#### Scenario: a new stop's entry moved
+- **WHEN** a new season's first episode is moved last, with a special placed after it, and the walk is
+  stored
+- **THEN** the season is made with the episode last and the special after it
 
 #### Scenario: a season TMDb has that the library lacks
 - **WHEN** a missing season is chosen at a held series' stop, and the stop is confirmed
@@ -1360,8 +1378,10 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMissingSeasonCho
 `aStopConfirmedTwiceAtOnceDraftsItsSeasonsOnce`, `aSpecialPlacedInANewSeasonIsCreatedWithIt`,
 `aNewSeasonsSerialsAreStopsBeneathIt`, `aGroupUngroupedInANewStopLeavesTheWalk`,
 `aGroupLeftOutOfANewStopLeavesTheWalkUntilTickedAgain`,
-`unchoosingAMissingSeasonRemovesItsStops`, `aStopsChildrenAreInTheOrderItsChildrenListThem`). The walk's sheet is
-pinned by nothing yet, as the rest of the shell is.
+`unchoosingAMissingSeasonRemovesItsStops`, `aStopsChildrenAreInTheOrderItsChildrenListThem`,
+`aNewStopsEntryMovedIsStoredWhereItWasMovedWithWhatFollowedIt`). The walk's sheet is pinned by nothing
+yet, as the rest of the shell is, but for what a moved child reads from a drop:
+`Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDraggedIsReadBackFromItsText`).
 
 ### Requirement: A walk is kept on this Mac until it is stored or discarded
 A walk SHALL be kept on this Mac, with its stops, their states, choices and placements, and the series'

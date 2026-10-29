@@ -79,6 +79,9 @@ struct GroupingList<Heading: View>: View {
     /// rather than grouped again.
     var renaming: GroupingSuggestion?
     var rename: (_ word: String) -> Void = { _ in }
+    /// Moves a child, by the key its row goes by, before another's, or last with none; nil when the
+    /// children keep the order they are in.
+    var move: ((_ child: String, _ before: String?) -> Void)?
     @ViewBuilder let heading: Heading
     /// The entries selected to be grouped.
     @State private var selected: Set<String> = []
@@ -89,11 +92,16 @@ struct GroupingList<Heading: View>: View {
     @State private var groupTitle = ""
     @State private var groupLabel = ""
     @FocusState private var titling: Bool
+    /// The child a dragged one is over, to go before it, or the end of the list.
+    @State private var dropping: String?
+    /// The child whose grab handle the pointer is on.
+    @State private var grabbing: String?
 
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(segments, id: \.id) { segment in view(of: segment) }
+                end
             }
             .padding(.leading, 4)
             .padding(.bottom, 8)
@@ -254,41 +262,22 @@ struct GroupingList<Heading: View>: View {
         switch segment {
         case .row(.member(let member)):
             entry(member)
-        case .row(.fixed(_, let title)):
+        case .row(.fixed(let id, let title)):
             // Held already, it is part of the walk whatever is ticked.
-            Toggle(isOn: .constant(true)) { Text(title) }.disabled(true)
+            movable(Toggle(isOn: .constant(true)) { Text(title) }.disabled(true), id, titled: title)
+                .contextMenu { moving(id) }
         case .row(.group(let group)) where group.held && group.members.isEmpty:
             // Held already, it is part of the walk whatever is ticked, and entries may be put into it.
-            Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }.disabled(true)
+            movable(
+                Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }
+                    .disabled(true),
+                group.entry,
+                titled: group.title
+            )
+            .contextMenu { group.entry.map(moving) }
         case .row(.group(let group)):
-            Bracketed {
-                ForEach(group.members) { member in
-                    HStack(spacing: 4) {
-                        Button {
-                            remove(member.id, group.id)
-                        } label: {
-                            Image(systemName: "minus.circle")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Remove from Group")
-                        // Taken with the group: only to be taken out of it.
-                        Toggle(isOn: .constant(true)) { Text(member.title) }.disabled(true)
-                    }
-                    .bracketRow()
-                }
-            } label: {
-                if group.held {
-                    Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }
-                        .disabled(true)
-                } else {
-                    HStack {
-                        Toggle(isOn: groupTick(group)) {
-                            Text("\(group.kind): \(group.title)").bold()
-                        }
-                        Button("Ungroup") { ungroup(group.id) }.buttonStyle(.borderless).font(.caption)
-                    }
-                }
-            }
+            movable(bracketed(group), group.entry, titled: group.title, group: true)
+                .contextMenu { group.entry.map(moving) }
         case .suggested(let suggestion, let run, renaming: true):
             Bracketed {
                 ForEach(run) { member in entry(member).bracketRow() }
@@ -319,8 +308,44 @@ struct GroupingList<Heading: View>: View {
         }
     }
 
-    /// An entry grouped in none: its tick, and its title, clicked to select it.
+    /// A group, its entries bracketed, each only to be taken out of it, and its title beside them.
+    private func bracketed(_ group: GroupingGroup) -> some View {
+        Bracketed {
+            ForEach(group.members) { member in
+                HStack(spacing: 4) {
+                    Button {
+                        remove(member.id, group.id)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Remove from Group")
+                    // Taken with the group: only to be taken out of it.
+                    Toggle(isOn: .constant(true)) { Text(member.title) }.disabled(true)
+                }
+                .bracketRow()
+            }
+        } label: {
+            if group.held {
+                Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }
+                    .disabled(true)
+            } else {
+                HStack {
+                    Toggle(isOn: groupTick(group)) {
+                        Text("\(group.kind): \(group.title)").bold()
+                    }
+                    Button("Ungroup") { ungroup(group.id) }.buttonStyle(.borderless).font(.caption)
+                }
+            }
+        }
+    }
+
+    /// An entry grouped in none: its tick, and its title, clicked to select it, dragged to move it.
     private func entry(_ member: GroupingMember) -> some View {
+        movable(selectable(member), member.id, titled: member.title)
+    }
+
+    private func selectable(_ member: GroupingMember) -> some View {
         HStack(spacing: 6) {
             Toggle("Ticked", isOn: ticking(member.id)).labelsHidden()
             Text(member.title)
@@ -333,8 +358,43 @@ struct GroupingList<Heading: View>: View {
                 .contentShape(Rectangle())
                 .onTapGesture { select(member.id) }
         }
-        // A right-click groups the selection when the entry is part of it, and the entry alone when not.
-        .contextMenu { grouping(selected.contains(member.id) ? selectedMembers : [member.id]) }
+        .contextMenu {
+            // A right-click groups the selection when the entry is part of it, and the entry alone when not.
+            grouping(selected.contains(member.id) ? selectedMembers : [member.id])
+            moving(member.id)
+        }
+    }
+
+    // MARK: Moving
+
+    /// The keys the children are moved by, in their order: an entry's, the entry naming a group, and a
+    /// held container's.
+    private var order: [String] {
+        rows.compactMap { row in
+            switch row {
+            case .member(let member): member.id
+            case .group(let group): group.entry
+            case .fixed(let id, _): id
+            }
+        }
+    }
+
+    private var mover: ChildMoving? {
+        move.map { ChildMoving(order: order, move: $0, dropping: $dropping, grabbing: $grabbing) }
+    }
+
+    private func movable(_ row: some View, _ key: String?, titled title: String, group: Bool = false) -> some View {
+        row.movable(key, titled: title, by: mover, group: group)
+    }
+
+    @ViewBuilder
+    private var end: some View {
+        if let mover { ChildEnd(mover: mover) }
+    }
+
+    @ViewBuilder
+    private func moving(_ key: String) -> some View {
+        if let mover { mover.menu(key) }
     }
 
     /// A click selects the entry alone, a command-click adds or takes it out, and a shift-click selects
@@ -505,6 +565,8 @@ struct EntryGrouping: View {
     let clone: (String) -> Void
     /// Renames the container's primary sequence, and with true each container's beneath it.
     let rename: (String, Bool) -> Void
+    /// Moves one of the container's entries before another, or last with none.
+    let move: (_ item: ItemID, _ before: ItemID?) -> Void
 
     private var container: Container? { tree.container(parent) }
     private var rows: [GroupingRow] { (container?.sequences.flatMap(\.items) ?? []).compactMap(row) }
@@ -535,6 +597,10 @@ struct EntryGrouping: View {
                     let parent = parent
                     guard let items = tree.suggestedRenaming(in: parent)?.items else { return }
                     update { $0.title(items, in: parent, as: word) }
+                },
+                move: { child, before in
+                    guard let item = ItemID(child) else { return }
+                    move(item, before.flatMap(ItemID.init))
                 }
             ) {
                 // Ticks every child that may be ticked or none, a group as one, and shows as mixed while

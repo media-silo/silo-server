@@ -307,7 +307,8 @@ private struct NewStop: View {
                     clone: { title in model.draftAlternatives { $0.cloneSequence(0, of: stop, titled: title) } },
                     rename: { name, beneath in
                         model.draftAlternatives { $0.renameSequence(0, at: stop, to: name, beneath: beneath) }
-                    }
+                    },
+                    move: { item, before in model.moveNewStopEntry(item, before: before) }
                 )
                 DisclosureGroup("Its form") {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
