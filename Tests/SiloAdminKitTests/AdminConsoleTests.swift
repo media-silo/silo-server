@@ -5672,7 +5672,10 @@ extension AdminConsoleTests {
         let spare = ContainerID("00000000000001f2")!
         walk.addContainer(spare, type: .collection, title: Title("Spare")!, beneath: id)
         walk.stops[id]?.chosen.remove("group:\(spare.value)")
-        #expect(walk.sequence(at: id).suffix(2) == [.added(extras.value), .added(spare.value)], "listed last, unticked or not")
+        #expect(
+            walk.sequence(at: id).suffix(2) == [.added(extras.value), .added(spare.value)],
+            "listed last, unticked or not"
+        )
         let dropped = ContainerID("00000000000001f4")!
         walk.addContainer(dropped, type: .collection, title: Title("Dropped")!, beneath: id)
         walk.dropContainer(dropped.value)
