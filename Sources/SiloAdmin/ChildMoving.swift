@@ -16,14 +16,23 @@ enum ChildDrag {
     static func child(_ payload: String) -> String? {
         payload.hasPrefix(prefix) ? String(payload.dropFirst(prefix.count)) : nil
     }
+
+    /// Whether a child dropped before another, or last with none, would move: one dropped on itself, on
+    /// the child after it, or past the last when it is last already stays where it is.
+    static func moves(_ child: String, before key: String?, in order: [String]) -> Bool {
+        guard let index = order.firstIndex(of: child) else { return true }
+        let next = order.indices.contains(index + 1) ? order[index + 1] : nil
+        return key != child && key != next
+    }
 }
 
 /// A list's children moved, each dragged by its grab handle onto another to go before it or past the
 /// last to go last, or from its right-click menu: the keys they go by, in order, what moves one, which
-/// one a drag is over, and which one's handle the pointer is on.
+/// one a drag is over, and which one's handle the pointer is on. The order is worked out only when a
+/// child is moved, not for every row each time a hover or a drag over the list renders it again.
 @MainActor
 struct ChildMoving {
-    let order: [String]
+    let order: () -> [String]
     let move: (_ child: String, _ before: String?) -> Void
     @Binding var dropping: String?
     @Binding var grabbing: String?
@@ -31,6 +40,7 @@ struct ChildMoving {
     /// A child moved from its right-click menu, a place at a time or to either end.
     @ViewBuilder
     func menu(_ key: String) -> some View {
+        let order = order()
         if let index = order.firstIndex(of: key) {
             Section("Move") {
                 Button("Move Up") { move(key, order[index - 1]) }.disabled(index == 0)
@@ -42,9 +52,14 @@ struct ChildMoving {
         }
     }
 
+    /// A child dropped where it already is is taken and left there, so no drag of one ever fails: a
+    /// failed drag slides back to where it began, and leaves the rows it was over still marked. Whatever
+    /// was marked during the drag is cleared once it is dropped.
     func drop(_ payloads: [String], before key: String?) -> Bool {
-        guard let moved = payloads.first.flatMap(ChildDrag.child), moved != key else { return false }
-        move(moved, key)
+        dropping = nil
+        grabbing = nil
+        guard let moved = payloads.first.flatMap(ChildDrag.child) else { return false }
+        if ChildDrag.moves(moved, before: key, in: order()) { move(moved, key) }
         return true
     }
 

@@ -407,7 +407,7 @@ struct GroupingList<Heading: View>: View {
     }
 
     private var mover: ChildMoving? {
-        move.map { ChildMoving(order: order, move: $0, dropping: $dropping, grabbing: $grabbing) }
+        move.map { ChildMoving(order: { order }, move: $0, dropping: $dropping, grabbing: $grabbing) }
     }
 
     private func movable(_ row: some View, _ key: String?, titled title: String, group: Bool = false) -> some View {
