@@ -6022,6 +6022,86 @@ extension AdminConsoleTests {
         #expect(made.last?.externalRefs == [special.ref])
     }
 
+    /// A special dropped among a stop's children is placed in its primary sequence before the child it was
+    /// dropped on, or last: in a held stop listed there, moved as the operator would move it; in a new stop
+    /// and a draft from TMDb, at that position of its draft.
+    @Test func aSpecialDroppedAmongAStopsChildrenIsPlacedBeforeTheChild() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let pilot = Self.episode(3771, 0, 1, "The Dead Planet (Unaired Pilot)", runtime: 25)
+        let colour = Self.episode(3772, 0, 2, "The Daleks in Colour", runtime: 75)
+        let (series, contents, serial, _, tmdb) = Self.daleks([pilot, colour])
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let stop = serial.id.value
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let held = walk.sequence(at: stop).map(\.key)
+        try #require(held.count == 4)
+
+        walk.place(pilot.id, at: stop, before: held[2])
+        let placed = walk.sequence(at: stop).map(\.key)
+        let added = placed.first { !held.contains($0) }
+        let pilotKey = try #require(added)
+        let expected: [String] = Array(held[..<2]) + [pilotKey] + Array(held[2...])
+        #expect(placed == expected)
+        #expect(walk.placements[pilot.id] == .entry(in: stop))
+        walk.place(colour.id, at: stop, before: nil)
+        let both = walk.sequence(at: stop).map(\.key)
+        #expect(both.count == 6)
+        #expect(Array(both.dropLast()) == expected, "last")
+        #expect(walk.placements[colour.id] == .entry(in: stop))
+        walk.place(pilot.id, at: stop, before: held[0])
+        #expect(walk.sequence(at: stop).map(\.key).prefix(2) == [pilotKey, held[0]], "placed here already, moved")
+
+        // In a new stop, and in a draft from TMDb, at the position of the entry dropped on.
+        let (newSeries, newContents, newTMDb, _, special) = Self.missingSeason()
+        let (newConsole, newHome) = try await Self.smddbConsole(HeldLibrary([newSeries] + newContents))
+        let newWalking = Walking(console: newConsole, home: newHome, database: database, tmdb: newTMDb)
+        var newWalk = try await newWalking.walk(newSeries.id.value, choosing: ["season:904"])
+        let new = try #require(newWalk.drafts.keys.first)
+        let entries = newWalk.container(new)?.sequences.first?.items ?? []
+        let items = entries.compactMap(\.id)
+        try #require(items.count > 2)
+        newWalk.place(special.id, at: new, before: items[2].value)
+        #expect(newWalk.placements[special.id] == .entry(in: new, position: 2))
+        // Listed in its place among the entries, an entry moved before it going before the one after it.
+        let specialKey = "special:\(special.id)"
+        let listed = TMDbTree.children(
+            of: newWalk.container(new),
+            placements: newWalk.placements,
+            specials: newWalk.specials
+        )
+        let listedKeys = listed.map(\.key)
+        let expectedKeys: [String] = items[..<2].map(\.value) + [specialKey] + items[2...].map(\.value)
+        #expect(listedKeys == expectedKeys)
+        let container = newWalk.container(new)
+        #expect(TMDbTree.entry(before: specialKey, in: container, placements: newWalk.placements) == items[2])
+        #expect(TMDbTree.entry(before: items[1].value, in: container, placements: newWalk.placements) == items[1])
+        #expect(TMDbTree.entry(before: nil, in: container, placements: newWalk.placements) == nil)
+        newWalk.place(4242, at: new, before: specialKey)
+        #expect(newWalk.placements[4242] == .entry(in: new, position: 2), "before the special, at its place")
+        newWalk.place(special.id, at: new, before: nil)
+        #expect(newWalk.placements[special.id] == .entry(in: new))
+        let last = TMDbTree.children(of: container, placements: newWalk.placements, specials: newWalk.specials)
+        #expect(last.last == .special(Special(episode: special)))
+        #expect(TMDbTree.entry(before: specialKey, in: container, placements: newWalk.placements) == nil)
+
+        // A container holding nothing yet lists the special placed in it alone; one placed elsewhere is not.
+        let empty = Container(id: ContainerID("00000000000005f1")!, type: .episode, title: Title("The Five Doctors")!)
+        let alone = TMDbTree.children(
+            of: empty,
+            placements: [special.id: .entry(in: empty.id.value), 4242: .extra(of: empty.id.value, type: "trailer")],
+            specials: [Special(episode: special)]
+        )
+        #expect(alone == [.special(Special(episode: special))])
+        #expect(TMDbTree.children(of: nil, placements: [:], specials: [Special(episode: special)]).isEmpty)
+        #expect(DraftChild.special("part-1") == nil)
+
+        var tree = try #require(newWalk.drafts[new])
+        tree.place(special.id, in: new, before: items[1].value)
+        #expect(tree.placements[special.id] == .entry(in: new, position: 1))
+    }
+
     /// A walk and a draft from TMDb kept with a special as another version of an item, or of a container,
     /// are read with each drafted as an alternative the special is placed in, which makes what the
     /// version did.

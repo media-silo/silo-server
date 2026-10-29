@@ -92,6 +92,8 @@ struct GroupingList<Heading: View>: View {
     /// Moves a child, by the key its row goes by, before another's, or last with none; nil when the
     /// children keep the order they are in.
     var move: ((_ child: String, _ before: String?) -> Void)?
+    /// Places a special dropped on a child before it, or past the last last; nil when none is.
+    var place: ((_ special: Int, _ before: String?) -> Void)?
     @ViewBuilder let heading: Heading
     /// The entries selected to be grouped.
     @State private var selected: Set<String> = []
@@ -407,7 +409,7 @@ struct GroupingList<Heading: View>: View {
     }
 
     private var mover: ChildMoving? {
-        move.map { ChildMoving(order: { order }, move: $0, dropping: $dropping, grabbing: $grabbing) }
+        move.map { ChildMoving(order: { order }, move: $0, place: place, dropping: $dropping, grabbing: $grabbing) }
     }
 
     private func movable(_ row: some View, _ key: String?, titled title: String, group: Bool = false) -> some View {
@@ -594,9 +596,21 @@ struct EntryGrouping: View {
     let rename: (String, Bool) -> Void
     /// Moves one of the container's entries before another, or last with none.
     let move: (_ item: ItemID, _ before: ItemID?) -> Void
+    /// Places a special dropped on a child before it, or past the last last, by the key the child goes by.
+    let place: (_ special: Int, _ before: String?) -> Void
+    /// Where the specials are placed, and the specials, for those placed in the container to be listed.
+    let placements: [Int: SpecialPlacement]
+    let specials: [Special]
 
     private var container: Container? { tree.container(parent) }
-    private var rows: [GroupingRow] { (container?.sequences.flatMap(\.items) ?? []).compactMap(row) }
+    private var rows: [GroupingRow] {
+        TMDbTree.children(of: container, placements: placements, specials: specials).compactMap { child in
+            switch child {
+            case .entry(let entry): row(entry)
+            case .special(let special): .fixed(id: child.key, "\(special.episode.title), placed")
+            }
+        }
+    }
 
     var body: some View {
         if container != nil {
@@ -626,9 +640,12 @@ struct EntryGrouping: View {
                     update { $0.title(items, in: parent, as: word) }
                 },
                 move: { child, before in
+                    // A special placed here moves by being placed again.
+                    if let special = DraftChild.special(child) { return place(special, before) }
                     guard let item = ItemID(child) else { return }
-                    move(item, before.flatMap(ItemID.init))
-                }
+                    move(item, TMDbTree.entry(before: before, in: container, placements: placements))
+                },
+                place: place
             ) {
                 // Ticks every child that may be ticked or none, a group as one, and shows as mixed while
                 // some are ticked.

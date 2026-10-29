@@ -912,7 +912,9 @@ SiloAdmin SHALL read a series' season 0 at TMDb as the series' specials, each wi
 id, air date, runtime, title and the provider ids TMDb holds for it, and SHALL show them beside a
 draft of the series as unassigned. The operator SHALL place each special, or not, as one of these:
 
-- an entry in one of the tree's sequences, at a position the operator chooses;
+- an entry in one of the tree's sequences, at a position the operator chooses, or in a container's
+  primary sequence by dropping it among the container's children, before the child it is dropped on
+  or past the last, and listed among them in its place, moved as they are;
 - an extra of the series or of a container beneath it, typed with one of the extra types SmdKit names;
 - a child container beneath the series, drafted as a child is;
 - a duplicate of another TMDb record: the special's home is the entry or container that record reads
@@ -1035,12 +1037,18 @@ and the console SHALL list every edit and creation the placements make before it
 - **THEN** that series' edit adds an entry carrying the special's references, the season's extras
   refer to it, and the series stays listed
 
+#### Scenario: a special dropped among a draft's children
+- **WHEN** a special is dropped on the second of a drafted season's entries
+- **THEN** it is placed in the season's primary sequence at that entry's position, and listed among
+  the season's children before the entry
+
 #### Scenario: a new companion series made listed
 - **WHEN** a special is placed in a new companion series the operator titles and lists
 - **THEN** the companion series is created listed, holding the special's entry, before the edit that
   refers to it
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aSeriesSpecialsArePlacedFromThePool`,
+`aSpecialDroppedAmongAStopsChildrenIsPlacedBeforeTheChild`,
 `aContainerAddedToADraftedAlternativeIsNamedInItAlone`,
 `aContainerAddedToAStopsDraftedAlternativeIsMadeInItAlone`,
 `aSpecialIsSuggestedAsAMoviesDuplicate`, `aSpecialPlacedAsANewEditionIsASequenceOfItsOwn`,
@@ -1279,7 +1287,10 @@ their heading, to draft an alternative playing it alone; onto an entry of a draf
 play in its place; or between two of its entries, to be added there. Each of the stop's sequences, the first from
 its children's heading, and each drafted alternative SHALL offer to be cloned into a drafted
 alternative, a drafted alternative's entries SHALL be reordered by
-dragging them, and a special SHALL be draggable onto the stop's extras by kind. The operator SHALL be able to rename a stop's primary
+dragging them, and a special SHALL be draggable onto the stop's extras by kind, and among its children, placed in
+its primary sequence before the child it is dropped on or past the last: in a held stop listed there
+and moved there as the operator would move it, one placed there already moved, and in a new stop at
+that entry's position in its draft, listed there among its children. The operator SHALL be able to rename a stop's primary
 sequence, the name kept as a sequence id and refused when another of its sequences has it; the
 alternatives naming it and the specials placed in it SHALL be renamed with it, a new stop's draft
 SHALL be shaped with it, and a held stop's SHALL be renamed by its edit when the walk is stored. When
@@ -1352,6 +1363,11 @@ and the walk SHALL keep what was not.
   stored
 - **THEN** the serial's edit renames the sequence, and the special's entry is in it
 
+#### Scenario: a special dropped among a held stop's children
+- **WHEN** a special is dropped on the third of a held serial's four parts at its stop, and another
+  past the last
+- **THEN** the first is listed among the serial's children before the third part, and the other last
+
 #### Scenario: a ticked difference ticked again
 - **WHEN** a difference a confirmed stop has ticked is ticked again
 - **THEN** the stop stays confirmed
@@ -1366,7 +1382,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 `aHeldStopsSequencesAreRenamedWhenStored`, `aNewStopsSequenceIsRenamedInItsDraft`,
 `aStopsPrimarySequenceIsRenamedBeneathItAndGivenToItsGroups`,
 `aRegroupedContainersPrimarySequenceIsItsParentsAndRenamedBeneathIt`,
-`aNewStopShowsTheAlternativesItsPlacedSpecialsMake`). The walk's sheet is pinned by nothing yet, as the rest
+`aNewStopShowsTheAlternativesItsPlacedSpecialsMake`,
+`aSpecialDroppedAmongAStopsChildrenIsPlacedBeforeTheChild`). The walk's sheet is pinned by nothing yet, as the rest
 of the shell is, but for what its alternatives read from a drop: `Tests/SiloAdminTests/AlternativesEditorTests.swift`
 (`aDragIsReadBackFromItsText`).
 

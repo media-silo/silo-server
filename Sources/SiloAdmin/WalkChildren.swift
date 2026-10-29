@@ -100,7 +100,7 @@ struct WalkChildren: View {
             .font(.caption).foregroundStyle(.secondary)
         }
         Text(
-            "In the order storing leaves them: drag a child by its handle to move it. Ticked, each child the library lacks is added to this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed, and each child put into one held here is that one's own, ticked at its stop."
+            "In the order storing leaves them: drag a child by its handle to move it, or a special onto a child to place it before it. Ticked, each child the library lacks is added to this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed, and each child put into one held here is that one's own, ticked at its stop."
         )
         .font(.caption).foregroundStyle(.secondary)
         GroupingList(
@@ -154,7 +154,8 @@ struct WalkChildren: View {
                 guard let episodes = walk.suggestedRenaming(at: stop)?.episodes else { return }
                 model.groupEpisodes { $0.title(episodes, at: $1, as: word) }
             },
-            move: { model.arrangeHeldStop($0, before: $1) }
+            move: { model.arrangeHeldStop($0, before: $1) },
+            place: { model.placeAmongChildren($0, before: $1) }
         ) {
             heading(tickable)
         }
