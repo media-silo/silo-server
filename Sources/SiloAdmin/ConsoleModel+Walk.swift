@@ -282,6 +282,19 @@ extension ConsoleModel {
         keepWalk()
     }
 
+    /// Moves one of the open held stop's entries, by its key, before another, or last; with none, undoes
+    /// every move made there.
+    func arrangeHeldStop(_ key: String?, before target: String?) {
+        guard let open = walking?.open else { return }
+        if let key {
+            walking?.walk.arrange(key, at: open, before: target)
+        } else {
+            walking?.walk.unarrange(open)
+        }
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// Groups the open held stop's missing episodes, or changes the groups made of them.
     func groupEpisodes(_ change: (inout TMDbWalk, String) -> Void) {
         guard let open = walking?.open, var walk = walking?.walk else { return }

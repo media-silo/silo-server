@@ -497,7 +497,8 @@ private struct WalkChildren: View {
                 heading(seasons.filter { !$0.isHeld }.map(\.id))
             }
         }
-        if !episodes.isEmpty { missing }
+        // Its children in order whenever there is an order to give, which a series' seasons are not.
+        if !episodes.isEmpty || (seasons.isEmpty && !rows.isEmpty) { missing }
     }
 
     /// The children that may be ticked: each episode the library lacks grouped in none, and each group as
@@ -512,10 +513,16 @@ private struct WalkChildren: View {
     private func heading(_ tickable: [String]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if tickable.isEmpty {
-                Text("Children, each held here")
+                HStack {
+                    Text("Children, each held here")
+                    undo
+                }
             } else {
-                Toggle(sources: tickable.map(tick), isOn: \.self) {
-                    Text("Children, \(tickable.filter { tick($0).wrappedValue }.count) of \(tickable.count) ticked")
+                HStack {
+                    Toggle(sources: tickable.map(tick), isOn: \.self) {
+                        Text("Children, \(tickable.filter { tick($0).wrappedValue }.count) of \(tickable.count) ticked")
+                    }
+                    undo
                 }
             }
             if walk.container(stop)?.sequences.isEmpty == false {
@@ -530,11 +537,21 @@ private struct WalkChildren: View {
         }
     }
 
+    /// Puts the children back in the order storing would give them had none been moved.
+    @ViewBuilder
+    private var undo: some View {
+        if walk.arrangedEntries[stop] != nil {
+            Button("Undo Moves") { model.arrangeHeldStop(nil, before: nil) }
+                .buttonStyle(.borderless).font(.caption)
+                .help("The order storing would give them had nothing been moved.")
+        }
+    }
+
     /// What ticking does said above the list, and the list, as a new stop has them.
     @ViewBuilder
     private var missing: some View {
         Text(
-            "Ticked, each child the library lacks is added to this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed, and each child put into one held here is that one's own, ticked at its stop."
+            "In the order storing leaves them: drag a child by its handle to move it. Ticked, each child the library lacks is added to this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed, and each child put into one held here is that one's own, ticked at its stop."
         )
         .font(.caption).foregroundStyle(.secondary)
         GroupingList(
@@ -581,27 +598,31 @@ private struct WalkChildren: View {
             rename: { word in
                 guard let episodes = walk.suggestedRenaming(at: stop)?.episodes else { return }
                 model.groupEpisodes { $0.title(episodes, at: $1, as: word) }
-            }
+            },
+            move: { model.arrangeHeldStop($0, before: $1) }
         ) {
             heading(tickable)
         }
     }
 
-    /// The children as the walk lists them, each group with its episodes and each container held beneath
-    /// with those put into it.
+    /// The children in the order storing leaves them, each group with its episodes, each container held
+    /// beneath with those put into it, and what the stop holds already between them.
     private var rows: [GroupingRow] {
-        walk.children(at: stop).map { child in
+        walk.sequence(at: stop).map { child in
             switch child {
             case .episode(let episode):
-                return .member(member(episode))
+                return .member(member(episode, key: child.key))
+            case .entry(let entry):
+                return .fixed(id: entry.id, entry.isAdded ? "\(entry.title), added" : entry.title)
             case .group(let group):
                 let members = group.episodes.compactMap { id in episodes.first { $0.id == id } }
                 return .group(
                     GroupingGroup(
                         id: group.id,
+                        entry: child.key,
                         title: group.title.rawValue,
                         kind: group.typeLabel ?? group.type.title,
-                        members: members.map(member)
+                        members: members.map { member($0) }
                     )
                 )
             case .held(let held):
@@ -616,16 +637,17 @@ private struct WalkChildren: View {
         return .group(
             GroupingGroup(
                 id: child.id,
+                entry: HeldStopChild.held(child).key,
                 title: child.title,
                 kind: child.typeLabel ?? child.type.title,
-                members: episodes.filter { added.contains($0.id) }.map(member),
+                members: episodes.filter { added.contains($0.id) }.map { member($0) },
                 held: true
             )
         )
     }
 
-    private func member(_ episode: TMDb.Episode) -> GroupingMember {
-        GroupingMember(id: String(episode.id), title: walk.title(of: episode))
+    private func member(_ episode: TMDb.Episode, key: String? = nil) -> GroupingMember {
+        GroupingMember(id: String(episode.id), title: walk.title(of: episode), key: key)
     }
 
     /// The episodes not grouped, ticked as the stop has them.

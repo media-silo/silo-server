@@ -10,6 +10,10 @@ import SwiftUI
 struct GroupingMember: Identifiable, Hashable {
     let id: String
     let title: String
+    /// The key it is moved by, when that is not the one it is selected by.
+    var key: String?
+
+    var moveKey: String { key ?? id }
 }
 
 /// A group made in a grouping list: the container its entries are to be in.
@@ -342,7 +346,7 @@ struct GroupingList<Heading: View>: View {
 
     /// An entry grouped in none: its tick, and its title, clicked to select it, dragged to move it.
     private func entry(_ member: GroupingMember) -> some View {
-        movable(selectable(member), member.id, titled: member.title)
+        movable(selectable(member), member.moveKey, titled: member.title)
     }
 
     private func selectable(_ member: GroupingMember) -> some View {
@@ -361,7 +365,7 @@ struct GroupingList<Heading: View>: View {
         .contextMenu {
             // A right-click groups the selection when the entry is part of it, and the entry alone when not.
             grouping(selected.contains(member.id) ? selectedMembers : [member.id])
-            moving(member.id)
+            moving(member.moveKey)
         }
     }
 
@@ -372,7 +376,7 @@ struct GroupingList<Heading: View>: View {
     private var order: [String] {
         rows.compactMap { row in
             switch row {
-            case .member(let member): member.id
+            case .member(let member): member.moveKey
             case .group(let group): group.entry
             case .fixed(let id, _): id
             }

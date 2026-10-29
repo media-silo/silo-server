@@ -1075,9 +1075,31 @@ to a group made there, each only to be taken out of it again, chosen then, or gr
 put there SHALL be one of that container's own missing episodes from then on, chosen at its stop to
 begin with, and grouped and taken there as any of its own are; none of them SHALL be added to the held
 container itself, and an entry TMDb puts after one of them SHALL follow the container.
+A held stop's children SHALL be listed in one list, in its primary sequence's order as storing would
+leave it were every child listed ticked: what it holds already and each special placed in it, those
+storing adds marked, among its missing episodes, its groups and the containers held beneath it, an
+unticked child in its place to be ticked there, and a group whose own stop is not yet drafted after
+the child it follows. Each SHALL be movable before another, or last, by its grab handle or from its
+right-click menu, as a draft's entries are, and the walk SHALL take the stops beneath it in the order
+they are moved into, as soon as they are moved. The order SHALL be kept
+with the walk, the stop pending again, and SHALL give the stop's edit its primary sequence; an entry the
+order does not name, as a special placed after the order was given, SHALL keep its place. The moves SHALL
+be undoable at once, the entries then listed as they would have been.
 Chosen artwork SHALL be put with its attribution when the walk is stored. The
 console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
 opened.
+
+#### Scenario: a held stop's entries moved
+- **WHEN** a held serial's first part is moved last at its stop, with a special placed in it before
+  the move and another placed first after it, and the walk is stored
+- **THEN** the serial's primary sequence holds the special placed after the move first, then the
+  other special, the rest of its parts, and the first part last
+
+#### Scenario: a held stop's children listed in order
+- **WHEN** a held season holds a serial and lacks four episodes, one of them unticked, and the parts of
+  the next story grouped, and the group is moved before the serial
+- **THEN** its children list the group, the serial, then the four episodes, the unticked one in its
+  place; once the season and the group are confirmed, storing names the group first
 
 #### Scenario: an episode TMDb has gained
 - **WHEN** a season the library holds lacks an episode TMDb's record of the season has, and the
@@ -1135,7 +1157,8 @@ opened.
 - **THEN** the breakout's differences list that IMDb id against the entry
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
-(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`,
+(`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`, `aHeldStopsEntriesMovedAreStoredInTheirNewOrder`,
+`aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem`,
 `aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`,
 `aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`,
 `aHeldSeasonsGroupsAreNewStopsBeneathItOnceConfirmed`). The list and its choosing are pinned by nothing

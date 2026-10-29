@@ -124,6 +124,15 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         set { sequenceRenames = newValue.isEmpty ? nil : newValue }
     }
 
+    /// The order the operator gave held stops' primary sequences, by stop, each entry by the key it is
+    /// moved by. Absent from a walk kept before held stops' entries could be moved.
+    private var entryOrders: [String: [String]]?
+
+    public var arrangedEntries: [String: [String]] {
+        get { entryOrders ?? [:] }
+        set { entryOrders = newValue.isEmpty ? nil : newValue }
+    }
+
     public init(library: String, root: Stop) {
         id = UUID()
         self.library = library
