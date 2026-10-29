@@ -51,6 +51,8 @@ public enum HeldStopChild: Hashable, Sendable {
     /// What the stop holds already, or a special placed there, in its place in the stop's sequence: only
     /// to be moved.
     case entry(StopEntry)
+    /// A container the operator added beneath it, by its id: a new stop of the walk, shaped there.
+    case added(String)
 }
 
 // MARK: - Grouping a held stop's missing episodes
@@ -281,6 +283,7 @@ extension TMDbWalk {
             switch child {
             case .group(let group): group.id
             case .held(let held): held.id
+            case .added(let id): id
             case .entry(let entry): entry.id.hasPrefix("child:") ? String(entry.id.dropFirst("child:".count)) : nil
             case .episode: nil
             }

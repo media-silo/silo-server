@@ -802,7 +802,10 @@ SHALL be movable before another entry of its sequence, or last, by dragging its 
 go before or past the last, or from its right-click menu, a place up or down or to either end. A group's handle SHALL run beside all
 its entries, and while the pointer is on a handle what it moves SHALL be shaded. A
 special placed in the sequence SHALL keep after the entry it followed, and one placed first SHALL stay
-first. A run of two or more entries in one sequence whose episodes TMDb
+first. From the primary sequence's menu, a new container of the kind and title the operator gives
+SHALL be added beneath the container, holding nothing yet, named last in its primary sequence, its own
+primary sequence going by that one's id, and made with the draft; entries SHALL be added to it, and it
+removed, as a group's are. A run of two or more entries in one sequence whose episodes TMDb
 titles as the parts of one story, as `Terror of the Zygons (1)` to `(4)` are, SHALL be bracketed and
 suggested as a group titled by the story, to be grouped one at a time or all at once. A part numbered
 one after the part before it SHALL be one of that story's parts though TMDb titles its story otherwise,
@@ -858,6 +861,12 @@ request to the silo.
 - **THEN** the season holds the episode first and the group last, the special placed after the group
   still follows it, and the one placed first is still first
 
+#### Scenario: a container added
+- **WHEN** a new serial is added to a drafted season, and one of the season's episodes is then added
+  to it
+- **THEN** the serial is named in the season, holding nothing until the episode is added, and is made
+  with the draft holding the episode
+
 #### Scenario: a group added to and taken from
 - **WHEN** an entry before a group is added to it, and its last entry is then taken out of it
 - **THEN** the group holds its entries in the season's order at the first one's place, and the entry
@@ -887,7 +896,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraft
 `aDraftsGroupIsAddedToTakenFromAndUngrouped`, `aDraftsEntryUntickedIsLeftOutOfWhatIsMade`,
 `aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`,
 `aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`,
-`aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`). The search, the shaping's sheet and the dry run as the
+`aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`,
+`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`). The search, the shaping's sheet and the dry run as the
 operator shapes are pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each
@@ -1084,10 +1094,23 @@ right-click menu, as a draft's entries are, and the walk SHALL take the stops be
 they are moved into, as soon as they are moved. The order SHALL be kept
 with the walk, the stop pending again, and SHALL give the stop's edit its primary sequence; an entry the
 order does not name, as a special placed after the order was given, SHALL keep its place. The moves SHALL
-be undoable at once, the entries then listed as they would have been.
+be undoable at once, the entries then listed as they would have been. From the primary sequence's menu,
+a new container of the kind and title the operator gives SHALL be added beneath a held stop, holding
+nothing yet, its primary sequence going by the held stop's id: a new stop of the walk, listed among the
+held stop's children, last to begin with, ticked there and removable there at once, where specials
+SHALL be placeable and its own children shaped as in any new stop. It SHALL be made beneath the held container when the walk is stored, once both are
+confirmed, named in it where a new container is; unticked, it SHALL leave the walk once the held stop
+is confirmed. Added beneath a new stop, it SHALL be a container of that stop's draft, as one added to a
+draft is.
 Chosen artwork SHALL be put with its attribution when the walk is stored. The
 console SHALL read a container against TMDb only when its stop is opened, or as the next stop to be
 opened.
+
+#### Scenario: a container added beneath a held stop
+- **WHEN** two containers are added beneath a held serial, one is unticked, the serial is confirmed,
+  and the other's stop is confirmed and the walk stored
+- **THEN** the unticked one has left the walk, and the other is made beneath the serial, named last in
+  its primary sequence
 
 #### Scenario: a held stop's entries moved
 - **WHEN** a held serial's first part is moved last at its stop, with a special placed in it before
@@ -1158,7 +1181,7 @@ opened.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`, `aHeldStopsEntriesMovedAreStoredInTheirNewOrder`,
-`aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem`,
+`aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem`, `aContainerAddedBeneathAStopIsMadeBeneathIt`,
 `aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`,
 `aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`,
 `aHeldSeasonsGroupsAreNewStopsBeneathItOnceConfirmed`). The list and its choosing are pinned by nothing

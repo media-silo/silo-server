@@ -295,6 +295,14 @@ extension ConsoleModel {
         keepWalk()
     }
 
+    /// A new container of a kind beneath the open stop, holding nothing yet.
+    func addContainer(_ type: ContainerType, title: Title) async {
+        guard let open = walking?.open, let id = try? await provisionalID() else { return }
+        walking?.walk.addContainer(id, type: type, title: title, beneath: open)
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// Groups the open held stop's missing episodes, or changes the groups made of them.
     func groupEpisodes(_ change: (inout TMDbWalk, String) -> Void) {
         guard let open = walking?.open, var walk = walking?.walk else { return }

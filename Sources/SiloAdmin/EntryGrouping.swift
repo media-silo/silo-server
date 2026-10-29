@@ -27,6 +27,8 @@ struct GroupingGroup: Identifiable {
     /// Held already, beneath a held container: entries may be added to it and taken out again, and it is
     /// neither ticked nor ungrouped.
     var held = false
+    /// Whether entries may be put into it here; one shaped at a stop of its own takes none.
+    var accepts = true
 }
 
 enum GroupingRow: Identifiable {
@@ -195,7 +197,7 @@ struct GroupingList<Heading: View>: View {
                     }
                 }
             }
-            ForEach(groups) { group in
+            ForEach(groups.filter(\.accepts)) { group in
                 Button("Into \(group.title)") {
                     add(entries, group.id)
                     selected = []
@@ -275,6 +277,19 @@ struct GroupingList<Heading: View>: View {
             movable(
                 Toggle(isOn: .constant(true)) { Text("\(group.kind): \(group.title), held here").bold() }
                     .disabled(true),
+                group.entry,
+                titled: group.title
+            )
+            .contextMenu { group.entry.map(moving) }
+        case .row(.group(let group)) where group.members.isEmpty:
+            // Added holding nothing yet: entries are put into it as into any group.
+            movable(
+                HStack {
+                    Toggle(isOn: groupTick(group)) { Text("\(group.kind): \(group.title)").bold() }
+                    Text(group.accepts ? "holds nothing yet" : "new, shaped at its own stop")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Remove") { ungroup(group.id) }.buttonStyle(.borderless).font(.caption)
+                },
                 group.entry,
                 titled: group.title
             )
@@ -626,7 +641,12 @@ struct EntryGrouping: View {
                         }
                     }
                     if let container, !container.sequences.isEmpty {
-                        PrimarySequence(name: container.sequences[0].id, clone: clone, rename: rename)
+                        PrimarySequence(
+                            name: container.sequences[0].id,
+                            clone: clone,
+                            rename: rename,
+                            add: addContainer
+                        )
                     }
                 }
             }
@@ -695,6 +715,13 @@ struct EntryGrouping: View {
         if let title = entry.title { return title }
         let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
         return tmdb.flatMap { tree.episodeTitles[$0.value] } ?? entry.id?.value ?? "a reference"
+    }
+
+    /// A new container, holding nothing yet, last among the children.
+    private func addContainer(_ type: ContainerType, _ title: Title) async {
+        guard let id = await provisionalID() else { return }
+        let parent = parent
+        update { $0.addContainer(id, type: type, title: title, beneath: parent) }
     }
 
     private func formGroup(_ members: [String], _ title: Title, _ type: ContainerType, _ label: String?) async {

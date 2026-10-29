@@ -5646,6 +5646,62 @@ extension AdminConsoleTests {
         #expect(AdminConsole.key(of: .ref(EntryRef(item: parts[0])), held: []) == "ref::\(parts[0].value)")
     }
 
+    /// A container added beneath a held stop is a new stop, ticked there: confirmed with it, it is made
+    /// beneath the held one, named last in its primary sequence, whose id its own goes by. Unticked, it
+    /// leaves the walk once the held stop is confirmed. One added beneath a new stop is a container of its
+    /// draft. An id the walk has already is refused.
+    @Test func aContainerAddedBeneathAStopIsMadeBeneathIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, serial, _, tmdb) = Self.daleks([])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walkToTheSerial(walking, series, serial)
+        let id = serial.id.value
+        try await walking.confirm(id, in: &walk)
+        let extras = ContainerID("00000000000001f1")!
+        let added = walk.addContainer(extras, type: .collection, title: Title("Extras")!, beneath: id)
+        #expect(added)
+        #expect(walk.isNew(extras.value) && walk.state(of: id) == .pending)
+        #expect(walk.addedContainers(at: id) == [extras.value])
+        #expect(walk.container(extras.value)?.sequences.map(\.id) == [walk.sequenceName(0, at: id)])
+        let again = walk.addContainer(extras, type: .collection, title: Title("Extras")!, beneath: id)
+        #expect(!again, "the walk has it")
+        let spare = ContainerID("00000000000001f2")!
+        walk.addContainer(spare, type: .collection, title: Title("Spare")!, beneath: id)
+        walk.stops[id]?.chosen.remove("group:\(spare.value)")
+        #expect(
+            walk.sequence(at: id).suffix(2) == [.added(extras.value), .added(spare.value)],
+            "listed last, unticked or not"
+        )
+        let dropped = ContainerID("00000000000001f4")!
+        walk.addContainer(dropped, type: .collection, title: Title("Dropped")!, beneath: id)
+        walk.dropContainer(dropped.value)
+        #expect(walk.stops[dropped.value] == nil && walk.drafts[dropped.value] == nil, "removed at once")
+        #expect(walk.stops[id]?.children.contains(dropped.value) == false)
+        #expect(walk.stops[id]?.chosen.contains("group:\(dropped.value)") == false)
+        let moved = walk.arrange("child:\(spare.value)", at: id, before: "child:\(extras.value)")
+        #expect(moved)
+        #expect(walk.sequence(at: id).suffix(2) == [.added(spare.value), .added(extras.value)])
+        #expect(walk.stops[id]?.children.suffix(2) == [spare.value, extras.value], "the walk's order too")
+        walk.unarrange(id)
+
+        try await walking.confirm(id, choosing: walk.stops[id]?.chosen ?? [], in: &walk)
+        #expect(walk.stops[spare.value] == nil && walk.drafts[spare.value] == nil, "unticked, it leaves")
+        #expect(walk.addedContainers(at: id) == [extras.value])
+        let inIt = ContainerID("00000000000001f3")!
+        let beneathNew = walk.addContainer(inIt, type: .serial, title: Title("Inside")!, beneath: extras.value)
+        #expect(beneathNew)
+        #expect(walk.drafts[extras.value]?.container(inIt.value) != nil, "in the new stop's draft")
+        try await walking.confirm(extras.value, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(extras))
+        #expect(made.title.rawValue == "Extras" && made.type == .collection)
+        #expect(held.container(serial.id)?.sequences.first?.items.last?.childContainer == extras)
+    }
+
     /// A held stop's children list what it holds already among what storing adds, in the order storing
     /// leaves them, an unticked child in its place to be ticked there, and are moved there as it is.
     @Test func aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem() async throws {
@@ -6120,6 +6176,43 @@ extension AdminConsoleTests {
         let unknown = tree.move(items[3], in: season, before: ItemID("nowhere")!)
         #expect(!unknown)
         #expect(tree.container(zygons.value)?.sequences[0].items.compactMap(\.id) == Array(items[0...2]))
+    }
+
+    /// A container added to a draft holds nothing, is named last in its container's primary sequence and
+    /// goes by its id, and is made with the draft; entries added to it are a group's. An id the draft has
+    /// already is refused.
+    @Test func aContainerAddedToADraftIsAnEmptyGroupMadeWithIt() throws {
+        var (tree, season, items) = Self.storiedSeason()
+        let extras = ContainerID("00000000000001e6")!
+        let added = tree.addContainer(
+            extras,
+            type: .serial,
+            typeLabel: "Story",
+            title: Title("Extras")!,
+            beneath: season
+        )
+        #expect(added)
+        #expect(tree.container(season)?.sequences[0].items.last?.childContainer == extras)
+        #expect(tree.groups(in: season).map(\.id) == [extras])
+        #expect(tree.container(extras.value)?.sequences.map(\.id) == ["episodes"])
+        #expect(tree.container(extras.value)?.sequences[0].items.isEmpty == true)
+        #expect(tree.container(extras.value)?.typeLabel == "Story")
+        let again = tree.addContainer(extras, type: .serial, title: Title("Again")!, beneath: season)
+        let nowhere = tree.addContainer(
+            ContainerID("00000000000001e7")!,
+            type: .serial,
+            title: Title("X")!,
+            beneath: "nowhere"
+        )
+        #expect(!again && !nowhere)
+
+        var empty = tree
+        empty.ungroup(extras.value)
+        #expect(empty.groups(in: season).isEmpty && empty.container(season)?.sequences[0].items.count == items.count)
+        tree.add([items[5]], to: extras.value)
+        #expect(tree.container(extras.value)?.sequences[0].items.compactMap(\.id) == [items[5]])
+        let making = tree.making
+        #expect(making.documents.contains { $0.id == extras })
     }
 
     /// A part TMDb names by another title than the rest of its story's, numbered after the part before

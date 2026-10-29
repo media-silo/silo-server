@@ -304,11 +304,21 @@ struct PrimarySequence: View {
     let clone: (String) -> Void
     /// Renames it, and with true the primary sequence of each container beneath it too.
     let rename: (String, Bool) -> Void
+    /// Adds a new container of a kind beneath, named last in it.
+    let add: (ContainerType, Title) async -> Void
     @State private var asking: Asking?
 
-    private enum Asking: String, Identifiable {
+    private enum Asking: Identifiable {
         case cloning, renaming
-        var id: String { rawValue }
+        case adding(ContainerType)
+
+        var id: String {
+            switch self {
+            case .cloning: "cloning"
+            case .renaming: "renaming"
+            case .adding(let type): "adding:\(type.rawValue)"
+            }
+        }
     }
 
     var body: some View {
@@ -319,6 +329,12 @@ struct PrimarySequence: View {
                 Button("Clone…") { asking = .cloning }
                     .help("A new alternative playing these children, to edit before it is stored.")
                 Button("Rename…") { asking = .renaming }
+                Menu("New Container") {
+                    ForEach(ContainerType.allCases, id: \.self) { type in
+                        Button("\(type.title)…") { asking = .adding(type) }
+                    }
+                }
+                .help("A new container of the kind chosen, holding nothing yet, last among these children.")
             }
         }
         .font(.body)
@@ -342,6 +358,13 @@ struct PrimarySequence: View {
                         help: "Each one refuses the name alone when another of its sequences has it."
                     ),
                     done: { title, beneath in rename(title.rawValue, beneath) }
+                )
+            case .adding(let type):
+                TitlePrompt(
+                    question: "A new \(type.title.lowercased()) last among these children: what is it called?",
+                    initial: "",
+                    action: "Add",
+                    done: { title, _ in Task { await add(type, title) } }
                 )
             }
         }
