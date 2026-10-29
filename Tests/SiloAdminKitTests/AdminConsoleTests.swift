@@ -5702,6 +5702,72 @@ extension AdminConsoleTests {
         #expect(held.container(serial.id)?.sequences.first?.items.last?.childContainer == extras)
     }
 
+    /// A container added to a drafted alternative of a held stop is a new stop beneath it, ticked there,
+    /// and made beneath it when the walk is stored, named in the alternative's sequence alone. One added
+    /// to an alternative of a new stop is a container of its draft, a stop once the new one is confirmed,
+    /// and made with it. Taken out of the alternative, it leaves the walk.
+    @Test func aContainerAddedToAStopsDraftedAlternativeIsMadeInItAlone() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (series, contents, tmdb, _, _) = Self.missingSeason()
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let stop = series.id.value
+        let new = try #require(walk.drafts.keys.first)
+        let heldDraft = walk.draftAlternative(at: stop, titled: "Omnibus")
+        let omnibus = ContainerID("00000000000001f4")!
+        let atHeld = walk.addContainer(
+            omnibus,
+            type: .collection,
+            title: Title("Omnibus")!,
+            toAlternative: heldDraft,
+            of: stop
+        )
+        #expect(atHeld && walk.isNew(omnibus.value) && walk.addedContainers(at: stop) == [omnibus.value])
+        #expect(!walk.sequence(at: stop).contains(.added(omnibus.value)), "not listed in the primary sequence")
+        let spare = ContainerID("00000000000001f5")!
+        walk.addContainer(spare, type: .collection, title: Title("Spare")!, toAlternative: heldDraft, of: stop)
+        walk.removeEntry(1, from: heldDraft, of: stop)
+        #expect(walk.stops[spare.value] == nil && walk.drafts[spare.value] == nil, "out of the alternative, gone")
+
+        let newDraft = walk.draftAlternative(at: new, titled: "Extended")
+        let extras = ContainerID("00000000000001f6")!
+        let atNew = walk.addContainer(
+            extras,
+            type: .collection,
+            title: Title("Extras")!,
+            toAlternative: newDraft,
+            of: new
+        )
+        #expect(atNew && walk.drafts[new]?.container(extras.value) != nil)
+        let spareNew = ContainerID("00000000000001f7")!
+        walk.addContainer(spareNew, type: .collection, title: Title("Spare")!, toAlternative: newDraft, of: new)
+        walk.removeEntry(1, from: newDraft, of: new)
+        #expect(walk.drafts[new]?.container(spareNew.value) == nil, "out of the new stop's draft")
+        let entries = try #require(walk.container(new)?.sequences.first?.items)
+        walk.move(try #require(entries.first?.id), at: new, before: nil)
+        #expect(walk.drafts[new]?.container(extras.value) != nil, "kept as the new stop is shaped again")
+
+        try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
+        try await walking.confirm(omnibus.value, in: &walk)
+        try await walking.confirm(new, choosing: ["ref::tmdb:904"], in: &walk)
+        #expect(walk.stops[extras.value] != nil, "a stop once the new one is confirmed")
+        try await walking.confirm(extras.value, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let madeSeries = try #require(held.container(series.id))
+        #expect(held.container(omnibus) != nil)
+        #expect(!madeSeries.sequences[0].items.contains { $0.childContainer == omnibus })
+        let omnibusSequence = madeSeries.sequences.first { $0.id == madeSeries.alternatives.last?.sequence }
+        #expect(omnibusSequence?.items.map(\.childContainer) == [omnibus])
+        let madeSeason = try #require(held.container(ContainerID(new)!))
+        #expect(held.container(extras) != nil)
+        #expect(madeSeason.sequences.dropFirst().first?.items.first?.childContainer == extras)
+    }
+
     /// A held stop's children list what it holds already among what storing adds, in the order storing
     /// leaves them, an unticked child in its place to be ticked there, and are moved there as it is.
     @Test func aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem() async throws {
@@ -6213,6 +6279,57 @@ extension AdminConsoleTests {
         #expect(tree.container(extras.value)?.sequences[0].items.compactMap(\.id) == [items[5]])
         let making = tree.making
         #expect(making.documents.contains { $0.id == extras })
+    }
+
+    /// A container added to a drafted alternative is beneath the container the alternative is of, and
+    /// made with it, named in the alternative's sequence alone: a clone of the alternative refers to it
+    /// there. Taken out of every alternative playing it, it leaves the draft.
+    @Test func aContainerAddedToADraftedAlternativeIsNamedInItAlone() throws {
+        var (tree, season, items) = Self.storiedSeason()
+        let draft = tree.draftAlternative(at: season, titled: "Extended")
+        let extras = ContainerID("00000000000001e8")!
+        let added = tree.addContainer(
+            extras,
+            type: .collection,
+            title: Title("Extras")!,
+            toAlternative: draft,
+            of: season
+        )
+        #expect(added)
+        let again = tree.addContainer(
+            extras,
+            type: .collection,
+            title: Title("Extras")!,
+            toAlternative: draft,
+            of: season
+        )
+        let noDraft = tree.addContainer(
+            ContainerID("00000000000001e9")!,
+            type: .collection,
+            title: Title("X")!,
+            toAlternative: "nothing",
+            of: season
+        )
+        #expect(!again && !noDraft && tree.container("00000000000001e9") == nil)
+        #expect(tree.parent(of: extras.value) == season && tree.isMade(extras.value))
+        #expect(tree.groups(in: season).isEmpty, "named in none of the season's own sequences")
+        #expect(tree.title(of: .container(extras.value), at: season) == "Extras")
+        #expect(tree.container(extras.value)?.sequences.map(\.id) == ["episodes"])
+        let cloned = tree.cloneDraft(draft, of: season, titled: "Also extended")
+        let clone = try #require(cloned)
+
+        let made = tree.making
+        #expect(made.documents.contains { $0.id == extras })
+        let madeSeason = try #require(made.documents.first { $0.id.value == season })
+        #expect(madeSeason.sequences[0].items.count == items.count)
+        let sequences = madeSeason.sequences.dropFirst()
+        #expect(sequences.first?.items.first?.childContainer == extras)
+        #expect(sequences.last?.items.first?.reference?.item == sequences.first?.items.first?.id, "the clone refers")
+
+        tree.removeEntry(0, from: draft, of: season)
+        #expect(tree.container(extras.value) != nil, "the clone plays it still")
+        tree.discard(clone, of: season)
+        #expect(tree.container(extras.value) == nil && !tree.isMade(extras.value))
     }
 
     /// A part TMDb names by another title than the rest of its story's, numbered after the part before

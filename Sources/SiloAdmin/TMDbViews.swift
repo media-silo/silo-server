@@ -402,7 +402,12 @@ struct ShapeTreeSheet: View {
                 model.updateTree { $0.removeAttribution(of: subject, from: selected) }
             }
             ContainerForm(container: container) { changed in model.updateTree { $0.set(changed) } }
-            AlternativesEditor(drafting: tree, container: container) { change in model.updateTree(change) }
+            AlternativesEditor(
+                drafting: tree,
+                container: container,
+                change: { change in model.updateTree(change) },
+                provisionalID: { try? await model.provisionalID() }
+            )
             ExtrasDropZones(
                 container: selected,
                 placements: tree.placements,

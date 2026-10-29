@@ -365,7 +365,12 @@ private struct StopAlternatives: View {
 
     var body: some View {
         if let container = walk.container(stop) {
-            AlternativesEditor(drafting: walk, container: container, change: model.draftAlternatives)
+            AlternativesEditor(
+                drafting: walk,
+                container: container,
+                change: model.draftAlternatives,
+                provisionalID: { try? await model.provisionalID() }
+            )
             ExtrasDropZones(
                 container: stop,
                 placements: walk.placements,

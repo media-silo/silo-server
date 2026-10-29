@@ -13,6 +13,9 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
         case item(String)
         /// A special placed in the alternative, by its TMDb id.
         case special(Int)
+        /// A container new beneath the one the alternative is of, by its id, played in its alternatives
+        /// alone: none of the container's own sequences names it.
+        case container(String)
     }
 
     public let id: String
@@ -30,6 +33,11 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
         entries.compactMap { if case .special(let id) = $0 { id } else { nil } }
     }
 
+    /// The new containers it plays.
+    public var containers: [String] {
+        entries.compactMap { if case .container(let id) = $0 { id } else { nil } }
+    }
+
     /// What a sequence of a container plays, as a drafted alternative's entries: each item it declares,
     /// and each of the container's own it refers to; a reference to another container's is left out.
     static func entries(of sequence: Sequence, in container: Container) -> [Entry] {
@@ -41,12 +49,20 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
     }
 
     /// A container's drafted alternatives made in it, in order: each a sequence holding its entries, a
-    /// special as an entry carrying its references, an item as a reference to it, then an alternative
-    /// with its title naming that sequence. An item the container no longer holds, or a special not
-    /// among those given, is left out, and an alternative left with nothing to play is not made.
-    static func make(_ drafts: [DraftAlternative], specials: [Special], in container: inout Container) {
-        // A special in more than one is an entry in the first, and referred to from the rest.
+    /// special as an entry carrying its references, an item as a reference to it, a new container as
+    /// the entry naming it, then an alternative with its title naming that sequence. An item the
+    /// container no longer holds, a special not among those given, or a new container not among those
+    /// made, by id with its title, is left out, and an alternative left with nothing to play is not made.
+    static func make(
+        _ drafts: [DraftAlternative],
+        specials: [Special],
+        containers: [ContainerID: Title] = [:],
+        in container: inout Container
+    ) {
+        // A special or a new container in more than one is an entry in the first, and referred to from
+        // the rest.
         var made: [Int: ItemID] = [:]
+        var named: [String: ItemID] = [:]
         for draft in drafts {
             let held = container.itemIDs
             let sequence = Slug.unique(from: draft.title, avoiding: Set(container.sequences.compactMap(\.id)))
@@ -66,6 +82,8 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
                     let leaf = TMDbTree.leaf(special, type: .episode, in: container)
                     made[id] = leaf.id
                     container.sequences[index].items.append(leaf)
+                case .container(let id):
+                    name(id, in: &container, sequence: index, made: containers, named: &named)
                 }
             }
             guard !container.sequences[index].items.isEmpty else {
@@ -83,6 +101,27 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
     }
 }
 
+extension DraftAlternative {
+    /// A new container an alternative plays named in its sequence: the entry naming it, the first time,
+    /// and a reference to that entry after; one not among those made, by id with its title, is left out.
+    private static func name(
+        _ id: String,
+        in container: inout Container,
+        sequence index: Int,
+        made: [ContainerID: Title],
+        named: inout [String: ItemID]
+    ) {
+        if let item = named[id] {
+            container.sequences[index].items.append(.ref(EntryRef(item: item)))
+            return
+        }
+        guard let child = ContainerID(id), let title = made[child] else { return }
+        let item = ItemID(Slug.unique(from: title.rawValue, avoiding: Set(container.itemIDs.map(\.value))))!
+        named[id] = item
+        container.sequences[index].items.append(.child(SmdKit.Entry.Child(id: item, container: child)))
+    }
+}
+
 /// What places a series' specials and drafts alternatives of its containers: a walk, or a draft from
 /// TMDb. A special in a drafted alternative is placed in the first of its container's that plays it; a
 /// clone of an alternative plays its specials too, referring to them where the first does.
@@ -97,6 +136,18 @@ public protocol AlternativeDrafting {
     func title(ofItem item: String, at container: String) -> String
     /// A container's specials or alternatives changed: for a walk, its stop pending again.
     mutating func alternativesChanged(at container: String)
+    /// A new container beneath one, holding nothing yet, its primary sequence going by that one's id,
+    /// to be played in its drafted alternatives; false, and nothing new, when the id is taken or the
+    /// container unknown.
+    mutating func declareContainer(
+        _ id: ContainerID,
+        type: ContainerType,
+        title: Title,
+        beneath container: String
+    )
+        -> Bool
+    /// A new container no drafted alternative plays any longer taken out, with what is beneath it.
+    mutating func dropContainer(_ id: String)
 }
 
 extension AlternativeDrafting {
@@ -110,7 +161,27 @@ extension AlternativeDrafting {
         switch entry {
         case .item(let item): title(ofItem: item, at: container)
         case .special(let id): placeable.first { $0.id == id }?.episode.title ?? String(id)
+        case .container(let id): self.container(id)?.displayTitle ?? id
         }
+    }
+
+    /// A new container of a kind, holding nothing yet, added last to one of a container's drafted
+    /// alternatives: played there, and in none of the container's own sequences.
+    @discardableResult
+    public mutating func addContainer(
+        _ id: ContainerID,
+        type: ContainerType,
+        title: Title,
+        toAlternative draft: String,
+        of container: String
+    ) -> Bool {
+        guard index(of: draft, at: container) != nil,
+            declareContainer(id, type: type, title: title, beneath: container),
+            let index = index(of: draft, at: container)
+        else { return false }
+        draftedAlternatives[container]![index].entries.append(.container(id.value))
+        alternativesChanged(at: container)
+        return true
     }
 
     /// A new alternative of a container, titled as given, playing the special given alone or nothing yet.
@@ -201,6 +272,7 @@ extension AlternativeDrafting {
         else { return }
         let removed = draftedAlternatives[container]![index].entries.remove(at: position)
         if case .special(let special) = removed { placeInFirst(special, at: container) }
+        if case .container(let id) = removed { dropUnplayed([id], at: container) }
         alternativesChanged(at: container)
     }
 
@@ -216,6 +288,7 @@ extension AlternativeDrafting {
         let removed = draftedAlternatives[container]!.remove(at: index)
         for special in removed.specials { placeInFirst(special, at: container) }
         if draftedAlternatives[container]?.isEmpty == true { draftedAlternatives[container] = nil }
+        dropUnplayed(removed.containers, at: container)
         alternativesChanged(at: container)
     }
 
@@ -233,6 +306,13 @@ extension AlternativeDrafting {
             alternativesChanged(at: container)
         }
         placements[special] = nil
+    }
+
+    /// New containers taken out of a container's drafted alternatives dropped, once none of them plays
+    /// one.
+    private mutating func dropUnplayed(_ containers: [String], at container: String) {
+        let played = Set((draftedAlternatives[container] ?? []).flatMap(\.containers))
+        for id in containers where !played.contains(id) { dropContainer(id) }
     }
 
     /// A special taken out of one of a container's drafted alternatives placed in the first that still

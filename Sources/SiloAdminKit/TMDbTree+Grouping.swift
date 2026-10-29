@@ -30,9 +30,10 @@ extension TMDbTree {
         }
     }
 
-    /// The container of the tree a container is beneath.
+    /// The container of the tree a container is beneath: the one naming it, or the one whose drafted
+    /// alternatives play it.
     public func parent(of id: String) -> String? {
-        containers.first { $0.childContainerIDs.contains { $0.value == id } }?.id.value
+        containers.first { $0.childContainerIDs.contains { $0.value == id } }?.id.value ?? alternativeParent(of: id)
     }
 
     /// Entries of a group's container added to the group, its entries then in the container's order and
@@ -106,11 +107,15 @@ extension TMDbTree {
     /// one holding it is ticked, all the way up.
     public func isMade(_ id: String) -> Bool {
         if id == top { return documents[id] != nil }
-        guard let parentID = parent(of: id), let parent = container(parentID),
+        guard let parentID = parent(of: id), let parent = container(parentID) else { return false }
+        guard
             let entry = (parent.sequences.flatMap(\.items) + parent.extras).first(where: {
                 $0.childContainer?.value == id
             })
-        else { return false }
+        else {
+            // Played in its parent's drafted alternatives alone, it is made with them.
+            return alternativeParent(of: id) == parentID && isMade(parentID)
+        }
         return !(entry.id.map { isLeftOut($0, in: parentID) } ?? false) && isMade(parentID)
     }
 

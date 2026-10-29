@@ -45,7 +45,10 @@ extension TMDbWalk {
     /// name yet, as a group whose own stop is not drafted, is listed after the child its list shows it
     /// after, and where the operator moved it.
     public func sequence(at stop: String) -> [HeldStopChild] {
-        let children = children(at: stop) + addedContainers(at: stop).map(HeldStopChild.added)
+        // A container its drafted alternatives play is theirs, and none of its primary sequence's.
+        let played = Set((draftedAlternatives[stop] ?? []).flatMap(\.containers))
+        let added = addedContainers(at: stop).filter { !played.contains($0) }
+        let children = children(at: stop) + added.map(HeldStopChild.added)
         let listed = Dictionary(children.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         var seen: Set<String> = []
         var ordered = storedEntries(at: stop).compactMap { entry -> HeldStopChild? in
