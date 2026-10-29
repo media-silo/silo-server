@@ -88,6 +88,9 @@ extension ConsoleModel {
         var leaving: [String]?
         /// A confirm under way, which a second press waits out rather than drafting its seasons again.
         var confirming = false
+        /// The next stop to be opened once the open one is confirmed, as Confirm and Next asked, while the
+        /// containers confirming takes out of the walk are said.
+        var nextOnceConfirmed = false
         /// Everything storing the walk will do, listed before any of it is done.
         var plan: TMDbWalk.Plan?
         var storing = false

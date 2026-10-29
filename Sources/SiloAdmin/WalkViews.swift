@@ -63,10 +63,22 @@ struct WalkSheet: View {
         .frame(minWidth: 1040, minHeight: 680)
         .alert(
             "Confirming takes containers out of the walk",
-            isPresented: Binding(get: { current.leaving != nil }, set: { if !$0 { model.walking?.leaving = nil } })
+            isPresented: Binding(
+                get: { current.leaving != nil },
+                set: { if !$0 { model.walking?.leaving = nil } }
+            )
         ) {
-            Button("Confirm", role: .destructive) { Task { await model.confirmStop(leavingSaid: true) } }
-            Button("Cancel", role: .cancel) { model.walking?.leaving = nil }
+            Button("Confirm", role: .destructive) {
+                if current.nextOnceConfirmed {
+                    Task { await model.confirmAndNext(leavingSaid: true) }
+                } else {
+                    Task { await model.confirmStop(leavingSaid: true) }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                model.walking?.leaving = nil
+                model.walking?.nextOnceConfirmed = false
+            }
         } message: {
             Text(
                 "No longer chosen, these new containers leave the walk with everything beneath them, and the specials placed in them are unassigned again: \((current.leaving ?? []).joined(separator: ", "))."
@@ -82,11 +94,12 @@ struct WalkSheet: View {
 
     private var actions: some View {
         HStack {
-            Button("Close") {
+            Button("Close and Save") {
                 model.keepWalk()
                 model.walking = nil
                 dismiss()
             }
+            .help("Keeps the walk on this Mac as it is, to be resumed; nothing is stored in the silo.")
             Button("Discard the Walk", role: .destructive) {
                 model.discardWalk()
                 dismiss()
@@ -97,9 +110,17 @@ struct WalkSheet: View {
                 Button("Store the Walk…") { model.listStore() }
                     .disabled(walk.order.allSatisfy { walk.stops[$0]?.taken == nil })
             }
-            Button("Next") { Task { await model.nextStop() } }
-                .buttonStyle(.borderedProminent)
-                .disabled(walk.next == nil || walk.next == current.open)
+            // On the first stop not yet confirmed, Next confirms it first, in the one click.
+            if let next = walk.next, next == current.open {
+                Button("Confirm and Next") { Task { await model.confirmAndNext() } }
+                    .buttonStyle(.borderedProminent)
+                    .help("Confirms this stop, as Confirm does, and opens the next.")
+                    .disabled(current.resuming || current.confirming || current.progress[next] != nil)
+            } else {
+                Button("Next") { Task { await model.nextStop() } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(walk.next == nil)
+            }
         }
     }
 
