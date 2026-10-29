@@ -1080,7 +1080,8 @@ leave it were every child listed ticked: what it holds already and each special 
 storing adds marked, among its missing episodes, its groups and the containers held beneath it, an
 unticked child in its place to be ticked there, and a group whose own stop is not yet drafted after
 the child it follows. Each SHALL be movable before another, or last, by its grab handle or from its
-right-click menu, as a draft's entries are. The order SHALL be kept
+right-click menu, as a draft's entries are, and the walk SHALL take the stops beneath it in the order
+they are moved into, as soon as they are moved. The order SHALL be kept
 with the walk, the stop pending again, and SHALL give the stop's edit its primary sequence; an entry the
 order does not name, as a special placed after the order was given, SHALL keep its place. The moves SHALL
 be undoable at once, the entries then listed as they would have been.

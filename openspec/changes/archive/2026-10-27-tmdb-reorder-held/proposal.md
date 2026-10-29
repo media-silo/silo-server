@@ -16,6 +16,7 @@ order of their own. Proposal: [A held tree reviewed against TMDb](../../../Propo
   there, and a group whose own stop is not drafted yet is listed after the child it follows.
 - Each child can be moved before another, or last, by its grab handle or from its right-click menu. The
   order is kept with the walk, the stop is pending again, and the stop's edit gets its primary sequence
-  in that order.
+  in that order. The walk takes the stops beneath it in the moved order at once, so the walk's list of
+  stops matches.
 - An entry the order does not name, as a special placed after the order was given, keeps its place.
 - The moves can be undone at once.

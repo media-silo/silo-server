@@ -5705,6 +5705,18 @@ extension AdminConsoleTests {
         let edit = try #require(Self.edit(of: stop, in: try walk.plan())?.value)
         #expect(edit.sequences.first?.items.first?.childContainer?.value == "00000000000001d3")
         #expect(keys(walk.sequence(at: stop)).first == "child:00000000000001d3")
+
+        // The walk takes the stops beneath in that order, and again as soon as they are moved.
+        let group = "00000000000001d3"
+        #expect(walk.stops[stop]?.children == [group, held])
+        #expect(walk.order.firstIndex(of: group)! < walk.order.firstIndex(of: held)!)
+        walk.arrange("child:\(held)", at: stop, before: "child:\(group)")
+        #expect(walk.stops[stop]?.children == [held, group])
+        walk.unarrange(stop)
+        #expect(walk.stops[stop]?.children == [held, group], "as storing would leave them unmoved")
+        walk.arrange("child:\(group)", at: stop, before: nil)
+        walk.arrange("child:\(group)", at: stop, before: "child:\(held)")
+        #expect(walk.stops[stop]?.children == [group, held])
     }
 
     /// A group made of a held stop's missing episodes has its primary sequence go by the stop's, as the

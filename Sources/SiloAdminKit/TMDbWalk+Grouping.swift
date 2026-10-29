@@ -264,7 +264,7 @@ extension TMDbWalk {
 
     /// The stops beneath a held stop in the order its children list them: its seasons as its reading
     /// lists them, held or drafted, then the containers held beneath it and the groups of its missing
-    /// episodes, each at its place.
+    /// episodes, each at its place, where the operator moved it.
     public func listed(beneath stop: String) -> [String] {
         let seasons = differences(of: stop).compactMap { difference -> String? in
             switch difference {
@@ -277,11 +277,12 @@ extension TMDbWalk {
                 return nil
             }
         }
-        let others = children(at: stop).compactMap { child -> String? in
+        let others = sequence(at: stop).compactMap { child -> String? in
             switch child {
             case .group(let group): group.id
             case .held(let held): held.id
-            case .episode, .entry: nil
+            case .entry(let entry): entry.id.hasPrefix("child:") ? String(entry.id.dropFirst("child:".count)) : nil
+            case .episode: nil
             }
         }
         var seen: Set<String> = []
