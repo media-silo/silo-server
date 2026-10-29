@@ -6,7 +6,8 @@ import SiloAdminKit
 import SmdKit
 import SwiftUI
 
-/// A held stop's children: the seasons TMDb has, those the library holds shown ticked and never chosen,
+/// A held stop's children, one list in the order storing leaves them, each moved by its grab handle: the
+/// seasons TMDb has, those the library holds shown ticked and never chosen, what the stop holds already,
 /// and the episodes it lacks, which may be grouped into new containers beneath it or added to one it
 /// holds beneath it, each held one shown in its place among them. What ticking each does is said once,
 /// above them.
@@ -29,43 +30,23 @@ struct WalkChildren: View {
     private var episodes: [TMDb.Episode] { walk.missingEpisodes(at: stop) }
 
     var body: some View {
-        if !seasons.isEmpty {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(
-                        "Ticked, each season the library lacks is drafted from TMDb when this is confirmed, and looked at in the walk after it. Those it holds are looked at whatever is ticked."
-                    )
-                    .font(.caption).foregroundStyle(.secondary)
-                    ForEach(seasons) { season in
-                        if season.isHeld {
-                            Toggle(isOn: .constant(true)) { DifferenceLabel(difference: season, walk: walk) }
-                                .disabled(true)
-                        } else {
-                            Toggle(isOn: tick(season.id)) { DifferenceLabel(difference: season, walk: walk) }
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } label: {
-                heading(seasons.filter { !$0.isHeld }.map(\.id))
-            }
-        }
-        // Its children in order whenever there is an order to give, which a series' seasons are not.
-        if !episodes.isEmpty || (seasons.isEmpty && !rows.isEmpty) {
-            missing
-        } else if seasons.isEmpty {
+        if rows.isEmpty {
             // Its heading still, for what its primary sequence's menu does.
             heading([])
+        } else {
+            missing
         }
     }
 
     /// The containers the operator added beneath it.
     private var added: [String] { walk.addedContainers(at: stop) }
 
-    /// The children that may be ticked: each episode the library lacks grouped in none, and each group as
-    /// one, which is what the heading's tick ticks.
+    /// The children that may be ticked: each season and each episode the library lacks, the episodes
+    /// grouped in none, and each group as one, which is what the heading's tick ticks.
     private var tickable: [String] {
-        episodes.filter { !grouped.contains($0.id) }.map { "episode:\($0.id)" } + groups.map(\.tick)
+        seasons.filter { !$0.isHeld }.map(\.id)
+            + episodes.filter { !grouped.contains($0.id) }.map { "episode:\($0.id)" }
+            + groups.map(\.tick)
     }
 
     /// Ticks every child that may be ticked or none, and shows as mixed while some are; how many are is
@@ -112,6 +93,12 @@ struct WalkChildren: View {
     /// What ticking does said above the list, and the list, as a new stop has them.
     @ViewBuilder
     private var missing: some View {
+        if !seasons.isEmpty {
+            Text(
+                "Ticked, each season the library lacks is drafted from TMDb when this is confirmed, and looked at in the walk after it. Those it holds are looked at whatever is ticked."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+        }
         Text(
             "In the order storing leaves them: drag a child by its handle to move it. Ticked, each child the library lacks is added to this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed, and each child put into one held here is that one's own, ticked at its stop."
         )
@@ -207,7 +194,22 @@ struct WalkChildren: View {
                 )
             case .held(let held):
                 return heldRow(held)
+            case .season(let season):
+                return .toggled(
+                    id: child.key,
+                    title: Self.name(of: season),
+                    tick: season.isHeld ? nil : tick(season.id),
+                    label: AnyView(DifferenceLabel(difference: season, walk: walk))
+                )
             }
+        }
+    }
+
+    /// A season's name, as its drag shows it.
+    private static func name(of season: AdminConsole.TMDbDifference) -> String {
+        switch season {
+        case .season(let season), .heldSeason(let season, _, _): season.name
+        default: season.id
         }
     }
 

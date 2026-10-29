@@ -48,7 +48,14 @@ extension TMDbWalk {
         // A container its drafted alternatives play is theirs, and none of its primary sequence's.
         let played = Set((draftedAlternatives[stop] ?? []).flatMap(\.containers))
         let added = addedContainers(at: stop).filter { !played.contains($0) }
-        let children = children(at: stop) + added.map(HeldStopChild.added)
+        // A series' seasons first, as its reading lists them, ahead of a held stop found beneath it again.
+        let seasons = differences(of: stop).compactMap { difference -> HeldStopChild? in
+            switch difference {
+            case .season, .heldSeason: .season(difference)
+            default: nil
+            }
+        }
+        let children = seasons + children(at: stop) + added.map(HeldStopChild.added)
         let listed = Dictionary(children.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         var seen: Set<String> = []
         var ordered = storedEntries(at: stop).compactMap { entry -> HeldStopChild? in
@@ -120,6 +127,8 @@ extension HeldStopChild {
         case .held(let held): "child:\(held.id)"
         case .entry(let entry): entry.id
         case .added(let id): "child:\(id)"
+        case .season(.heldSeason(_, let container, _)): "child:\(container)"
+        case .season(let season): season.id
         }
     }
 }

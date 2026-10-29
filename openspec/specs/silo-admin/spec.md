@@ -1101,11 +1101,13 @@ begin with, and grouped and taken there as any of its own are; none of them SHAL
 container itself, and an entry TMDb puts after one of them SHALL follow the container.
 A held stop's children SHALL be listed in one list, in its primary sequence's order as storing would
 leave it were every child listed ticked: what it holds already and each special placed in it, those
-storing adds marked, among its missing episodes, its groups and the containers held beneath it, an
-unticked child in its place to be ticked there, and a group whose own stop is not yet drafted after
-the child it follows. Each SHALL be movable before another, or last, by its grab handle or from its
+storing adds marked, among a series' seasons, held or missing, its missing episodes, its groups and
+the containers held beneath it, an unticked child in its place to be ticked there, and a missing season
+or a group whose own stop is not yet drafted after the child it follows. Each SHALL be movable before another, or last, by its grab handle or from its
 right-click menu, as a draft's entries are, and the walk SHALL take the stops beneath it in the order
-they are moved into, as soon as they are moved. The order SHALL be kept
+they are moved into, as soon as they are moved; until then, a series' seasons in TMDb's order. A
+missing season, which no sequence names until it is made, SHALL be named in the series when it is made
+before the first child it was moved before that the series names. The order SHALL be kept
 with the walk, the stop pending again, and SHALL give the stop's edit its primary sequence; an entry the
 order does not name, as a special placed after the order was given, SHALL keep its place. The moves SHALL
 be undoable at once, the entries then listed as they would have been. From the primary sequence's menu,
@@ -1137,6 +1139,13 @@ opened.
   the next story grouped, and the group is moved before the serial
 - **THEN** its children list the group, the serial, then the four episodes, the unticked one in its
   place; once the season and the group are confirmed, storing names the group first
+
+#### Scenario: a series' seasons moved
+- **WHEN** a held series holds three seasons and lacks a fourth, which is ticked, the fourth is moved
+  first and the series' second held season last, and the series and the new season are confirmed and
+  the walk stored
+- **THEN** the series names the new season first and the moved held season last, and the walk took the
+  stops beneath the series in that order once it was confirmed
 
 #### Scenario: an episode TMDb has gained
 - **WHEN** a season the library holds lacks an episode TMDb's record of the season has, and the
@@ -1195,7 +1204,7 @@ opened.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aHeldContainersDifferencesFromTMDbAreTakenOrLeft`, `aHeldStopsEntriesMovedAreStoredInTheirNewOrder`,
-`aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem`, `aContainerAddedBeneathAStopIsMadeBeneathIt`,
+`aHeldStopsChildrenAreListedInTheOrderStoringLeavesThem`, `aSeriesSeasonsAreMovedAmongItsChildren`, `aContainerAddedBeneathAStopIsMadeBeneathIt`,
 `aHeldSeasonsMissingEpisodesGroupedAreMadeAContainerBeneathIt`,
 `aHeldSeasonsMissingEpisodesAreAddedToAContainerHeldBeneathIt`,
 `aHeldSeasonsGroupsAreNewStopsBeneathItOnceConfirmed`). The list and its choosing are pinned by nothing

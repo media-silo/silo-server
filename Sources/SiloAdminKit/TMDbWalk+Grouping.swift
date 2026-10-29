@@ -53,6 +53,9 @@ public enum HeldStopChild: Hashable, Sendable {
     case entry(StopEntry)
     /// A container the operator added beneath it, by its id: a new stop of the walk, shaped there.
     case added(String)
+    /// One of a series' seasons, as its reading lists it: held beneath it, or missing, ticked to be
+    /// drafted.
+    case season(AdminConsole.TMDbDifference)
 }
 
 // MARK: - Grouping a held stop's missing episodes
@@ -264,32 +267,43 @@ extension TMDbWalk {
         return children + waiting.map(HeldStopChild.held)
     }
 
-    /// The stops beneath a held stop in the order its children list them: its seasons as its reading
-    /// lists them, held or drafted, then the containers held beneath it and the groups of its missing
-    /// episodes, each at its place, where the operator moved it.
+    /// The stops beneath a held stop in the order its children list them, once the operator has moved
+    /// them; until then its seasons as its reading lists them, held or drafted, then the containers held
+    /// beneath it and the groups of its missing episodes, each at its place.
     public func listed(beneath stop: String) -> [String] {
-        let seasons = differences(of: stop).compactMap { difference -> String? in
-            switch difference {
-            case .heldSeason(_, let container, _):
-                return container
-            case .season(let season):
-                return drafts.values.first { $0.creating.parent == stop && Self.missing($0) == "season:\(season.id)" }?
-                    .top
-            default:
-                return nil
+        let seasons =
+            arrangedEntries[stop] != nil
+            ? []
+            : differences(of: stop).compactMap { difference -> String? in
+                switch difference {
+                case .heldSeason(_, let container, _): container
+                case .season(let season): drafted(season.id, at: stop)
+                default: nil
+                }
             }
-        }
-        let others = sequence(at: stop).compactMap { child -> String? in
-            switch child {
-            case .group(let group): group.id
-            case .held(let held): held.id
-            case .added(let id): id
-            case .entry(let entry): entry.id.hasPrefix("child:") ? String(entry.id.dropFirst("child:".count)) : nil
-            case .episode: nil
-            }
-        }
+        let others = sequence(at: stop).compactMap { container(of: $0, at: stop) }
         var seen: Set<String> = []
         return (seasons + others).filter { seen.insert($0).inserted }
+    }
+
+    /// The stop beneath a held stop one of its children is, when it is one: a season held or drafted,
+    /// a container held beneath, a group or a container added, or a child container it holds.
+    private func container(of child: HeldStopChild, at stop: String) -> String? {
+        switch child {
+        case .group(let group): group.id
+        case .held(let held): held.id
+        case .added(let id): id
+        case .entry(let entry): entry.id.hasPrefix("child:") ? String(entry.id.dropFirst("child:".count)) : nil
+        case .episode: nil
+        case .season(.heldSeason(_, let container, _)): container
+        case .season(.season(let season)): drafted(season.id, at: stop)
+        case .season: nil
+        }
+    }
+
+    /// The stop drafted beneath a series for one of TMDb's seasons, once it is.
+    func drafted(_ season: Int, at stop: String) -> String? {
+        drafts.values.first { $0.creating.parent == stop && Self.missing($0) == "season:\(season)" }?.top
     }
 
     /// The containers a held stop holds beneath it, as its reading found them, or, for a reading kept
