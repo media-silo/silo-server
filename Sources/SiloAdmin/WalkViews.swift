@@ -519,13 +519,20 @@ private struct WalkSpecials: View {
             if walk.series == walk.root, walk.stops[walk.root]?.comparison == nil {
                 Text("Read with the series.").font(.caption).foregroundStyle(.secondary)
             }
-            List {
-                ForEach(ordered) { special in row(special) }
-                if !walk.declined.isEmpty, walk.stops[walk.series ?? ""] != nil {
-                    Section("Declined: \(walk.declined.count)") {
+            // Not a List: its table tracks a mouse-down itself, and a special dragged from one of its rows and
+            // let go where nothing takes it leaves the table tracking still, every move of the pointer a
+            // drag that scrolls it and every click swallowed, until the sheet is closed.
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(ordered) { special in row(special) }
+                    if !walk.declined.isEmpty, walk.stops[walk.series ?? ""] != nil {
+                        Text("Declined: \(walk.declined.count)").font(.subheadline.bold()).foregroundStyle(.secondary)
+                            .padding(.top, 6)
                         ForEach(walk.declined.filter { walk.placements[$0.id] == nil }) { special in row(special) }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
             }
         }
         .padding(.horizontal, 6)

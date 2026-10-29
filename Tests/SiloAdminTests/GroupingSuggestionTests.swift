@@ -24,5 +24,18 @@ struct GroupingSuggestionTests {
             #expect(ChildDrag.child(stray) == nil, "\(stray)")
         }
     }
+
+    /// A child dropped where it already is stays there: on itself, on the child after it, or past the
+    /// last when it is last.
+    @Test func aChildDroppedWhereItIsStays() {
+        let order = ["a", "b", "c"]
+        #expect(!ChildDrag.moves("a", before: "a", in: order))
+        #expect(!ChildDrag.moves("a", before: "b", in: order))
+        #expect(!ChildDrag.moves("c", before: nil, in: order))
+        #expect(ChildDrag.moves("a", before: "c", in: order))
+        #expect(ChildDrag.moves("a", before: nil, in: order))
+        #expect(ChildDrag.moves("c", before: "b", in: order))
+        #expect(ChildDrag.moves("b", before: "a", in: order))
+    }
 }
 #endif

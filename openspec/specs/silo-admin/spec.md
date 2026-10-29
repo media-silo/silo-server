@@ -799,7 +799,8 @@ choosable, each only to be taken out of it, back beside the group; and the group
 ungrouped, its entries back in its place and the specials placed in it unassigned again. A group left
 with nothing SHALL be ungrouped. Each of the container's entries, an episode or the entry naming a group,
 SHALL be movable before another entry of its sequence, or last, by dragging its grab handle onto the entry it is to
-go before or past the last, or from its right-click menu, a place up or down or to either end. A group's handle SHALL run beside all
+go before or past the last, or from its right-click menu, a place up or down or to either end. One dropped where it already is, on
+itself, on the entry after it or past the last when it is last, SHALL stay there, nothing moved. A group's handle SHALL run beside all
 its entries, and while the pointer is on a handle what it moves SHALL be shaded. A
 special placed in the sequence SHALL keep after the entry it followed, and one placed first SHALL stay
 first. From the primary sequence's menu, a new container of the kind and title the operator gives
@@ -861,6 +862,11 @@ request to the silo.
 - **THEN** the season holds the episode first and the group last, the special placed after the group
   still follows it, and the one placed first is still first
 
+#### Scenario: an entry dropped where it is
+- **WHEN** a drafted season's entry is dragged by its handle and dropped on itself, and then on the
+  entry after it
+- **THEN** the season's entries are in the order they were, and nothing is moved
+
 #### Scenario: a container added
 - **WHEN** a new serial is added to a drafted season, and one of the season's episodes is then added
   to it
@@ -898,7 +904,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraft
 `aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`,
 `aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`,
 `aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`). The search, the shaping's sheet and the dry run as the
-operator shapes are pinned by nothing yet, as the rest of the shell is.
+operator shapes are pinned by nothing yet, as the rest of the shell is, but for where a child dropped
+where it is goes: `Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDroppedWhereItIsStays`).
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each
 SiloAdmin SHALL read a series' season 0 at TMDb as the series' specials, each with its TMDb episode
