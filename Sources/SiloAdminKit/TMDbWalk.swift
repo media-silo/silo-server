@@ -80,9 +80,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     public var suggestions: [Int: AdminConsole.SpecialSuggestion] = [:]
     /// Where each special goes, by its TMDb id; one with none is unassigned.
     public var placements: [Int: SpecialPlacement] = [:]
-    /// Series of the operator's own the walk makes for specials, by id, as documents: each made at the
-    /// top of the library before anything that refers to it.
-    public var companions: [String: String] = [:]
+    /// Series of the operator's own a walk kept before companions were stops made for specials, by id, as
+    /// documents: read into companion stops when the walk is read.
+    private var companions: [String: String]?
     /// The steps a store made, by id, so a store after a refusal makes only the rest.
     public var stored: Set<String> = []
     /// The containers the walk makes, a missing child chosen at a stop and what is beneath it, each as a
@@ -141,6 +141,10 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         set { entryOrders = newValue.isEmpty ? nil : newValue }
     }
 
+    /// The companion series the walk makes, each a new stop at the top of the library, in the order they
+    /// were added. Absent from a walk kept before companions were stops.
+    var companionOrder: [String]?
+
     public init(library: String, root: Stop) {
         id = UUID()
         self.library = library
@@ -149,7 +153,8 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         edited = .now
     }
 
-    /// The walk's stops depth first, each container's children in the order its children list them.
+    /// The walk's stops depth first, each container's children in the order its children list them: the
+    /// root's tree, then each companion series' in the order they were added.
     public var order: [String] {
         var ordered: [String] = []
         func visit(_ id: String) {
@@ -158,6 +163,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
             stop.children.forEach(visit)
         }
         visit(root)
+        companionStops.forEach(visit)
         return ordered
     }
 
@@ -419,18 +425,32 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     }
 
     /// Puts a special where the operator says, or, with nil, back among the unassigned. A new companion
-    /// series it names is kept with the walk until the walk is stored.
+    /// series it names joins the walk as a stop of its own.
     public mutating func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
+        if let companion { addCompanion(companion) }
         // Where it was and where it goes are each pending again.
         for home in [placements[special], placement].compactMap({ $0.flatMap(home) }) { unconfirm(home) }
         unplace(special)
         placements[special] = settle(special, placement)
-        if let companion { companions[companion.id.value] = TMDbTree.text(companion) }
     }
 
-    /// A companion series new in the walk, as its document says it.
+    /// A companion series new in the walk, as its stop's draft has it now.
     public func companion(_ id: String) -> Container? {
-        companions[id].flatMap { try? ContainerFile.container(from: Data($0.utf8)) }
+        guard companionStops.contains(id) else { return nil }
+        return drafts[id]?.container(id)
+    }
+
+    /// Each companion series a walk kept before companions were stops made, a stop of its own, confirmed,
+    /// since storing that walk would have made it.
+    mutating func settlingCompanions() {
+        guard let kept = companions else { return }
+        companions = nil
+        for (id, text) in kept.sorted(by: { $0.key < $1.key }) {
+            guard let series = try? ContainerFile.container(from: Data(text.utf8)), addCompanion(series) else {
+                continue
+            }
+            stops[id]?.taken = []
+        }
     }
 }
 
@@ -504,6 +524,7 @@ public final class TMDbWalkStore: Sendable {
             walks.map { walk in
                 var settled = walk
                 settled.settlingVersions()
+                settled.settlingCompanions()
                 return settled
             }
         }

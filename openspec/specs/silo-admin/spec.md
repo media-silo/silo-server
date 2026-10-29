@@ -924,8 +924,9 @@ draft of the series as unassigned. The operator SHALL place each special, or not
 - an entry in a breakout, a companion series of the operator's own beside the series: any series the
   library holds other than the one being drafted or walked, listed or unlisted, or a new one with the
   title the operator gives it, unlisted to begin with and listed when the operator says, created at
-  the top of the library before anything that refers to it; the series SHALL refer to the entry in
-  it, from its extras or a sequence;
+  the top of the library before anything that refers to it, and in a walk a stop of its own, created
+  once that stop is confirmed; the series SHALL refer to the entry in it, from its extras or a
+  sequence;
 - an alternative of the container it is placed in, a cut naming the sequence it plays: an entry in an
   alternate sequence the container has, at a position; or an entry in an alternative drafted for the
   container. The operator SHALL be able to draft an alternative of a container with a title, playing
@@ -1043,7 +1044,8 @@ and the console SHALL list every edit and creation the placements make before it
   the season's children before the entry
 
 #### Scenario: a new companion series made listed
-- **WHEN** a special is placed in a new companion series the operator titles and lists
+- **WHEN** a special is placed in a new companion series the operator titles and lists, and the
+  companion series' stop is confirmed
 - **THEN** the companion series is created listed, holding the special's entry, before the edit that
   refers to it
 
@@ -1541,3 +1543,53 @@ the series being read again; a season said to be held SHALL NOT be drafted.
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aSeasonCarryingNoTMDbIdMatchesNothingUntilSaid`, `anUnmatchedSeasonIsSuggestedByItsNumberOrItsEpisodes`).
 The stop's list of TMDb's seasons is pinned by nothing yet, as the rest of the shell is.
+
+### Requirement: A companion series of the operator's own is a stop of a walk
+Beneath the walk's tree, the console SHALL offer to add a companion series of the operator's own
+beside the walked series, with the title the operator gives it, unlisted to begin with and listed
+when the operator says, holding nothing yet. A new companion series made for a special as it is
+placed SHALL be one too. Each SHALL be a new stop of the walk with no stop above it, listed after
+the root's tree in the order the companions were added, and the walk's tree SHALL show it as a new
+companion series. It SHALL be opened, shaped and confirmed as any new stop is: specials SHALL be
+placeable in it, alternatives drafted for it, extras dropped on it, and new containers added beneath
+it, each a new stop beneath it once it is confirmed. Storing the walk SHALL create a confirmed
+companion series, with the containers beneath it in one creation, at the top of the library before
+anything else the walk makes, holding after its own entries each entry placed in it from another
+stop. A companion series not confirmed SHALL make nothing, nor SHALL a special placed in it from
+another stop make an entry in it or a reference to that entry. The operator SHALL be able to take a
+companion series out of the walk, which SHALL take every stop beneath it out too, SHALL unassign
+again the specials placed in it or beneath it and those placed in it from another stop, and SHALL
+make those other stops pending again. A walk kept before companion series were stops SHALL be read
+with each new companion series it made as a stop of its own, confirmed.
+
+#### Scenario: a companion series added
+- **WHEN** a companion series is added to a walk of a held series
+- **THEN** it is a pending new stop with no stop above it, listed after the series' tree
+
+#### Scenario: a companion series stored
+- **WHEN** a special is placed as an entry of a new companion series, a collection is added beneath
+  it, another special is placed in it from a season, and the companion series, the collection and
+  the season are confirmed and the walk is stored
+- **THEN** the companion series is created first, at the top of the library, with the collection
+  beneath it, holding the collection, the first special's entry, then the second's, and the
+  season's edit refers to the second special's entry
+
+#### Scenario: a companion series not confirmed
+- **WHEN** a special is placed in a new companion series from a season, and the season is confirmed
+  and the companion series is not
+- **THEN** storing the walk makes nothing of the companion series, and the season's edit refers to
+  nothing in it
+
+#### Scenario: a companion series taken out
+- **WHEN** a companion series holding a container beneath it, one special placed in it and another
+  placed in it from a season, is taken out of the walk
+- **THEN** its stop and the container's leave the walk, both specials are unassigned again, and the
+  season's stop is pending again
+
+#### Scenario: a walk kept before companion series were stops
+- **WHEN** a walk kept with a new companion series made for a special is read
+- **THEN** the companion series is a confirmed stop of the walk, which storing the walk creates
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aCompanionSeriesIsAStopOfItsOwn`,
+`aWalkKeptBeforeCompanionsWereStopsReadsThemAsStops`). The walk's sheet is pinned by nothing yet, as
+the rest of the shell is.

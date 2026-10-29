@@ -322,21 +322,33 @@ extension TMDbWalk {
 
     /// What the plan gathers across the stops besides their own edits.
     private struct Gathering {
-        /// The companion series new in the walk, gaining the entries placed in them.
+        /// The entries placed in each confirmed companion series of the walk from elsewhere, gathered in
+        /// its first sequence, by id.
         var made: [String: Container]
         /// The edits of other containers that placed specials make.
         var edits: [TMDbTree.Making.HeldEdit] = []
         var artwork: [Step] = []
     }
 
+    /// The confirmed companion series, each holding nothing yet, to gather the entries placed in them.
+    private var gathering: Gathering {
+        var made: [String: Container] = [:]
+        for id in companionStops where stops[id]?.taken != nil {
+            guard var series = companion(id) else { continue }
+            series.sequences = [Sequence(id: series.sequences.first?.id, items: [])]
+            made[id] = series
+        }
+        return Gathering(made: made)
+    }
+
     /// The walk's store, from what each confirmed stop took and where the specials were placed, less
     /// what an earlier store made. A stop never confirmed contributes nothing.
     public func plan() throws -> Plan {
-        let new = Dictionary(
-            companions.keys.compactMap { id in companion(id).map { (id, $0) } },
-            uniquingKeysWith: { first, _ in first }
-        )
-        var gathering = Gathering(made: new)
+        var gathering = gathering
+        var companions: [(creating: ContainerDraft.Creating, making: TMDbTree.Making)] = []
+        for id in companionStops {
+            if let made = making(of: id, gathering: &gathering) { companions.append(made) }
+        }
         var changes: [Change] = []
         for id in order {
             if let change = try change(of: id, gathering: &gathering) { changes.append(change) }
@@ -359,15 +371,19 @@ extension TMDbWalk {
                 outside.append(edit)
             }
         }
-        // A companion no placement of a confirmed stop gained an entry in is not made.
-        var steps = gathering.made.keys.sorted().filter { gathering.made[$0] != new[$0] }.compactMap { id in
-            gathering.made[id].map { companion in
-                Step(
-                    id: "create:\(id)",
-                    kind: .create([companion], parent: nil),
-                    described: "make \(companion.displayTitle), a series of its own, at the top of the library"
-                )
+        // Each confirmed companion first, holding the entries placed in it from elsewhere after its own.
+        var steps = companions.compactMap { _, making -> Step? in
+            guard var top = making.documents.first else { return nil }
+            for entry in gathering.made[top.id.value]?.sequences.first?.items ?? [] {
+                TMDbTree.insert(entry, into: &top, sequence: nil, at: nil)
             }
+            let beneath = making.documents.count - 1
+            return Step(
+                id: "create:\(top.id)",
+                kind: .create([top] + making.documents.dropFirst(), parent: nil, attributions: making.attributions),
+                described:
+                    "make \(top.displayTitle), a series of its own,\(beneath > 0 ? " and the \(beneath) beneath it," : "") at the top of the library"
+            )
         }
         steps += outside.map { edit in
             Step(id: "held:\(edit.key)", kind: .held(edit), described: edit.described)
@@ -423,7 +439,8 @@ extension TMDbWalk {
         }
         let confirmed = Set(tree.containers.map(\.id.value).filter { stops[$0]?.taken != nil })
         let placed = (specials + declined).filter { special in
-            placements[special.id].flatMap(home).map(confirmed.contains) ?? false
+            !waitsOnCompanion(placements[special.id])
+                && placements[special.id].flatMap(home).map(confirmed.contains) ?? false
         }
         tree.specials = placed
         tree.placements = placements.filter { id, _ in placed.contains { $0.id == id } }
@@ -487,7 +504,7 @@ extension TMDbWalk {
         }
         var declined = sidecar.declined
         for special in placed(in: id) {
-            guard let placement = placements[special.id] else { continue }
+            guard let placement = placements[special.id], !waitsOnCompanion(placement) else { continue }
             AdminConsole.place(
                 special,
                 placement,
@@ -817,11 +834,7 @@ extension TMDbWalk {
 
     func stored(_ id: String, takingEveryChild: Bool = false) -> (before: Container, after: Container)? {
         var walk = self
-        let new = Dictionary(
-            companions.keys.compactMap { id in companion(id).map { (id, $0) } },
-            uniquingKeysWith: { first, _ in first }
-        )
-        var gathering = Gathering(made: new)
+        var gathering = gathering
         if let (top, tree) = drafts.first(where: { $0.value.documents[id] != nil }) {
             for container in tree.containers.map(\.id.value) {
                 walk.stops[container]?.taken = stops[container]?.taken ?? stops[container]?.chosen

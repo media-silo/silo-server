@@ -4095,6 +4095,7 @@ extension AdminConsoleTests {
             .breakout(confidential.id.value, from: series.id.value, asExtra: true),
             companion: confidential
         )
+        try await walking.confirm(confidential.id.value, in: &walk)
         try await walking.confirm(
             series.id.value,
             choosing: ["year", "outline", "ref::tvdb:76107"],
@@ -4848,6 +4849,7 @@ extension AdminConsoleTests {
         try await walking.read(season, in: &walk)
         walk.place(concert.id, .breakout(proms.id.value, from: season, asExtra: false), companion: proms)
         try await walking.confirm(season, in: &walk)
+        try await walking.confirm(proms.id.value, in: &walk)
         let plan = try walk.plan()
         #expect(plan.steps.map(\.id) == ["create:\(proms.id)", "edit:\(season)"])
         #expect(plan.steps[0].described == "make At the Proms, a series of its own, at the top of the library")
@@ -4856,6 +4858,110 @@ extension AdminConsoleTests {
         let made = try #require(held.container(proms.id))
         #expect(made.listed && made.sequences[0].items.map(\.externalRefs) == [[concert.ref]])
         #expect(held.container(seasons[0].id)?.sequences[0].items.last?.reference?.container == proms.id)
+    }
+
+    /// A companion series of the operator's own added to a walk is a stop of its own with no parent, after
+    /// the root's tree: specials are placed in it and containers added beneath it as at any new stop, and
+    /// it is made at the top of the library, first, once confirmed. Until then storing makes nothing of it,
+    /// nor of what refers to it; taken out of the walk, what was placed in it is unassigned again.
+    @Test func aCompanionSeriesIsAStopOfItsOwn() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let concert = Self.episode(3751, 0, 1, "Doctor Who at the Proms 2013", runtime: 60)
+        let prom = Self.episode(3752, 0, 2, "Prom 2013: Behind the Scenes", runtime: 20)
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [concert, prom])
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let season = seasons[0].id.value
+        var proms = Container(
+            id: try await database.provisionalID(),
+            type: .series,
+            title: Title("At the Proms")!,
+            listed: true
+        )
+        proms.sequences = [Sequence(id: "episodes", items: [])]
+        let id = proms.id.value
+
+        var walk = try await walking.walk(series.id.value)
+        let rooted = walk.order
+        let film = Container(id: try await database.provisionalID(), type: .movie, title: Title("Not a Series")!)
+        let added = (walk.addCompanion(proms), walk.addCompanion(proms), walk.addCompanion(film))
+        #expect(added.0 && !added.1, "an id the walk has, refused")
+        #expect(!added.2, "a companion is a series")
+        #expect(walk.order == rooted + [id] && walk.companionStops == [id])
+        #expect(walk.stops[id]?.parent == nil && walk.isNew(id) && walk.state(of: id) == .pending)
+        #expect(walk.companion(id)?.listed == true && walk.companion(season) == nil)
+
+        try await walking.read(season, in: &walk)
+        walk.place(concert.id, .breakout(id, from: season, asExtra: true))
+        try await walking.confirm(season, in: &walk)
+        let waiting = try walk.plan()
+        #expect(!waiting.made.contains(id), "not confirmed, it is not made")
+        #expect(
+            Self.edit(of: season, in: waiting)?.value?.extras.isEmpty ?? true,
+            "nor the reference to it"
+        )
+
+        walk.place(prom.id, .entry(in: id))
+        let collection = try await database.provisionalID()
+        let beneath = walk.addContainer(collection, type: .collection, title: Title("Proms")!, beneath: id)
+        #expect(beneath)
+        try await walking.confirm(id, in: &walk)
+        #expect(walk.stops[id]?.children == [collection.value] && walk.order.suffix(2) == [id, collection.value])
+        try await walking.confirm(collection.value, in: &walk)
+        #expect(walk.state(of: id) == .willCreate && walk.state(of: collection.value) == .willCreate)
+
+        let plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["create:\(id)", "edit:\(season)"], "the companion first")
+        #expect(
+            plan.steps[0].described
+                == "make At the Proms, a series of its own, and the 1 beneath it, at the top of the library"
+        )
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made = try #require(held.container(proms.id))
+        #expect(made.listed)
+        #expect(
+            made.sequences[0].items.map(\.externalRefs) == [[], [prom.ref], [concert.ref]],
+            "the container beneath it, its own entry, then the one placed in it from the season"
+        )
+        #expect(made.sequences[0].items[0].childContainer == collection)
+        #expect(held.container(collection) != nil)
+        #expect(held.container(seasons[0].id)?.extras.compactMap(\.reference).map(\.container) == [proms.id])
+
+        walk.dropCompanion(season)
+        #expect(walk.companionStops == [id], "only a companion is taken out")
+        walk.dropCompanion(id)
+        #expect(walk.companionStops.isEmpty && !walk.order.contains(id))
+        #expect(walk.stops[id] == nil && walk.stops[collection.value] == nil && walk.drafts.isEmpty)
+        #expect(walk.placements.isEmpty, "the special placed in it, and the one placed in it from the season")
+        #expect(walk.state(of: season) == .pending)
+    }
+
+    /// A walk kept before companion series were stops reads each new companion it made as a stop of its
+    /// own, confirmed, so storing it makes what it would have made.
+    @Test func aWalkKeptBeforeCompanionsWereStopsReadsThemAsStops() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "walks.json")
+        var proms = Container(id: ContainerID("00000000000001d1")!, type: .series, title: Title("At the Proms")!)
+        proms.sequences = [Sequence(id: "concerts", items: [])]
+        let walk = TMDbWalk(
+            library: "tv",
+            root: TMDbWalk.Stop(id: "00000000000001d0", title: "Doctor Who", type: "series")
+        )
+        var kept = try #require(
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(walk)) as? [String: Any]
+        )
+        kept["companions"] = [proms.id.value: String(decoding: ContainerFile.data(for: proms), as: UTF8.self)]
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["home": [kept]]).write(to: file)
+
+        let read = try #require(TMDbWalkStore(file: file).walks(of: "home").first)
+        #expect(read.companionStops == [proms.id.value] && read.companion(proms.id.value) == proms)
+        #expect(read.stops[proms.id.value]?.taken == [] && read.order == [walk.root, proms.id.value])
+        #expect(try read.plan().made == [proms.id.value])
     }
 
     // MARK: New containers in a walk
@@ -6209,6 +6315,7 @@ extension AdminConsoleTests {
         try await walking.confirm(second.value, in: &walk)
         walk.place(concert.id, .breakout(proms.id.value, from: first.value, asExtra: true), companion: proms)
         try await walking.confirm(first.value, in: &walk)
+        try await walking.confirm(proms.id.value, in: &walk)
         #expect([first, second].allSatisfy { walk.state(of: $0.value) == .willCreate })
         #expect(walk.state(of: new) == .willCreate)
 

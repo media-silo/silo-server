@@ -44,8 +44,7 @@ struct WalkSheet: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
             }
             HSplitView {
-                WalkTree(walk: walk, open: current.open) { stop in Task { await model.openStop(stop) } }
-                    .frame(minWidth: 220, idealWidth: 260)
+                WalkTree(walk: walk, open: current.open, model: model).frame(minWidth: 220, idealWidth: 260)
                 stopDetail.frame(minWidth: 400, idealWidth: 480)
                 if walk.series != nil {
                     WalkSpecials(current: current, model: model).frame(minWidth: 260, idealWidth: 320)
@@ -275,27 +274,66 @@ struct WalkSheet: View {
     }
 }
 
-/// The walk's tree as far as it has found it, each stop with its state; choosing one opens it.
+/// The walk's tree as far as it has found it, each stop with its state; choosing one opens it. The
+/// companion series the walk makes follow the root's tree, each a tree of its own, and one is added
+/// beneath the list.
 private struct WalkTree: View {
     let walk: TMDbWalk
     let open: String
-    let opening: (String) -> Void
+    let model: ConsoleModel
+    @State private var adding = false
 
     var body: some View {
         let states = walk.states()
-        List(walk.order, id: \.self, selection: Binding(get: { open }, set: { $0.map(opening) })) { id in
-            if let stop = walk.stops[id] {
-                HStack(spacing: 6) {
-                    StopState(state: states[id] ?? .pending, walk: walk, compact: true)
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(stop.title).lineLimit(1)
-                        Text(walk.isNew(id) ? "\(stop.type), new" : stop.type).font(.caption2)
-                            .foregroundStyle(walk.isNew(id) ? .blue : .secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            List(
+                walk.order,
+                id: \.self,
+                selection: Binding(get: { open }, set: { $0.map { stop in Task { await model.openStop(stop) } } })
+            ) { id in
+                if let stop = walk.stops[id] {
+                    HStack(spacing: 6) {
+                        StopState(state: states[id] ?? .pending, walk: walk, compact: true)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(stop.title).lineLimit(1)
+                            Text(caption(id, stop)).font(.caption2)
+                                .foregroundStyle(walk.isNew(id) ? .blue : .secondary)
+                        }
+                    }
+                    .padding(.leading, CGFloat(depth(of: id)) * 14)
+                    .contextMenu {
+                        if walk.companionStops.contains(id) {
+                            Button("Take Out of the Walk", role: .destructive) { model.dropCompanion(id) }
+                        }
                     }
                 }
-                .padding(.leading, CGFloat(depth(of: id)) * 14)
             }
+            Divider()
+            Button("Add a Companion Series…", systemImage: "plus") { adding = true }
+                .buttonStyle(.borderless)
+                .help(
+                    "A series of your own beside this one, for specials TMDb has no series for: shaped here as any new container is, and made at the top of the library when the walk is stored."
+                )
+                .padding(6)
         }
+        .sheet(isPresented: $adding) {
+            TitlePrompt(
+                question:
+                    "A new companion series beside \(walk.stops[walk.root]?.title ?? walk.root): what is it called?",
+                initial: "",
+                action: "Add",
+                option: TitlePrompt.Option(
+                    label: "Listed",
+                    help:
+                        "Unlisted, it is browsed to only through what refers to it; listed, the household finds it too."
+                )
+            ) { title, listed in Task { await model.addCompanion(title, listed: listed) } }
+        }
+    }
+
+    private func caption(_ id: String, _ stop: TMDbWalk.Stop) -> String {
+        if walk.companionStops.contains(id) { return "companion series, new" }
+        return walk.isNew(id) ? "\(stop.type), new" : stop.type
     }
 
     private func depth(of id: String) -> Int {
@@ -322,7 +360,18 @@ private struct NewStop: View {
     var body: some View {
         // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
         LazyVStack(alignment: .leading, spacing: 10, pinnedViews: [.sectionHeaders]) {
-            Text("New: drafted from TMDb, and made when the walk is stored.").font(.caption).foregroundStyle(.secondary)
+            if walk.companionStops.contains(stop) {
+                HStack {
+                    Text("New: a companion series of your own, made at the top of the library when the walk is stored.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Take Out of the Walk", role: .destructive) { model.dropCompanion(stop) }
+                        .help("Every stop beneath it leaves too, and the specials placed in it are unassigned again.")
+                }
+            } else {
+                Text("New: drafted from TMDb, and made when the walk is stored.").font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             let offered = walk.offered(stop)
             DifferenceGroup("Fields", offered.filter(\.isField), walk: walk, tick: tick)
             DifferenceGroup("References", offered.filter(\.isReference), walk: walk, tick: tick)
@@ -719,7 +768,7 @@ private struct WalkSpecials: View {
     /// The series a special may go into as its companion: those the library holds, then those the walk
     /// makes.
     private var companionChoices: [(id: String, name: String, listed: Bool)] {
-        let made = walk.companions.keys.sorted().compactMap(walk.companion)
+        let made = walk.companionStops.filter { $0 != current.open }.compactMap(walk.companion)
         return current.companions.map { ($0.id, $0.displayTitle, $0.listed) }
             + made.map { ($0.id.value, $0.displayTitle, $0.listed) }
     }
