@@ -13,4 +13,6 @@ kept the walk on this Mac without saying so, so closing read as possibly losing 
 - On the first stop not yet confirmed, Next is Confirm and Next: it confirms the stop as Confirm does,
   saying first any new containers confirming takes out of the walk, and opens the next stop once
   confirmed.
+- Return presses whichever of Next and Confirm and Next is shown, the sheet's default button, but
+  not while a text field is being edited, where Return is the field's.
 - Close is Close and Save, and says it keeps the walk on this Mac, nothing stored in the silo.

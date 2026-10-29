@@ -16,6 +16,8 @@ struct WalkSheet: View {
     let walking: ConsoleModel.Walking
     let model: ConsoleModel
     @Environment(\.dismiss) private var dismiss
+    /// Whether a text field of the sheet is being edited, when Return is the field's and not Next's.
+    @State private var editing = false
 
     private var current: ConsoleModel.Walking { model.walking ?? walking }
     private var walk: TMDbWalk { current.walk }
@@ -61,6 +63,12 @@ struct WalkSheet: View {
         }
         .padding()
         .frame(minWidth: 1040, minHeight: 680)
+        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidBeginEditingNotification)) { _ in
+            editing = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidEndEditingNotification)) { _ in
+            editing = false
+        }
         .alert(
             "Confirming takes containers out of the walk",
             isPresented: Binding(
@@ -110,15 +118,18 @@ struct WalkSheet: View {
                 Button("Store the Walk…") { model.listStore() }
                     .disabled(walk.order.allSatisfy { walk.stops[$0]?.taken == nil })
             }
-            // On the first stop not yet confirmed, Next confirms it first, in the one click.
+            // On the first stop not yet confirmed, Next confirms it first, in the one click. Either is the
+            // sheet's default, pressed by Return, except while a text field takes Return for itself.
             if let next = walk.next, next == current.open {
                 Button("Confirm and Next") { Task { await model.confirmAndNext() } }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(editing ? nil : .defaultAction)
                     .help("Confirms this stop, as Confirm does, and opens the next.")
                     .disabled(current.resuming || current.confirming || current.progress[next] != nil)
             } else {
                 Button("Next") { Task { await model.nextStop() } }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(editing ? nil : .defaultAction)
                     .disabled(walk.next == nil)
             }
         }

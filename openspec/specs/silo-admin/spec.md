@@ -1267,8 +1267,9 @@ in the order its children list them, whatever their ids: a series' seasons in TM
 container's other children each at its place among its missing episodes, and a new container's in
 its draft's order; a stop never read SHALL add them in the order its sequences hold them. A stop confirmed with nothing chosen and nothing placed in it SHALL be confirmed and unchanged. Pending stops
 SHALL be opened in the tree's order, depth first; open on the first of them, the operator SHALL be
-able to confirm it and open the next in one step. Closing the walk SHALL say that it saves the walk
-on this Mac. The console SHALL show the walk's tree as far as the
+able to confirm it and open the next in one step, and Return SHALL go on to the next stop as that
+step or Next does, but while a text field is being edited. Closing the walk SHALL say that it saves
+the walk on this Mac. The console SHALL show the walk's tree as far as the
 walk has found it, each stop with its state, which SHALL say what storing the walk would do: pending, not confirmed; or
 confirmed, and then that storing creates its container, creates it only once a stop above it named
 there is confirmed, edits it, or leaves it unchanged, as the store would find it. The operator SHALL
