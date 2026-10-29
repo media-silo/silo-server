@@ -295,6 +295,15 @@ extension ConsoleModel {
         keepWalk()
     }
 
+    /// A special dropped among the open stop's children, placed in its primary sequence before the child
+    /// whose key is given, or last.
+    func placeAmongChildren(_ special: Int, before target: String?) {
+        guard let open = walking?.open else { return }
+        walking?.walk.place(special, at: open, before: target)
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// A new container of a kind beneath the open stop, holding nothing yet.
     func addContainer(_ type: ContainerType, title: Title) async {
         guard let open = walking?.open, let id = try? await provisionalID() else { return }

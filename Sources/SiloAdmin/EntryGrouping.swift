@@ -92,6 +92,8 @@ struct GroupingList<Heading: View>: View {
     /// Moves a child, by the key its row goes by, before another's, or last with none; nil when the
     /// children keep the order they are in.
     var move: ((_ child: String, _ before: String?) -> Void)?
+    /// Places a special dropped on a child before it, or past the last last; nil when none is.
+    var place: ((_ special: Int, _ before: String?) -> Void)?
     @ViewBuilder let heading: Heading
     /// The entries selected to be grouped.
     @State private var selected: Set<String> = []
@@ -407,7 +409,7 @@ struct GroupingList<Heading: View>: View {
     }
 
     private var mover: ChildMoving? {
-        move.map { ChildMoving(order: { order }, move: $0, dropping: $dropping, grabbing: $grabbing) }
+        move.map { ChildMoving(order: { order }, move: $0, place: place, dropping: $dropping, grabbing: $grabbing) }
     }
 
     private func movable(_ row: some View, _ key: String?, titled title: String, group: Bool = false) -> some View {
@@ -594,6 +596,8 @@ struct EntryGrouping: View {
     let rename: (String, Bool) -> Void
     /// Moves one of the container's entries before another, or last with none.
     let move: (_ item: ItemID, _ before: ItemID?) -> Void
+    /// Places a special dropped on an entry before it, or past the last last, by the entry's item id.
+    let place: (_ special: Int, _ before: String?) -> Void
 
     private var container: Container? { tree.container(parent) }
     private var rows: [GroupingRow] { (container?.sequences.flatMap(\.items) ?? []).compactMap(row) }
@@ -628,7 +632,8 @@ struct EntryGrouping: View {
                 move: { child, before in
                     guard let item = ItemID(child) else { return }
                     move(item, before.flatMap(ItemID.init))
-                }
+                },
+                place: place
             ) {
                 // Ticks every child that may be ticked or none, a group as one, and shows as mixed while
                 // some are ticked.

@@ -396,7 +396,8 @@ struct ShapeTreeSheet: View {
                 rename: { name, beneath in
                     model.updateTree { $0.renameSequence(0, of: selected, to: name, beneath: beneath) }
                 },
-                move: { item, before in model.updateTree { $0.move(item, in: selected, before: before) } }
+                move: { item, before in model.updateTree { $0.move(item, in: selected, before: before) } },
+                place: { special, before in model.updateTree { $0.place(special, in: selected, before: before) } }
             )
             AttributionsLine(attributions: tree.attributions[selected] ?? []) { subject in
                 model.updateTree { $0.removeAttribution(of: subject, from: selected) }
@@ -449,7 +450,7 @@ struct ShapeTreeSheet: View {
                 HStack(spacing: 4) {
                     Text(special.episode.title)
                         .draggable(special: special.id, title: special.episode.title)
-                        .help("Drag onto the chosen container's alternatives or extras.")
+                        .help("Drag among the chosen container's children, or onto its alternatives or extras.")
                     TMDbMark()
                     if let aired = special.episode.airDate { Text(aired).font(.caption).foregroundStyle(.secondary) }
                 }

@@ -27,13 +27,15 @@ enum ChildDrag {
 }
 
 /// A list's children moved, each dragged by its grab handle onto another to go before it or past the
-/// last to go last, or from its right-click menu: the keys they go by, in order, what moves one, which
+/// last to go last, or from its right-click menu, and a special dragged there placed there: the keys they go by, in order, what moves one, which
 /// one a drag is over, and which one's handle the pointer is on. The order is worked out only when a
 /// child is moved, not for every row each time a hover or a drag over the list renders it again.
 @MainActor
 struct ChildMoving {
     let order: () -> [String]
     let move: (_ child: String, _ before: String?) -> Void
+    /// Places a special dropped before a child, or last with none; nil where none is placed.
+    let place: ((_ special: Int, _ before: String?) -> Void)?
     @Binding var dropping: String?
     @Binding var grabbing: String?
 
@@ -58,6 +60,10 @@ struct ChildMoving {
     func drop(_ payloads: [String], before key: String?) -> Bool {
         dropping = nil
         grabbing = nil
+        if let place, case .special(let special)? = payloads.first.flatMap(AlternativeDrag.init) {
+            place(special, key)
+            return true
+        }
         guard let moved = payloads.first.flatMap(ChildDrag.child) else { return false }
         if ChildDrag.moves(moved, before: key, in: order()) { move(moved, key) }
         return true

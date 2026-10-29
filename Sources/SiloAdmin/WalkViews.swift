@@ -308,7 +308,8 @@ private struct NewStop: View {
                     rename: { name, beneath in
                         model.draftAlternatives { $0.renameSequence(0, at: stop, to: name, beneath: beneath) }
                     },
-                    move: { item, before in model.moveNewStopEntry(item, before: before) }
+                    move: { item, before in model.moveNewStopEntry(item, before: before) },
+                    place: { special, before in model.placeAmongChildren(special, before: before) }
                 )
                 DisclosureGroup("Its form") {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
@@ -575,7 +576,7 @@ private struct WalkSpecials: View {
             HStack(spacing: 4) {
                 Text(special.episode.title).lineLimit(2)
                     .draggable(special: special.id, title: special.episode.title)
-                    .help("Drag onto the open stop's alternatives or extras.")
+                    .help("Drag among the open stop's children, or onto its alternatives or extras.")
                 TMDbMark()
                 if isSuggestedHere(special) {
                     Text("suggested here").font(.caption2.bold()).foregroundStyle(.orange)
