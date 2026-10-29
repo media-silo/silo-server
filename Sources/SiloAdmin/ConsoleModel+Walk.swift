@@ -220,12 +220,13 @@ extension ConsoleModel {
     /// operator looks at this one. Any change to it afterwards makes it pending again.
     /// A missing child no longer chosen takes its new stops out of the walk, so the console says which
     /// first, and confirms only once the operator says so.
-    func confirmStop(leavingSaid: Bool = false) async {
-        guard let current = walking, !current.confirming, let database, let tmdb else { return }
+    @discardableResult
+    func confirmStop(leavingSaid: Bool = false) async -> Bool {
+        guard let current = walking, !current.confirming, let database, let tmdb else { return false }
         let leaving = current.walk.leaving(confirming: current.open)
         if !leaving.isEmpty, !leavingSaid {
             walking?.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
-            return
+            return false
         }
         walking?.leaving = nil
         walking?.confirming = true
@@ -238,15 +239,27 @@ extension ConsoleModel {
                 tmdb: tmdb
             )
             let beneath = try await console.stops(beneath: current.open, in: current.walk, of: current.silo)
-            guard walking?.id == current.id else { return }
+            guard walking?.id == current.id else { return false }
             walking?.walk.confirm(current.open, beneath: beneath, drafts: drafts)
             walking?.plan = nil
             keepWalk()
         } catch {
             walking?.failure = describe(error)
-            return
+            return false
         }
         if let next = walking?.walk.next, next != current.open { Task { await read(next) } }
+        return true
+    }
+
+    /// Confirms the open stop and opens the next, as Confirm and then Next would. When confirming waits
+    /// for the operator to say containers may leave the walk, the next is opened once they have.
+    func confirmAndNext(leavingSaid: Bool = false) async {
+        walking?.nextOnceConfirmed = true
+        let confirmed = await confirmStop(leavingSaid: leavingSaid)
+        // Still asked while the leaving are being said; otherwise done with, confirmed or not.
+        guard confirmed || walking?.leaving == nil else { return }
+        walking?.nextOnceConfirmed = false
+        if confirmed { await nextStop() }
     }
 
     /// The open stop pending again, its choices kept, as though nothing were confirmed there.
