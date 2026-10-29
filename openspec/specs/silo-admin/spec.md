@@ -914,7 +914,7 @@ draft of the series as unassigned. The operator SHALL place each special, or not
 
 - an entry in one of the tree's sequences, at a position the operator chooses, or in a container's
   primary sequence by dropping it among the container's children, before the child it is dropped on
-  or past the last;
+  or past the last, and listed among them in its place, moved as they are;
 - an extra of the series or of a container beneath it, typed with one of the extra types SmdKit names;
 - a child container beneath the series, drafted as a child is;
 - a duplicate of another TMDb record: the special's home is the entry or container that record reads
@@ -1039,7 +1039,8 @@ and the console SHALL list every edit and creation the placements make before it
 
 #### Scenario: a special dropped among a draft's children
 - **WHEN** a special is dropped on the second of a drafted season's entries
-- **THEN** it is placed in the season's primary sequence at that entry's position, before it
+- **THEN** it is placed in the season's primary sequence at that entry's position, and listed among
+  the season's children before the entry
 
 #### Scenario: a new companion series made listed
 - **WHEN** a special is placed in a new companion series the operator titles and lists
@@ -1289,7 +1290,7 @@ alternative, a drafted alternative's entries SHALL be reordered by
 dragging them, and a special SHALL be draggable onto the stop's extras by kind, and among its children, placed in
 its primary sequence before the child it is dropped on or past the last: in a held stop listed there
 and moved there as the operator would move it, one placed there already moved, and in a new stop at
-that entry's position in its draft. The operator SHALL be able to rename a stop's primary
+that entry's position in its draft, listed there among its children. The operator SHALL be able to rename a stop's primary
 sequence, the name kept as a sequence id and refused when another of its sequences has it; the
 alternatives naming it and the specials placed in it SHALL be renamed with it, a new stop's draft
 SHALL be shaped with it, and a held stop's SHALL be renamed by its edit when the walk is stored. When

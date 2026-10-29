@@ -596,11 +596,21 @@ struct EntryGrouping: View {
     let rename: (String, Bool) -> Void
     /// Moves one of the container's entries before another, or last with none.
     let move: (_ item: ItemID, _ before: ItemID?) -> Void
-    /// Places a special dropped on an entry before it, or past the last last, by the entry's item id.
+    /// Places a special dropped on a child before it, or past the last last, by the key the child goes by.
     let place: (_ special: Int, _ before: String?) -> Void
+    /// Where the specials are placed, and the specials, for those placed in the container to be listed.
+    let placements: [Int: SpecialPlacement]
+    let specials: [Special]
 
     private var container: Container? { tree.container(parent) }
-    private var rows: [GroupingRow] { (container?.sequences.flatMap(\.items) ?? []).compactMap(row) }
+    private var rows: [GroupingRow] {
+        TMDbTree.children(of: container, placements: placements, specials: specials).compactMap { child in
+            switch child {
+            case .entry(let entry): row(entry)
+            case .special(let special): .fixed(id: child.key, "\(special.episode.title), placed")
+            }
+        }
+    }
 
     var body: some View {
         if container != nil {
@@ -630,8 +640,10 @@ struct EntryGrouping: View {
                     update { $0.title(items, in: parent, as: word) }
                 },
                 move: { child, before in
+                    // A special placed here moves by being placed again.
+                    if let special = DraftChild.special(child) { return place(special, before) }
                     guard let item = ItemID(child) else { return }
-                    move(item, before.flatMap(ItemID.init))
+                    move(item, TMDbTree.entry(before: before, in: container, placements: placements))
                 },
                 place: place
             ) {

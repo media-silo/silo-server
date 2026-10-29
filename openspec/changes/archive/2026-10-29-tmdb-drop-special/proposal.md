@@ -14,4 +14,6 @@ would go into, it did nothing, though the list marked the drop as it would a chi
   child, and one dropped past the last is placed last, in a draft from TMDb and at a walk's stop alike.
 - At a held stop it is listed among the children where it was dropped, moved there as the operator
   would move it after placing it; one placed there already is moved.
-- In a new stop, and in a draft, it is placed at the position of the entry it was dropped on.
+- In a new stop, and in a draft, it is placed at the position of the entry it was dropped on, and
+  listed among the children there, as a special placed in its primary sequence now always is, moved
+  by its handle as they are: one in a container holding nothing yet is its one child.

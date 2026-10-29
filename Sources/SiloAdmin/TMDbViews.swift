@@ -397,7 +397,9 @@ struct ShapeTreeSheet: View {
                     model.updateTree { $0.renameSequence(0, of: selected, to: name, beneath: beneath) }
                 },
                 move: { item, before in model.updateTree { $0.move(item, in: selected, before: before) } },
-                place: { special, before in model.updateTree { $0.place(special, in: selected, before: before) } }
+                place: { special, before in model.updateTree { $0.place(special, in: selected, before: before) } },
+                placements: tree.placements,
+                specials: tree.specials
             )
             AttributionsLine(attributions: tree.attributions[selected] ?? []) { subject in
                 model.updateTree { $0.removeAttribution(of: subject, from: selected) }

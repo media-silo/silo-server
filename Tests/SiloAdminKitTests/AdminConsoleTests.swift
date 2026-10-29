@@ -6064,8 +6064,38 @@ extension AdminConsoleTests {
         try #require(items.count > 2)
         newWalk.place(special.id, at: new, before: items[2].value)
         #expect(newWalk.placements[special.id] == .entry(in: new, position: 2))
+        // Listed in its place among the entries, an entry moved before it going before the one after it.
+        let specialKey = "special:\(special.id)"
+        let listed = TMDbTree.children(
+            of: newWalk.container(new),
+            placements: newWalk.placements,
+            specials: newWalk.specials
+        )
+        let listedKeys = listed.map(\.key)
+        let expectedKeys: [String] = items[..<2].map(\.value) + [specialKey] + items[2...].map(\.value)
+        #expect(listedKeys == expectedKeys)
+        let container = newWalk.container(new)
+        #expect(TMDbTree.entry(before: specialKey, in: container, placements: newWalk.placements) == items[2])
+        #expect(TMDbTree.entry(before: items[1].value, in: container, placements: newWalk.placements) == items[1])
+        #expect(TMDbTree.entry(before: nil, in: container, placements: newWalk.placements) == nil)
+        newWalk.place(4242, at: new, before: specialKey)
+        #expect(newWalk.placements[4242] == .entry(in: new, position: 2), "before the special, at its place")
         newWalk.place(special.id, at: new, before: nil)
         #expect(newWalk.placements[special.id] == .entry(in: new))
+        let last = TMDbTree.children(of: container, placements: newWalk.placements, specials: newWalk.specials)
+        #expect(last.last == .special(Special(episode: special)))
+        #expect(TMDbTree.entry(before: specialKey, in: container, placements: newWalk.placements) == nil)
+
+        // A container holding nothing yet lists the special placed in it alone; one placed elsewhere is not.
+        let empty = Container(id: ContainerID("00000000000005f1")!, type: .episode, title: Title("The Five Doctors")!)
+        let alone = TMDbTree.children(
+            of: empty,
+            placements: [special.id: .entry(in: empty.id.value), 4242: .extra(of: empty.id.value, type: "trailer")],
+            specials: [Special(episode: special)]
+        )
+        #expect(alone == [.special(Special(episode: special))])
+        #expect(TMDbTree.children(of: nil, placements: [:], specials: [Special(episode: special)]).isEmpty)
+        #expect(DraftChild.special("part-1") == nil)
 
         var tree = try #require(newWalk.drafts[new])
         tree.place(special.id, in: new, before: items[1].value)

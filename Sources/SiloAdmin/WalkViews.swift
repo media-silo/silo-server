@@ -309,7 +309,9 @@ private struct NewStop: View {
                         model.draftAlternatives { $0.renameSequence(0, at: stop, to: name, beneath: beneath) }
                     },
                     move: { item, before in model.moveNewStopEntry(item, before: before) },
-                    place: { special, before in model.placeAmongChildren(special, before: before) }
+                    place: { special, before in model.placeAmongChildren(special, before: before) },
+                    placements: walk.placements,
+                    specials: walk.specials
                 )
                 DisclosureGroup("Its form") {
                     ContainerForm(container: container) { changed in model.shapeNewStop { $0.set(changed) } }
