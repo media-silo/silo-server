@@ -86,7 +86,20 @@ extension TMDbWalk {
         guard keys != order else { return false }
         arrangedEntries[stop] = keys
         unconfirm(stop)
+        relist(stop)
         return true
+    }
+
+    /// A held stop's stops beneath it put in the order its children list them, as the walk takes them.
+    private mutating func relist(_ stop: String) {
+        guard let children = stops[stop]?.children else { return }
+        let rank = Dictionary(
+            listed(beneath: stop).enumerated().map { ($1, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        stops[stop]?.children = children.enumerated()
+            .sorted { (rank[$0.element] ?? .max, $0.offset) < (rank[$1.element] ?? .max, $1.offset) }
+            .map(\.element)
     }
 
     /// A held stop's entries in the order storing would give them had none been moved.
@@ -94,6 +107,7 @@ extension TMDbWalk {
         guard arrangedEntries[stop] != nil else { return }
         arrangedEntries[stop] = nil
         unconfirm(stop)
+        relist(stop)
     }
 }
 
