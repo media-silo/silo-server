@@ -776,7 +776,7 @@ provider's id TMDb holds for it. Each episode's entry SHALL carry its references
 outline, until the operator titles it. A container's outline SHALL be TMDb's overview, attributed to `tmdb` with the record's id.
 
 Each container SHALL be a draft of a new container with an id from the clone's `provisionalID()`,
-kept on this Mac as a new container's draft is. The top SHALL be filed beneath the container of the
+kept on this Mac with the walk it roots. The top SHALL be filed beneath the container of the
 library that carries the reference of the record above it, when there is one, or at the top of the
 library. The form SHALL show each episode's title from TMDb beside its entry, marked as TMDb's, and
 SHALL store none. The operator SHALL be able to shape the tree before it is created: re-type a
@@ -819,9 +819,10 @@ group made of a story's parts holds them, SHALL NOT be suggested as a group: it 
 instead to be titled by its parts' numbers, as `Episode 1` and on or `Part 1` and on, as the operator
 chooses, the choice worded by the first and last of those numbers, and once titled SHALL be suggested
 as nothing. The
-console SHALL show the dry run of the whole tree as they shape it. Creating SHALL store the parent's edit
-naming the top, as creating a child does, and then make the tree, with its attributions, in one
-request to the silo.
+draft SHALL be shaped and made as the walk rooted at its top, which is how a record the library does
+not hold is walked from a draft of it. A season picked of a series the library holds by its reference
+SHALL NOT be drafted on its own: the series' walk SHALL open with the season chosen among its missing
+children, drafted beneath the series once the series' stop is confirmed.
 
 #### Scenario: a film neither smddb nor the library holds
 - **WHEN** the operator picks from TMDb a film whose reference neither the clone nor the library holds
@@ -833,10 +834,11 @@ request to the silo.
 - **THEN** the console offers that series' import from smddb, and drafts nothing
 
 #### Scenario: a season drafted beneath its series
-- **WHEN** the operator picks from TMDb a season of a series the library holds by its reference, and
-  creates it
-- **THEN** the series' sidecar names the season, and the library holds the season with an entry for
-  each episode carrying its references and no title, and no presentations
+- **WHEN** the operator picks from TMDb a season of a series the library holds by its reference
+- **THEN** the series' walk opens with the season chosen among its missing children; once the series'
+  stop and the season's are confirmed and the walk is stored, the series' sidecar names the season,
+  and the library holds the season with an entry for each episode carrying its references and no
+  title, and no presentations
 
 #### Scenario: a season's serials suggested from TMDb's titles
 - **WHEN** a drafted season's episodes are titled at TMDb as three parts of one story, two of another,
@@ -879,8 +881,8 @@ request to the silo.
   taken out follows the group
 
 #### Scenario: an entry and a group unticked
-- **WHEN** one of a drafted season's entries and a group of three others are unticked, and the tree is
-  made
+- **WHEN** one of a drafted season's entries and a group of three others are unticked, and the season
+  is made
 - **THEN** the season is made without the entry, and neither the group nor its three entries are made
 
 #### Scenario: groups made one after another
@@ -893,7 +895,7 @@ request to the silo.
 - **THEN** its entries are back in its place, and the special is unassigned again
 
 #### Scenario: a season regrouped into serials
-- **WHEN** the operator regroups a drafted season's episodes into two serials beneath it, and creates it
+- **WHEN** the operator regroups a drafted season's episodes into two serials beneath it, and makes it
 - **THEN** the library holds the season, with the two serials beneath it, each holding its episodes in
   TMDb's order
 
@@ -903,9 +905,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraft
 `aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`,
 `aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`,
 `aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`,
-`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`). The search, the shaping's sheet and the dry run as the
-operator shapes are pinned by nothing yet, as the rest of the shell is, but for where a child dropped
-where it is goes: `Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDroppedWhereItIsStays`).
+`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`). The search, and the walk's sheet the draft is shaped in,
+are pinned by nothing yet, as the rest of the shell is, but for where a child dropped where it is goes: `Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDroppedWhereItIsStays`).
 
 ### Requirement: A series' specials are unassigned until the operator places or declines each
 SiloAdmin SHALL read a series' season 0 at TMDb as the series' specials, each with its TMDb episode
@@ -1593,3 +1594,43 @@ with each new companion series it made as a stop of its own, confirmed.
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aCompanionSeriesIsAStopOfItsOwn`,
 `aWalkKeptBeforeCompanionsWereStopsReadsThemAsStops`). The walk's sheet is pinned by nothing yet, as
 the rest of the shell is.
+
+### Requirement: A record the library does not hold is walked from a draft of it
+Picking a TMDb record that neither smddb's clone nor the library holds SHALL start a walk rooted at
+the draft's top, shown in the same sheet as a walk of a held tree: the walk's tree, the open stop and,
+for a series, its specials beside every stop. The root SHALL be a new stop with no stop above it in
+the walk, opened, shaped and confirmed as any new stop is, its fields and references chosen to begin
+with; confirming it SHALL add the containers of its draft beneath it as new stops. A drafted series
+SHALL be the series whose specials sit beside every stop, each suggested where it goes as a draft's
+specials are. Storing the walk SHALL make nothing of a root not confirmed. A confirmed root SHALL be
+made, with the confirmed containers beneath it and their attributions, in one creation: at the top of
+the library, after the walk's companion series and before any other step; or, for a film filed beneath
+a collection the library holds, beneath that collection, once that collection's sidecar is edited to
+name it. A drafted series SHALL then decline the specials declined in it. The walk SHALL be kept on
+this Mac as a walk of a held tree is, and picking the same record for the same library again SHALL
+offer to resume it or start again, starting again drafting the record afresh.
+
+#### Scenario: a series the library lacks
+- **WHEN** the operator picks a series neither the clone nor the library holds, declines its one
+  special, and confirms the series' stop and the stop of its one season
+- **THEN** storing the walk makes the series at the top of the library with the season beneath it,
+  and the series declines the special
+
+#### Scenario: a drafted root not confirmed
+- **WHEN** a walk rooted at a draft of a series is stored before the series' stop is confirmed
+- **THEN** storing makes nothing
+
+#### Scenario: a film in a collection the library holds
+- **WHEN** the operator picks a film the library lacks whose collection the library holds, and
+  confirms the film's stop
+- **THEN** storing the walk names the film in the collection first, then makes it beneath the
+  collection
+
+#### Scenario: a walk of a record resumed
+- **WHEN** a walk rooted at a draft of a record is kept, and the same record is picked for the same
+  library again
+- **THEN** the console offers to resume that walk, or start again with a new draft of the record
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aRecordTheLibraryLacksIsWalkedFromADraft`).
+The walk's sheet, the offer to resume, and starting again are pinned by nothing yet, as the rest of
+the shell is.

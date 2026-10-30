@@ -7,11 +7,11 @@ import SmdKit
 import SmdSidecar
 import SwiftUI
 
-/// A held container's tree walked against TMDb: the walk's tree beside the open stop, with each
-/// stop's state; the open stop's differences, each with a tick and none ticked to begin with; and the
-/// series' unassigned specials beside every stop, to be placed in the one they belong to. What the
-/// library holds and TMDb lacks is shown, and never offered for removal. Nothing is stored until the
-/// walk is, and the store lists everything it will do first.
+/// A container's tree walked against TMDb, held or drafted from it: the walk's tree beside the open
+/// stop, with each stop's state; the open stop's differences, each with a tick and none ticked to begin
+/// with; and the series' unassigned specials beside every stop, to be placed in the one they belong to.
+/// What the library holds and TMDb lacks is shown, and never offered for removal. Nothing is stored
+/// until the walk is, and the store lists everything it will do first.
 struct WalkSheet: View {
     let walking: ConsoleModel.Walking
     let model: ConsoleModel
@@ -25,7 +25,7 @@ struct WalkSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("\(walk.stops[walk.root]?.title ?? walk.root) against TMDb").font(.title3.bold())
+                Text(heading).font(.title3.bold())
                 TMDbMark()
                 Spacer()
                 Text(counts).font(.caption).foregroundStyle(.secondary)
@@ -33,7 +33,7 @@ struct WalkSheet: View {
             if current.resuming {
                 HStack {
                     Label(
-                        "This Mac kept a walk of this tree, last changed \(walk.edited.formatted(date: .abbreviated, time: .shortened)): \(counts).",
+                        "This Mac kept a walk of this \(walk.drafting ? "record" : "tree"), last changed \(walk.edited.formatted(date: .abbreviated, time: .shortened)): \(counts).",
                         systemImage: "clock.arrow.circlepath"
                     )
                     Spacer()
@@ -91,6 +91,11 @@ struct WalkSheet: View {
                 "No longer chosen, these new containers leave the walk with everything beneath them, and the specials placed in them are unassigned again: \((current.leaving ?? []).joined(separator: ", "))."
             )
         }
+    }
+
+    private var heading: String {
+        let title = walk.stops[walk.root]?.title ?? walk.root
+        return walk.drafting ? "\(title) from TMDb, into \(walk.library)" : "\(title) against TMDb"
     }
 
     private var counts: String {
@@ -600,7 +605,7 @@ private struct WalkSpecials: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Specials: \(walk.unassigned.count) of \(walk.specials.count) unassigned").font(.headline)
             if let pooling = current.pooling { ReadingProgress(progress: pooling) }
-            if walk.series == walk.root, walk.stops[walk.root]?.comparison == nil {
+            if walk.series == walk.root, !walk.drafting, walk.stops[walk.root]?.comparison == nil {
                 Text("Read with the series.").font(.caption).foregroundStyle(.secondary)
             }
             // Not a List: its table tracks a mouse-down itself, and a special dragged from one of its rows and

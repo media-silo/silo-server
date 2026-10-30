@@ -24,14 +24,73 @@ extension ConsoleModel {
     }
 
     /// Starts a walk of a held container's tree against TMDb, rooted at it: its first stop opened and
-    /// read, and, for a walk rooted below a series, the series' specials read beside it.
-    func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo) async {
+    /// read, and, for a walk rooted below a series, the series' specials read beside it. A difference of
+    /// the root given is ticked once the root is read.
+    func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
         // A walk this Mac keeps for the container is offered to be resumed, or started again.
         if let kept = console.tmdbWalks.walk(rootedAt: key.container, in: key.library, of: silo.id) {
-            walking = Walking(silo: silo, walk: kept, open: kept.next ?? kept.root, resuming: true)
+            walking = Walking(
+                silo: silo,
+                walk: kept,
+                open: choosing == nil ? kept.next ?? kept.root : kept.root,
+                resuming: true,
+                choosing: choosing
+            )
             return
         }
-        await startWalk(key, on: silo)
+        await startWalk(key, on: silo, choosing: choosing)
+    }
+
+    /// Opens a walk rooted at a draft from TMDb, kept on this Mac from the start: its root opened, and, for
+    /// a series, where its specials go suggested beside it.
+    func openDraftWalk(_ walk: TMDbWalk, on silo: AdminConsole.Silo, redraft: Walking.Redraft) async {
+        let opening = Walking(silo: silo, walk: walk, open: walk.root, redraft: redraft)
+        walking = opening
+        keepWalk()
+        await readCompanions(for: opening.id)
+        if walk.series == walk.root, !walk.specials.isEmpty { suggestSpecials(for: opening.id) }
+        await openStop(walk.root)
+    }
+
+    /// Suggests where a drafted series' specials go, while they sit beside the stops.
+    private func suggestSpecials(for id: UUID) {
+        guard let current = walking, let database, let tmdb else { return }
+        walking?.pooling = AdminConsole.TMDbProgress("Suggesting where the specials go")
+        tmdbState.pooling = Task {
+            do {
+                let suggested = try await console.suggest(
+                    in: current.walk,
+                    of: current.silo,
+                    from: database,
+                    tmdb: tmdb,
+                    progress: { step in await self.suggesting(step, for: id) }
+                )
+                if walking?.id == id {
+                    walking?.walk.specials = suggested.specials
+                    walking?.walk.suggestions = suggested.suggestions
+                    keepWalk()
+                }
+            } catch {
+                if walking?.id == id, !Task.isCancelled { walking?.failure = describe(error) }
+            }
+            if walking?.id == id { walking?.pooling = nil }
+        }
+    }
+
+    private func suggesting(_ step: AdminConsole.TMDbProgress, for id: UUID) {
+        guard walking?.id == id else { return }
+        walking?.pooling = step
+    }
+
+    /// Ticks the difference of the root the walk was asked to choose, once the root's reading offers it.
+    private func choosePending() {
+        guard let choosing = walking?.choosing, let walk = walking?.walk,
+            walk.differences(of: walk.root).contains(where: { $0.id == choosing })
+        else { return }
+        walking?.walk.choose(choosing, true, at: walk.root)
+        walking?.choosing = nil
+        walking?.plan = nil
+        keepWalk()
     }
 
     /// Goes on with the walk this Mac kept, as it was left.
@@ -44,15 +103,33 @@ extension ConsoleModel {
         }
         await readCompanions(for: current.id)
         await openStop(current.open)
+        choosePending()
     }
 
-    /// Discards the walk this Mac kept for the container and starts a new one.
+    /// Discards the walk this Mac kept for the container, or for the record it drafted, and starts a new
+    /// one.
     func startWalkAgain() async {
         guard let current = walking else { return }
         try? console.tmdbWalks.remove(current.walk.id, of: current.silo.id)
+        if let redraft = current.redraft {
+            do {
+                if let said = try await startTMDbDraft(
+                    of: redraft.record,
+                    shape: redraft.shape,
+                    for: redraft.finding,
+                    again: true
+                ) {
+                    walking?.failure = said
+                }
+            } catch {
+                walking?.failure = describe(error)
+            }
+            return
+        }
         await startWalk(
             ContainerKey(silo: current.silo.id, library: current.walk.library, container: current.walk.root),
-            on: current.silo
+            on: current.silo,
+            choosing: current.choosing
         )
     }
 
@@ -81,9 +158,14 @@ extension ConsoleModel {
         if walking?.id == id { walking?.companions = held ?? [] }
     }
 
-    private func startWalk(_ key: ContainerKey, on silo: AdminConsole.Silo) async {
+    private func startWalk(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
         let root = TMDbWalk.Stop(id: key.container, title: key.container, type: "")
-        let starting = Walking(silo: silo, walk: TMDbWalk(library: key.library, root: root), open: key.container)
+        let starting = Walking(
+            silo: silo,
+            walk: TMDbWalk(library: key.library, root: root),
+            open: key.container,
+            choosing: choosing
+        )
         walking = starting
         guard database != nil, tmdb != nil else {
             walking?.failure = tmdbProblem ?? smddbProblem ?? "TMDb or smddb's clone cannot be read."
@@ -159,6 +241,7 @@ extension ConsoleModel {
                 if walking?.id == id {
                     walking?.walk.read(comparison)
                     keepWalk()
+                    choosePending()
                 }
             } catch let unreadable as AdminConsole.NoTMDbReading {
                 if walking?.id == id { walking?.failures[stop] = unreadable.reason }
@@ -395,7 +478,13 @@ extension ConsoleModel {
                 walking?.open = stale
                 await read(stale)
             }
-            await open(ContainerKey(silo: current.silo.id, library: current.walk.library, container: current.walk.root))
+            // A root drafted from TMDb is in the library's list once it is made, and not before.
+            let root = current.walk.root
+            if current.walk.drafting {
+                await loadContainers(for: current.silo)
+                guard stored.walk.stored.contains("create:\(root)") else { return }
+            }
+            await open(ContainerKey(silo: current.silo.id, library: current.walk.library, container: root))
         } catch {
             walking?.failure = describe(error)
         }

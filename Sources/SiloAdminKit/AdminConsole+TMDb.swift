@@ -68,6 +68,46 @@ extension AdminConsole {
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
     ) async throws -> TMDbStart {
+        let start = try await reading(record, shape: shape, into: library, of: silo, from: database, tmdb: tmdb)
+        if case .draft(let tree) = start { try tmdbDrafts.save(tree, for: silo.id) }
+        return start
+    }
+
+    /// Starts a walk of a TMDb record the library does not hold, rooted at a draft of it: smddb first,
+    /// the library next, as a draft starts, and otherwise the walk, which the console keeps as it keeps
+    /// any walk.
+    public func startWalk(
+        drafting record: TMDb.Record,
+        shape: TMDbShape = TMDbShape(),
+        into library: String,
+        of silo: Silo,
+        from database: any ContainerDatabase,
+        tmdb: any TMDbSource
+    ) async throws -> TMDbWalkStart {
+        switch try await reading(record, shape: shape, into: library, of: silo, from: database, tmdb: tmdb) {
+        case .importFromSmddb(let container): .importFromSmddb(container)
+        case .held(let summary): .held(summary)
+        case .draft(let tree): .walk(TMDbWalk(drafting: tree))
+        }
+    }
+
+    /// What picking a TMDb record to walk comes to: smddb's container to import instead, the library's
+    /// container that carries the record's reference already, or a walk rooted at a draft of it.
+    public enum TMDbWalkStart: Hashable, Sendable {
+        case importFromSmddb(Container)
+        case held(SiloClient.ContainerSummary)
+        case walk(TMDbWalk)
+    }
+
+    /// A TMDb record as starting a draft finds it, keeping nothing.
+    private func reading(
+        _ record: TMDb.Record,
+        shape: TMDbShape,
+        into library: String,
+        of silo: Silo,
+        from database: any ContainerDatabase,
+        tmdb: any TMDbSource
+    ) async throws -> TMDbStart {
         if let known = try await database.containers().first(where: {
             $0.type == record.containerType && $0.externalRefs.contains(record.ref)
         }) {
@@ -92,9 +132,7 @@ extension AdminConsole {
         {
             creating = ContainerDraft.Creating(parent: holder.id)
         }
-        let tree = reader.tree(top: top, record: record, library: library, creating: creating)
-        try tmdbDrafts.save(tree, for: silo.id)
-        return .draft(tree)
+        return .draft(reader.tree(top: top, record: record, library: library, creating: creating))
     }
 
     /// Starts a draft of one of a series' seasons beneath the series a library holds by its reference.
@@ -378,6 +416,32 @@ extension AdminConsole {
         )
         try tmdbDrafts.save(suggested, for: silo.id)
         return (suggested, suggestions)
+    }
+
+    /// The suggestions for the specials of a walk's drafted series, as a draft's are suggested: the walk
+    /// gains them, and its specials the other ids TMDb holds for them. A walk rooted at no drafted
+    /// series is as it was.
+    public func suggest(
+        in walk: TMDbWalk,
+        of silo: Silo,
+        from database: any ContainerDatabase,
+        tmdb: any TMDbSource,
+        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
+    ) async throws -> TMDbWalk {
+        guard walk.drafting, walk.series == walk.root, var tree = walk.drafts[walk.root] else { return walk }
+        tree.specials = walk.specials
+        tree.placements = walk.placements
+        let (suggested, suggestions) = try await self.suggestions(
+            for: tree,
+            of: silo,
+            from: database,
+            tmdb: tmdb,
+            progress: progress
+        )
+        var walk = walk
+        walk.specials = suggested.specials
+        walk.suggestions = suggestions
+        return walk
     }
 
     /// The suggestions `suggest(for:of:from:tmdb:progress:)` makes, keeping nothing.

@@ -172,6 +172,18 @@ extension AdminConsole {
                 }
             case .held(let edit):
                 try await apply(edit, on: silo)
+            case .name(let child, let parent, let creating):
+                let opened = try await open(container: parent, in: library, of: silo)
+                var naming = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
+                guard let held = naming.value else { return "the parent's sidecar does not read as a container" }
+                let named = Self.naming(child, in: held, at: creating)
+                guard named != held else { return nil }
+                naming.set(named)
+                switch try await store(naming, of: silo) {
+                case .stored: break
+                case .refused(let result): return result.findings.map(\.text).joined(separator: "; ")
+                case .landedFirst: return "the parent's sidecar changed as it was edited; try again"
+                }
             case .decline(let refs, let series):
                 try await decline(refs, in: series, of: library, on: silo)
             case .artwork(let kind, let path, let record, let container):
@@ -299,7 +311,10 @@ extension TMDbWalk {
         case edit(ContainerDraft)
         /// An edit of a container outside the walk, onto its sidecar as it is then.
         case held(TMDbTree.Making.HeldEdit)
-        /// References the series declines, when the series is no stop of the walk.
+        /// A container outside the walk that names the walk's drafted root, edited onto its sidecar as it
+        /// is then, before the root is made beneath it.
+        case name(Container, in: String, at: ContainerDraft.Creating)
+        /// References the series declines, when the series is no stop of the walk, or one the walk makes.
         case decline([ExternalRef], in: String)
         case artwork(kind: String, path: String, record: TMDb.Record, of: String)
     }
@@ -349,6 +364,7 @@ extension TMDbWalk {
         for id in companionStops {
             if let made = making(of: id, gathering: &gathering) { companions.append(made) }
         }
+        let drafted = drafting ? making(of: root, gathering: &gathering) : nil
         var changes: [Change] = []
         for id in order {
             if let change = try change(of: id, gathering: &gathering) { changes.append(change) }
@@ -385,6 +401,7 @@ extension TMDbWalk {
                     "make \(top.displayTitle), a series of its own,\(beneath > 0 ? " and the \(beneath) beneath it," : "") at the top of the library"
             )
         }
+        if let drafted { steps += rootSteps(drafted) }
         steps += outside.map { edit in
             Step(id: "held:\(edit.key)", kind: .held(edit), described: edit.described)
         }
@@ -392,17 +409,59 @@ extension TMDbWalk {
         if let decline { steps.append(decline) }
         steps += gathering.artwork
         var plan = Plan(steps: steps.filter { !stored.contains($0.id) })
-        for step in steps {
-            switch step.kind {
-            case .create(let containers, _, _): plan.made.formUnion(containers.map(\.id.value))
-            case .edit(let draft): plan.edited.insert(draft.container)
-            case .held(let edit) where edit.library == library: plan.edited.insert(edit.container)
-            case .held: break
-            case .decline(_, let series): plan.edited.insert(series)
-            case .artwork(_, _, _, let container): plan.edited.insert(container)
-            }
-        }
+        for step in steps { tally(step, in: &plan) }
         return plan
+    }
+
+    /// What a step makes or edits of the library, counted in the plan whether or not it is still to be
+    /// made.
+    private func tally(_ step: Step, in plan: inout Plan) {
+        switch step.kind {
+        case .create(let containers, _, _): plan.made.formUnion(containers.map(\.id.value))
+        case .edit(let draft): plan.edited.insert(draft.container)
+        case .held(let edit) where edit.library == library: plan.edited.insert(edit.container)
+        case .held: break
+        case .name(_, let parent, _): plan.edited.insert(parent)
+        case .decline(_, let series): plan.edited.insert(series)
+        case .artwork(_, _, _, let container): plan.edited.insert(container)
+        }
+    }
+
+    /// What storing makes of a root drafted from TMDb, once it is confirmed: named first in the container
+    /// that holds the record above it, when it is filed beneath one, then made with what is beneath it in
+    /// one creation, and then, for a series, the specials declined in it.
+    private func rootSteps(_ drafted: (creating: ContainerDraft.Creating, making: TMDbTree.Making)) -> [Step] {
+        let (creating, making) = drafted
+        guard let top = making.documents.first else { return [] }
+        let beneath = making.documents.count - 1
+        let made = "make \(top.displayTitle)\(beneath > 0 ? " and the \(beneath) beneath it" : "")"
+        var steps: [Step] = []
+        if let parent = creating.parent {
+            steps.append(
+                Step(
+                    id: "name:\(top.id)",
+                    kind: .name(top, in: parent, at: creating),
+                    described: "name \(top.displayTitle) in the collection that holds it"
+                )
+            )
+        }
+        steps.append(
+            Step(
+                id: "create:\(top.id)",
+                kind: .create(making.documents, parent: creating.parent, attributions: making.attributions),
+                described: "\(made) \(creating.parent == nil ? "at the top of the library" : "beneath that collection")"
+            )
+        )
+        if !making.declined.isEmpty {
+            steps.append(
+                Step(
+                    id: "decline:\(top.id)",
+                    kind: .decline(making.declined, in: top.id.value),
+                    described: "decline \(making.declined.count) of TMDb's specials in \(top.displayTitle)"
+                )
+            )
+        }
+        return steps
     }
 
     /// What a confirmed new stop's draft makes: each container of it as its own stop left it, with the
@@ -683,7 +742,8 @@ extension TMDbWalk {
 
     /// The specials declined in a series that is no confirmed stop of the walk, as an edit of its own.
     private var decline: Step? {
-        guard let series, stops[series]?.taken == nil else { return nil }
+        // A series the walk makes declines what it declines as it is made, or, not confirmed, nothing.
+        guard let series, stops[series]?.taken == nil, !isNew(series) else { return nil }
         let refs = specials.filter { placements[$0.id] == .declined }.map(\.episode.ref)
         guard !refs.isEmpty else { return nil }
         return Step(

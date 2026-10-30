@@ -61,7 +61,6 @@ extension ConsoleModel {
         var language = "en-US"
         var problem: String?
         var finding: FindingInTMDb?
-        var shaping: ShapingTree?
         var walking: Walking?
         /// The readings of the walk's stops, by stop, cancelled when its sheet closes.
         var readings: [String: Task<Void, Never>] = [:]
@@ -69,15 +68,26 @@ extension ConsoleModel {
         var pooling: Task<Void, Never>?
     }
 
-    /// A held tree being walked against TMDb: the walk as it stands, the stop open, each stop's reading
-    /// as it goes and why one failed, and the store's list and how storing it ended.
+    /// A tree being walked against TMDb, held or drafted from it: the walk as it stands, the stop open,
+    /// each stop's reading as it goes and why one failed, and the store's list and how storing it ended.
     struct Walking: Identifiable {
+        /// What a walk rooted at a draft was drafted from, to draft it again when it is started again.
+        struct Redraft {
+            var record: TMDb.Record
+            var shape: AdminConsole.TMDbShape
+            var finding: FindingInTMDb
+        }
+
         let id = UUID()
         var silo: AdminConsole.Silo
         var walk: TMDbWalk
         var open: String
         /// A walk this Mac kept, offered to be resumed or started again before anything is read.
         var resuming = false
+        /// For a walk rooted at a draft, what it was drafted from.
+        var redraft: Redraft?
+        /// A difference of the root to tick once the root is read, as a season asked for of a held series.
+        var choosing: String?
         var progress: [String: AdminConsole.TMDbProgress] = [:]
         var failures: [String: String] = [:]
         /// The step the series' specials are on while they are read through the series above the root.
@@ -108,23 +118,6 @@ extension ConsoleModel {
         var library: String
         /// The held series, and its TMDb number, for a season.
         var series: (container: String, title: String, tmdb: Int)?
-    }
-
-    /// A draft from TMDb being shaped before it is made: the tree as last kept, what each special is
-    /// suggested for, the silo's dry run, and how making it ended.
-    struct ShapingTree: Identifiable {
-        var silo: AdminConsole.Silo
-        var tree: TMDbTree
-        var suggestions: [Int: AdminConsole.SpecialSuggestion] = [:]
-        /// The step the specials' suggestions are on while they are read.
-        var suggesting: AdminConsole.TMDbProgress?
-        /// The series the library holds that a special may go into as a breakout.
-        var companions: [SiloClient.ContainerSummary] = []
-        var check: AdminConsole.ContainerCheck?
-        var outcome: AdminConsole.TMDbCreateOutcome?
-        var failure: String?
-
-        var id: TMDbTree.ID { tree.id }
     }
 
     /// An import from smddb into a library being chosen.
