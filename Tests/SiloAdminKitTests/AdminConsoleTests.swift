@@ -2568,12 +2568,28 @@ extension AdminConsoleTests {
             walk.confirm(id, beneath: try await console.stops(beneath: id, in: walk, of: home), drafts: drafts)
         }
 
+        /// A draft from TMDb made as the walk rooted at it makes it: every stop confirmed with what it is
+        /// offered, and the walk stored.
+        func make(_ tree: TMDbTree) async throws -> AdminConsole.TMDbWalkStored {
+            var walk = TMDbWalk(drafting: tree)
+            while let next = walk.next {
+                try await confirm(next, choosing: walk.stops[next]?.chosen ?? [], in: &walk)
+            }
+            return try await console.store(walk, of: home, tmdb: tmdb)
+        }
+
         /// A walk rooted at a held container, its root read, ticked as given, and confirmed.
         func walk(_ id: String, choosing chosen: Set<String> = []) async throws -> TMDbWalk {
             var walk = try await console.startWalk(at: id, in: library, of: home)
             try await confirm(id, choosing: chosen, in: &walk)
             return walk
         }
+    }
+
+    /// The draft a walk from TMDb is rooted at, or nil when the record is not drafted.
+    private static func drafted(_ start: AdminConsole.TMDbWalkStart) -> TMDbTree? {
+        guard case .walk(let walk) = start else { return nil }
+        return walk.drafts[walk.root]
     }
 
     /// The edit a walk's store makes of a container.
@@ -2615,12 +2631,14 @@ extension AdminConsoleTests {
         tmdb.seasons["121/14"] = TMDb.Season(id: 3644, number: 14, name: "Season 14", year: 1976, episodes: parts)
 
         guard
-            case .draft(let film) = try await console.startDraft(
-                of: TMDb.Record(.movie, 348),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            let film = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.movie, 348),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("a film neither smddb nor the library holds is drafted")
@@ -2638,48 +2656,29 @@ extension AdminConsoleTests {
         let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "348")]
         #expect(film.attributions[film.top] == attributed)
         #expect(try await database.container(alien.id) == nil, "an id the clone has no file for")
-        #expect(console.tmdbDrafts.drafts(of: home.id).map(\.id) == [film.id], "kept on this Mac")
-        guard case .created = try await console.create(film, of: home) else {
-            Issue.record("the film is made")
-            return
-        }
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        #expect(try await walking.make(film).refusal == nil, "the film is made")
         #expect(held.sidecar(alien.id)?.attributions == attributed, "made with its outline's attribution")
-        #expect(console.tmdbDrafts.drafts(of: home.id).isEmpty, "made, the draft ends")
 
         // A season of a series the library holds, filed beneath it.
-        let season = try await console.startDraft(
-            ofSeason: 14,
-            of: 121,
-            beneath: doctorWho.id.value,
-            into: "tv",
-            of: home,
-            from: database,
-            tmdb: tmdb
-        )
+        let beneath = ContainerDraft.Creating(parent: doctorWho.id.value)
+        let season = try await console.draft(ofSeason: 14, of: 121, at: beneath, into: "tv", from: database, tmdb: tmdb)
         let fourteen = try #require(season.container(season.top))
         let entries = fourteen.sequences.flatMap(\.items)
         #expect(entries.map(\.externalRefs) == parts.map { [$0.ref] })
         #expect(entries.allSatisfy { $0.title == nil }, "TMDb has a title for each, so none is stored")
         #expect(season.episodeTitles["1001"] == "The Robots of Death: Part One", "but each is shown")
-        guard case .wouldWrite = try await console.check(season, of: home) else {
-            Issue.record("the parent's edit naming the season would be written")
-            return
-        }
-        guard case .created = try await console.create(season, of: home) else {
-            Issue.record("the season is made beneath the series")
-            return
-        }
+        #expect(try await walking.make(season).refusal == nil, "the season is made beneath the series")
         #expect(held.container(doctorWho.id)?.childContainerIDs.contains(fourteen.id) == true)
         #expect(held.container(fourteen.id)?.sequences.flatMap(\.items).count == 3)
 
         // The same season regrouped into two serials before it is made.
         held.sidecars.withLock { $0[fourteen.id.value] = nil }
-        var regrouped = try await console.startDraft(
+        var regrouped = try await console.draft(
             ofSeason: 14,
             of: 121,
-            beneath: doctorWho.id.value,
+            at: beneath,
             into: "tv",
-            of: home,
             from: database,
             tmdb: tmdb
         )
@@ -2701,10 +2700,7 @@ extension AdminConsoleTests {
             type: .serial,
             title: Title("The Talons of Weng-Chiang")!
         )
-        guard case .created = try await console.create(regrouped, of: home) else {
-            Issue.record("the regrouped season is made")
-            return
-        }
+        #expect(try await walking.make(regrouped).refusal == nil, "the regrouped season is made")
         #expect(held.container(ContainerID(regrouped.top)!)?.childContainerIDs == [robots, talons])
         #expect(
             held.container(robots)?.sequences.flatMap(\.items).map(\.externalRefs) == [[parts[0].ref], [parts[1].ref]],
@@ -2714,8 +2710,8 @@ extension AdminConsoleTests {
         // A series the library holds by its reference is not drafted.
         tmdb.series[121] = TMDb.Series(id: 121, name: "Doctor Who", seasons: [])
         guard
-            case .held(let summary) = try await console.startDraft(
-                of: TMDb.Record(.series, 121),
+            case .held(let summary) = try await console.startWalk(
+                drafting: TMDb.Record(.series, 121),
                 into: "tv",
                 of: home,
                 from: database,
@@ -2742,8 +2738,8 @@ extension AdminConsoleTests {
         )
         try await database.save(film)
         guard
-            case .draft = try await console.startDraft(
-                of: TMDb.Record(.series, 121),
+            case .walk = try await console.startWalk(
+                drafting: TMDb.Record(.series, 121),
                 into: "tv",
                 of: home,
                 from: database,
@@ -2758,8 +2754,8 @@ extension AdminConsoleTests {
         series.externalRefs.append(ExternalRef(provider: .tmdb, value: "121"))
         try await database.save(series)
         #expect(
-            try await console.startDraft(
-                of: TMDb.Record(.series, 121),
+            try await console.startWalk(
+                drafting: TMDb.Record(.series, 121),
                 into: "tv",
                 of: home,
                 from: database,
@@ -2799,12 +2795,14 @@ extension AdminConsoleTests {
         )
 
         guard
-            case .draft(var tree) = try await console.startDraft(
-                of: TMDb.Record(.series, 900),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            var tree = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.series, 900),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("the series is drafted")
@@ -2842,10 +2840,8 @@ extension AdminConsoleTests {
         #expect(suggestions[3003]?.reason == "the specials either side of it are in Behind the Sofa")
         #expect(tree.making.described.first == "make Behind the Sofa, a series of its own, at the top of the library")
 
-        guard case .created = try await console.create(tree, of: home) else {
-            Issue.record("the series is made with its placed specials")
-            return
-        }
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        #expect(try await walking.make(tree).refusal == nil, "the series is made with its placed specials")
         let madeSofa = try #require(held.container(sofa.id))
         #expect(!madeSofa.listed)
         #expect(madeSofa.sequences.flatMap(\.items).map(\.externalRefs) == [[sofaOne.ref], [sofaTwo.ref]])
@@ -2887,12 +2883,14 @@ extension AdminConsoleTests {
         tmdb.found["imdb:tt2779318"] = TMDb.Found(movies: [TMDb.Movie(id: 1000, title: "The Day of the Doctor")])
 
         guard
-            case .draft(let drafted) = try await console.startDraft(
-                of: TMDb.Record(.series, 901),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            let drafted = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.series, 901),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("the series is drafted")
@@ -2908,10 +2906,8 @@ extension AdminConsoleTests {
         #expect(tree.specials[0].refs.contains(ExternalRef(provider: .imdb, value: "tt2779318")), "asked of TMDb")
         tree.place(5000, suggestion.placement)
         #expect(tree.making.described.last == "add TMDb's id to feature of \(day.id) in films")
-        guard case .created = try await console.create(tree, of: home) else {
-            Issue.record("the series is made")
-            return
-        }
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        #expect(try await walking.make(tree).refusal == nil, "the series is made")
         let film = try #require(held.container(day.id))
         #expect(film.sequences[0].items[0].externalRefs.contains(special.ref), "the home carries both ids")
         let series = try #require(held.container(ContainerID(tree.top)!))
@@ -3032,12 +3028,14 @@ extension AdminConsoleTests {
         )
 
         guard
-            case .draft(let quadrilogy) = try await console.startDraft(
-                of: TMDb.Record(.collection, 9000),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            let quadrilogy = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.collection, 9000),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("a collection no library holds is drafted")
@@ -3052,22 +3050,22 @@ extension AdminConsoleTests {
         #expect(quadrilogy.making.described == ["make Quadrilogy and the 2 beneath it"])
 
         guard
-            case .draft(let film) = try await console.startDraft(
-                of: TMDb.Record(.movie, 348),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            let film = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.movie, 348),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("the film is drafted")
             return
         }
         #expect(film.creating.parent == alienCollection.id.value, "beneath the collection the library holds")
-        guard case .created = try await console.create(film, of: home) else {
-            Issue.record("the film is made beneath the collection")
-            return
-        }
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        #expect(try await walking.make(film).refusal == nil, "the film is made beneath the collection")
         #expect(held.container(alienCollection.id)?.childContainerIDs == [ContainerID(film.top)!])
     }
 
@@ -3103,13 +3101,15 @@ extension AdminConsoleTests {
         )
 
         guard
-            case .draft(let arcs) = try await console.startDraft(
-                of: TMDb.Record(.series, 902),
-                shape: AdminConsole.TMDbShape(group: "g1", groupType: .arc, groupTypeLabel: "Arc"),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            let arcs = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.series, 902),
+                    shape: AdminConsole.TMDbShape(group: "g1", groupType: .arc, groupTypeLabel: "Arc"),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("the series is drafted through its group")
@@ -3124,12 +3124,14 @@ extension AdminConsoleTests {
         #expect(arcs.specials.map(\.id) == [makingOf.id], "the group placed the other")
 
         guard
-            case .draft(let seasons) = try await console.startDraft(
-                of: TMDb.Record(.series, 902),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            let seasons = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.series, 902),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("the series is drafted by its seasons")
@@ -3215,12 +3217,14 @@ extension AdminConsoleTests {
         tmdb.found["imdb:tt0002"] = TMDb.Found(episodes: [(series: 778, episode: Self.episode(8001, 1, 6, "Dalek"))])
 
         guard
-            case .draft(let tree) = try await console.startDraft(
-                of: TMDb.Record(.series, 903),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            let tree = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.series, 903),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("a series smddb holds by another provider's id alone is drafted")
@@ -3304,12 +3308,14 @@ extension AdminConsoleTests {
             episodes: [onTheSofa, invasion, bloopers]
         )
         guard
-            case .draft(var tree) = try await console.startDraft(
-                of: TMDb.Record(.series, 904),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+            var tree = Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.series, 904),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
         else {
             Issue.record("the series is drafted")
@@ -3322,10 +3328,8 @@ extension AdminConsoleTests {
         tree.place(bloopers.id, .extra(of: season, type: EntryType.featurette.rawValue))
         #expect(tree.making.described.last == "add an entry to \(sofa.id) in tv")
 
-        guard case .created = try await console.create(tree, of: home) else {
-            Issue.record("the series is made with its placed specials")
-            return
-        }
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        #expect(try await walking.make(tree).refusal == nil, "the series is made with its placed specials")
         let entryID = ItemID("\(Slug.make(from: onTheSofa.title))-\(onTheSofa.id)")!
         let madeSofa = try #require(held.container(sofa.id))
         #expect(madeSofa.sequences.flatMap(\.items).map(\.id) == [entryID])
@@ -3343,45 +3347,34 @@ extension AdminConsoleTests {
         #expect(own.sequences.flatMap(\.items).map(\.externalRefs) == [[invasion.ref]])
     }
 
-    /// The silo's dry run says what it makes of a tree with no parent, and a refusal keeps the draft.
-    @Test func aTreeTheSiloRefusesIsKept() async throws {
+    /// A walk from a draft the silo refuses stops there and keeps it: what it did not make is still to be
+    /// stored, and the refusal is in the silo's words.
+    @Test func aDraftTheSiloRefusesIsKeptInItsWalk() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
         let (console, home) = try await Self.smddbConsole(HeldLibrary())
         let tmdb = FakeTMDb(movies: [348: Self.alienRecord, 349: TMDb.Movie(id: 349, title: "Refused")])
-        guard
-            case .draft(let alien) = try await console.startDraft(
-                of: TMDb.Record(.movie, 348),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
-            ),
-            case .draft(let refused) = try await console.startDraft(
-                of: TMDb.Record(.movie, 349),
-                into: "tv",
-                of: home,
-                from: database,
-                tmdb: tmdb
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        func draft(_ number: Int) async throws -> TMDbTree? {
+            Self.drafted(
+                try await console.startWalk(
+                    drafting: TMDb.Record(.movie, number),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    tmdb: tmdb
+                )
             )
-        else {
+        }
+        guard let alien = try await draft(348), let refused = try await draft(349) else {
             Issue.record("both films are drafted")
             return
         }
-        guard case .wouldWrite = try await console.check(alien, of: home) else {
-            Issue.record("the silo would make the film")
-            return
-        }
-        guard case .refused(let findings) = try await console.check(refused, of: home) else {
-            Issue.record("the silo's validator refuses the other")
-            return
-        }
-        #expect(findings.findings.map(\.text).contains { $0.contains("the validator refuses it") })
-        guard case .refused = try await console.create(refused, of: home) else {
-            Issue.record("the making is refused")
-            return
-        }
-        #expect(console.tmdbDrafts.drafts(of: home.id).map(\.id).contains(refused.id), "a refusal keeps the draft")
+        #expect(try await walking.make(alien).refusal == nil, "the silo makes the film")
+        let stored = try await walking.make(refused)
+        #expect(stored.refusal?.contains("the validator refuses it") == true)
+        #expect(stored.stored.isEmpty && stored.rest.map(\.id) == ["create:\(refused.top)"])
+        #expect(try stored.walk.plan().steps.map(\.id) == ["create:\(refused.top)"], "still to be stored")
     }
 
     /// A tree's containers are edited, their attributions pruned with the outline or removed alone, and
@@ -3436,32 +3429,6 @@ extension AdminConsoleTests {
         #expect(tree.containers.map(\.id) == [series.id])
         #expect(tree.container(series.id.value)?.childContainerIDs == [])
         #expect(tree.attributions[season.id.value] == nil)
-    }
-
-    /// The drafts from TMDb are kept in a file, read again by the next store, and removed one by one or
-    /// all of a silo's at once.
-    @Test func draftsFromTMDbAreKeptInAFile() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tmdb-drafts-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let file = folder.appendingPathComponent("drafts.json")
-        let film = Container(id: ContainerID("00000000000000e1")!, type: .movie, title: Title("Alien")!)
-        let tree = TMDbTree(
-            library: "tv",
-            record: TMDb.Record(.movie, 348),
-            creating: ContainerDraft.Creating(),
-            containers: [film],
-            top: film.id
-        )
-        let store = TMDbDraftStore(file: file)
-        try store.save(tree, for: "home")
-        let read = TMDbDraftStore(file: file).drafts(of: "home")
-        #expect(read.map(\.id) == [tree.id] && read.map(\.documents) == [tree.documents], "to the second it was edited")
-        try store.remove(tree.id, of: "home")
-        #expect(TMDbDraftStore(file: file).drafts(of: "home").isEmpty)
-        try store.save(tree, for: "home")
-        try store.removeAll(of: "home")
-        try store.removeAll(of: "home")
-        #expect(TMDbDraftStore(file: file).drafts(of: "home").isEmpty)
     }
 
     /// An alternative's outline is attributed as the container's is: pruned with it, lost when smddb's
@@ -5004,7 +4971,6 @@ extension AdminConsoleTests {
         #expect(walk.drafting && walk.isNew(root) && walk.series == root && walk.stops[root]?.parent == nil)
         #expect(walk.order == [root] && walk.state(of: root) == .pending)
         #expect(walk.specials.map(\.id) == [special.id], "its specials beside every stop")
-        #expect(console.tmdbDrafts.drafts(of: home.id).isEmpty, "kept as a walk, not as a draft")
         try console.tmdbWalks.save(walk, for: home.id)
         #expect(console.tmdbWalks.walk(drafting: record, in: "tv", of: home.id)?.id == walk.id)
         #expect(console.tmdbWalks.walk(drafting: TMDb.Record(.series, 122), in: "tv", of: home.id) == nil)
@@ -6352,15 +6318,14 @@ extension AdminConsoleTests {
         #expect(tree.placements[special.id] == .entry(in: new, position: 1))
     }
 
-    /// A walk and a draft from TMDb kept with a special as another version of an item, or of a container,
-    /// are read with each drafted as an alternative the special is placed in, which makes what the
-    /// version did.
+    /// A walk kept with a special as another version of an item, or of a container, is read with each
+    /// drafted as an alternative the special is placed in.
     @Test func versionsKeptBeforeAlternativesWereDraftedAreReadAsDrafts() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
         let pilot = Self.episode(3771, 0, 1, "The Dead Planet (Unaired Pilot)", runtime: 25)
         let colour = Self.episode(3772, 0, 2, "The Daleks in Colour", runtime: 75)
-        let (series, contents, serial, parts, tmdb) = Self.daleks([pilot, colour])
+        let (series, contents, serial, _, tmdb) = Self.daleks([pilot, colour])
         let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
         let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
         let id = serial.id.value
@@ -6376,36 +6341,6 @@ extension AdminConsoleTests {
         #expect(drafts.first?.entries == [.special(pilot.id), .item("part-2"), .item("part-3"), .item("part-4")])
         #expect(drafts.last?.entries == [.special(colour.id)])
         #expect(read.placements[pilot.id] == .alternative(of: id, draft: drafts[0].id))
-
-        var tree = TMDbTree(
-            library: "tv",
-            record: TMDb.Record(.series, 121),
-            creating: ContainerDraft.Creating(),
-            containers: [serial],
-            top: serial.id,
-            episodeTitles: Dictionary(uniqueKeysWithValues: parts.map { (String($0.id), $0.title) }),
-            specials: [Special(episode: pilot), Special(episode: colour)]
-        )
-        tree.placements[pilot.id] = .version(of: id, item: "part-1", title: "Pilot")
-        tree.placements[colour.id] = .version(of: id, item: "no-such-part", title: "Lost")
-        let trees = folder.appendingPathComponent("trees.json")
-        try TMDbDraftStore(file: trees).save(tree, for: "silo")
-        let kept = try #require(TMDbDraftStore(file: trees).drafts(of: "silo").first)
-        #expect(kept.alternatives(draftedAt: id).map(\.title) == ["Pilot"])
-        #expect(kept.title(of: .item("part-1"), at: id) == "The Dead Planet")
-        #expect(
-            kept.placements[colour.id] == .version(of: id, item: "no-such-part", title: "Lost"),
-            "kept, making nothing"
-        )
-        var edited = kept
-        let pilotDraft = try #require(edited.alternatives(draftedAt: id).first?.id)
-        edited.insert(colour.id, into: pilotDraft, at: 4, of: id)
-        #expect(edited.title(of: .special(colour.id), at: id) == colour.title)
-        #expect(edited.title(of: .item("no-such-part"), at: id) == "no-such-part")
-        #expect(edited.edited >= kept.edited)
-        let made = try #require(edited.making.documents.first)
-        #expect(made.alternatives.map(\.title) == ["As broadcast", "Pilot"])
-        #expect(made.sequences.last?.items.last?.externalRefs == [colour.ref])
     }
 
     /// A new stop leaving the walk takes the alternatives drafted for it.

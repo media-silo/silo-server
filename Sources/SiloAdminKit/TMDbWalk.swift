@@ -155,20 +155,28 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     /// A walk of a record the library does not hold, rooted at a draft from TMDb: its top is the first
     /// stop, new, filed where the draft is, at the top of the library or beneath the container that holds
-    /// the record above it. A series is the one whose specials sit beside every stop.
+    /// the record above it. A series is the one whose specials sit beside every stop, placed where the
+    /// draft placed them; each new breakout the draft made for them is a companion series of the walk.
+    /// The alternatives drafted for its containers are the walk's.
     public init(drafting tree: TMDbTree) {
         let top = tree.top
+        var draft = tree
+        draft.breakouts = [:]
         id = UUID()
         library = tree.library
         root = top
         stops = [:]
         edited = .now
-        drafts[top] = tree
-        stops[top] = Stop(newIn: tree, top, parent: tree.creating.parent, offering: offered(top, in: tree))
+        drafts[top] = draft
+        stops[top] = Stop(newIn: draft, top, parent: tree.creating.parent, offering: offered(top, in: draft))
+        draftedAlternatives = tree.draftedAlternatives
         if tree.container(top)?.type == .series {
             series = top
             specials = tree.specials
             placements = tree.placements
+        }
+        for id in tree.breakouts.keys.sorted() {
+            if let breakout = tree.container(id) { addCompanion(breakout) }
         }
     }
 

@@ -50,47 +50,6 @@ extension AdminConsole {
         }
     }
 
-    /// What picking a TMDb record comes to: smddb's container to import instead, the library's
-    /// container that carries the record's reference already, or a draft.
-    public enum TMDbStart: Hashable, Sendable {
-        case importFromSmddb(Container)
-        case held(SiloClient.ContainerSummary)
-        case draft(TMDbTree)
-    }
-
-    /// Starts a draft of a TMDb record for a library: smddb first, the library next, and otherwise the
-    /// record read as containers, kept on this Mac.
-    public func startDraft(
-        of record: TMDb.Record,
-        shape: TMDbShape = TMDbShape(),
-        into library: String,
-        of silo: Silo,
-        from database: any ContainerDatabase,
-        tmdb: any TMDbSource
-    ) async throws -> TMDbStart {
-        let start = try await reading(record, shape: shape, into: library, of: silo, from: database, tmdb: tmdb)
-        if case .draft(let tree) = start { try tmdbDrafts.save(tree, for: silo.id) }
-        return start
-    }
-
-    /// Starts a walk of a TMDb record the library does not hold, rooted at a draft of it: smddb first,
-    /// the library next, as a draft starts, and otherwise the walk, which the console keeps as it keeps
-    /// any walk.
-    public func startWalk(
-        drafting record: TMDb.Record,
-        shape: TMDbShape = TMDbShape(),
-        into library: String,
-        of silo: Silo,
-        from database: any ContainerDatabase,
-        tmdb: any TMDbSource
-    ) async throws -> TMDbWalkStart {
-        switch try await reading(record, shape: shape, into: library, of: silo, from: database, tmdb: tmdb) {
-        case .importFromSmddb(let container): .importFromSmddb(container)
-        case .held(let summary): .held(summary)
-        case .draft(let tree): .walk(TMDbWalk(drafting: tree))
-        }
-    }
-
     /// What picking a TMDb record to walk comes to: smddb's container to import instead, the library's
     /// container that carries the record's reference already, or a walk rooted at a draft of it.
     public enum TMDbWalkStart: Hashable, Sendable {
@@ -99,15 +58,18 @@ extension AdminConsole {
         case walk(TMDbWalk)
     }
 
-    /// A TMDb record as starting a draft finds it, keeping nothing.
-    private func reading(
-        _ record: TMDb.Record,
-        shape: TMDbShape,
+    /// Starts a walk of a TMDb record the library does not hold, rooted at a draft of it: smddb's
+    /// container to import is said first, then the library's container that carries the record's
+    /// reference, and otherwise the record is read as containers, the walk's draft. Nothing is kept: the
+    /// console keeps the walk as it keeps any walk.
+    public func startWalk(
+        drafting record: TMDb.Record,
+        shape: TMDbShape = TMDbShape(),
         into library: String,
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
-    ) async throws -> TMDbStart {
+    ) async throws -> TMDbWalkStart {
         if let known = try await database.containers().first(where: {
             $0.type == record.containerType && $0.externalRefs.contains(record.ref)
         }) {
@@ -132,29 +94,7 @@ extension AdminConsole {
         {
             creating = ContainerDraft.Creating(parent: holder.id)
         }
-        return .draft(reader.tree(top: top, record: record, library: library, creating: creating))
-    }
-
-    /// Starts a draft of one of a series' seasons beneath the series a library holds by its reference.
-    public func startDraft(
-        ofSeason number: Int,
-        of series: Int,
-        beneath held: String,
-        into library: String,
-        of silo: Silo,
-        from database: any ContainerDatabase,
-        tmdb: any TMDbSource
-    ) async throws -> TMDbTree {
-        let tree = try await draft(
-            ofSeason: number,
-            of: series,
-            at: ContainerDraft.Creating(parent: held),
-            into: library,
-            from: database,
-            tmdb: tmdb
-        )
-        try tmdbDrafts.save(tree, for: silo.id)
-        return tree
+        return .walk(TMDbWalk(drafting: reader.tree(top: top, record: record, library: library, creating: creating)))
     }
 
     /// A draft of one of a series' seasons, filed where it is said to be, kept nowhere: what a walk makes
@@ -395,29 +335,6 @@ extension AdminConsole {
         }
     }
 
-    /// A suggestion for each unassigned special that has one, strongest first: where smddb files its
-    /// reference; the breakout the specials either side of it are in; a duplicate of the record whose
-    /// IMDb or TVDB id it shares; the position an episode group gives it; where it aired among the tree's
-    /// episodes; and, for a short special whose title says what it is, an extra of that type, or
-    /// declined for a trailer. Asking TMDb for each special's other ids, the tree gains them.
-    public func suggest(
-        for tree: TMDbTree,
-        of silo: Silo,
-        from database: any ContainerDatabase,
-        tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
-    ) async throws -> (TMDbTree, [Int: SpecialSuggestion]) {
-        let (suggested, suggestions) = try await suggestions(
-            for: tree,
-            of: silo,
-            from: database,
-            tmdb: tmdb,
-            progress: progress
-        )
-        try tmdbDrafts.save(suggested, for: silo.id)
-        return (suggested, suggestions)
-    }
-
     /// The suggestions for the specials of a walk's drafted series, as a draft's are suggested: the walk
     /// gains them, and its specials the other ids TMDb holds for them. A walk rooted at no drafted
     /// series is as it was.
@@ -431,7 +348,7 @@ extension AdminConsole {
         guard walk.drafting, walk.series == walk.root, var tree = walk.drafts[walk.root] else { return walk }
         tree.specials = walk.specials
         tree.placements = walk.placements
-        let (suggested, suggestions) = try await self.suggestions(
+        let (suggested, suggestions) = try await suggest(
             for: tree,
             of: silo,
             from: database,
@@ -444,8 +361,13 @@ extension AdminConsole {
         return walk
     }
 
-    /// The suggestions `suggest(for:of:from:tmdb:progress:)` makes, keeping nothing.
-    func suggestions(
+    /// A suggestion for each unassigned special that has one, strongest first: where smddb files its
+    /// reference; the breakout the specials either side of it are in; a duplicate of the record whose
+    /// IMDb or TVDB id it shares; the position an episode group gives it; where it aired among the tree's
+    /// episodes; and, for a short special whose title says what it is, an extra of that type, or
+    /// declined for a trailer. Asking TMDb for each special's other ids, the tree gains them. Nothing is
+    /// kept.
+    public func suggest(
         for tree: TMDbTree,
         of silo: Silo,
         from database: any ContainerDatabase,
@@ -768,113 +690,7 @@ extension AdminConsole {
         )
     }
 
-    // MARK: Creating
-
-    /// How a draft from TMDb's making ended: made, which ends the draft; refused by the silo's findings
-    /// on the parent's edit naming the top, or on the making, which keep it.
-    public enum TMDbCreateOutcome: Hashable, Sendable {
-        case created(SiloClient.ContainerCreateResult)
-        case parentRefused(SiloClient.ContainerEditResult)
-        case refused(SiloClient.ContainerCreateResult)
-    }
-
-    /// What the silo makes of the tree, asked as a dry run and storing nothing: the edit of the parent
-    /// naming the top, for a tree beneath one, or else the making of the tree itself.
-    public func check(_ tree: TMDbTree, of silo: Silo) async throws -> ContainerCheck {
-        let making = tree.making
-        guard let top = making.documents.first else { return .unreadable("the draft holds nothing") }
-        if let parent = tree.creating.parent {
-            let opened = try await open(container: parent, in: tree.library, of: silo)
-            var naming = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
-            guard let held = naming.value else {
-                return .unreadable("the parent's sidecar does not read as a container")
-            }
-            naming.set(Self.naming(top, in: held, at: tree.creating))
-            return try await check(naming, of: silo)
-        }
-        do {
-            let result = try await withOperator(silo) {
-                try await $0.create(
-                    containers: making.documents.map(TMDbTree.text),
-                    parent: nil,
-                    in: tree.library,
-                    attributions: making.attributions,
-                    dryRun: true
-                )
-            }
-            return .wouldWrite(Self.editResult(result))
-        } catch SiloClientError.status(422, let body) {
-            guard
-                let result = try? SiloClient.decoder.decode(
-                    SiloClient.ContainerCreateResult.self,
-                    from: Data(body.utf8)
-                )
-            else { return .unreadable(Self.detail(body)) }
-            return .refused(Self.editResult(result))
-        } catch SiloClientError.status(400, let body) {
-            return .unreadable(Self.detail(body))
-        }
-    }
-
-    /// Makes the tree: the new breakouts at the top of the library, then the parent's edit naming the
-    /// top, for a tree beneath one, then the tree with its attributions in one request, then the
-    /// references the top declines, then the edits of containers libraries hold that placements make.
-    /// Made, the draft ends; a refusal keeps it.
-    public func create(_ tree: TMDbTree, of silo: Silo) async throws -> TMDbCreateOutcome {
-        let making = tree.making
-        guard let top = making.documents.first else { throw StoreRefused(reason: "the draft holds nothing") }
-        for breakout in making.breakouts {
-            _ = try await withOperator(silo) {
-                try await $0.create(containers: [TMDbTree.text(breakout)], parent: nil, in: tree.library)
-            }
-        }
-        if let parent = tree.creating.parent {
-            let opened = try await open(container: parent, in: tree.library, of: silo)
-            var naming = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
-            guard let held = naming.value else {
-                throw StoreRefused(reason: "the parent's sidecar does not read as a container")
-            }
-            let named = Self.naming(top, in: held, at: tree.creating)
-            if named != held {
-                naming.set(named)
-                switch try await store(naming, of: silo) {
-                case .stored: break
-                case .refused(let result): return .parentRefused(result)
-                case .landedFirst:
-                    throw StoreRefused(reason: "the parent's sidecar changed as it was edited; try again")
-                }
-            }
-        }
-        let result: SiloClient.ContainerCreateResult
-        do {
-            result = try await withOperator(silo) {
-                try await $0.create(
-                    containers: making.documents.map(TMDbTree.text),
-                    parent: tree.creating.parent,
-                    in: tree.library,
-                    attributions: making.attributions
-                )
-            }
-        } catch SiloClientError.status(422, let body) {
-            guard
-                let refused = try? SiloClient.decoder.decode(
-                    SiloClient.ContainerCreateResult.self,
-                    from: Data(body.utf8)
-                )
-            else { throw StoreRefused(reason: Self.detail(body)) }
-            return .refused(refused)
-        } catch SiloClientError.status(let status, let body) where status == 400 || status == 404 {
-            throw StoreRefused(
-                reason: Self.detail(body).isEmpty ? "the library no longer holds the parent" : Self.detail(body)
-            )
-        }
-        if !making.declined.isEmpty {
-            try await decline(making.declined, in: top.id.value, of: tree.library, on: silo)
-        }
-        for edit in making.heldEdits { try await apply(edit, on: silo) }
-        try tmdbDrafts.remove(tree.id, of: silo.id)
-        return .created(result)
-    }
+    // MARK: What a walk's store makes outside its stops
 
     /// Adds references to what a library's container declines, its own fields as they stand.
     func decline(_ refs: [ExternalRef], in container: String, of library: String, on silo: Silo) async throws {

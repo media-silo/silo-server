@@ -97,8 +97,6 @@ public actor AdminConsole {
     public nonisolated let drafts: DraftStore
     /// The container drafts this Mac keeps, by silo.
     public nonisolated let containerDrafts: ContainerDraftStore
-    /// The drafts from TMDb this Mac keeps, by silo.
-    public nonisolated let tmdbDrafts: TMDbDraftStore
     /// The walks against TMDb this Mac keeps, by silo.
     public nonisolated let tmdbWalks: TMDbWalkStore
     private let passkeys: any PasskeyStore
@@ -126,7 +124,6 @@ public actor AdminConsole {
         registry: SiloRegistry = SiloRegistry(),
         drafts: DraftStore = DraftStore(),
         containerDrafts: ContainerDraftStore = ContainerDraftStore(),
-        tmdbDrafts: TMDbDraftStore = TMDbDraftStore(),
         tmdbWalks: TMDbWalkStore = TMDbWalkStore(),
         passkeys: any PasskeyStore,
         session: URLSession = .shared,
@@ -136,7 +133,6 @@ public actor AdminConsole {
         self.registry = registry
         self.drafts = drafts
         self.containerDrafts = containerDrafts
-        self.tmdbDrafts = tmdbDrafts
         self.tmdbWalks = tmdbWalks
         self.passkeys = passkeys
         self.session = session
@@ -504,7 +500,6 @@ extension AdminConsole {
         try? registry.remove(silo.id)
         try? drafts.removeAll(of: silo.id)
         try? containerDrafts.removeAll(of: silo.id)
-        try? tmdbDrafts.removeAll(of: silo.id)
         try? tmdbWalks.removeAll(of: silo.id)
         liveness.removeValue(forKey: silo.id)
         latest.removeAll { $0.id == silo.id }

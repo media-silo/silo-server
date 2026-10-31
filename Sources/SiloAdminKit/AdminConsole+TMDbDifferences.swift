@@ -470,7 +470,7 @@ extension AdminConsole {
             top: sidecar.container.id,
             specials: uncovered
         )
-        let (suggested, suggestions) = try await self.suggestions(
+        let (suggested, suggestions) = try await self.suggest(
             for: pool,
             of: silo,
             from: database,
