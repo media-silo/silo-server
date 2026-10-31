@@ -455,7 +455,9 @@ private struct DifferenceGroup: View {
                             DifferenceLabel(difference: difference, walk: walk, images: images)
                         }
                         // Outside the toggle's label, so that choosing an image is not a click on the toggle.
-                        if case .artwork(let kind, let path, _, let offered?) = difference, offered.count > 1, let images {
+                        if case .artwork(let kind, let path, _, let offered?) = difference, offered.count > 1,
+                            let images
+                        {
                             ImageStrip(
                                 kind: kind,
                                 offered: offered,

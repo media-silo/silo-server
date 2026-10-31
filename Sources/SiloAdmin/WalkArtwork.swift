@@ -23,13 +23,17 @@ struct ImageStrip: View {
             ScrollView(.horizontal) {
                 HStack {
                     ForEach(offered, id: \.self) { image in
-                        Button { choose(kind, image) } label: { TMDbImage(path: image, size: 44) }
-                            .buttonStyle(.plain)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(image == chosen ? Color.accentColor : .clear, lineWidth: 2)
-                            )
-                            .help(image == chosen ? "The image storing puts" : "Put this image instead")
+                        Button {
+                            choose(kind, image)
+                        } label: {
+                            TMDbImage(path: image, size: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(image == chosen ? Color.accentColor : .clear, lineWidth: 2)
+                        )
+                        .help(image == chosen ? "The image storing puts" : "Put this image instead")
                     }
                 }
                 .padding(2)
