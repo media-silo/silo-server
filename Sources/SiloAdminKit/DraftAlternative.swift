@@ -347,7 +347,7 @@ extension AlternativeDrafting {
     }
 
     /// Every special kept as another version of a container, or of one of its items, placed again as a
-    /// drafted alternative, as a walk or draft kept before alternatives were drafted is read.
+    /// drafted alternative, as a walk kept before alternatives were drafted is read.
     mutating func settlingVersions() {
         for (special, placement) in placements.sorted(by: { $0.key < $1.key }) {
             switch placement {

@@ -517,26 +517,6 @@ public final class TMDbWalkStore: Sendable {
         walks(of: silo).first { $0.drafting && $0.library == library && $0.drafts[$0.root]?.record == record }
     }
 
-    /// Takes each draft from TMDb this Mac kept, before a draft was a walk, in the file given, as a walk
-    /// rooted at it, and removes the file: a walk of a record is resumed by picking the record again.
-    /// A file that does not read is left as it is.
-    public func adoptDrafts(from file: URL) throws {
-        guard FileManager.default.fileExists(atPath: file.path) else { return }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let kept = try? decoder.decode([String: [TMDbTree]].self, from: Data(contentsOf: file)) else { return }
-        for (silo, trees) in kept.sorted(by: { $0.key < $1.key }) {
-            for tree in trees.sorted(by: { $0.edited < $1.edited }) {
-                var settled = tree
-                settled.settlingVersions()
-                var walk = TMDbWalk(drafting: settled)
-                walk.edited = tree.edited
-                try save(walk, for: silo)
-            }
-        }
-        try FileManager.default.removeItem(at: file)
-    }
-
     /// Keeps a walk, in place of the one it was and of any other rooted at the same container.
     public func save(_ walk: TMDbWalk, for silo: String) throws {
         try entries.withLock { entries in

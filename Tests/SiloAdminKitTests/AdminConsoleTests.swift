@@ -2592,14 +2592,6 @@ extension AdminConsoleTests {
         return walk.drafts[walk.root]
     }
 
-    /// Drafts from TMDb as this Mac kept them before a draft was a walk: by silo, in one file.
-    private static func keep(_ trees: [TMDbTree], for silo: String, in file: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try encoder.encode([silo: trees]).write(to: file)
-    }
-
     /// The edit a walk's store makes of a container.
     private static func edit(of id: String, in plan: TMDbWalk.Plan) -> ContainerDraft? {
         plan.steps.lazy.compactMap { step in
@@ -3437,38 +3429,6 @@ extension AdminConsoleTests {
         #expect(tree.containers.map(\.id) == [series.id])
         #expect(tree.container(series.id.value)?.childContainerIDs == [])
         #expect(tree.attributions[season.id.value] == nil)
-    }
-
-    /// Drafts from TMDb this Mac kept before a draft was a walk are taken as walks rooted at them, each
-    /// found again by its record and edited when it was, and the file is gone; with no file, or one
-    /// that does not read, nothing is taken.
-    @Test func draftsKeptBeforeTheyWereWalksAreAdoptedAsWalks() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tmdb-drafts-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let file = folder.appendingPathComponent("tmdb-drafts.json")
-        let film = Container(id: ContainerID("00000000000000e1")!, type: .movie, title: Title("Alien")!)
-        var tree = TMDbTree(
-            library: "tv",
-            record: TMDb.Record(.movie, 348),
-            creating: ContainerDraft.Creating(),
-            containers: [film],
-            top: film.id
-        )
-        tree.edited = Date(timeIntervalSince1970: 1_800_000_000)
-        let walks = TMDbWalkStore()
-        try walks.adoptDrafts(from: file)
-        #expect(walks.walks(of: "home").isEmpty, "no file, nothing taken")
-
-        try Self.keep([tree], for: "home", in: file)
-        try walks.adoptDrafts(from: file)
-        let walk = try #require(walks.walk(drafting: tree.record, in: "tv", of: "home"))
-        #expect(walk.root == film.id.value && walk.drafting && walk.drafts[walk.root]?.documents == tree.documents)
-        #expect(walk.edited == tree.edited, "to the second it was edited")
-        #expect(!FileManager.default.fileExists(atPath: file.path))
-
-        try Data("not drafts".utf8).write(to: file)
-        try walks.adoptDrafts(from: file)
-        #expect(walks.walks(of: "home").count == 1 && FileManager.default.fileExists(atPath: file.path))
     }
 
     /// An alternative's outline is attributed as the container's is: pruned with it, lost when smddb's
@@ -6358,15 +6318,14 @@ extension AdminConsoleTests {
         #expect(tree.placements[special.id] == .entry(in: new, position: 1))
     }
 
-    /// A walk and a draft from TMDb kept with a special as another version of an item, or of a container,
-    /// are read with each drafted as an alternative the special is placed in, which makes what the
-    /// version did.
+    /// A walk kept with a special as another version of an item, or of a container, is read with each
+    /// drafted as an alternative the special is placed in.
     @Test func versionsKeptBeforeAlternativesWereDraftedAreReadAsDrafts() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
         let pilot = Self.episode(3771, 0, 1, "The Dead Planet (Unaired Pilot)", runtime: 25)
         let colour = Self.episode(3772, 0, 2, "The Daleks in Colour", runtime: 75)
-        let (series, contents, serial, parts, tmdb) = Self.daleks([pilot, colour])
+        let (series, contents, serial, _, tmdb) = Self.daleks([pilot, colour])
         let (console, home) = try await Self.smddbConsole(HeldLibrary([series] + contents))
         let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
         let id = serial.id.value
@@ -6382,39 +6341,6 @@ extension AdminConsoleTests {
         #expect(drafts.first?.entries == [.special(pilot.id), .item("part-2"), .item("part-3"), .item("part-4")])
         #expect(drafts.last?.entries == [.special(colour.id)])
         #expect(read.placements[pilot.id] == .alternative(of: id, draft: drafts[0].id))
-
-        var tree = TMDbTree(
-            library: "tv",
-            record: TMDb.Record(.series, 121),
-            creating: ContainerDraft.Creating(),
-            containers: [serial],
-            top: serial.id,
-            episodeTitles: Dictionary(uniqueKeysWithValues: parts.map { (String($0.id), $0.title) }),
-            specials: [Special(episode: pilot), Special(episode: colour)]
-        )
-        tree.placements[pilot.id] = .version(of: id, item: "part-1", title: "Pilot")
-        tree.placements[colour.id] = .version(of: id, item: "no-such-part", title: "Lost")
-        let trees = folder.appendingPathComponent("trees.json")
-        try Self.keep([tree], for: "silo", in: trees)
-        let adopting = TMDbWalkStore()
-        try adopting.adoptDrafts(from: trees)
-        let adopted = try #require(adopting.walks(of: "silo").first)
-        let kept = try #require(adopted.drafts[adopted.root])
-        #expect(kept.alternatives(draftedAt: id).map(\.title) == ["Pilot"])
-        #expect(kept.title(of: .item("part-1"), at: id) == "The Dead Planet")
-        #expect(
-            kept.placements[colour.id] == .version(of: id, item: "no-such-part", title: "Lost"),
-            "kept, making nothing"
-        )
-        var edited = kept
-        let pilotDraft = try #require(edited.alternatives(draftedAt: id).first?.id)
-        edited.insert(colour.id, into: pilotDraft, at: 4, of: id)
-        #expect(edited.title(of: .special(colour.id), at: id) == colour.title)
-        #expect(edited.title(of: .item("no-such-part"), at: id) == "no-such-part")
-        #expect(edited.edited >= kept.edited)
-        let made = try #require(edited.making.documents.first)
-        #expect(made.alternatives.map(\.title) == ["As broadcast", "Pilot"])
-        #expect(made.sequences.last?.items.last?.externalRefs == [colour.ref])
     }
 
     /// A new stop leaving the walk takes the alternatives drafted for it.

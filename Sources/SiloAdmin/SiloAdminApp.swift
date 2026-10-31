@@ -28,9 +28,6 @@ struct SiloAdminApp: App {
             tmdbWalks: TMDbWalkStore(file: folder.appending(path: "tmdb-walks.json", directoryHint: .notDirectory)),
             passkeys: KeychainPasskeyStore()
         )
-        // Drafts from TMDb this Mac kept before a draft was a walk are walks now.
-        let keptDrafts = folder.appending(path: "tmdb-drafts.json", directoryHint: .notDirectory)
-        try? console.tmdbWalks.adoptDrafts(from: keptDrafts)
         _model = State(initialValue: ConsoleModel(console: console))
 
         // A bare executable earns no menu bar of its own: menus, the app name and Quit all
