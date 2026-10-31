@@ -227,6 +227,7 @@ struct TMDbClientTests {
             "movie/348/images": images,
             "tv/121/images": #"{"posters":[],"backdrops":[],"logos":[{"file_path":"/logo.png"}]}"#,
             "collection/8091/images": images,
+            "tv/121/season/1/images": #"{"posters":[{"file_path":"/season.jpg"}]}"#,
             "/t/p/original/poster.jpg": "JPEG",
         ])
         #expect(
@@ -238,6 +239,13 @@ struct TMDbClientTests {
         #expect(try await client.images(of: TMDb.Record(.series, 121)).offered(for: "logo") == ["/logo.png"])
         #expect(try await client.images(of: TMDb.Record(.collection, 8091)).offered(for: "fanart") == ["/backdrop.jpg"])
         #expect(TMDb.Images().offered(for: "banner") == [])
+        #expect(
+            try await client.images(ofSeason: 1, of: 121) == TMDb.Images(posters: ["/season.jpg"]),
+            "a season's, beneath its series, are posters alone"
+        )
+        await #expect(throws: TMDb.Unavailable.answered(404), "a season is asked for through its series") {
+            try await client.images(of: TMDb.Record(.season, 901))
+        }
 
         #expect(try await client.image(at: "/poster.jpg") == Data("JPEG".utf8))
         #expect(Stub.asked.withLock { $0.last?.url?.host } == "image.tmdb.org")

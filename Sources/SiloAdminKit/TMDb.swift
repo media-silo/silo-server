@@ -22,6 +22,9 @@ public enum TMDb {
     public struct Record: Hashable, Sendable, Codable {
         public enum Kind: String, Hashable, Sendable, Codable {
             case movie, series, collection
+            /// A season, by TMDb's own id for it: read only through its series, so never what a draft is
+            /// read from, but what the season's outline and artwork are credited to.
+            case season
         }
 
         public var kind: Kind
@@ -38,6 +41,7 @@ public enum TMDb {
             case .movie: .movie
             case .series: .series
             case .collection: .collection
+            case .season: .season
             }
         }
 
@@ -316,8 +320,10 @@ public protocol TMDbSource: Sendable {
     func externalIDs(of episode: TMDb.Episode, in series: Int) async throws -> TMDb.ExternalIDs
     /// What TMDb holds under another provider's id: `imdb` or `tvdb`.
     func find(_ ref: ExternalRef) async throws -> TMDb.Found
-    /// The images TMDb holds for a movie, a series or a collection.
+    /// The images TMDb holds for a movie, a series or a collection; a season's are asked through its series.
     func images(of record: TMDb.Record) async throws -> TMDb.Images
+    /// The images TMDb holds for a season of a series, by its number there: posters, and nothing else.
+    func images(ofSeason number: Int, of series: Int) async throws -> TMDb.Images
     /// An image's bytes, by its path at TMDb.
     func image(at path: String) async throws -> Data
 }
@@ -459,16 +465,22 @@ public struct TMDbClient: TMDbSource {
             case .movie: "movie"
             case .series: "tv"
             case .collection: "collection"
+            // TMDb serves a season's images only beneath its series, by its number there.
+            case .season: throw TMDb.Unavailable.answered(404)
             }
+        return try await images(at: "\(kind)/\(record.id)/images")
+    }
+
+    public func images(ofSeason number: Int, of series: Int) async throws -> TMDb.Images {
+        try await images(at: "tv/\(series)/season/\(number)/images")
+    }
+
+    private func images(at path: String) async throws -> TMDb.Images {
         // Images in any language, and those with none, which is what a backdrop usually is.
-        let images = try await get(
-            "\(kind)/\(record.id)/images",
-            ["include_image_language": "\(language.prefix(2)),null"],
-            as: ImagesJSON.self
-        )
+        let images = try await get(path, ["include_image_language": "\(language.prefix(2)),null"], as: ImagesJSON.self)
         return TMDb.Images(
             posters: images.posters.map(\.file_path),
-            backdrops: images.backdrops.map(\.file_path),
+            backdrops: (images.backdrops ?? []).map(\.file_path),
             logos: (images.logos ?? []).map(\.file_path)
         )
     }
@@ -635,7 +647,8 @@ public struct TMDbClient: TMDbSource {
     private struct ImagesJSON: Decodable {
         struct Image: Decodable { var file_path: String }
         var posters: [Image]
-        var backdrops: [Image]
+        /// Absent for a season, which has posters alone.
+        var backdrops: [Image]?
         var logos: [Image]?
     }
     private struct FindJSON: Decodable {
