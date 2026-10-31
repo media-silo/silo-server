@@ -4964,6 +4964,150 @@ extension AdminConsoleTests {
         #expect(try read.plan().made == [proms.id.value])
     }
 
+    /// A record the library does not hold is walked from a draft of it: the draft's top is the root, a
+    /// new stop with nothing above it in the walk, and a series' specials sit beside every stop. Storing
+    /// makes it once confirmed, at the top of the library with what is beneath it confirmed, declining
+    /// what was declined; a film in a collection the library holds is named in it first. The walk is
+    /// kept, and found again by its record.
+    @Test func aRecordTheLibraryLacksIsWalkedFromADraft() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let alienCollection = Container(
+            id: ContainerID("00000000000000a1")!,
+            type: .collection,
+            title: Title("Alien Collection")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "8091")]
+        )
+        let held = HeldLibrary([alienCollection])
+        let (console, home) = try await Self.smddbConsole(held)
+        var (_, _, tmdb, _, special) = Self.missingSeason()
+        var alien = Self.alienRecord
+        alien.collection = 8091
+        tmdb.movies[348] = alien
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let record = TMDb.Record(.series, 121)
+
+        guard
+            case .walk(var walk) = try await console.startWalk(
+                drafting: record,
+                shape: AdminConsole.TMDbShape(seasons: [4]),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("a series neither smddb nor the library holds is walked from a draft")
+            return
+        }
+        let root = walk.root
+        #expect(walk.drafting && walk.isNew(root) && walk.series == root && walk.stops[root]?.parent == nil)
+        #expect(walk.order == [root] && walk.state(of: root) == .pending)
+        #expect(walk.specials.map(\.id) == [special.id], "its specials beside every stop")
+        #expect(console.tmdbDrafts.drafts(of: home.id).isEmpty, "kept as a walk, not as a draft")
+        try console.tmdbWalks.save(walk, for: home.id)
+        #expect(console.tmdbWalks.walk(drafting: record, in: "tv", of: home.id)?.id == walk.id)
+        #expect(console.tmdbWalks.walk(drafting: TMDb.Record(.series, 122), in: "tv", of: home.id) == nil)
+
+        #expect(try walk.plan().steps.isEmpty, "not confirmed, it makes nothing")
+        walk.place(special.id, .declined)
+        try await walking.confirm(root, choosing: walk.stops[root]?.chosen ?? [], in: &walk)
+        let season = try #require(walk.stops[root]?.children.first)
+        #expect(walk.order == [root, season] && walk.isNew(season))
+        var plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["create:\(root)", "decline:\(root)"])
+        #expect(plan.steps[0].described == "make Doctor Who at the top of the library", "the season not confirmed")
+        try await walking.confirm(season, choosing: walk.stops[season]?.chosen ?? [], in: &walk)
+        plan = try walk.plan()
+        #expect(plan.steps[0].described == "make Doctor Who and the 1 beneath it at the top of the library")
+        #expect(walk.state(of: root) == .willCreate && walk.state(of: season) == .willCreate)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let series = try #require(ContainerID(root))
+        #expect(held.container(series)?.childContainerIDs == [ContainerID(season)!])
+        #expect(held.sidecar(series)?.declined == [special.ref])
+
+        guard
+            case .walk(var film) = try await console.startWalk(
+                drafting: TMDb.Record(.movie, 348),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        else {
+            Issue.record("the film is walked from a draft")
+            return
+        }
+        #expect(film.stops[film.root]?.parent == alienCollection.id.value && film.series == nil)
+        try await walking.confirm(film.root, choosing: film.stops[film.root]?.chosen ?? [], in: &film)
+        plan = try film.plan()
+        #expect(plan.steps.map(\.id) == ["name:\(film.root)", "create:\(film.root)"])
+        #expect(
+            plan.steps.map(\.described) == [
+                "name Alien (1979) in the collection that holds it", "make Alien (1979) beneath that collection",
+            ]
+        )
+        #expect(try await console.store(film, of: home, tmdb: tmdb).refusal == nil)
+        #expect(held.container(alienCollection.id)?.childContainerIDs == [ContainerID(film.root)!])
+    }
+
+    /// A walk from a draft starts as a draft does: a record the library holds is walked as it is held,
+    /// and one smddb holds is imported instead. A drafted series' specials are suggested as a draft's
+    /// are; a walk rooted at no drafted series is suggested nothing.
+    @Test func aWalkFromADraftStartsAndSuggestsAsADraftDoes() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var doctorWho = Self.series(naming: [])
+        doctorWho.externalRefs.append(ExternalRef(provider: .tmdb, value: "121"))
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([doctorWho]))
+        var tmdb = FakeTMDb()
+        tmdb.series[900] = TMDb.Series(
+            id: 900,
+            name: "Doctor Who",
+            year: 2005,
+            seasons: [.init(id: 50, number: 0, name: "Specials"), .init(id: 51, number: 1, name: "Series 1")]
+        )
+        let first = Self.episode(2001, 1, 1, "Rose", aired: "2005-03-26")
+        let second = Self.episode(2002, 1, 2, "The End of the World", aired: "2005-04-09")
+        tmdb.seasons["900/1"] = TMDb.Season(id: 51, number: 1, name: "Series 1", year: 2005, episodes: [first, second])
+        let christmas = Self.episode(3001, 0, 1, "Children in Need", aired: "2005-04-02", runtime: 7)
+        tmdb.seasons["900/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [christmas])
+        func start(_ number: Int) async throws -> AdminConsole.TMDbWalkStart {
+            try await console.startWalk(
+                drafting: TMDb.Record(.series, number),
+                into: "tv",
+                of: home,
+                from: database,
+                tmdb: tmdb
+            )
+        }
+
+        guard case .held(let summary) = try await start(121) else {
+            Issue.record("a series the library holds is walked as it is held")
+            return
+        }
+        #expect(summary.id == doctorWho.id.value)
+
+        guard case .walk(let walk) = try await start(900) else {
+            Issue.record("a series neither smddb nor the library holds is walked from a draft")
+            return
+        }
+        let season = try #require(walk.drafts[walk.root]?.containers.last).id.value
+        let suggested = try await console.suggest(in: walk, of: home, from: database, tmdb: tmdb)
+        #expect(suggested.suggestions[3001]?.placement == .entry(in: season, sequence: "episodes", position: 1))
+        #expect(suggested.suggestions[3001]?.reason == "it aired between Rose and The End of the World")
+        let held = TMDbWalk(
+            library: "tv",
+            root: TMDbWalk.Stop(id: doctorWho.id.value, title: "Doctor Who", type: "series")
+        )
+        #expect(try await console.suggest(in: held, of: home, from: database, tmdb: tmdb) == held)
+
+        var series = Self.series(naming: [])
+        series.externalRefs.append(ExternalRef(provider: .tmdb, value: "900"))
+        try await database.save(series)
+        #expect(try await start(900) == .importFromSmddb(series))
+    }
+
     // MARK: New containers in a walk
 
     /// The walked series with a fourth season TMDb has and the library lacks, of four episodes, and one

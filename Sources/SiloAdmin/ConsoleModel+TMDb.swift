@@ -25,10 +25,6 @@ extension ConsoleModel {
         get { tmdbState.finding }
         set { tmdbState.finding = newValue }
     }
-    var shapingTree: ShapingTree? {
-        get { tmdbState.shaping }
-        set { tmdbState.shaping = newValue }
-    }
     /// This Mac's language and region, as TMDb names a language: `en-GB`.
     static var macLanguage: String {
         guard let code = Locale.current.language.languageCode?.identifier else { return "en-US" }
@@ -88,16 +84,30 @@ extension ConsoleModel {
         try await tmdb?.series(id)
     }
 
-    /// Starts a draft of a record for the library being found for. A record smddb or the library holds
-    /// is not drafted, and what holds it is said instead; a draft opens to be shaped.
+    /// Starts a walk of a record for the library being found for, rooted at a draft of it. A record smddb
+    /// holds is not drafted, and what holds it is said instead; one the library holds is walked as it is
+    /// held; a walk this Mac kept of the record is offered to be resumed, or started again.
     func startTMDbDraft(
         of record: TMDb.Record,
         shape: AdminConsole.TMDbShape,
-        for finding: FindingInTMDb
+        for finding: FindingInTMDb,
+        again: Bool = false
     ) async throws -> String? {
         guard let database, let tmdb else { return "TMDb or smddb's clone cannot be read." }
-        switch try await console.startDraft(
-            of: record,
+        let redraft = Walking.Redraft(record: record, shape: shape, finding: finding)
+        if !again, let kept = console.tmdbWalks.walk(drafting: record, in: finding.library, of: finding.silo.id) {
+            findingInTMDb = nil
+            walking = Walking(
+                silo: finding.silo,
+                walk: kept,
+                open: kept.next ?? kept.root,
+                resuming: true,
+                redraft: redraft
+            )
+            return nil
+        }
+        switch try await console.startWalk(
+            drafting: record,
             shape: shape,
             into: finding.library,
             of: finding.silo,
@@ -114,103 +124,23 @@ extension ConsoleModel {
                 on: finding.silo
             )
             return nil
-        case .draft(let tree):
+        case .walk(let walk):
             findingInTMDb = nil
-            await openShaping(tree, on: finding.silo)
+            await openDraftWalk(walk, on: finding.silo, redraft: redraft)
             return nil
         }
     }
 
-    /// Starts a draft of one of a held series' seasons beneath it.
-    func startSeasonDraft(_ number: Int, for finding: FindingInTMDb) async throws {
-        guard let database, let tmdb, let series = finding.series else { return }
-        let tree = try await console.startDraft(
-            ofSeason: number,
-            of: series.tmdb,
-            beneath: series.container,
-            into: finding.library,
-            of: finding.silo,
-            from: database,
-            tmdb: tmdb
-        )
+    /// Walks the held series being found for, the season of TMDb's chosen as a missing child to be
+    /// drafted beneath it once the series' stop is confirmed.
+    func startSeasonDraft(_ season: TMDb.SeasonSummary, for finding: FindingInTMDb) async {
+        guard let series = finding.series else { return }
         findingInTMDb = nil
-        await openShaping(tree, on: finding.silo)
-    }
-
-    /// Opens a draft from TMDb to be shaped, with its specials' suggestions.
-    func openShaping(_ tree: TMDbTree, on silo: AdminConsole.Silo) async {
-        shapingTree = ShapingTree(silo: silo, tree: tree)
-        if !tree.specials.isEmpty {
-            shapingTree?.companions =
-                (try? await console.companionSeries(in: tree.library, besides: nil, of: silo)) ?? []
-        }
-        await suggestSpecials()
-        await checkTree()
-    }
-
-    /// The tree as the operator shaped it, kept on this Mac, and checked with the silo again.
-    func updateTree(_ change: (inout TMDbTree) -> Void) {
-        guard var shaping = shapingTree else { return }
-        change(&shaping.tree)
-        shaping.outcome = nil
-        shaping.failure = nil
-        try? console.tmdbDrafts.save(shaping.tree, for: shaping.silo.id)
-        shapingTree = shaping
-        Task { await checkTree() }
-    }
-
-    func suggestSpecials() async {
-        guard let shaping = shapingTree, !shaping.tree.specials.isEmpty, let database, let tmdb else { return }
-        let id = shaping.id
-        shapingTree?.suggesting = AdminConsole.TMDbProgress("Suggesting where the specials go")
-        defer { if shapingTree?.id == id { shapingTree?.suggesting = nil } }
-        do {
-            let (tree, suggestions) = try await console.suggest(
-                for: shaping.tree,
-                of: shaping.silo,
-                from: database,
-                tmdb: tmdb,
-                progress: { [weak self] step in await self?.suggesting(step, for: id) }
-            )
-            shapingTree?.tree = tree
-            shapingTree?.suggestions = suggestions
-        } catch {
-            shapingTree?.failure = describe(error)
-        }
-    }
-
-    /// A step of the specials' suggestions, shown while the tree they were asked for is being shaped.
-    private func suggesting(_ step: AdminConsole.TMDbProgress, for id: TMDbTree.ID) {
-        guard shapingTree?.id == id else { return }
-        shapingTree?.suggesting = step
-    }
-
-    func checkTree() async {
-        guard let shaping = shapingTree else { return }
-        do {
-            shapingTree?.check = try await console.check(shaping.tree, of: shaping.silo)
-        } catch {
-            shapingTree?.failure = describe(error)
-        }
-    }
-
-    /// Makes the tree. Made, the library's containers are read again.
-    func createTree() async {
-        guard let shaping = shapingTree else { return }
-        do {
-            let outcome = try await console.create(shaping.tree, of: shaping.silo)
-            shapingTree?.outcome = outcome
-            if case .created = outcome { await loadContainers(for: shaping.silo) }
-        } catch {
-            shapingTree?.failure = describe(error)
-        }
-    }
-
-    /// Discards the draft from TMDb: off this Mac, and the sheet closed.
-    func discardTree() {
-        guard let shaping = shapingTree else { return }
-        try? console.tmdbDrafts.remove(shaping.tree.id, of: shaping.silo.id)
-        shapingTree = nil
+        await compareWithTMDb(
+            ContainerKey(silo: finding.silo.id, library: finding.library, container: series.container),
+            on: finding.silo,
+            choosing: "season:\(season.id)"
+        )
     }
 
     /// TMDb's images for a container's record, for its artwork kinds to be chosen from.

@@ -55,7 +55,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         }
 
         /// A new stop for a container of a draft, everything it is offered with chosen to begin with.
-        init(newIn tree: TMDbTree, _ id: String, parent: String, offering: [AdminConsole.TMDbDifference]) {
+        init(newIn tree: TMDbTree, _ id: String, parent: String?, offering: [AdminConsole.TMDbDifference]) {
             let container = tree.container(id)
             self.init(
                 id: id,
@@ -152,6 +152,28 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         stops = [root.id: root]
         edited = .now
     }
+
+    /// A walk of a record the library does not hold, rooted at a draft from TMDb: its top is the first
+    /// stop, new, filed where the draft is, at the top of the library or beneath the container that holds
+    /// the record above it. A series is the one whose specials sit beside every stop.
+    public init(drafting tree: TMDbTree) {
+        let top = tree.top
+        id = UUID()
+        library = tree.library
+        root = top
+        stops = [:]
+        edited = .now
+        drafts[top] = tree
+        stops[top] = Stop(newIn: tree, top, parent: tree.creating.parent, offering: offered(top, in: tree))
+        if tree.container(top)?.type == .series {
+            series = top
+            specials = tree.specials
+            placements = tree.placements
+        }
+    }
+
+    /// Whether the walk's root is a draft from TMDb the library does not hold yet.
+    public var drafting: Bool { isNew(root) }
 
     /// The walk's stops depth first, each container's children in the order its children list them: the
     /// root's tree, then each companion series' in the order they were added.
@@ -480,6 +502,11 @@ public final class TMDbWalkStore: Sendable {
     /// The walk kept for a container's tree, rooted at it.
     public func walk(rootedAt container: String, in library: String, of silo: String) -> TMDbWalk? {
         walks(of: silo).first { $0.root == container && $0.library == library }
+    }
+
+    /// The walk kept for a record the library does not hold, rooted at a draft of it.
+    public func walk(drafting record: TMDb.Record, in library: String, of silo: String) -> TMDbWalk? {
+        walks(of: silo).first { $0.drafting && $0.library == library && $0.drafts[$0.root]?.record == record }
     }
 
     /// Keeps a walk, in place of the one it was and of any other rooted at the same container.
