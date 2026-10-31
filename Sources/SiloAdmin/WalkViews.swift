@@ -262,16 +262,17 @@ struct WalkSheet: View {
                     )
                     .font(.caption).foregroundStyle(.secondary)
                 }
+                if let storing = current.storing { ReadingProgress(progress: storing) }
                 HStack {
                     if plan.steps.isEmpty {
                         Label(current.stored == nil ? "Nothing to store" : "Stored", systemImage: "checkmark.circle")
                             .foregroundStyle(.green).font(.caption)
                     }
                     Spacer()
-                    Button("Not Yet") { model.walking?.plan = nil }
+                    Button("Not Yet") { model.walking?.plan = nil }.disabled(current.storing != nil)
                     Button("Store") { Task { await model.storeWalk() } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(plan.steps.isEmpty || current.storing)
+                        .disabled(plan.steps.isEmpty || current.storing != nil)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

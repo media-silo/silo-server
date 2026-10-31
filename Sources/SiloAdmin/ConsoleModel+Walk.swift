@@ -460,10 +460,12 @@ extension ConsoleModel {
     /// walk, to be stored again. The root is read again in the browser.
     func storeWalk() async {
         guard let current = walking, let tmdb else { return }
-        walking?.storing = true
-        defer { walking?.storing = false }
+        walking?.storing = AdminConsole.TMDbProgress("Storing the walk")
+        defer { if walking?.id == current.id { walking?.storing = nil } }
         do {
-            let stored = try await console.store(current.walk, of: current.silo, tmdb: tmdb)
+            let stored = try await console.store(current.walk, of: current.silo, tmdb: tmdb) { step in
+                await self.storing(step, for: current.id)
+            }
             guard walking?.id == current.id else { return }
             walking?.walk = stored.walk
             walking?.stored = stored
@@ -488,6 +490,11 @@ extension ConsoleModel {
         } catch {
             walking?.failure = describe(error)
         }
+    }
+
+    private func storing(_ step: AdminConsole.TMDbProgress, for id: UUID) {
+        guard walking?.id == id else { return }
+        walking?.storing = step
     }
 }
 #endif

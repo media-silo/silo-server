@@ -4490,9 +4490,17 @@ extension AdminConsoleTests {
             ]
         )
 
-        let stored = try await console.store(walk, of: home, tmdb: tmdb)
+        let told = Mutex<[AdminConsole.TMDbProgress]>([])
+        let stored = try await console.store(walk, of: home, tmdb: tmdb) { step in told.withLock { $0.append(step) } }
         #expect(stored.stored.map(\.id) == ["edit:\(series.id)"])
         #expect(stored.refusal == "the validator refuses it")
+        #expect(
+            told.withLock { $0 } == [
+                AdminConsole.TMDbProgress("edit Doctor Who: its outline", done: 0, of: 3),
+                AdminConsole.TMDbProgress("edit Season 1: its title", done: 1, of: 3),
+            ],
+            "each step said as it is begun, and none past the refusal"
+        )
         #expect(stored.rest.map(\.id) == ["edit:\(one)", "edit:\(two)"])
         #expect(try stored.walk.plan().steps.map(\.id) == ["edit:\(one)", "edit:\(two)"], "kept, to be stored again")
         #expect(held.container(series.id)?.outline == "A time traveller.")

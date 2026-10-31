@@ -103,7 +103,8 @@ extension ConsoleModel {
         var nextOnceConfirmed = false
         /// Everything storing the walk will do, listed before any of it is done.
         var plan: TMDbWalk.Plan?
-        var storing = false
+        /// The step a store under way is on, and how many of the plan's steps it has made.
+        var storing: AdminConsole.TMDbProgress?
         var stored: AdminConsole.TMDbWalkStored?
         var failure: String?
 

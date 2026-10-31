@@ -118,11 +118,18 @@ extension AdminConsole {
     }
 
     /// Stores the walk as its plan lists it, step by step, stopping at the first the silo refuses.
-    public func store(_ walk: TMDbWalk, of silo: Silo, tmdb: any TMDbSource) async throws -> TMDbWalkStored {
+    /// `progress` is told each step as it is begun, with how many of the plan's steps are made before it.
+    public func store(
+        _ walk: TMDbWalk,
+        of silo: Silo,
+        tmdb: any TMDbSource,
+        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
+    ) async throws -> TMDbWalkStored {
         var walk = walk
         let steps = try walk.plan().steps
         var stored: [TMDbWalk.Step] = []
         for (index, step) in steps.enumerated() {
+            await progress(TMDbProgress(step.described, done: index, of: steps.count))
             if let refusal = try await make(step, in: walk.library, of: silo, tmdb: tmdb) {
                 var stale: String?
                 // An edit based on a sidecar the library has changed since: its stop is to be read again,
