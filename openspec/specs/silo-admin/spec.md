@@ -1631,6 +1631,6 @@ offer to resume it or start again, starting again drafting the record afresh.
   library again
 - **THEN** the console offers to resume that walk, or start again with a new draft of the record
 
-Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aRecordTheLibraryLacksIsWalkedFromADraft`).
-The walk's sheet, the offer to resume, and starting again are pinned by nothing yet, as the rest of
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aRecordTheLibraryLacksIsWalkedFromADraft`,
+`aWalkFromADraftStartsAndSuggestsAsADraftDoes`). The walk's sheet, the offer to resume, and starting again are pinned by nothing yet, as the rest of
 the shell is.
