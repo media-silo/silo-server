@@ -5,7 +5,6 @@ import Foundation
 import SiloClient
 import SmdKit
 import SmdSidecar
-import Synchronization
 
 /// A special, from a series' season 0 at TMDb: unassigned until the operator places it or declines it.
 public struct Special: Hashable, Sendable, Codable, Identifiable {
