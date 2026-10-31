@@ -33,8 +33,9 @@ extension AdminConsole {
         case unmatchedSeason(series: Int, seasons: [TMDb.SeasonSummary], suggested: Int?)
         /// Items both hold, at the same level, in TMDb's order rather than the sidecar's.
         case order(sequence: String?, items: [String])
-        /// An artwork kind the folder has no file for, and the image TMDb offers for it.
-        case artwork(kind: String, path: String, record: TMDb.Record)
+        /// An artwork kind the folder has no file for, and the image TMDb offers first for it; `offered`,
+        /// every image TMDb offers for it, best first, is absent from a walk kept before it was read.
+        case artwork(kind: String, path: String, record: TMDb.Record, offered: [String]? = nil)
         /// A special of the series nothing covers, to be placed or declined as a draft's specials are.
         case special(Special)
 
@@ -49,7 +50,7 @@ extension AdminConsole {
             case .heldSeason(_, let container, _): "held:\(container)"
             case .unmatchedSeason: "unmatched"
             case .order(let sequence, _): "order:\(sequence ?? "")"
-            case .artwork(let kind, _, _): "artwork:\(kind)"
+            case .artwork(let kind, _, _, _): "artwork:\(kind)"
             case .special(let special): "special:\(special.id)"
             }
         }
@@ -345,8 +346,9 @@ extension AdminConsole {
     {
         let images = try await tmdb.images(of: record)
         return ["poster", "fanart", "logo"].compactMap { kind in
-            guard !held.contains(kind), let path = images.offered(for: kind).first else { return nil }
-            return .artwork(kind: kind, path: path, record: record)
+            let offered = images.offered(for: kind)
+            guard !held.contains(kind), let path = offered.first else { return nil }
+            return .artwork(kind: kind, path: path, record: record, offered: offered)
         }
     }
 

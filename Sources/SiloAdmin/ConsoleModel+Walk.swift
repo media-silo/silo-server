@@ -140,6 +140,14 @@ extension ConsoleModel {
         walking = nil
     }
 
+    /// Another of the images TMDb offers for an artwork kind, chosen at the open stop.
+    func choose(image path: String, for kind: String) {
+        guard let open = walking?.open else { return }
+        walking?.walk.choose(image: path, for: kind, at: open)
+        walking?.plan = nil
+        keepWalk()
+    }
+
     /// Keeps the walk on this Mac as it stands, to be resumed after the console closes.
     func keepWalk() {
         guard var walk = walking?.walk, let silo = walking?.silo, walking?.resuming == false else { return }
