@@ -268,7 +268,7 @@ public enum TMDb {
 
     /// The images TMDb holds for a record, by their paths there, best first: what the artwork kinds
     /// `poster`, `fanart` and `logo` are offered from.
-    public struct Images: Hashable, Sendable {
+    public struct Images: Hashable, Sendable, Codable {
         public var posters: [String]
         public var backdrops: [String]
         public var logos: [String]

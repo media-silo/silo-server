@@ -349,7 +349,7 @@ extension AdminConsole {
     }
 
     /// The artwork kinds the folder lacks that the images TMDb holds for the record have one for.
-    private nonisolated static func artwork(
+    nonisolated static func artwork(
         of record: TMDb.Record,
         held: [String],
         images: TMDb.Images

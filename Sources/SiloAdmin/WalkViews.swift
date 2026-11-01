@@ -281,14 +281,33 @@ struct WalkSheet: View {
 }
 
 extension WalkSheet {
-    /// The artwork the open stop offers, each kind with the images TMDb offers for it to choose from.
+    /// The artwork the open held stop offers.
     fileprivate func artwork(_ comparison: AdminConsole.TMDbComparison) -> some View {
+        StopArtwork(
+            walk: walk,
+            model: model,
+            stop: comparison.container,
+            differences: comparison.differences,
+            tick: tick
+        )
+    }
+}
+
+/// The artwork a stop offers, each kind with the images TMDb offers for it to choose from.
+private struct StopArtwork: View {
+    let walk: TMDbWalk
+    let model: ConsoleModel
+    let stop: String
+    let differences: [AdminConsole.TMDbDifference]
+    let tick: (String) -> Binding<Bool>
+
+    var body: some View {
         DifferenceGroup(
             "Artwork",
-            comparison.differences.filter(\.isArtwork),
+            differences.filter(\.isArtwork),
             walk: walk,
             tick: tick,
-            images: ImageChoice(stop: comparison.container) { model.choose(image: $1, for: $0) }
+            images: ImageChoice(stop: stop) { model.choose(image: $1, for: $0) }
         )
     }
 }
@@ -394,6 +413,7 @@ private struct NewStop: View {
             let offered = walk.offered(stop)
             DifferenceGroup("Fields", offered.filter(\.isField), walk: walk, tick: tick)
             DifferenceGroup("References", offered.filter(\.isReference), walk: walk, tick: tick)
+            StopArtwork(walk: walk, model: model, stop: stop, differences: offered, tick: tick)
             if let container = walk.container(stop), let tree = walk.draft(holding: stop) {
                 Text(
                     "Ticked, each child is made with this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed."

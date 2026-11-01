@@ -5198,6 +5198,45 @@ extension AdminConsoleTests {
         #expect(again.isEmpty, "drafted once")
     }
 
+    /// A new stop is offered the artwork TMDb holds for its record, chosen to begin with, and chosen from as
+    /// a held stop's is; storing puts it once the container is made, credited to the record.
+    @Test func aNewStopsArtworkIsOfferedAndPutOnceItIsMade() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, contents, tmdb, _, _) = Self.missingSeason()
+        tmdb.images[TMDb.Record(.season, 904)] = TMDb.Images(posters: ["/one.jpg", "/two.jpg"])
+        let held = HeldLibrary([series] + contents)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
+        let new = try #require(walk.stops[series.id.value]?.children.last)
+        let poster = AdminConsole.TMDbDifference.artwork(
+            kind: "poster",
+            path: "/one.jpg",
+            record: TMDb.Record(.season, 904),
+            offered: ["/one.jpg", "/two.jpg"]
+        )
+        #expect(walk.offered(new).filter { $0.id.hasPrefix("artwork:") } == [poster], "posters alone, as TMDb holds")
+        #expect(walk.stops[new]?.chosen.contains("artwork:poster") == true, "chosen to begin with")
+        #expect(walk.image(for: "poster", at: new) == "/one.jpg")
+        walk.choose(image: "/two.jpg", for: "poster", at: new)
+        #expect(walk.image(for: "poster", at: new) == "/two.jpg")
+
+        try await walking.confirm(new, choosing: walk.stops[new]?.chosen ?? [], in: &walk)
+        let kinds = try walk.plan().steps.map(\.kind)
+        #expect(
+            kinds.last == .artwork(kind: "poster", path: "/two.jpg", record: TMDb.Record(.season, 904), of: new),
+            "the last step, once the season is made"
+        )
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(
+            held.sidecar(try #require(ContainerID(new)))?.attributions.contains(
+                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "904")
+            ) == true
+        )
+    }
+
     /// A series' seasons are among its children, held and missing alike, and are moved there: a held one by
     /// its entry in the series' sequence, and a missing one, which no sequence names until it is drafted
     /// and made, by its place among the stops beneath, where it is named when it is made.

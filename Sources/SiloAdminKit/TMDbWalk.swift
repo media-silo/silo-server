@@ -248,31 +248,6 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         unconfirm(stop)
     }
 
-    /// The image a stop puts for an artwork kind when its artwork is ticked: the one the operator chose,
-    /// or the one TMDb offers first.
-    public func image(for kind: String, at stop: String) -> String? {
-        stops[stop]?.images?[kind] ?? offeredFirst(kind, at: stop)
-    }
-
-    /// Another of the images TMDb offers for an artwork kind chosen at a stop, its artwork ticked with it,
-    /// and the stop pending again if that changes anything.
-    public mutating func choose(image path: String, for kind: String, at stop: String) {
-        guard var images = stops[stop].map({ $0.images ?? [:] }) else { return }
-        if image(for: kind, at: stop) != path {
-            images[kind] = path == offeredFirst(kind, at: stop) ? nil : path
-            stops[stop]?.images = images.isEmpty ? nil : images
-            unconfirm(stop)
-        }
-        choose("artwork:\(kind)", true, at: stop)
-    }
-
-    private func offeredFirst(_ kind: String, at stop: String) -> String? {
-        stops[stop]?.comparison?.differences.lazy.compactMap { difference -> String? in
-            guard case .artwork(kind, let path, _, _) = difference else { return nil }
-            return path
-        }.first
-    }
-
     /// The container whose pending change a placement is part of: the one the special goes in, the one
     /// that refers to it, or, for a decline, the series.
     public func home(of placement: SpecialPlacement) -> String? {
@@ -447,14 +422,17 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     }
 
     /// What a new stop is created with that the operator may leave out: its year, its outline, attributed
-    /// to TMDb, and its references.
+    /// to TMDb, its references, and each artwork kind TMDb has an image for.
     public func offered(_ id: String, in tree: TMDbTree? = nil) -> [AdminConsole.TMDbDifference] {
-        guard let container = (tree ?? draft(holding: id))?.container(id) else { return [] }
+        guard let tree = tree ?? draft(holding: id), let container = tree.container(id) else { return [] }
         var offered: [AdminConsole.TMDbDifference] = []
         if let year = container.year { offered.append(.year(year)) }
         let record = container.externalRefs.first { $0.provider == .tmdb }?.value ?? ""
         if let outline = container.outline, !outline.isEmpty { offered.append(.outline(outline, record: record)) }
         offered += container.externalRefs.map { .reference(item: nil, $0) }
+        if let held = tree.images?[id] {
+            offered += AdminConsole.artwork(of: held.record, held: [], images: held.images)
+        }
         return offered
     }
 
