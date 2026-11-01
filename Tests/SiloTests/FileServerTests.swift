@@ -64,4 +64,30 @@ struct FileServerTests {
         server.unpublish("job-1/source")
         #expect(try await fetch("/files/job-1/source", secret: published.secret).0 == 404)
     }
+
+    /// A file longer than the socket buffer arrives whole every time. The server closes a connection whose
+    /// request was never read to its end, dropping what of the response is still queued, so before the
+    /// handler read its requests a three-megabyte file came back short on some of thirty fetches.
+    @Test func aLargeFileArrivesWholeEveryTime() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bytes = Data(repeating: 0x2A, count: 3 << 20)
+        let held = root.appendingPathComponent("rip.mkv")
+        try bytes.write(to: held)
+
+        let server = try FileServer(host: "127.0.0.1", port: 0, advertisedHost: "127.0.0.1")
+        let serving = Task { try await server.run() }
+        defer { serving.cancel() }
+        let port = try await server.boundPort
+        let published = server.publish(held, at: "job-1/source")
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/files/job-1/source")!)
+        request.setValue(published.secret, forHTTPHeaderField: "x-silo-secret")
+
+        var whole = 0
+        for _ in 0..<30 {
+            if let (data, _) = try? await URLSession.shared.data(for: request), data == bytes { whole += 1 }
+        }
+        #expect(whole == 30)
+    }
 }

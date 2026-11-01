@@ -91,6 +91,7 @@ public final class FileServer: Sendable {
             reader: consuming sending NIOHTTPServer.Reader,
             responseSender: consuming sending NIOHTTPServer.ResponseSender
         ) async throws {
+            await FileServer.drain(reader)
             guard request.method == .get || request.method == .head,
                 let path = request.path, path.hasPrefix("/files/"),
                 let published = files.lookup(String(path.dropFirst("/files/".count))),
@@ -106,6 +107,33 @@ public final class FileServer: Sendable {
                 contentType: FileResponse.contentType(for: published.url),
                 to: responseSender
             )
+        }
+    }
+
+    /// How much of a request's body the handler reads before giving up on the connection: a fetch has no
+    /// body, so anything this long is not one.
+    static let drainLimit = 1 << 20
+
+    /// The request read to its end, its body discarded, before anything is answered.
+    ///
+    /// The server hands a connection back to its keep-alive loop only from a reader that has read the
+    /// request's end. Without that it closes the connection once the handler returns, and whatever of the
+    /// response is still queued behind the socket goes with it, so a file longer than the socket buffer
+    /// arrived short of its `Content-Length`. A read that fails, or a body past ``drainLimit``, leaves the
+    /// connection to close as it did before.
+    static func drain(_ reader: consuming sending NIOHTTPServer.Reader) async {
+        var reader = reader
+        var drained = 0
+        var ended = false
+        while !ended, drained <= drainLimit {
+            do {
+                ended = try await reader.read { buffer, finalElement in
+                    drained += buffer.count
+                    return finalElement != nil
+                }
+            } catch {
+                return
+            }
         }
     }
 
