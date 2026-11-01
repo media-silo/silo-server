@@ -126,14 +126,12 @@ public final class FileServer: Sendable {
         var drained = 0
         var ended = false
         while !ended, drained <= drainLimit {
-            do {
-                ended = try await reader.read { buffer, finalElement in
+            // A failed read ends the drain as the request's end does: there is nothing more to read.
+            ended =
+                (try? await reader.read { buffer, finalElement in
                     drained += buffer.count
                     return finalElement != nil
-                }
-            } catch {
-                return
-            }
+                }) ?? true
         }
     }
 
