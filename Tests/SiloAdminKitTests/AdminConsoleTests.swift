@@ -2505,6 +2505,10 @@ extension AdminConsoleTests {
         /// A JPEG's signature and nothing else, as every image TMDb serves here.
         static let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x00])
         func images(of record: TMDb.Record) async throws -> TMDb.Images { images[record] ?? .init() }
+        /// A season's, as `images` holds them under the season's own id.
+        func images(ofSeason number: Int, of series: Int) async throws -> TMDb.Images {
+            seasons["\(series)/\(number)"].flatMap { images[TMDb.Record(.season, $0.id)] } ?? .init()
+        }
         func image(at path: String) async throws -> Data { Self.jpeg }
 
         func authenticate() async throws {
@@ -3731,6 +3735,47 @@ extension AdminConsoleTests {
 
         try await console.putArtwork(FakeTMDb.jpeg, as: "poster", of: alien.id.value, in: "films", on: home)
         #expect(held.sidecar(alien.id)?.attributions.isEmpty == true, "the operator's own image is credited to no one")
+    }
+
+    /// A held season's poster is offered from TMDb's images of the season, read through its series, and
+    /// put credited to the season's own id there.
+    @Test func aHeldSeasonsArtworkIsOfferedFromTMDbsImagesOfTheSeason() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, tmdb) = Self.walkedSeries()
+        tmdb.images[TMDb.Record(.season, 901)] = TMDb.Images(posters: ["/one.jpg", "/two.jpg"])
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
+        let season = try #require(seasons.first { $0.title.rawValue == "Season 1" })
+        let one = season.id.value
+
+        var walk = try await console.startWalk(at: one, in: "tv", of: home)
+        try await walking.read(one, in: &walk)
+        #expect(
+            walk.differences(of: one).filter { $0.id.hasPrefix("artwork:") } == [
+                .artwork(
+                    kind: "poster",
+                    path: "/one.jpg",
+                    record: TMDb.Record(.season, 901),
+                    offered: ["/one.jpg", "/two.jpg"]
+                )
+            ],
+            "posters alone, which is all TMDb holds for a season"
+        )
+        walk.choose(image: "/two.jpg", for: "poster", at: one)
+        try await walking.confirm(one, choosing: walk.stops[one]?.chosen ?? [], in: &walk)
+        #expect(
+            try walk.plan().steps.map(\.kind) == [
+                .artwork(kind: "poster", path: "/two.jpg", record: TMDb.Record(.season, 901), of: one)
+            ]
+        )
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(
+            held.sidecar(season.id)?.attributions == [
+                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "901")
+            ]
+        )
     }
 
     /// A film's and a collection's own fields that TMDb says otherwise, and the ids it holds that the

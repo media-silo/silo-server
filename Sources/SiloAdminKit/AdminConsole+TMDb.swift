@@ -88,6 +88,8 @@ extension AdminConsole {
             top = try await reader.collection(try await tmdb.collection(record.id))
         case .series:
             top = try await reader.series(try await tmdb.series(record.id), shape: shape)
+        case .season:
+            throw NoTMDbReading(reason: "a season is drafted from TMDb beneath the series that holds it")
         }
         if record.kind == .movie, let collection = reader.collectionAbove,
             let holder = try await carrying(TMDb.Record(.collection, collection), in: library, of: silo)

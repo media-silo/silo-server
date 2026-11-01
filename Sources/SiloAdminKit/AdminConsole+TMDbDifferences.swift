@@ -165,6 +165,7 @@ extension AdminConsole {
             try await compareSeason(
                 of: seriesOfSeason,
                 container: container,
+                artwork: opened.container.artwork,
                 identified: identified[id],
                 into: &comparison,
                 of: silo,
@@ -258,6 +259,7 @@ extension AdminConsole {
     private func compareSeason(
         of series: Int?,
         container: Container,
+        artwork held: [String],
         identified: Int?,
         into comparison: inout TMDbComparison,
         of silo: Silo,
@@ -291,11 +293,7 @@ extension AdminConsole {
         let record = try await tmdb.season(summary.number, of: series)
         comparison.reading = "\(record.name) of TMDb's series \(series)"
         comparison.series = series
-        if own == nil {
-            comparison.differences.append(
-                .reference(item: nil, ExternalRef(provider: .tmdb, value: String(summary.id)))
-            )
-        }
+        if own == nil { comparison.differences.append(.reference(item: nil, TMDb.Record(.season, summary.id).ref)) }
         comparison.differences += Self.fields(
             of: container,
             title: record.name,
@@ -303,6 +301,9 @@ extension AdminConsole {
             overview: record.overview,
             record: summary.id
         )
+        await progress(TMDbProgress("Reading TMDb's artwork"), comparison)
+        let images = try await tmdb.images(ofSeason: summary.number, of: series)
+        comparison.differences += Self.artwork(of: TMDb.Record(.season, summary.id), held: held, images: images)
         try await compareEpisodes(
             record.episodes,
             of: series,
@@ -344,8 +345,16 @@ extension AdminConsole {
     /// The artwork kinds the folder lacks that TMDb has an image for.
     private func artwork(of record: TMDb.Record, held: [String], tmdb: any TMDbSource) async throws -> [TMDbDifference]
     {
-        let images = try await tmdb.images(of: record)
-        return ["poster", "fanart", "logo"].compactMap { kind in
+        Self.artwork(of: record, held: held, images: try await tmdb.images(of: record))
+    }
+
+    /// The artwork kinds the folder lacks that the images TMDb holds for the record have one for.
+    private nonisolated static func artwork(
+        of record: TMDb.Record,
+        held: [String],
+        images: TMDb.Images
+    ) -> [TMDbDifference] {
+        ["poster", "fanart", "logo"].compactMap { kind in
             let offered = images.offered(for: kind)
             guard !held.contains(kind), let path = offered.first else { return nil }
             return .artwork(kind: kind, path: path, record: record, offered: offered)
