@@ -92,3 +92,8 @@ deltas in `openspec/changes/`, as that README describes.
   a sidebar showing the tree and each container's state for the operator to go back to, the series'
   unassigned specials beside every container so each is placed where it belongs, and one store at the
   end that lists every edit, creation and put before it makes any.
+- [An episode's details](EpisodeDetails.md) — a library keeps each episode's title, outline, first air
+  date, cast, and directors and writers in an `.smd` of the episode's own beside its presentations,
+  named by its item in the container's sidecar and served with the item; the walk reads them from TMDb
+  and offers each field for the operator to take, the outline attributed; the repository document is
+  unchanged and nothing in the file goes to smddb.
