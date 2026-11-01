@@ -638,11 +638,11 @@ extension TMDbWalk {
         case .order(let sequence, let items): AdminConsole.reorder(sequence, to: items, in: &change.container)
         // A missing season chosen is a new stop of the walk, made with what its own stop keeps.
         case .season, .heldSeason, .unmatchedSeason: break
-        case .artwork(let kind, let path, let record):
+        case .artwork(let kind, let path, let record, _):
             gathering.artwork.append(
                 Step(
                     id: "artwork:\(id):\(kind)",
-                    kind: .artwork(kind: kind, path: path, record: record, of: id),
+                    kind: .artwork(kind: kind, path: change.stop.images?[kind] ?? path, record: record, of: id),
                     described: "put TMDb's \(kind) on \(change.stop.title), credited to TMDb"
                 )
             )

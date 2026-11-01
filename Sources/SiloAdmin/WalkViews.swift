@@ -206,7 +206,7 @@ struct WalkSheet: View {
             DifferenceGroup("References", comparison.differences.filter(\.isReference), walk: walk, tick: tick)
             WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
             DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
-            DifferenceGroup("Artwork", comparison.differences.filter(\.isArtwork), walk: walk, tick: tick)
+            artwork(comparison)
             StopAlternatives(walk: walk, model: model, stop: comparison.container)
             PlacedSpecials(walk: walk, model: model, stop: comparison.container)
             if !comparison.heldOnly.isEmpty {
@@ -277,6 +277,19 @@ struct WalkSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+extension WalkSheet {
+    /// The artwork the open stop offers, each kind with the images TMDb offers for it to choose from.
+    fileprivate func artwork(_ comparison: AdminConsole.TMDbComparison) -> some View {
+        DifferenceGroup(
+            "Artwork",
+            comparison.differences.filter(\.isArtwork),
+            walk: walk,
+            tick: tick,
+            images: ImageChoice(stop: comparison.container) { model.choose(image: $1, for: $0) }
+        )
     }
 }
 
@@ -417,17 +430,20 @@ private struct DifferenceGroup: View {
     let differences: [AdminConsole.TMDbDifference]
     let walk: TMDbWalk
     let tick: (String) -> Binding<Bool>
+    let images: ImageChoice?
 
     init(
         _ title: String,
         _ differences: [AdminConsole.TMDbDifference],
         walk: TMDbWalk,
-        tick: @escaping (String) -> Binding<Bool>
+        tick: @escaping (String) -> Binding<Bool>,
+        images: ImageChoice? = nil
     ) {
         self.title = title
         self.differences = differences
         self.walk = walk
         self.tick = tick
+        self.images = images
     }
 
     var body: some View {
@@ -435,7 +451,21 @@ private struct DifferenceGroup: View {
             GroupBox {
                 VStack(alignment: .leading) {
                     ForEach(differences) { difference in
-                        Toggle(isOn: tick(difference.id)) { DifferenceLabel(difference: difference, walk: walk) }
+                        Toggle(isOn: tick(difference.id)) {
+                            DifferenceLabel(difference: difference, walk: walk, images: images)
+                        }
+                        // Outside the toggle's label, so that choosing an image is not a click on the toggle.
+                        if case .artwork(let kind, let path, _, let offered?) = difference, offered.count > 1,
+                            let images
+                        {
+                            ImageStrip(
+                                kind: kind,
+                                offered: offered,
+                                chosen: walk.image(for: kind, at: images.stop) ?? path,
+                                choose: images.choose
+                            )
+                            .padding(.leading, 20)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -503,6 +533,7 @@ private struct PlacedSpecials: View {
 struct DifferenceLabel: View {
     let difference: AdminConsole.TMDbDifference
     let walk: TMDbWalk
+    var images: ImageChoice?
 
     var body: some View {
         switch difference {
@@ -533,14 +564,9 @@ struct DifferenceLabel: View {
         case .unmatchedSeason: EmptyView()
         case .order(let sequence, let items):
             Text("\(sequence ?? "The sequence") in TMDb's order: \(items.joined(separator: ", "))")
-        case .artwork(let kind, let path, _):
+        case .artwork(let kind, let path, _, _):
             HStack {
-                AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(path)")) {
-                    $0.resizable().scaledToFit()
-                } placeholder: {
-                    ProgressView()
-                }
-                .frame(width: 60, height: 60)
+                TMDbImage(path: images.flatMap { walk.image(for: kind, at: $0.stop) } ?? path, size: 60)
                 Text("\(kind), credited to TMDb")
             }
         case .special(let special): Text(special.episode.title)

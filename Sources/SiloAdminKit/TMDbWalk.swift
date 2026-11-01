@@ -46,6 +46,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         /// The missing episodes the operator added to containers a held stop holds beneath it, by each
         /// container's id; absent from a walk kept before they were asked.
         var episodesIntoHeld: [String: [Int]]?
+        /// The image the operator chose for an artwork kind in place of the one TMDb offers first, by kind;
+        /// absent from a walk kept before it was asked.
+        var images: [String: String]?
 
         public init(id: String, title: String, type: String, parent: String? = nil) {
             self.id = id
@@ -243,6 +246,31 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         guard let was = stops[stop]?.chosen.contains(difference), was != chosen else { return }
         if chosen { stops[stop]?.chosen.insert(difference) } else { stops[stop]?.chosen.remove(difference) }
         unconfirm(stop)
+    }
+
+    /// The image a stop puts for an artwork kind when its artwork is ticked: the one the operator chose,
+    /// or the one TMDb offers first.
+    public func image(for kind: String, at stop: String) -> String? {
+        stops[stop]?.images?[kind] ?? offeredFirst(kind, at: stop)
+    }
+
+    /// Another of the images TMDb offers for an artwork kind chosen at a stop, its artwork ticked with it,
+    /// and the stop pending again if that changes anything.
+    public mutating func choose(image path: String, for kind: String, at stop: String) {
+        guard var images = stops[stop].map({ $0.images ?? [:] }) else { return }
+        if image(for: kind, at: stop) != path {
+            images[kind] = path == offeredFirst(kind, at: stop) ? nil : path
+            stops[stop]?.images = images.isEmpty ? nil : images
+            unconfirm(stop)
+        }
+        choose("artwork:\(kind)", true, at: stop)
+    }
+
+    private func offeredFirst(_ kind: String, at stop: String) -> String? {
+        stops[stop]?.comparison?.differences.lazy.compactMap { difference -> String? in
+            guard case .artwork(kind, let path, _, _) = difference else { return nil }
+            return path
+        }.first
     }
 
     /// The container whose pending change a placement is part of: the one the special goes in, the one

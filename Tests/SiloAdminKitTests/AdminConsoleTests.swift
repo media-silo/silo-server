@@ -3659,7 +3659,8 @@ extension AdminConsoleTests {
     }
 
     /// TMDb's poster for a film the library holds is offered for the kind the folder lacks and put with
-    /// its attribution; an image of the operator's own put over it carries none.
+    /// its attribution; another of the posters TMDb offers is put in its place when the operator chooses
+    /// it; and an image of the operator's own put over it carries none.
     @Test func artworkIsTakenFromTMDbWithItsAttribution() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -3675,20 +3676,51 @@ extension AdminConsoleTests {
         held.file(Sidecar(container: alien), in: "films")
         let (console, home) = try await Self.smddbConsole(held)
         var tmdb = FakeTMDb(movies: [348: TMDb.Movie(id: 348, title: "Alien", year: 1979)])
-        tmdb.images[TMDb.Record(.movie, 348)] = TMDb.Images(posters: ["/poster.jpg"], backdrops: ["/backdrop.jpg"])
+        tmdb.images[TMDb.Record(.movie, 348)] = TMDb.Images(
+            posters: ["/poster.jpg", "/other.jpg"],
+            backdrops: ["/backdrop.jpg"]
+        )
 
         let compared = try await console.compare(alien.id.value, in: "films", of: home, from: database, tmdb: tmdb)
         #expect(
             compared.differences == [
-                .artwork(kind: "poster", path: "/poster.jpg", record: TMDb.Record(.movie, 348)),
-                .artwork(kind: "fanart", path: "/backdrop.jpg", record: TMDb.Record(.movie, 348)),
+                .artwork(
+                    kind: "poster",
+                    path: "/poster.jpg",
+                    record: TMDb.Record(.movie, 348),
+                    offered: ["/poster.jpg", "/other.jpg"]
+                ),
+                .artwork(
+                    kind: "fanart",
+                    path: "/backdrop.jpg",
+                    record: TMDb.Record(.movie, 348),
+                    offered: ["/backdrop.jpg"]
+                ),
             ]
         )
         let walking = Walking(console: console, home: home, database: database, tmdb: tmdb, library: "films")
-        let walk = try await walking.walk(alien.id.value, choosing: ["artwork:poster"])
+        let id = alien.id.value
+        var walk = try await walking.walk(id, choosing: ["artwork:poster"])
         #expect(
             try walk.plan().steps.map(\.described) == ["put TMDb's poster on \(alien.displayTitle), credited to TMDb"],
             "artwork changes no field"
+        )
+        #expect(walk.image(for: "poster", at: id) == "/poster.jpg", "TMDb's first, until another is chosen")
+
+        walk.choose(image: "/other.jpg", for: "poster", at: id)
+        #expect(walk.state(of: id) == .pending, "another image chosen, the stop is pending again")
+        walk.choose(image: "/poster.jpg", for: "poster", at: id)
+        #expect(walk.image(for: "poster", at: id) == "/poster.jpg", "TMDb's first chosen again")
+        walk.choose(image: "/backdrop.jpg", for: "fanart", at: id)
+        #expect(walk.stops[id]?.chosen == ["artwork:poster", "artwork:fanart"], "an image chosen ticks its kind")
+        walk.choose("artwork:fanart", false, at: id)
+        walk.choose(image: "/other.jpg", for: "poster", at: id)
+        try await walking.confirm(id, choosing: walk.stops[id]?.chosen ?? [], in: &walk)
+        #expect(
+            try walk.plan().steps.map(\.kind) == [
+                .artwork(kind: "poster", path: "/other.jpg", record: TMDb.Record(.movie, 348), of: id)
+            ],
+            "the chosen poster is the one put"
         )
         #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
         #expect(
