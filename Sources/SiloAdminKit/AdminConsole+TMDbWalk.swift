@@ -480,7 +480,7 @@ extension TMDbWalk {
     ) -> (creating: ContainerDraft.Creating, making: TMDbTree.Making)? {
         guard var tree = drafts[top], stops[top]?.taken != nil else { return nil }
         for container in tree.containers {
-            guard let taken = stops[container.id.value]?.taken else {
+            guard let stop = stops[container.id.value], let taken = stop.taken else {
                 // Not confirmed, it is not made, nor anything beneath it.
                 if let parent = tree.containers.first(where: { $0.childContainerIDs.contains(container.id) }),
                     let item = parent.sequences.flatMap(\.items).first(where: { $0.childContainer == container.id })?.id
@@ -492,16 +492,7 @@ extension TMDbWalk {
                 }
                 continue
             }
-            var kept = container
-            for difference in offered(container.id.value, in: tree) where !taken.contains(difference.id) {
-                switch difference {
-                case .year: kept.year = nil
-                case .outline: kept.outline = nil
-                case .reference(_, let ref): kept.externalRefs.removeAll { $0 == ref }
-                default: break
-                }
-            }
-            tree.set(kept)
+            tree.set(kept(container, in: tree, taking: taken, at: stop, gathering: &gathering))
         }
         let confirmed = Set(tree.containers.map(\.id.value).filter { stops[$0]?.taken != nil })
         let placed = (specials + declined).filter { special in
@@ -528,6 +519,29 @@ extension TMDbWalk {
         gathering.edits += making.heldEdits.filter { edit in edit.entry == nil || gathering.made[edit.container] == nil
         }
         return (tree.creating, making)
+    }
+
+    /// A confirmed new stop's container with what it was offered and did not take left out, and the
+    /// artwork it took gathered to put once it is made.
+    private func kept(
+        _ container: Container,
+        in tree: TMDbTree,
+        taking taken: Set<String>,
+        at stop: Stop,
+        gathering: inout Gathering
+    ) -> Container {
+        var kept = container
+        for difference in offered(container.id.value, in: tree) {
+            switch (difference, taken.contains(difference.id)) {
+            case (.year, false): kept.year = nil
+            case (.outline, false): kept.outline = nil
+            case (.reference(_, let ref), false): kept.externalRefs.removeAll { $0 == ref }
+            case (.artwork(let kind, let path, let record, _), true):
+                gathering.artwork.append(Self.artwork(kind, path, record, at: stop))
+            default: break
+            }
+        }
+        return kept
     }
 
     /// A confirmed stop's change: its ticked differences and the specials placed in it, onto the sidecar
@@ -639,15 +653,19 @@ extension TMDbWalk {
         // A missing season chosen is a new stop of the walk, made with what its own stop keeps.
         case .season, .heldSeason, .unmatchedSeason: break
         case .artwork(let kind, let path, let record, _):
-            gathering.artwork.append(
-                Step(
-                    id: "artwork:\(id):\(kind)",
-                    kind: .artwork(kind: kind, path: change.stop.images?[kind] ?? path, record: record, of: id),
-                    described: "put TMDb's \(kind) on \(change.stop.title), credited to TMDb"
-                )
-            )
+            gathering.artwork.append(Self.artwork(kind, path, record, at: change.stop))
         case .special: break
         }
+    }
+
+    /// The step putting a kind of artwork on a stop's container: the image the operator chose there, or
+    /// the one TMDb offers first.
+    private static func artwork(_ kind: String, _ path: String, _ record: TMDb.Record, at stop: Stop) -> Step {
+        Step(
+            id: "artwork:\(stop.id):\(kind)",
+            kind: .artwork(kind: kind, path: stop.images?[kind] ?? path, record: record, of: stop.id),
+            described: "put TMDb's \(kind) on \(stop.title), credited to TMDb"
+        )
     }
 
     /// The first of a group's episodes the stop's reading still offers.

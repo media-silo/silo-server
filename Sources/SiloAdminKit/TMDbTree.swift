@@ -101,6 +101,9 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     /// The alternatives drafted for the tree's containers, by id; absent from a draft kept before they
     /// were drafted.
     var alternativeDrafts: [String: [DraftAlternative]]?
+    /// The images TMDb holds for each container read from a record of its own, by id: what a new stop's
+    /// artwork is offered from. Absent from a draft kept before artwork was offered.
+    var images: [String: RecordImages]?
 
     public init(
         library: String,
@@ -113,7 +116,8 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         airDates: [String: String] = [:],
         episodeGroups: [String] = [],
         runtimes: [String: Int] = [:],
-        specials: [Special] = []
+        specials: [Special] = [],
+        images: [ContainerID: RecordImages] = [:]
     ) {
         id = UUID()
         self.library = library
@@ -133,6 +137,7 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
         self.episodeGroups = episodeGroups
         self.runtimes = runtimes
         self.specials = specials
+        self.images = images.isEmpty ? nil : Dictionary(uniqueKeysWithValues: images.map { ($0.key.value, $0.value) })
         placements = [:]
         breakouts = [:]
         title = containers.first { $0.id == top }?.displayTitle ?? ""
@@ -427,7 +432,9 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
             declined: declined
         )
     }
+}
 
+extension TMDbTree {
     /// A special as an entry of a container: its references, and no title, since TMDb has one for it.
     static func leaf(_ special: Special, type: EntryType, in container: Container) -> Entry {
         .leaf(
@@ -489,6 +496,19 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
             container.extras.append(.ref(ref))
         } else {
             insert(.ref(ref), into: &container, sequence: nil, at: nil)
+        }
+    }
+}
+
+extension TMDbTree {
+    /// The images TMDb holds for a record, and the record, which artwork put from them is credited to.
+    public struct RecordImages: Hashable, Sendable, Codable {
+        public var record: TMDb.Record
+        public var images: TMDb.Images
+
+        public init(_ record: TMDb.Record, _ images: TMDb.Images) {
+            self.record = record
+            self.images = images
         }
     }
 }

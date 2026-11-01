@@ -110,7 +110,8 @@ extension AdminConsole {
         tmdb: any TMDbSource
     ) async throws -> TMDbTree {
         var reader = Reader(tmdb: tmdb, database: database)
-        let season = try await reader.season(try await tmdb.season(number, of: series))
+        async let images = Reader.images(ofSeason: number, of: series, tmdb: tmdb)
+        let season = try await reader.season(try await tmdb.season(number, of: series), images: await images)
         return reader.tree(top: season, record: TMDb.Record(.series, series), library: library, creating: creating)
     }
 
@@ -136,6 +137,8 @@ extension AdminConsole {
         var runtimes: [String: Int] = [:]
         var episodeGroups: [String] = []
         var specials: [Special] = []
+        /// The images TMDb holds for each container read from a record of its own.
+        var images: [ContainerID: TMDbTree.RecordImages] = [:]
         /// The collection a movie read is in, for filing it beneath one the library holds.
         var collectionAbove: Int?
 
@@ -156,8 +159,21 @@ extension AdminConsole {
                 airDates: airDates,
                 episodeGroups: episodeGroups,
                 runtimes: runtimes,
-                specials: specials
+                specials: specials,
+                images: images
             )
+        }
+
+        /// The images TMDb holds for a record. Artwork is offered, not needed: a draft is read without
+        /// it when TMDb will not say.
+        private func images(of record: TMDb.Record) async -> TMDbTree.RecordImages {
+            TMDbTree.RecordImages(record, (try? await tmdb.images(of: record)) ?? TMDb.Images())
+        }
+
+        /// The images TMDb holds for one of a series' seasons, read through the series, as `images(of:)`
+        /// reads a record's.
+        static func images(ofSeason number: Int, of series: Int, tmdb: any TMDbSource) async -> TMDb.Images {
+            (try? await tmdb.images(ofSeason: number, of: series)) ?? TMDb.Images()
         }
 
         /// A container from a record's facts, its outline TMDb's overview, attributed.
@@ -196,6 +212,7 @@ extension AdminConsole {
                 Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie))])
             ]
             collectionAbove = movie.collection
+            images[container.id] = await images(of: TMDb.Record(.movie, movie.id))
             containers.append(container)
             return container
         }
@@ -208,6 +225,7 @@ extension AdminConsole {
                 overview: collection.overview,
                 refs: [ExternalRef(provider: .tmdb, value: String(collection.id))]
             )
+            images[container.id] = await images(of: TMDb.Record(.collection, collection.id))
             containers.append(container)
             var items: [Entry] = []
             for part in collection.parts {
@@ -227,6 +245,7 @@ extension AdminConsole {
                 overview: series.overview,
                 refs: [ExternalRef(provider: .tmdb, value: String(series.id))] + series.externalIDs.refs
             )
+            images[container.id] = await images(of: TMDb.Record(.series, series.id))
             containers.append(container)
             episodeGroups = series.episodeGroups.map(\.id)
             var placed: Set<Int> = []
@@ -243,10 +262,11 @@ extension AdminConsole {
             } else {
                 let wanted = series.seasons.filter { $0.number != 0 && shape.seasons?.contains($0.number) ?? true }
                 let records = try await AdminConsole.concurrently(wanted) { [tmdb, id = series.id] summary in
-                    try await tmdb.season(summary.number, of: id)
+                    async let images = Self.images(ofSeason: summary.number, of: id, tmdb: tmdb)
+                    return (try await tmdb.season(summary.number, of: id), await images)
                 }
-                for record in records {
-                    let season = try await self.season(record)
+                for (record, images) in records {
+                    let season = try await self.season(record, images: images)
                     items.append(
                         .child(Entry.Child(id: Self.itemID(season.title.rawValue, in: items), container: season.id))
                     )
@@ -262,7 +282,7 @@ extension AdminConsole {
             return container
         }
 
-        mutating func season(_ season: TMDb.Season) async throws -> Container {
+        mutating func season(_ season: TMDb.Season, images: TMDb.Images) async throws -> Container {
             var container = try await make(
                 .season,
                 title: season.name,
@@ -270,6 +290,7 @@ extension AdminConsole {
                 overview: season.overview,
                 refs: [ExternalRef(provider: .tmdb, value: String(season.id))]
             )
+            self.images[container.id] = TMDbTree.RecordImages(TMDb.Record(.season, season.id), images)
             container.sequences = [Sequence(id: "episodes", items: episodes(season.episodes))]
             containers.append(container)
             return container
