@@ -95,5 +95,10 @@ deltas in `openspec/changes/`, as that README describes.
 - [An episode's details](EpisodeDetails.md) — a library keeps each episode's title, outline, first air
   date, cast, and directors and writers in an `.smd` of the episode's own beside its presentations,
   named by its item in the container's sidecar and served with the item; the walk reads the facts from
-  Wikidata and the outline from TMDb, attributed, and offers each field for the operator to take; the repository document is
-  unchanged and nothing in the file goes to smddb.
+  Wikidata and the outline from TMDb, attributed, and offers each field for the operator to take; the
+  repository document is unchanged and nothing in the file goes to smddb.
+- [Facts from Wikidata, content from TMDb](Wikidata.md) — every fact the console takes from a
+  provider comes from Wikidata, whose statements are CC0, so no fact's provenance is tracked and any may
+  go to smddb; TMDb is read only for outlines and artwork, attributed with the date they were read and
+  read again within the six months TMDb's terms allow; an attributed field goes to smddb only when its
+  provider is CC0, and artwork never does.
