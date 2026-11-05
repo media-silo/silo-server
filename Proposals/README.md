@@ -92,6 +92,11 @@ deltas in `openspec/changes/`, as that README describes.
   a sidebar showing the tree and each container's state for the operator to go back to, the series'
   unassigned specials beside every container so each is placed where it belongs, and one store at the
   end that lists every edit, creation and put before it makes any.
+- [An episode is a container of its own](EpisodeDetails.md) — an episode is held as a container of
+  type `episode`, as a film is a `movie`, with its own document, sidecar and folder; its title, first
+  date, cast, and directors and writers are its own fields, facts from Wikidata that go to smddb, each
+  participant known by its references; its outline is TMDb's, attributed and kept in the library; its
+  versions and extras are its own; and the walk offers each field a season's episodes at a time.
 - [Facts from Wikidata, content from TMDb](Wikidata.md) — every fact the console takes from a
   provider comes from Wikidata, whose statements are CC0, so no fact's provenance is tracked and any may
   go to smddb; TMDb is read only for outlines and artwork, attributed with the date they were read and

@@ -18,8 +18,9 @@ to smddb only when its provider's licence is CC0. Artwork never goes to smddb.
 
 It revises [0017-tmdb](Tmdb.md), whose reading took facts and content alike from TMDb, and its walk in
 [0018-tmdb-walk](TmdbWalk.md), which it keeps as it is but for where each difference is read from. It
-revises the reading of [0019-episode-details](EpisodeDetails.md) in the same way: an episode's title,
-air date, cast and crew come from Wikidata, and its outline from TMDb.
+revises the reading of [0019-episode-details](EpisodeDetails.md) in the same way: an episode, held as a
+container of its own, takes its title, first date, cast and crew from Wikidata, and its outline from
+TMDb.
 
 ## The problem
 
@@ -79,7 +80,7 @@ something, the place to add it is Wikidata, and the console links to the item.
 
 **The walk, read from both.** 0018's walk stays as it is. A stop's facts are compared with Wikidata's
 reading: title and year, missing children, order, missing references and, from 0019, an episode's
-title, air date, cast and crew. Its content is compared with TMDb's: outline and artwork, and an
+title, first date, cast and crew. Its content is compared with TMDb's: outline and artwork, and an
 episode's outline. A stop reads TMDb only for content, through the TMDb ids its container carries or
 Wikidata holds. A walk with no TMDb token still reviews every fact.
 
@@ -129,8 +130,7 @@ Each step is a pull request carrying its spec change, in `openspec/changes/` and
 `Attribution` gains `read`, the date the content was read from its provider, written as an attribute of
 `<attribution>` and required: an attribution without it is refused on reading, as one without a value
 is. Nothing written under 0017 is kept, as *Non-goals* says, so no attribution of unknown age has to be
-read. SmdKit's sidecar spec changes in the same pull request, and the details
-file 0019 adds takes it with the rest.
+read. SmdKit's sidecar spec changes in the same pull request.
 
 ### 2. Attributions' age in the silo
 
@@ -153,8 +153,9 @@ again.
 
 ### 5. Episode details from Wikidata
 
-0019's third step, *Details in the walk*, reads an episode's title, air date, cast and crew from the
-Wikidata reading step 3 adds and its outline from TMDb, and follows step 4. It is that proposal's to
+0019's third step, *Episodes as containers in the walk*, drafts each episode as a container with its
+title, first date, cast and crew from the Wikidata reading step 3 adds and its outline from TMDb, and
+follows step 4. It is that proposal's to
 build, and is listed here only for the order.
 
 ## What comes next
@@ -190,4 +191,4 @@ CC0 could be read beside it.
    needs its own reading, and the walk should say when it meets one.
 3. **Episode cast.** With cast taken from Wikidata, an episode's cast is what its item lists. For most
    episodes that is nothing. The series' cast, which Wikidata often lists with the characters, could be
-   offered for each episode instead, as 0019 offered TMDb's regular cast.
+   offered for each episode instead, as 0019's first open question weighs.
