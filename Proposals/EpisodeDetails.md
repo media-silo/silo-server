@@ -13,8 +13,9 @@ own beside its files. Its title, the date it was first broadcast, its cast, and 
 are the container's own fields. They are facts, read from Wikidata as
 [0020-wikidata](Wikidata.md) has every fact read, and they go to smddb with the rest of the container.
 Its outline is content, read from TMDb and attributed in its sidecar as a container's outline already
-is, and it stays in the library. The walk offers each of these fields for the operator to take or leave,
-a season's episodes at once or one at a time.
+is, and it stays in the library. Each episode is a stop of the walk, its fields offered for the
+operator to take or leave there or a season's episodes at once, and any stop can be confirmed with
+everything beneath it in one action.
 
 It revisits a non-goal of [0017-tmdb](Tmdb.md), *Titles and outlines for entries*, which stored TMDb's
 episode titles nowhere, keeping to SmdKit's rule that an entry carries a title only when a provider has
@@ -96,16 +97,29 @@ read, and 0020's rule keeps it out of smddb. Its artwork never goes.
 answer lists its episodes as children, and each child's summary carries its `premiered` with its title,
 so a player has a season's episode titles and dates in the read it already makes.
 
-**Reviewed in its season's stop.** An episode is not a stop of the walk. A season is reviewed as a
-season, and its episodes with it: at the season's stop, an *Episodes* group lists five fields, *Title*,
-*Outline*, *Premiered*, *Cast* and *Directors and writers*, each saying how many of the season's
-episodes it would change. Each field is ticked for every episode at once, and an episode opened in the
-group shows its own five fields, each ticked or not. A field is offered where its provider has a value
-and the episode's container lacks it or differs. As with the stop's other differences, nothing is ticked
-to begin with at a held stop, and everything is ticked at a new one. A new episode is made with its
-title whatever is ticked, since a container has to have one. Storing the walk edits each held episode
-with a field ticked, after its season's edit, and makes each new one beneath its season. The outline is
-put with its attribution and read date.
+**A stop of its own.** An episode is a stop of the walk, as every container beneath a confirmed stop
+is. Its stop lists its differences as any container's does: its title, outline, first date, cast, and
+directors and writers, each with its provider, its missing references, and its artwork. Specials are
+placed in it, and its versions and extras are shaped there. As with every stop, nothing is ticked to
+begin with at a held episode, and everything is ticked at a new one. A new episode is made with its title
+whatever is ticked, since a container has to have one. The outline is put with its attribution and read
+date.
+
+**Its fields across a season.** A season holding a dozen episodes would be a dozen stops whose
+differences are mostly the same few fields. So the season's stop also has an *Episodes* group: the five
+fields, *Title*, *Outline*, *Premiered*, *Cast* and *Directors and writers*, each saying how many of the
+season's episodes it would change. Ticking a field there ticks it at every episode's stop beneath the
+season, and an episode's own stop can untick it again. The group sets ticks. It confirms nothing.
+
+**Confirming a tree at once.** Every stop has a second way to be confirmed: *Confirm with everything
+beneath*. It confirms the stop with its ticks, then reads each stop beneath it against Wikidata and
+TMDb, with the progress a reading shows, and confirms each with the ticks it holds: the ones the
+operator set, at a stop they opened or through a group above it, and otherwise the defaults, nothing at
+a held stop and everything at a new one. A missing child is drafted beneath a stop only when it is
+ticked, so the fast path makes the new children a new season's defaults take and none of a held one's.
+It places no special. The sidebar marks each stop it confirmed without the operator opening it as
+*confirmed from above*, and opening one makes it a stop like any other. Storing the walk lists every
+edit, creation and put, as it always does, before it makes any.
 
 **Specials placed as containers.** 0017's and 0018's placements were written for entries. With episodes
 as containers they become placements of containers: a special placed in a season's run is an episode
@@ -115,7 +129,10 @@ special's own container. A special that is an extra stays a leaf, since an extra
 
 ## Principles
 
-0017's, 0018's and 0020's principles stand. This proposal adds three.
+0017's, 0018's and 0020's principles stand. 0018's non-goal *Taking everything at once* is revised:
+there is now an action that confirms a stop and every stop beneath it, but it takes only what each
+stop's ticks already say, the operator's or the defaults, so nothing held is changed that the operator
+did not tick. This proposal adds three principles.
 
 1. **A programme is a container.** An episode, like a film, is a thing with a title, credits, versions
    and extras of its own. A leaf is what a container plays: its feature, a version, an extra.
@@ -135,8 +152,10 @@ special's own container. A special that is an extra stays a leaf, since an extra
 
 A season of *Andor* is drafted from Wikidata in a walk. Its stop shows twelve episodes as its children
 and, under *Episodes*, the five fields, all ticked, since the season is new. The operator unticks *Cast*,
-because Wikidata lists no one for these episodes, and confirms. The store lists the season, then its
-twelve episodes, each made with its title, date, directors, writers and TMDb's outline. A player
+because Wikidata lists no one for these episodes, opens the first episode to choose its still, and then
+confirms the season with everything beneath. The eleven episodes they did not open are read and
+confirmed, and marked *confirmed from above*. The store lists the season, then its twelve episodes,
+each made with its title, date, directors, writers and TMDb's outline. A player
 browsing the season shows each episode's title and date, and an episode's page its outline, credited to
 TMDb, and its credits.
 
@@ -174,17 +193,21 @@ in one year and dated in another is warned on.
 ### 3. Episodes as containers in the walk
 
 0020's Wikidata reading drafting each episode as an episode container beneath its season or serial, with
-its facts, and its outline from TMDb. The *Episodes* group at every stop holding episode containers, its
-fields ticked whole or an episode at a time, kept with the walk. The store's edits and creations. 0017's
+its facts, and its outline from TMDb. Each episode a stop, with its fields among its differences. The
+*Episodes* group at every stop holding episode containers, ticking a field at each episode's stop.
+*Confirm with everything beneath*, and the sidebar's *confirmed from above*. The store's edits and
+creations. 0017's
 and 0018's placements of specials, as containers. It follows 0020's Wikidata reading and its walk from
 both providers.
 
-Tests: a season drafted from Wikidata holds each episode as a container in Wikidata's order; a held
-season's episodes offer each field their provider has and the episode lacks; ticking *Premiered* alone
-edits each episode's date and nothing else; an episode's field unticked leaves it as the library holds
-it; a new season's episodes are made with their fields and outline once it is; the crew offered holds
-the episode's directors and screenwriters, each with their Wikidata id; a special placed as a version of
-an episode is an alternative of the episode's container.
+Tests: a season drafted from Wikidata holds each episode as a container in Wikidata's order; confirming
+a season queues each episode as a stop; a held episode offers each field its provider has and it lacks;
+ticking *Premiered* in the season's group and confirming the season with everything beneath edits each
+episode's date and nothing else; an episode whose field is unticked at its own stop keeps it as the
+library holds it; confirming a held season with everything beneath, nothing ticked, stores nothing;
+a new season confirmed with everything beneath makes its episodes with their fields and outline once it
+is made; the crew offered holds the episode's directors and screenwriters, each with their Wikidata id;
+a special placed as a version of an episode is an alternative of the episode's container.
 
 ## What comes next
 
@@ -200,7 +223,6 @@ artwork is.
 
 ## Non-goals
 
-- **An episode as a stop.** A season is reviewed as a season. Its episodes are reviewed in its stop.
 - **Migrating episodes held as entries.** 0020 already removes and drafts again the one library drafted
   under 0017, so no episode entry is converted.
 - **Every crew job.** Wikidata lists producers, composers and cinematographers too. Directing and
