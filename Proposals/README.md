@@ -92,3 +92,8 @@ deltas in `openspec/changes/`, as that README describes.
   a sidebar showing the tree and each container's state for the operator to go back to, the series'
   unassigned specials beside every container so each is placed where it belongs, and one store at the
   end that lists every edit, creation and put before it makes any.
+- [Facts from Wikidata, content from TMDb](Wikidata.md) — every fact the console takes from a
+  provider comes from Wikidata, whose statements are CC0, so no fact's provenance is tracked and any may
+  go to smddb; TMDb is read only for outlines and artwork, attributed with the date they were read and
+  read again within the six months TMDb's terms allow; an attributed field goes to smddb only when its
+  provider is CC0, and artwork never does.
