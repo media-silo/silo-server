@@ -3,18 +3,18 @@
 
 # Proposals: 0019-episode-details
 
-Modified: 2026-11-02
+Modified: 2026-11-05
 
 # An episode's details, in an smd of its own
 
 This proposes that a library keep, for each episode, the details a player shows on the episode's page:
 its title, its outline, the date it first aired, its cast, and who directed and wrote it. They live in a
 file of the episode's own, `{item}.smd`, beside the episode's presentations and named by the episode's
-`<item>` in its container's sidecar, as a child container's sidecar is. The walk reads them from TMDb
-and offers each field for the operator to take or leave. A title, a date and a credit are taken plainly,
-since they are facts. An outline is attributed to TMDb, as a container's is. The file is a library fact
-through and through. The repository document does not change, and nothing in the file is proposed to
-smddb.
+`<item>` in its container's sidecar, as a child container's sidecar is. The walk reads them as
+[0020-wikidata](Wikidata.md) has every reading do: the title, date and credits are facts, read from
+Wikidata, and the outline is content, read from TMDb and attributed to it. The walk offers each field
+for the operator to take or leave. The file is a library fact through and through. The repository
+document does not change, and nothing in the file is proposed to smddb.
 
 It revisits a non-goal of [0017-tmdb](Tmdb.md), *Titles and outlines for entries*, which stored TMDb's
 episode titles nowhere. That non-goal kept the repository to SmdKit's rule that an entry carries a title
@@ -55,24 +55,26 @@ file moved or copied to the wrong place says so:
   <aired>2022-09-21</aired>
   <cast>
     <participant name="Diego Luna" role="Cassian Andor">
+      <externalRef provider="wikidata" value="…"/>
       <externalRef provider="tmdb" value="8688"/>
     </participant>
     …
   </cast>
   <crew>
     <participant name="Toby Haynes" role="Director">
-      <externalRef provider="tmdb" value="…"/>
+      <externalRef provider="wikidata" value="…"/>
     </participant>
     …
   </crew>
-  <attribution subject="outline" provider="tmdb" value="3504536"/>
+  <attribution subject="outline" provider="tmdb" value="3504536" read="2026-11-05"/>
 </details>
 ```
 
 Each element is optional, and one the operator did not take is not written. `<participant name role>`
 is the element a `<feature>` already uses, with the same convention: the role is what the person is to
 the programme, a character for the cast and a job for the crew, as an NFO's `<actor>` has it. The
-`<attribution>` is the sidecar's, and only the outline is attributed.
+`<attribution>` is the sidecar's, with the date its content was read as 0020 adds it, and only the
+outline is attributed.
 
 **A participant is known by its references.** SmdKit's `Participant` gains `externalRefs`, written as
 `<externalRef>` children of `<participant>` wherever one stands: in an item's details, and on a
@@ -104,14 +106,15 @@ it already makes. The outline's attribution is served with it, so a player can c
 container's sidecar, and another removes them. The silo checks their shape and nothing about where they
 came from, as with an attribution.
 
-**Read from TMDb, a field at a time.** The walk reads each episode's details with its season: the
-title, overview and air date TMDb gives for the episode, its guest stars, and the jobs in its crew that
-TMDb files under directing and writing. The season's regular cast is read once for the season. Each
-credit carries TMDb's id for the person, which becomes the participant's `tmdb` reference at no further
-cost. A person's IMDb id would be a request per person, and is not read. At each
+**Read from Wikidata and TMDb, a field at a time.** The walk reads each episode's facts with its season
+from Wikidata's reading: the episode's label as its title, its publication date as the date it first
+aired, its cast members with the characters they play, and its directors and screenwriters. Each person
+is a Wikidata item, so each participant carries a `wikidata` reference, and the TMDb and IMDb person
+ids Wikidata holds for them, in the same query. The outline is TMDb's overview of the episode, read
+through the TMDb episode id Wikidata holds, and attributed to it with the date it was read. At each
 stop, an *Episodes* group lists five fields: *Title*, *Outline*, *Aired*, *Cast* and *Directors and
 writers*. Each field is ticked for every episode of the stop at once, and an episode opened in the group
-shows its own five fields, each ticked or not. A field is offered where TMDb has a value and the
+shows its own five fields, each ticked or not. A field is offered where its provider has a value and the
 library's details lack it or differ. As with the stop's other differences, nothing is ticked to begin
 with at a held stop, and everything is ticked at a new one. Storing the walk puts each episode's details
 after the edit or creation of its container. The details put are the library's, with the ticked fields
@@ -122,24 +125,24 @@ replaced.
 0017's and 0018's principles stand. This proposal adds three.
 
 1. **The repository stays as 0017 left it.** An entry still carries a title only when no provider has
-   one. The details are the library's copy of what a provider says, kept for the household's players,
-   and they never reach smddb.
+   one. The details are the library's copy of what the providers say, kept for the household's
+   players, and the repository has no place for them.
 2. **The details are the episode's.** They live in a file of the episode's own, go where the episode
    goes, and are changed by nothing but a put of them.
 3. **Each field is the operator's to take.** A provider's cast list may be one the operator would rather
-   not hold, and its crew lists everyone who touched the episode. The walk offers the fields separately,
-   and the crew only as directing and writing.
+   not hold, and its crew runs to everyone who worked on the episode. The walk offers the fields
+   separately, and the crew only as directing and writing.
 
 ## Vocabulary
 
-- **Details** — what a library keeps about one item beyond its references and its files: title, outline,
-  first air date, cast and crew.
+- **Details** — what a library keeps about one item beyond its references and its files: title,
+  outline, first air date, cast and crew.
 - **Details file** — the `.smd` holding one item's details, beside its presentations.
 
 ## What this looks like to the operator
 
 A held season of *Andor* is open in a walk. Under *Episodes* the five fields are listed, each unticked,
-and each saying how many of the season's twelve episodes TMDb would change. The operator ticks *Title*,
+and each saying how many of the season's twelve episodes it would change. The operator ticks *Title*,
 *Aired* and *Directors and writers*, opens the fourth episode and unticks its *Directors and writers*,
 because the library already credits that episode as the operator wants it, and confirms the stop. The
 store lists twelve puts of details after the season's edit. Once it runs, a player browsing the season
@@ -179,20 +182,23 @@ feature's participant is served with its references.
 
 ### 3. Details in the walk
 
-The TMDb client reading each episode's overview, crew and guest stars with its season, and the season's
-regular cast. The *Episodes* group at every stop whose container holds an entry carrying a TMDb episode
-the reading has, its fields ticked whole or an episode at a time, kept with the walk. The store's puts.
+Each episode's statements in 0020's Wikidata reading of a season: label, publication date, cast with
+characters, directors and screenwriters, and the people's ids; and each episode's overview from TMDb.
+The *Episodes* group at every stop whose container holds an entry carrying the Wikidata id of an
+episode the reading has, its fields ticked whole or an episode at a time, kept with the walk. The
+store's puts. It follows 0020's Wikidata reading and its walk from both providers, and replaces the
+episode details step 0020 lists.
 
-Tests: a held season's episodes offer each field TMDb has and the library lacks; ticking *Aired* alone
-puts details holding the date and the library's other fields as they stood; an episode's field unticked
-leaves that field as the library holds it; a new season's details are ticked and put once it is made;
-the crew offered holds only directing and writing jobs, each participant with its TMDb person id; the
-outline is put with its attribution.
+Tests: a held season's episodes offer each field its provider has and the library lacks; ticking
+*Aired* alone puts details holding the date and the library's other fields as they stood; an
+episode's field unticked leaves that field as the library holds it; a new season's details are ticked and put once it is made;
+the crew offered holds the episode's directors and screenwriters, each participant with its Wikidata id
+and the TMDb person id Wikidata holds; the outline is put with its attribution and the date it was read.
 
 ## What comes next
 
-**Details for films and extras.** A film held as an entry of a collection, or an extra TMDb lists as a
-movie, has details at TMDb of the same shape. The file takes any leaf, so this is a reading, not a
+**Details for films and extras.** A film held as an entry of a collection, or an extra Wikidata holds
+as a film, has statements of the same shape. The file takes any leaf, so this is a reading, not a
 format change.
 
 **An episode's still.** TMDb holds a still for most episodes. As artwork it would be `{item}-thumb.jpg`
@@ -201,35 +207,38 @@ beside the episode's files, found by name as a container's artwork is, and attri
 **People across the library.** With references on every participant, the question
 `StructuredContainers.md` put to the shared database, every commentary a director recorded, can be asked
 of a library: the episodes a person is credited in, and the features and extras they appear on. A
-console offering a feature's participants from TMDb's people, with their ids, is the other half.
+console offering a feature's participants from Wikidata's people, with their ids, is the other half.
 
 **Titles in file names.** A presentation's file is named for the item's title, or its id when it has
-none, and an episode drafted from TMDb has none. The details' title could name its files instead, at
-the cost of a move each time the title is taken.
+none, and an episode drafted from a provider has none. The details' title could name its files
+instead, at the cost of a move each time the title is taken.
 
 ## Non-goals
 
-- **Details in smddb.** smddb's data is meant to be CC0. A cast list in credit order is someone's
-  arrangement as much as a set of facts. A feature's participants, with their references, are the
-  repository's already, and go to smddb as they always have.
-- **Following TMDb.** Details stored do not change when TMDb's do. The next walk shows the difference.
-- **Every crew job.** TMDb's crew for an episode runs to editors, composers and casting. Directing and
+- **Details in smddb.** The repository document has no place for an entry's details, and SmdKit's rule
+  that an entry carries a title only when no provider has one stays. The facts in a details file are
+  Wikidata's, and CC0, so a repository that one day carries them could take them; the outline would go
+  only as 0020's rule for attributed fields has it, which for TMDb's is never. A feature's
+  participants, with their references, are the repository's already, and go to smddb as they always
+  have, a reference naming a person rather than copying a provider's record of them.
+- **Following a provider.** Details stored do not change when a provider's do. The next walk shows the
+  difference, and 0020's read date has the outline read again before TMDb's terms say it is stale.
+- **Every crew job.** Wikidata lists producers, composers and cinematographers too. Directing and
   writing are what a player shows.
 - **The silo reaching TMDb.** Unchanged from 0017.
 
 ## Open questions
 
-1. **Who is in an episode.** TMDb's episode lists its guest stars, and its season lists the regular
-   cast. Whether a regular appears in a given episode is held only by TMDb's per-episode credits, a
-   request for each episode. Proposed: the season's regulars, then the episode's guest stars, which is
-   what TMDb's own episode page shows, at one request per season. If players show a regular in an
-   episode they are absent from often enough to matter, the per-episode read is the fix.
-2. **What TMDb's terms allow kept.** 0017's first open question applies here with more in it: a cast
-   list for every episode, stored indefinitely.
-3. **A TMDb id on a person.** TMDb numbers people apart from films and series, as it numbers those
+1. **Who is in an episode.** Wikidata lists an episode's cast less often than its title or date: none of
+   *Andor*'s first season's episodes list theirs, where the series lists twenty-five. Taken from the
+   episode alone, most episodes' cast field would be empty. Offering the series' cast for each episode,
+   as 0020's third open question raises, would fill it with people who may not be in the episode.
+   Proposed: the episode's own statements, with an empty field where there are none, and the gap filled
+   at Wikidata.
+2. **A TMDb id on a person.** TMDb numbers people apart from films and series, as it numbers those
    apart from each other. A `tmdb` reference on a participant is a person's, since nothing else is a
    participant, so it is read as one without a prefix, as 0017's third open question reads a film's
    and a series'.
-4. **An item named `container`.** An item whose `{item}` is `container` would have a details file named
+3. **An item named `container`.** An item whose `{item}` is `container` would have a details file named
    as its container's sidecar. Proposed: the layout names that one `container - details.smd`. Item ids
    are slugs of titles, so it takes an episode titled *Container* to reach it.
