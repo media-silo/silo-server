@@ -191,7 +191,8 @@ episode details step 0020 lists.
 
 Tests: a held season's episodes offer each field its provider has and the library lacks; ticking
 *Aired* alone puts details holding the date and the library's other fields as they stood; an
-episode's field unticked leaves that field as the library holds it; a new season's details are ticked and put once it is made;
+episode's field unticked leaves that field as the library holds it; a new season's details are
+ticked and put once it is made;
 the crew offered holds the episode's directors and screenwriters, each participant with its Wikidata id
 and the TMDb person id Wikidata holds; the outline is put with its attribution and the date it was read.
 
