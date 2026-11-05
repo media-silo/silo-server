@@ -3077,6 +3077,123 @@ extension ServerTests {
         }
     }
 
+    struct CreditedRead: Decodable {
+        struct Participant: Decodable, Equatable {
+            var name: String
+            var role: String?
+            var externalRefs: [RefJSON]
+        }
+        struct Child: Decodable, Equatable {
+            var title: String
+            var premiered: String?
+        }
+        var premiered: String?
+        var cast: [Participant]
+        var crew: [Participant]
+        var children: [Child]
+    }
+
+    /// Adds a library of its own in a fresh folder, makes `containers` in it in one create, runs
+    /// `body`, and removes the library and its folder.
+    func withLibrary(
+        _ id: String,
+        holding containers: [Container],
+        _ body: (TestClient) async throws -> Void
+    ) async throws {
+        struct NewLibrary: Encodable {
+            var id: String
+            var path: String
+        }
+        let folder = Fixture.root.appendingPathComponent("Media/\(id)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await withClient { client in
+            let added = try await client.post(
+                "/v1/libraries",
+                json: NewLibrary(id: id, path: folder.path),
+                headers: Self.operatorHeaders
+            )
+            #expect(added.status == 201)
+            let made = try await client.send(
+                "POST",
+                "/v1/libraries/\(id)/containers",
+                body: try JSONEncoder().encode(AttributedCreate(documents: containers.map(Self.xml))),
+                headers: Self.operatorHeaders
+            )
+            #expect(made.status == 200)
+            try await body(client)
+            #expect(try await client.send("DELETE", "/v1/libraries/\(id)", headers: Self.operatorHeaders).status == 204)
+        }
+    }
+
+    /// An episode held as a container of its own, with its first date and credits.
+    static func episode(_ id: String, _ title: String, premiered: String) -> Container {
+        Container(
+            id: ContainerID(id)!,
+            type: .episode,
+            title: Title(title)!,
+            premiered: CalendarDate(premiered),
+            cast: [Participant(name: "Diego Luna", role: "Cassian Andor")],
+            crew: [
+                Participant(
+                    name: "Toby Haynes",
+                    role: "Director",
+                    externalRefs: [ExternalRef(provider: .wikidata, value: "Q7811842")]
+                )
+            ],
+            sequences: [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])]
+        )
+    }
+
+    @Test func aContainersFirstDateAndCreditsAreServed() async throws {
+        let kassa = Self.episode("0000000000000071", "Kassa", premiered: "2022-09-21")
+        try await withLibrary("credited", holding: [kassa]) { client in
+            let read = try await client.get("/v1/containers/\(kassa.id)").json(CreditedRead.self)
+            #expect(read.premiered == "2022-09-21")
+            #expect(read.cast == [.init(name: "Diego Luna", role: "Cassian Andor", externalRefs: [])])
+            #expect(
+                read.crew == [
+                    .init(
+                        name: "Toby Haynes",
+                        role: "Director",
+                        externalRefs: [RefJSON(provider: "wikidata", value: "Q7811842")]
+                    )
+                ]
+            )
+        }
+    }
+
+    @Test func aSeasonListsItsEpisodesDates() async throws {
+        let kassa = Self.episode("0000000000000072", "Kassa", premiered: "2022-09-21")
+        let thatWouldBeMe = Self.episode("0000000000000073", "That Would Be Me", premiered: "2022-09-21")
+        let season = Container(
+            id: ContainerID("0000000000000074")!,
+            type: .season,
+            title: Title("Season 1")!,
+            year: 2022,
+            premiered: CalendarDate("2022-09-21"),
+            sequences: [
+                Sequence(
+                    id: "episodes",
+                    items: [
+                        .child(Entry.Child(id: ItemID("kassa")!, container: kassa.id)),
+                        .child(Entry.Child(id: ItemID("that-would-be-me")!, container: thatWouldBeMe.id)),
+                    ]
+                )
+            ]
+        )
+        try await withLibrary("dated", holding: [season, kassa, thatWouldBeMe]) { client in
+            let read = try await client.get("/v1/containers/\(season.id)").json(CreditedRead.self)
+            #expect(read.premiered == "2022-09-21")
+            #expect(
+                read.children == [
+                    .init(title: "Kassa", premiered: "2022-09-21"),
+                    .init(title: "That Would Be Me", premiered: "2022-09-21"),
+                ]
+            )
+        }
+    }
+
     @Test func aCreateCarriesItsAttributions() async throws {
         let film = Self.attributedFilm("0000000000000061")
         try await withAttributionLibrary("attributed-create", film: film, attributed: true) { client, route in

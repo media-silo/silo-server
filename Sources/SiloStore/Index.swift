@@ -26,8 +26,9 @@ public struct Index: Sendable {
     /// file's `user_version`. Raised whenever either changes — a table's columns or keys, or how a
     /// presentation's id is formed — so a file another version made is emptied on opening and the
     /// boot's walk fills it again from the sidecars, rather than every write to it failing. 2 is the
-    /// index keyed by library, with presentations named for what they are.
-    static let version = 2
+    /// index keyed by library, with presentations named for what they are; 3 adds each container's
+    /// first date, for the summaries a parent's children are served as.
+    static let version = 3
 
     /// Opens or creates the index at `url`; `nil` keeps it in memory, for tests.
     public init(at url: URL?) throws {
@@ -75,6 +76,7 @@ public struct Index: Sendable {
                 table.column("year", .integer)
                 table.column("typeLabel", .text)
                 table.column("outline", .text)
+                table.column("premiered", .text)
                 table.column("listed", .boolean).notNull()
                 table.column("document", .blob).notNull()
                 table.primaryKey(["library", "id"])
@@ -317,6 +319,8 @@ public struct IndexedContainer: Codable, Hashable, Sendable, FetchableRecord, Pe
     public var year: Int?
     public var typeLabel: String?
     public var outline: String?
+    /// The day the container was first broadcast or released, `yyyy-mm-dd`.
+    public var premiered: String?
     public var listed: Bool
     /// The sidecar's bytes.
     public var document: Data
@@ -449,6 +453,7 @@ struct IndexEntry {
             year: container.year,
             typeLabel: container.typeLabel,
             outline: container.outline,
+            premiered: container.premiered?.description,
             listed: container.listed,
             document: document
         )

@@ -54,6 +54,7 @@ enum Mapping {
             year: row.year,
             typeLabel: row.typeLabel,
             outline: row.outline,
+            premiered: row.premiered,
             listed: row.listed,
             parent: row.parent
         )
@@ -102,6 +103,9 @@ enum Mapping {
             year: row.year,
             typeLabel: row.typeLabel,
             outline: row.outline,
+            premiered: row.premiered,
+            cast: container.cast.map(participant),
+            crew: container.crew.map(participant),
             listed: row.listed,
             parent: row.parent,
             defaultAlternative: container.defaultAlternative,
@@ -113,9 +117,7 @@ enum Mapping {
                     id: feature.id,
                     _type: feature.type.rawValue,
                     title: feature.title,
-                    participants: feature.participants.map {
-                        Components.Schemas.Participant(name: $0.name, role: $0.role)
-                    }
+                    participants: feature.participants.map(participant)
                 )
             },
             sequences: container.sequences.map { sequence in
@@ -305,5 +307,18 @@ enum Mapping {
     /// document's types without a second hand-written mapping to keep in step.
     static func transcode<From: Encodable, To: Decodable>(_ value: From, to type: To.Type = To.self) throws -> To {
         try JSONDecoder().decode(To.self, from: try JSONEncoder().encode(value))
+    }
+}
+
+extension Mapping {
+    /// A credit as the API serves it, with the references it carries.
+    static func participant(_ participant: Participant) -> Components.Schemas.Participant {
+        Components.Schemas.Participant(
+            name: participant.name,
+            role: participant.role,
+            externalRefs: participant.externalRefs.map {
+                Components.Schemas.ExternalRef(provider: $0.provider.rawValue, value: $0.value)
+            }
+        )
     }
 }

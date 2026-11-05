@@ -122,6 +122,11 @@ public enum Validator {
         {
             findings.append(Finding(.error, "the default alternative \(preferred) is not there"))
         }
+        // The year and the first date are authored apart, a series' year the one it began in, so a
+        // disagreement is a warning: more likely a typo than a choice.
+        if let year = container.year, let premiered = container.premiered, premiered.year != year {
+            findings.append(Finding(.warning, "premiered \(premiered) is not in \(year)"))
+        }
         return findings
     }
 
