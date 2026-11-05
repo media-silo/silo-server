@@ -54,12 +54,16 @@ file moved or copied to the wrong place says so:
   <outline>…</outline>
   <aired>2022-09-21</aired>
   <cast>
-    <participant name="Diego Luna" role="Cassian Andor"/>
-    <participant name="Kyle Soller" role="Syril Karn"/>
+    <participant name="Diego Luna" role="Cassian Andor">
+      <externalRef provider="tmdb" value="8688"/>
+    </participant>
+    …
   </cast>
   <crew>
-    <participant name="Toby Haynes" role="Director"/>
-    <participant name="Tony Gilroy" role="Writer"/>
+    <participant name="Toby Haynes" role="Director">
+      <externalRef provider="tmdb" value="…"/>
+    </participant>
+    …
   </crew>
   <attribution subject="outline" provider="tmdb" value="3504536"/>
 </details>
@@ -69,6 +73,15 @@ Each element is optional, and one the operator did not take is not written. `<pa
 is the element a `<feature>` already uses, with the same convention: the role is what the person is to
 the programme, a character for the cast and a job for the crew, as an NFO's `<actor>` has it. The
 `<attribution>` is the sidecar's, and only the outline is attributed.
+
+**A participant is known by its references.** SmdKit's `Participant` gains `externalRefs`, written as
+`<externalRef>` children of `<participant>` wherever one stands: in an item's details, and on a
+container's `<feature>` in the repository document. A name is not an identity. Two people share one,
+and one person is credited under several. With a provider's id on both sides, the director in an
+episode's details is the director on the serial's commentary, and the interviewee on an extra is the
+actor in the episode it is about, matched by reference rather than by spelling. `StructuredContainers.md`
+left people's provider ids to the shared database. A reference on the participant is where that
+database would hold them, so a feature proposed to smddb carries its participants' ids with it.
 
 **Named from the sidecar.** The episode's `<item>` in its container's sidecar names the file in an
 `smd` attribute, as a child container's `<item type="container">` names the child's sidecar. Every file
@@ -93,7 +106,9 @@ came from, as with an attribution.
 
 **Read from TMDb, a field at a time.** The walk reads each episode's details with its season: the
 title, overview and air date TMDb gives for the episode, its guest stars, and the jobs in its crew that
-TMDb files under directing and writing. The season's regular cast is read once for the season. At each
+TMDb files under directing and writing. The season's regular cast is read once for the season. Each
+credit carries TMDb's id for the person, which becomes the participant's `tmdb` reference at no further
+cost. A person's IMDb id would be a request per person, and is not read. At each
 stop, an *Episodes* group lists five fields: *Title*, *Outline*, *Aired*, *Cast* and *Directors and
 writers*. Each field is ticked for every episode of the stop at once, and an episode opened in the group
 shows its own five fields, each ticked or not. A field is offered where TMDb has a value and the
@@ -138,12 +153,15 @@ Each step is a pull request carrying its spec change. The silo's two are in `ope
 ### 1. Item details, in SmdKit
 
 `ItemDetails` — `container`, `item`, `title`, `outline`, `aired`, `cast`, `crew` and `attributions` —
-with its file's reading and writing. `Sidecar.details`, each item's details file by the item's id,
+with its file's reading and writing. `Participant.externalRefs`, in the container file as in the details
+file. A reader that predates it ignores the element, as it ignores anything it does not know, so the
+container format's version does not change. `Sidecar.details`, each item's details file by the item's id,
 read from and written to the `smd` attribute of a leaf `<item>`. An update and setting the container's
 own fields leave it as it stands, as they leave the rules. SmdKit's sidecar spec changes in the same pull
 request. It merges first, and the silo's `Package.resolved` moves to it.
 
-Tests: details with every field read back as written; details with none write the bare root; an
+Tests: details with every field, a participant with a reference among them, read back as written; a
+feature's participant with a reference reads back with it; details with none write the bare root; an
 `aired` that is not a date is refused on reading; a sidecar naming an item's details reads back with
 them; the container read from it is the container read from one without.
 
@@ -156,7 +174,8 @@ details served on the item; and the put and remove routes.
 
 Tests: a put writes the file and names it in the sidecar, and the container's read serves them; a put
 of details naming another item is 400; a removal deletes the file and the name; a placement into the
-container keeps them; an edit dropping the item is 422; a details file nothing names is a warning.
+container keeps them; an edit dropping the item is 422; a details file nothing names is a warning; a
+feature's participant is served with its references.
 
 ### 3. Details in the walk
 
@@ -167,7 +186,8 @@ the reading has, its fields ticked whole or an episode at a time, kept with the 
 Tests: a held season's episodes offer each field TMDb has and the library lacks; ticking *Aired* alone
 puts details holding the date and the library's other fields as they stood; an episode's field unticked
 leaves that field as the library holds it; a new season's details are ticked and put once it is made;
-the crew offered holds only directing and writing jobs; the outline is put with its attribution.
+the crew offered holds only directing and writing jobs, each participant with its TMDb person id; the
+outline is put with its attribution.
 
 ## What comes next
 
@@ -178,6 +198,11 @@ format change.
 **An episode's still.** TMDb holds a still for most episodes. As artwork it would be `{item}-thumb.jpg`
 beside the episode's files, found by name as a container's artwork is, and attributed in its details.
 
+**People across the library.** With references on every participant, the question
+`StructuredContainers.md` put to the shared database, every commentary a director recorded, can be asked
+of a library: the episodes a person is credited in, and the features and extras they appear on. A
+console offering a feature's participants from TMDb's people, with their ids, is the other half.
+
 **Titles in file names.** A presentation's file is named for the item's title, or its id when it has
 none, and an episode drafted from TMDb has none. The details' title could name its files instead, at
 the cost of a move each time the title is taken.
@@ -185,8 +210,8 @@ the cost of a move each time the title is taken.
 ## Non-goals
 
 - **Details in smddb.** smddb's data is meant to be CC0. A cast list in credit order is someone's
-  arrangement as much as a set of facts, and the people's provider ids, where smddb would want them,
-  are not read here.
+  arrangement as much as a set of facts. A feature's participants, with their references, are the
+  repository's already, and go to smddb as they always have.
 - **Following TMDb.** Details stored do not change when TMDb's do. The next walk shows the difference.
 - **Every crew job.** TMDb's crew for an episode runs to editors, composers and casting. Directing and
   writing are what a player shows.
@@ -201,6 +226,10 @@ the cost of a move each time the title is taken.
    episode they are absent from often enough to matter, the per-episode read is the fix.
 2. **What TMDb's terms allow kept.** 0017's first open question applies here with more in it: a cast
    list for every episode, stored indefinitely.
-3. **An item named `container`.** An item whose `{item}` is `container` would have a details file named
+3. **A TMDb id on a person.** TMDb numbers people apart from films and series, as it numbers those
+   apart from each other. A `tmdb` reference on a participant is a person's, since nothing else is a
+   participant, so it is read as one without a prefix, as 0017's third open question reads a film's
+   and a series'.
+4. **An item named `container`.** An item whose `{item}` is `container` would have a details file named
    as its container's sidecar. Proposed: the layout names that one `container - details.smd`. Item ids
    are slugs of titles, so it takes an episode titled *Container* to reach it.

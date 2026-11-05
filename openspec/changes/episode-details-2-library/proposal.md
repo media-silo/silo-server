@@ -17,5 +17,6 @@ by every edit of the season and the details are the episode's. Proposal:
   item, is not named as the layout would name it, or is named by nothing.
 - A placement and an edit keep an item's details, and an edit that drops an item with details is 422.
 - An `Item` in a container's read answers carries its `details`.
+- A participant, in an item's details or on a container's feature, is served with its `externalRefs`.
 - `PUT` and `DELETE` on `/v1/libraries/{library}/containers/{id}/items/{item}/details` put and remove an
   item's details.

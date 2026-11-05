@@ -5,8 +5,9 @@
 
 ### Requirement: An item's details are served with it, and put and removed whole
 An `Item` in a container's read answers SHALL carry `details` when its library holds them: `title`,
-`outline`, `aired` as `yyyy-mm-dd`, `cast` and `crew`, each a list of participants with a `name` and a
-`role` in the order they are credited, and `attributions`, each a `subject`, `provider` and `value`.
+`outline`, `aired` as `yyyy-mm-dd`, `cast` and `crew`, each a list of participants with a `name`, a
+`role` and `externalRefs` in the order they are credited, and `attributions`, each a `subject`, `provider` and `value`.
+A participant on a container's feature SHALL carry its `externalRefs` too.
 `PUT /v1/libraries/{library}/containers/{id}/items/{item}/details` with a JSON `ItemDetails` SHALL
 write the item's details file where the layout puts it, by writing beside it and renaming, SHALL name
 it in the item's `<item>` in the container's sidecar when the sidecar does not already, and SHALL
@@ -22,6 +23,10 @@ require the operator's bearer; a missing or wrong bearer SHALL be 401.
 - **WHEN** the operator puts details for an episode of a season, with a title, an air date, two of the
   cast and a director
 - **THEN** the answer is 200, and the season's read answer carries the episode with those details
+
+#### Scenario: a participant's references served
+- **WHEN** the operator puts details for an episode whose director carries a `tmdb` reference
+- **THEN** the season's read answer carries the director in the episode's crew with that reference
 
 #### Scenario: details replaced whole
 - **WHEN** the operator puts details holding only a title for an episode whose details held a title and

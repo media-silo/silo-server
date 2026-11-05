@@ -8,7 +8,8 @@ A reading of a season, held or drafted, SHALL read with it each episode's overvi
 stars and crew, and the season's regular cast; a reading SHALL go on without them when TMDb does not
 answer. An episode's details from TMDb SHALL be its title, its overview as the outline, its air date,
 its cast as the season's regular cast followed by the episode's guest stars, each with the character
-they play, and its crew as the jobs TMDb files under directing and writing, each with the job. A stop
+they play, and its crew as the jobs TMDb files under directing and writing, each with the job, and each participant
+carrying TMDb's id for the person as a `tmdb` reference. A stop
 whose container holds an entry carrying the TMDb id of an episode the reading has SHALL offer an
 *Episodes* group of five fields: title, outline, aired, cast, and directors and writers. A field SHALL
 be offered for an episode when TMDb has a value for it and the library's details of the episode lack
@@ -38,7 +39,8 @@ TMDb's, and the outline, when chosen, attributed to the episode's TMDb id.
 
 #### Scenario: only directors and writers offered
 - **WHEN** TMDb lists an episode's director, writer, editor and composer
-- **THEN** the episode's directors and writers field offers the director and the writer alone
+- **THEN** the episode's directors and writers field offers the director and the writer alone, each with
+  their TMDb person id as a `tmdb` reference
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aHeldSeasonsEpisodeDetailsAreOfferedAField`,
 `anEpisodesFieldUnchosenIsLeftAsTheLibraryHeldIt`, `aNewSeasonsEpisodeDetailsArePutOnceItIsMade`);
