@@ -153,8 +153,9 @@ again.
 
 ### 5. Episode details from Wikidata
 
-0019's episode details, their title, air date, cast and crew read from Wikidata's statements on each
-episode, and their outline from TMDb.
+0019's third step, *Details in the walk*, reads an episode's title, air date, cast and crew from the
+Wikidata reading step 3 adds and its outline from TMDb, and follows step 4. It is that proposal's to
+build, and is listed here only for the order.
 
 ## What comes next
 
