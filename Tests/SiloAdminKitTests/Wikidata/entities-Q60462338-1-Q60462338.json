@@ -1,0 +1,810 @@
+{
+  "entities" : {
+    "Q60462338" : {
+      "claims" : {
+        "P57" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q5321636",
+                  "numeric-id" : 5321636
+                }
+              }
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q7648702",
+                  "numeric-id" : 7648702
+                }
+              }
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q22958724",
+                  "numeric-id" : 22958724
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P161" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q313044",
+                  "numeric-id" : 313044
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q27970919",
+                      "numeric-id" : 27970919
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q208667",
+                  "numeric-id" : 208667
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q134437285",
+                      "numeric-id" : 134437285
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q438161",
+                  "numeric-id" : 438161
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q2631047",
+                      "numeric-id" : 2631047
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q6451452",
+                  "numeric-id" : 6451452
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Syril Karn"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q5257674",
+                  "numeric-id" : 5257674
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Dedra Meero"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q18684239",
+                  "numeric-id" : 18684239
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Bix Caleen"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q73612",
+                  "numeric-id" : 73612
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q114251545",
+                      "numeric-id" : 114251545
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q182763",
+                  "numeric-id" : 182763
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q24734909",
+                      "numeric-id" : 24734909
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q5524676",
+                  "numeric-id" : 5524676
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q114252082",
+                      "numeric-id" : 114252082
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q13576931",
+                  "numeric-id" : 13576931
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q115519629",
+                      "numeric-id" : 115519629
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q6139160",
+                  "numeric-id" : 6139160
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Timm Karlo"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q4716984",
+                  "numeric-id" : 4716984
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Linus Mosk"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q5104734",
+                  "numeric-id" : 5104734
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Brasso"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q1964106",
+                  "numeric-id" : 1964106
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Chief Hyne"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q5314569",
+                  "numeric-id" : 5314569
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q28039564",
+                      "numeric-id" : 28039564
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q816565",
+                  "numeric-id" : 816565
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q28039497",
+                      "numeric-id" : 28039497
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q349350",
+                  "numeric-id" : 349350
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q28039487",
+                      "numeric-id" : 28039487
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q459482",
+                  "numeric-id" : 459482
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Eedy Karn"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q1280675",
+                  "numeric-id" : 1280675
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Perrin Fertha"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q591515",
+                  "numeric-id" : 591515
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Lio Partagaz"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q16231429",
+                  "numeric-id" : 16231429
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Vel Sartha"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q47459178",
+                  "numeric-id" : 47459178
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Cinta Kaz"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q114772394",
+                  "numeric-id" : 114772394
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q134386696",
+                      "numeric-id" : 134386696
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q73362",
+                  "numeric-id" : 73362
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q6315462",
+                      "numeric-id" : 6315462
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q4727316",
+                  "numeric-id" : 4727316
+                }
+              }
+            },
+            "qualifiers" : {
+              "P4633" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "Davits Draven"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P345" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "string",
+                "value" : "tt9253284"
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P361" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q51964873",
+                  "numeric-id" : 51964873
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P527" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q119129258",
+                  "numeric-id" : 119129258
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "1"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q126908011",
+                  "numeric-id" : 126908011
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "2"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P580" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "time",
+                "value" : {
+                  "after" : 0,
+                  "before" : 0,
+                  "calendarmodel" : "http:\/\/www.wikidata.org\/entity\/Q1985727",
+                  "precision" : 11,
+                  "time" : "+2022-09-21T00:00:00Z",
+                  "timezone" : 0
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P4835" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "string",
+                "value" : "393189"
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P4983" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "string",
+                "value" : "83867"
+              }
+            },
+            "rank" : "normal"
+          }
+        ]
+      },
+      "descriptions" : {
+        "en" : {
+          "language" : "en",
+          "value" : "2022–2025 Star Wars television series"
+        },
+        "en-gb" : {
+          "language" : "en-gb",
+          "value" : "American space opera streaming television series"
+        }
+      },
+      "id" : "Q60462338",
+      "labels" : {
+        "en" : {
+          "language" : "en",
+          "value" : "Andor"
+        },
+        "en-gb" : {
+          "language" : "en-gb",
+          "value" : "Andor"
+        }
+      }
+    }
+  },
+  "success" : 1
+}

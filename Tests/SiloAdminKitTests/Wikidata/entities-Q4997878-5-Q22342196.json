@@ -1,0 +1,756 @@
+{
+  "entities" : {
+    "Q4997878" : {
+      "claims" : {
+        "P57" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q7123618",
+                  "numeric-id" : 7123618
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P58" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q6536621",
+                  "numeric-id" : 6536621
+                }
+              }
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q7345586",
+                  "numeric-id" : 7345586
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P161" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q234539",
+                  "numeric-id" : 234539
+                }
+              }
+            },
+            "qualifiers" : {
+              "P453" : [
+                {
+                  "datavalue" : {
+                    "type" : "wikibase-entityid",
+                    "value" : {
+                      "entity-type" : "item",
+                      "id" : "Q587725",
+                      "numeric-id" : 587725
+                    }
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P179" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q34316",
+                  "numeric-id" : 34316
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "82"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P527" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q22342193",
+                  "numeric-id" : 22342193
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "1"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q22342194",
+                  "numeric-id" : 22342194
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "2"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q22342195",
+                  "numeric-id" : 22342195
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "3"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q22342196",
+                  "numeric-id" : 22342196
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "4"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P577" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "time",
+                "value" : {
+                  "after" : 0,
+                  "before" : 0,
+                  "calendarmodel" : "http:\/\/www.wikidata.org\/entity\/Q1985727",
+                  "precision" : 11,
+                  "time" : "+1976-12-16T00:00:00Z",
+                  "timezone" : 0
+                }
+              }
+            },
+            "rank" : "normal"
+          },
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "time",
+                "value" : {
+                  "after" : 0,
+                  "before" : 0,
+                  "calendarmodel" : "http:\/\/www.wikidata.org\/entity\/Q1985727",
+                  "precision" : 11,
+                  "time" : "+1975-10-25T00:00:00Z",
+                  "timezone" : 0
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P4908" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q1611030",
+                  "numeric-id" : 1611030
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "3"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ]
+      },
+      "descriptions" : {
+        "en" : {
+          "language" : "en",
+          "value" : "Doctor Who serial"
+        }
+      },
+      "id" : "Q4997878",
+      "labels" : {
+        "en" : {
+          "language" : "en",
+          "value" : "Pyramids of Mars"
+        }
+      }
+    },
+    "Q22342193" : {
+      "claims" : {
+        "P179" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q34316",
+                  "numeric-id" : 34316
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "410"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P345" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "string",
+                "value" : "tt0562870"
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P361" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q4997878",
+                  "numeric-id" : 4997878
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "1"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P577" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "time",
+                "value" : {
+                  "after" : 0,
+                  "before" : 0,
+                  "calendarmodel" : "http:\/\/www.wikidata.org\/entity\/Q1985727",
+                  "precision" : 11,
+                  "time" : "+1975-10-25T00:00:00Z",
+                  "timezone" : 0
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P4908" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q1611030",
+                  "numeric-id" : 1611030
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "9"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ]
+      },
+      "descriptions" : {
+        "en" : {
+          "language" : "en",
+          "value" : "episode of Doctor Who"
+        }
+      },
+      "id" : "Q22342193",
+      "labels" : {
+        "en" : {
+          "language" : "en",
+          "value" : "Pyramids of Mars I"
+        }
+      }
+    },
+    "Q22342194" : {
+      "claims" : {
+        "P179" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q34316",
+                  "numeric-id" : 34316
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "411"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P345" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "string",
+                "value" : "tt0811829"
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P361" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q4997878",
+                  "numeric-id" : 4997878
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "2"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P577" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "time",
+                "value" : {
+                  "after" : 0,
+                  "before" : 0,
+                  "calendarmodel" : "http:\/\/www.wikidata.org\/entity\/Q1985727",
+                  "precision" : 11,
+                  "time" : "+1975-11-01T00:00:00Z",
+                  "timezone" : 0
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P4908" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q1611030",
+                  "numeric-id" : 1611030
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "10"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ]
+      },
+      "descriptions" : {
+        "en" : {
+          "language" : "en",
+          "value" : "episode of Doctor Who"
+        }
+      },
+      "id" : "Q22342194",
+      "labels" : {
+        "en" : {
+          "language" : "en",
+          "value" : "Pyramids of Mars II"
+        }
+      }
+    },
+    "Q22342195" : {
+      "claims" : {
+        "P179" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q34316",
+                  "numeric-id" : 34316
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "412"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P345" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "string",
+                "value" : "tt0811830"
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P361" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q4997878",
+                  "numeric-id" : 4997878
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "3"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P577" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "time",
+                "value" : {
+                  "after" : 0,
+                  "before" : 0,
+                  "calendarmodel" : "http:\/\/www.wikidata.org\/entity\/Q1985727",
+                  "precision" : 11,
+                  "time" : "+1975-11-08T00:00:00Z",
+                  "timezone" : 0
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P4908" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q1611030",
+                  "numeric-id" : 1611030
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "11"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ]
+      },
+      "descriptions" : {
+        "en" : {
+          "language" : "en",
+          "value" : "episode of Doctor Who"
+        }
+      },
+      "id" : "Q22342195",
+      "labels" : {
+        "en" : {
+          "language" : "en",
+          "value" : "Pyramids of Mars III"
+        }
+      }
+    },
+    "Q22342196" : {
+      "claims" : {
+        "P179" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q34316",
+                  "numeric-id" : 34316
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "413"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P345" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "string",
+                "value" : "tt0811831"
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P361" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q4997878",
+                  "numeric-id" : 4997878
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "4"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P577" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "time",
+                "value" : {
+                  "after" : 0,
+                  "before" : 0,
+                  "calendarmodel" : "http:\/\/www.wikidata.org\/entity\/Q1985727",
+                  "precision" : 11,
+                  "time" : "+1975-11-15T00:00:00Z",
+                  "timezone" : 0
+                }
+              }
+            },
+            "rank" : "normal"
+          }
+        ],
+        "P4908" : [
+          {
+            "mainsnak" : {
+              "datavalue" : {
+                "type" : "wikibase-entityid",
+                "value" : {
+                  "entity-type" : "item",
+                  "id" : "Q1611030",
+                  "numeric-id" : 1611030
+                }
+              }
+            },
+            "qualifiers" : {
+              "P1545" : [
+                {
+                  "datavalue" : {
+                    "type" : "string",
+                    "value" : "12"
+                  }
+                }
+              ]
+            },
+            "rank" : "normal"
+          }
+        ]
+      },
+      "descriptions" : {
+        "en" : {
+          "language" : "en",
+          "value" : "episode of Doctor Who"
+        }
+      },
+      "id" : "Q22342196",
+      "labels" : {
+        "en" : {
+          "language" : "en",
+          "value" : "Pyramids of Mars IV"
+        }
+      }
+    }
+  },
+  "success" : 1
+}

@@ -1,0 +1,1516 @@
+{
+  "head" : {
+    "vars" : [ "item", "itemLabel", "imdb", "tmdb", "tvdb" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q101797"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000213"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1920"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "321116"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Winona Ryder"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q102124"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000244"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "10205"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "253588"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Sigourney Weaver"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q103876"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000564"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "11390"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Peter O'Toole"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q110374"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000200"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2053"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Bill Paxton"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q124357"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0114460"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "53916"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ralph Brown"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q133393"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ash"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q138715"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0288714"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "129051"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Harry Fowler"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q184903"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000399"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "7467"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "David Fincher"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q200405"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000457"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "5049"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "John Hurt"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q212351"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0225483"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "71083"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "247839"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Kate Dickie"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q217137"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000592"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "4935"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Pete Postlethwaite"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q217324"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000466"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2419"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Jean-Pierre Jeunet"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q220698"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000579"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2372"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "253796"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ron Perlman"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q223091"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000453"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "65"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Ian Holm"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q223745"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001602"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "529"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Guy Pearce"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q228676"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0636426"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "87722"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "360661"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Noomi Rapace"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q241510"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000299"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2712"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Michael Biehn"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q263964"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001280"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "3981"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Jenette Goldstein"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q266270"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001433"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "5050"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Yaphet Kotto"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q283872"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001021"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "5047"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Veronica Cartwright"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q298025"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0923736"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "12891"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Joss Whedon"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q306403"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0290556"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "17051"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "255153"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "James Franco"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q309690"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001097"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "4391"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "247871"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Charles Dance"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q310556"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0511541"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "28974"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Damon Lindelof"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q312077"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000448"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2714"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Lance Henriksen"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q313650"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001082"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "8289"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Billy Crudup"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q314290"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001765"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "5048"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Harry Dean Stanton"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q320093"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000643"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "4139"
+      },
+      "itemLabel" : {
+        "xml:lang" : "mul",
+        "type" : "literal",
+        "value" : "Tom Skerritt"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q323185"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0045993"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "5051"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Bolaji Badejo"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q329734"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000374"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1370"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Brad Dourif"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1190134"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm1245863"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "28847"
+      },
+      "itemLabel" : {
+        "xml:lang" : "mul",
+        "type" : "literal",
+        "value" : "Rafe Spall"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1271614"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0365317"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "16702"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Sean Harris"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1320006"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0650702"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2221"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Leland Orser"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1364886"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0190441"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "58650"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Raymond Cruz"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1368027"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0394054"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "10207"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "William Hope"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1368141"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0564697"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "7497"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "295002"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Holt McCallany"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1655682"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm1613839"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "946696"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "247925"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ian Whyte"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2037770"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Bishop"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2056689"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0743768"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "10212"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ricco Ross"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2396324"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0318429"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "915"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "David Giler"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2602031"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0347423"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "27172"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Peter Guinness"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2686633"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0649046"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "58758"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "DeObia Oparei"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3015315"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0916073"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "53917"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Danny Webb"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3047302"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0694101"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1077325"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Eddie Powell"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3056094"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0795953"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "5046"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ronald Shusett"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3156752"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0293422"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "5169"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "J. E. Freeman"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3163137"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm2306701"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "111090"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Javier Botet"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3196718"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0283200"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "170146"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Kim Flowers"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3218046"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0272511"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "912"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Larry Ferguson"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q3273931"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0567881"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "33403"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Mac McDonald"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q11308606"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0778992"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "10211"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Cynthia Dale Scott"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q12059144"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0940430"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "109870"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Tom Woodruff Jr."
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q15222780"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm2239702"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "77795"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Katherine Waterston"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q18416432"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm3746071"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1057485"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Tess Haubrich"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q19708675"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Newt Jorden"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q19875117"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm5937328"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1384511"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Uli Latukefu"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q20830731"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm5097044"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1428070"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Isabela Merced"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q24444473"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm5555747"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1486488"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Callie Hernandez"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q25999409"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm4430268"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1371541"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Benjamin Rigby"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26988717"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Dennis Monroe Parker"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26988720"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Joan Lambert"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26988721"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Arthur Dallas"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26988722"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Samuel Brett"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26988724"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Gilbert Kane"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26989435"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Scott Gorman"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26989882"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Carter Burke"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26989927"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "William Hudson"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26989952"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Jenette Vasquez"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26989987"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Al Apone"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26990041"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Mark Drake"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26990056"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ricco Frost"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26990070"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Daniel Spunkmeyer"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26990085"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Tim Crowe"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26990097"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Colette Ferro"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26990145"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Cynthia Dietrich"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26995615"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Leonard Dillon"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26995649"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Jonathan Clemens"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26995666"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Harold Andrews"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26995695"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Francis Aaron"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26995712"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Walter Golic"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26995724"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Robert Morse"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q26995734"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "David Postlethwaite"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001197"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Elizabeth Shaw"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001255"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Peter Weyland"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001319"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Idris Janek"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001534"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Charlie Holloway"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001563"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Meredith Vickers"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001586"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Rafe Millburn"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001629"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Sean Fifield"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27001676"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Kate Ford"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27003234"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Benedict Ravel"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27003269"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Emun Chance"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q105563760"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Walter One"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q115676831"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm9657438"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2761308"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "David Jonsson"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q117215863"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Vincent DiStephano"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q117225572"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Annalee Call"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q123531213"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "David 8"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q124457667"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm10514458"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2304140"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Spike Fearn"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q129721495"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Big Chap"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q131030310"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm12495816"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "3948018"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Aileen Wu"
+      }
+    } ]
+  }
+}

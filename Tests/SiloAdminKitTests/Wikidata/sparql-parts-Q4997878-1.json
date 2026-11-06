@@ -1,0 +1,44 @@
+{
+  "head" : {
+    "vars" : [ "item", "ordinal" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q22342194"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "10"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q22342195"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "11"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q22342193"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "9"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q22342196"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "12"
+      }
+    } ]
+  }
+}

@@ -1,0 +1,660 @@
+{
+  "head" : {
+    "vars" : [ "item", "itemLabel", "imdb", "tmdb", "tvdb" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q73362"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000973"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "4589"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Benjamin Bratt"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q73612"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0789716"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "10981"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Fiona Shaw"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q182763"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001845"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2178"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Forest Whitaker"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "276091"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q208667"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0001745"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1640"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Stellan Skarsgård"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "378106"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q313044"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0526019"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "8688"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Diego Luna"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q349350"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0876138"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "21088"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Alan Tudyk"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "295572"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q438161"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0642444"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "139654"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Genevieve O'Reilly"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q459482"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0402898"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "72309"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Kathryn Hunter"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q591515"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0504320"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "27397"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Anton Lesser"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q816565"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0578853"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "77335"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Ben Mendelsohn"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1280675"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0533258"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Alastair Mackenzie"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1964106"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0889338"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "2479"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Rupert Vansittart"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "248014"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2631047"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Mon Mothma"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q4716984"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0273159"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "60416"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Alex Ferns"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q4727316"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0677944"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "56100"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Alistair Petrie"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q5104734"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0796322"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "529302"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Joplin Sibtain"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q5257674"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm1740112"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1182597"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Denise Gough"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "524223"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q5314569"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm2010069"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1264237"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Duncan Pow"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q5321636"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm1595284"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1230430"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Toby Haynes"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q5524676"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0063542"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "86045"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Gary Beadle"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6139160"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm4574630"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1256215"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "James McArdle"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6315462"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Bail Organa"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6451452"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm4964567"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1390505"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Kyle Soller"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "489117"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q7648702"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm1264352"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "113600"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Susanna White"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "302190"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q13576931"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm3016166"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "589652"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Robert Emms"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q16231429"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm3849670"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1204956"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Faye Marsay"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q18684239"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm5245722"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1371297"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Adria Arjona"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q22958724"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0139081"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "136505"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Benjamin Caron"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q24734909"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Saw Gerrera"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q27970919"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Cassian Andor"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q28039487"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "K-2SO"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q28039497"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Orson Krennic"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q28039564"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ruescott Melshi"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q47459178"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm4215324"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1071127"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Varada Sethu"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q114251545"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Maarva Andor"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q114252082"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Clem Andor"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q114772394"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm11004152"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "3718745"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Elizabeth Dulau"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "9103401"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q115519629"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Lonni Jung"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q134386696"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Kleya Marki"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q134437285"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Luthen Rael"
+      }
+    } ]
+  }
+}

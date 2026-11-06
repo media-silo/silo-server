@@ -1,0 +1,176 @@
+{
+  "head" : {
+    "vars" : [ "item", "ordinal", "serial", "isSerial" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q118877501"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "1"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q118967734"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "2"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q118967742"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "3"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129456"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "4"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129457"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "5"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129458"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "6"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129459"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "7"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129460"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "8"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129462"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "9"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129464"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "10"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129465"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "11"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129467"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "12"
+      },
+      "isSerial" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#boolean",
+        "type" : "literal",
+        "value" : "false"
+      }
+    } ]
+  }
+}
