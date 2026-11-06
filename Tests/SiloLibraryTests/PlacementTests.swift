@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloKit
 import SmdKit
 import SmdSidecar
 import Testing
@@ -717,7 +718,7 @@ struct PlacementTests {
         let url = try placedSerial(in: sandbox)
         var serial = Self.serial
         serial.outline = "Sutekh is imprisoned beneath a pyramid."
-        let outline = Attribution(subject: .outline, provider: .tmdb, value: "1012")
+        let outline = Attribution(subject: .outline, provider: .tmdb, value: "1012", read: .today)
         let edited = try SidecarFile.data(
             settingAttributions: [outline],
             in: SidecarFile.data(settingContainer: serial, in: Data(contentsOf: url))
@@ -739,9 +740,14 @@ struct PlacementTests {
         odd.attributions = [
             outline,
             outline,
-            Attribution(subject: .outline(ofAlternative: "se"), provider: .tmdb, value: "1012"),
-            Attribution(subject: Attribution.Subject(rawValue: "tagline"), provider: .tmdb, value: "1012"),
-            Attribution(subject: .artwork("poster"), provider: .tmdb, value: "1012"),
+            Attribution(subject: .outline(ofAlternative: "se"), provider: .tmdb, value: "1012", read: .today),
+            Attribution(
+                subject: Attribution.Subject(rawValue: "tagline"),
+                provider: .tmdb,
+                value: "1012",
+                read: .today
+            ),
+            Attribution(subject: .artwork("poster"), provider: .tmdb, value: "1012", read: .today),
         ]
         #expect(
             Validator.check(odd).map(\.text) == [

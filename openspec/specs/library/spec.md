@@ -294,7 +294,7 @@ Pinned by: `Tests/SiloStoreTests/IndexTests.swift` (`artworkInTwoFormatsIsAWarni
 
 ### Requirement: A sidecar may attribute a field or an artwork kind to a provider
 A library sidecar's `<container>` MAY hold `<attribution>` elements, each with a `subject`, a
-`provider` and a `value`. The subject SHALL be `outline`, an alternative's outline as
+`provider`, a `value` and `read`, the `yyyy-mm-dd` day the subject was read from the provider. The subject SHALL be `outline`, an alternative's outline as
 `alternative/<id>/outline`, or an artwork kind as `artwork/<kind>`, and the provider and value are
 the reference the subject came from. An attribution SHALL be a library fact, as a presentation is:
 it is not one of the container's own fields, a repository document has no place for it, and the
@@ -304,7 +304,13 @@ not own. A subject that is none of these, and two attributions of one subject, S
 error-severity findings, and so SHALL an attribution of a field the container does not have
 (`<subject> is attributed to <provider> but the container has none`). An attribution of an artwork
 kind the container's folder holds no file for SHALL be a warning the walk reports on the sidecar
-(`artwork <kind> is attributed to <provider> but the folder has none`).
+(`artwork <kind> is attributed to <provider> but the folder has none`). A provider's terms MAY limit how
+long content read from it is kept: TMDb's limit it to six months, and the terms of a provider whose
+content is CC0, as Wikidata's is, set no limit. An attribution read longer ago than its provider's
+limit, reckoned as the same day that many months later or that month's last day when it is shorter,
+SHALL be a warning the walk reports on the sidecar each time it walks the library, whether or not
+the sidecar has changed (`<subject> was read from <provider> on <read>, more than <n> months ago,
+longer than its terms let it be kept`).
 
 #### Scenario: an attributed outline kept through a placement
 - **WHEN** a container's sidecar attributes its outline to a provider, and a presentation is then
@@ -321,8 +327,20 @@ kind the container's folder holds no file for SHALL be a warning the walk report
   poster
 - **THEN** the walk warns on the sidecar `artwork poster is attributed to tmdb but the folder has none`
 
+#### Scenario: an outline kept longer than TMDb's terms allow
+- **WHEN** a sidecar attributes its container's outline to provider `tmdb`, read on 5 January 2026, and
+  the library is walked on 5 July 2026 and again, unchanged, on 6 July 2026
+- **THEN** the first walk reports nothing of the outline's age, and the second warns on the sidecar
+  `outline was read from tmdb on 2026-01-05, more than 6 months ago, longer than its terms let it be kept`
+
+#### Scenario: an attribution to a provider whose terms set no limit
+- **WHEN** a sidecar attributes an artwork kind to provider `wikidata`, read on 5 January 2026, and the
+  library is walked on 6 July 2026
+- **THEN** the walk reports nothing of the attribution's age
+
 Pinned by: `Tests/SiloLibraryTests/PlacementTests.swift` (`attributionsAreLibraryFacts`),
-`Tests/SiloStoreTests/IndexTests.swift` (`anAttributedKindWithNoFileIsAWarning`).
+`Tests/SiloStoreTests/IndexTests.swift` (`anAttributedKindWithNoFileIsAWarning`,
+`anAttributionKeptLongerThanItsTermsIsAWarning`, `aDateMonthsLaterIsTheSameDayOrTheMonthsLast`).
 
 ### Requirement: A sidecar may record the refs the operator declined
 A library sidecar's `<container>` MAY hold `<declined>` elements, each with a `provider` and a

@@ -53,16 +53,19 @@ extension SiloClient {
         }
 
         /// Whose an attributed field or artwork kind is: the subject, as `outline`,
-        /// `alternative/<id>/outline` or `artwork/<kind>`, the provider, and the reference there.
+        /// `alternative/<id>/outline` or `artwork/<kind>`, the provider, the reference there, and the
+        /// day, `yyyy-mm-dd`, it was read from the provider.
         public struct Attribution: Hashable, Sendable, Codable {
             public var subject: String
             public var provider: String
             public var value: String
+            public var read: String
 
-            public init(subject: String, provider: String, value: String) {
+            public init(subject: String, provider: String, value: String, read: String) {
                 self.subject = subject
                 self.provider = provider
                 self.value = value
+                self.read = read
             }
         }
 
@@ -320,12 +323,15 @@ extension SiloClient {
         public var subject: String
         public var provider: String
         public var value: String
+        /// The day, `yyyy-mm-dd`, the field was read from the provider.
+        public var read: String
 
-        public init(container: String, subject: String, provider: String, value: String) {
+        public init(container: String, subject: String, provider: String, value: String, read: String) {
             self.container = container
             self.subject = subject
             self.provider = provider
             self.value = value
+            self.read = read
         }
     }
 
@@ -371,8 +377,22 @@ extension SiloClient {
         public var format: String
     }
 
+    /// Whose an image put as artwork is: the provider, the reference there, and the day, `yyyy-mm-dd`,
+    /// the image was read from the provider.
+    public struct ArtworkAttribution: Hashable, Sendable {
+        public var provider: String
+        public var value: String
+        public var read: String
+
+        public init(provider: String, value: String, read: String) {
+            self.provider = provider
+            self.value = value
+            self.read = read
+        }
+    }
+
     /// Puts an image as a kind of a container's artwork, attributed to `provider` and the reference
-    /// `value` there, or with none, which removes any the kind had. Refused with `status(415, _)` for
+    /// `value` there, read on `read`, or with none, which removes any the kind had. Refused with `status(415, _)` for
     /// anything not a JPEG or a PNG by its bytes, and `status(413, _)` for an image over 25 MB.
     /// Operator only.
     public func putArtwork(
@@ -380,7 +400,7 @@ extension SiloClient {
         as kind: String,
         of id: String,
         in library: String,
-        attributedTo attribution: (provider: String, value: String)? = nil
+        attributedTo attribution: ArtworkAttribution? = nil
     ) async throws -> ArtworkPut {
         var path = URLComponents()
         path.path = "/v1/libraries/\(library)/containers/\(id)/artwork/\(kind)"
@@ -388,6 +408,7 @@ extension SiloClient {
             path.queryItems = [
                 URLQueryItem(name: "provider", value: attribution.provider),
                 URLQueryItem(name: "value", value: attribution.value),
+                URLQueryItem(name: "read", value: attribution.read),
             ]
         }
         let (data, status) = try await request(

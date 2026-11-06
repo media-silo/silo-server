@@ -158,13 +158,17 @@ package struct OperatorController {
             let outcome = try await ContainerMaker.create(
                 body.documents,
                 parent: body.parent,
-                attributions: (body.attributions ?? []).map {
-                    (
+                attributions: try (body.attributions ?? []).map {
+                    guard let read = CalendarDate($0.read) else {
+                        throw BadCreate(reason: "\($0.read) is not a yyyy-mm-dd date to have read \($0.subject) on")
+                    }
+                    return (
                         container: $0.container,
                         attribution: Attribution(
                             subject: Attribution.Subject(rawValue: $0.subject),
                             provider: Provider(rawValue: $0.provider),
-                            value: $0.value
+                            value: $0.value,
+                            read: read
                         )
                     )
                 },
@@ -225,11 +229,15 @@ package struct OperatorController {
                 in: library,
                 document: body.document,
                 basedOn: body.basedOn,
-                attributions: body.attributions?.map {
-                    Attribution(
+                attributions: try body.attributions?.map {
+                    guard let read = CalendarDate($0.read) else {
+                        throw BadEdit(reason: "\($0.read) is not a yyyy-mm-dd date to have read \($0.subject) on")
+                    }
+                    return Attribution(
                         subject: Attribution.Subject(rawValue: $0.subject),
                         provider: Provider(rawValue: $0.provider),
-                        value: $0.value
+                        value: $0.value,
+                        read: read
                     )
                 },
                 declined: body.declined?.map {

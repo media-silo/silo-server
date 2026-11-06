@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloClient
+import SiloKit
 import SmdKit
 import SmdSidecar
 
@@ -195,7 +196,9 @@ extension AdminConsole {
             )
             container.sequences = []
             if let overview, !overview.isEmpty, let tmdb = refs.first(where: { $0.provider == .tmdb }) {
-                attributions[container.id] = [Attribution(subject: .outline, provider: .tmdb, value: tmdb.value)]
+                attributions[container.id] = [
+                    Attribution(subject: .outline, provider: .tmdb, value: tmdb.value, read: .today)
+                ]
             }
             return container
         }

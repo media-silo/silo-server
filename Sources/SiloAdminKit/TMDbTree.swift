@@ -420,7 +420,8 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
                     container: container.id.value,
                     subject: $0.subject.rawValue,
                     provider: $0.provider.rawValue,
-                    value: $0.value
+                    value: $0.value,
+                    read: $0.read.description
                 )
             }
         }

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SiloKit
 import SiloLibrary
 import SmdKit
 import SmdSidecar
@@ -55,12 +56,16 @@ public enum Indexer {
     /// Walks the library and applies what it found, or throws `LibraryUnavailable` having changed
     /// nothing: a folder that is missing, or that holds no container where the index holds some, is
     /// far more often a drive not yet mounted than a library emptied.
-    public static func scan(_ library: LibraryConfig, into index: Index) throws -> ScanReport {
+    public static func scan(
+        _ library: LibraryConfig,
+        into index: Index,
+        today: CalendarDate = .today
+    ) throws -> ScanReport {
         guard folderExists(library) else {
             throw LibraryUnavailable.missing
         }
         let known = Dictionary(uniqueKeysWithValues: try index.sidecars(in: library.id).map { ($0.path, $0) })
-        var walk = Walk(library: library, index: index, known: known)
+        var walk = Walk(library: library, index: index, known: known, today: today)
 
         let folders = try FileManager.default.contentsOfDirectory(
             at: library.root,
@@ -149,6 +154,8 @@ public enum Indexer {
         var reached: Set<String> = []
         var found: [ContainerID: String] = [:]
         var report = ScanReport()
+        /// The day the attributions' ages are reckoned on.
+        var today = CalendarDate.today
     }
 
     /// A sidecar's modification time and size, as the index records them to tell it is unchanged.
@@ -201,6 +208,7 @@ public enum Indexer {
             sidecar: path,
             attributions: visited.attributions
         )
+        walk.report.findings += AttributionAge.findings(visited.attributions, sidecar: path, today: walk.today)
 
         guard walk.descend else { return }
         try visitChildren(of: visited, folder: folder, walk: &walk)

@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloClient
+import SiloKit
 import SmdKit
 import SmdSidecar
 
@@ -621,7 +622,7 @@ extension TMDbWalk {
             })
         {
             draft.attributions.removeAll { $0.subject == .outline }
-            draft.attributions.append(Attribution(subject: .outline, provider: .tmdb, value: record))
+            draft.attributions.append(Attribution(subject: .outline, provider: .tmdb, value: record, read: .today))
         }
         if declined != sidecar.declined { draft.declined = declined }
         change.draft = draft

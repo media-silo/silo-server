@@ -84,7 +84,8 @@ public struct LibraryTree: Sendable {
 /// each sidecar's `smd` paths lead to its children. A sidecar the walk never reaches is a warning,
 /// because reachability is what keeps an abandoned draft from changing what a client renders.
 public enum LibraryWalker {
-    public static func walk(_ root: URL) -> LibraryTree {
+    /// The library's tree as it stands, its attributions' ages reckoned on `today`.
+    public static func walk(_ root: URL, today: CalendarDate = .today) -> LibraryTree {
         var findings: [Finding] = []
         var reached: Set<String> = []
         var found: [ContainerID: String] = [:]
@@ -110,6 +111,10 @@ public enum LibraryWalker {
             ) {
                 roots.append(node)
             }
+        }
+
+        for node in roots.flatMap(\.flattened) {
+            findings += AttributionAge.findings(node.sidecar.attributions, sidecar: node.relativeSidecar, today: today)
         }
 
         // The enumerator's order is the filesystem's, which differs between platforms; the

@@ -18,7 +18,8 @@ info:
     logo and thumb: GET answers the image with its content type, or 404, openly; PUT takes a JPEG or
     a PNG, told by its signature, answers 200 with {"kind", "format"}, 415 for anything else and 413
     for an image over 25 MB, and removes the kind's file in the other format; with the query
-    parameters provider and value, both or neither (400 for one alone), it records the kind's
+    parameters provider, value and read, the yyyy-mm-dd date the image was read from the provider,
+    all or none (400 for some alone or for a read that is not a date), it records the kind's
     attribution in the sidecar, and without them removes any; DELETE answers 204, removing the
     kind's attribution with its file, or 404 for a kind the folder does not hold. PUT and DELETE
     are the operator's.
@@ -2999,7 +3000,7 @@ components:
 
     Attribution:
       type: object
-      required: [subject, provider, value]
+      required: [subject, provider, value, read]
       properties:
         subject:
           type: string
@@ -3011,6 +3012,11 @@ components:
         value:
           type: string
           description: The reference at the provider the subject came from.
+        read:
+          type: string
+          description: >
+            The day, yyyy-mm-dd, the subject was read from the provider, so that it is not kept longer
+            than the provider's terms allow.
 
     LibraryContainer:
       type: object
@@ -3153,7 +3159,7 @@ components:
 
     CreateAttribution:
       type: object
-      required: [container, subject, provider, value]
+      required: [container, subject, provider, value, read]
       properties:
         container:
           type: string
@@ -3164,6 +3170,9 @@ components:
           type: string
         value:
           type: string
+        read:
+          type: string
+          description: The day, yyyy-mm-dd, the subject was read from the provider.
 
     ContainerCreateResult:
       type: object
