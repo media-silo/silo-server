@@ -52,7 +52,7 @@ elements as JSON, never a separate API vocabulary. A `Container` SHALL carry
 the sidecar's `type`, `title`, `displayTitle`, `year`, `typeLabel`, `outline`,
 `listed`, `defaultAlternative`, `alternatives`, `features` with their
 `participants`, `sequences`, `extrasAnchor`, `extras`, `externalRefs`, its
-`attributions` — each a `subject`, `provider` and `value` — and its child containers as
+`attributions` — each a `subject`, `provider`, `value` and `read` — and its child containers as
 summaries; an `Item` SHALL carry its `optional`, `ref`,
 `externalRefs` and `presentations`; a `Presentation` SHALL carry `id`,
 `alternative`, `profile`, `displayName`, `file`, `source` — its binding and
@@ -544,13 +544,13 @@ Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibrarysContainersAreReadWithi
 ### Requirement: A container's own fields are edited in one library, on the sidecar the editor read
 `PUT /v1/libraries/{library}/containers/{id}` with a JSON `ContainerEdit` — `document`, the
 container as its repository XML; `basedOn`, the digest of the sidecar it was made from;
-`dryRun`; `attributions`, optional, each a `subject`, `provider` and `value`; and `declined`,
+`dryRun`; `attributions`, optional, each a `subject`, `provider`, `value` and `read`, the `yyyy-mm-dd` day it was read; and `declined`,
 optional, each a `provider` and `value` — SHALL set the container's own fields in that library's sidecar to the document's,
 and SHALL change none of the library's facts but the paths of the folders it moves, the attributions of the
 container's own fields and its declined refs: its presentations, its rules and its artwork's attributions stay as they
 stand. With `attributions` absent, the sidecar's attributions of the container's own fields SHALL
-stand as they are; present, they SHALL replace them, and one whose subject is an artwork kind SHALL
-be 400. With `declined` absent, the sidecar's declined refs SHALL stand as they are; present,
+stand as they are; present, they SHALL replace them, and one whose subject is an artwork kind, or whose `read`
+is not a calendar date, SHALL be 400. With `declined` absent, the sidecar's declined refs SHALL stand as they are; present,
 they SHALL replace them. A sidecar's digest is the SHA-256 of its bytes as the index read
 them, in lowercase hexadecimal, and the `LibraryContainer` a library's container route answers
 SHALL carry it as `digest`. The answer SHALL be a `ContainerEditResult`: `applied`, the
@@ -645,6 +645,10 @@ wrong bearer SHALL be 401.
 - **THEN** the answer is 200 with `applied` true, the library's container reads that declined ref,
   and its own fields are as they were
 
+#### Scenario: an attribution read on no day there is
+- **WHEN** the operator puts a document carrying an attribution whose `read` is `2026-02-30`
+- **THEN** the answer is 400, and the sidecar is unchanged
+
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersOwnFieldsAreEditedOntoTheSidecarRead`,
 `anEditMovesTheFoldersItRenames`, `anEditCarriesTheAttributionsOfItsFields`,
 `anEditCarriesTheRefsItDeclines`).
@@ -658,9 +662,10 @@ answer without a token. `PUT` on the same path SHALL take the image's bytes and 
 JPEG or a PNG, told by the bytes' signature rather than the declared type: anything else SHALL be
 415, and an image over 25 MB SHALL be 413. It SHALL write the file as `<kind>.jpg` or
 `<kind>.png` by writing beside it and renaming, SHALL remove the kind's file in the other format
-if there is one, and SHALL answer 200 with the kind and its format. A `PUT` MAY carry the query parameters `provider` and `value`, both or
-neither, one alone being 400: with them, the silo SHALL record in the container's sidecar the
-attribution of `artwork/<kind>` to that provider and value, and without them SHALL remove any
+if there is one, and SHALL answer 200 with the kind and its format. A `PUT` MAY carry the query parameters `provider`, `value` and `read`, the
+`yyyy-mm-dd` day the image was read from the provider, all or none, some alone or a `read` that is not
+a calendar date being 400: with them, the silo SHALL record in the container's sidecar the
+attribution of `artwork/<kind>` to that provider and value, read that day, and without them SHALL remove any
 attribution the kind had. When a put records an attribution, the sidecar SHALL be written before
 the image, and when it removes one, the image before the sidecar, so that an interrupted put
 credits the provider for too much rather than leaving its image uncredited. A sidecar a put or a
@@ -690,10 +695,10 @@ the artwork kinds, a library the silo does not serve, and a container it does no
 - **THEN** the answer is 204, the folder holds no poster, and getting the poster is 404
 
 #### Scenario: a poster put with its attribution
-- **WHEN** the operator puts a JPEG as a container's `poster` with `provider` `tmdb` and `value`
-  `348`
+- **WHEN** the operator puts a JPEG as a container's `poster` with `provider` `tmdb`, `value` `348`
+  and `read` `2026-11-05`
 - **THEN** the answer is 200, and the container carries an attribution of `artwork/poster` to
-  `tmdb` with value `348`
+  `tmdb` with value `348`, read on 2026-11-05
 
 #### Scenario: an attributed poster replaced with the operator's own
 - **WHEN** a container's `poster` is attributed to a provider, and the operator puts a PNG as its
@@ -704,6 +709,11 @@ the artwork kinds, a library the silo does not serve, and a container it does no
 - **WHEN** the operator puts a poster with a `provider` and no `value`
 - **THEN** the answer is 400, and the folder and the sidecar are unchanged
 
+#### Scenario: a poster put with no day it was read
+- **WHEN** the operator puts a poster with a `provider` and a `value` and no `read`, or a `read` of
+  `2026-02-30`
+- **THEN** the answer is 400, and the sidecar is unchanged
+
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersArtworkIsPutServedAndRemoved`,
 `aContainersArtworkIsPutWithItsAttribution`).
 
@@ -711,7 +721,7 @@ Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersArtworkIsPutServedAn
 `POST /v1/libraries/{library}/containers` with a JSON `ContainerCreate` — `documents`, one or more
 containers as repository XML; `parent`, the id of a container the library holds, or absent;
 `dryRun`; and `attributions`, optional, each naming the `container` in the request it belongs to,
-with its `subject`, `provider` and `value` — SHALL make each container in that library as a placement would make it, and SHALL place
+with its `subject`, `provider`, `value` and `read`, the `yyyy-mm-dd` day it was read — SHALL make each container in that library as a placement would make it, and SHALL place
 no file. The documents SHALL form one tree: exactly one of them, the top, is named as a child by
 none of the others, and every other is named as a child by a document in the request. With a
 `parent`, the top SHALL be filed beneath the parent's folder; without one, at the top of the
@@ -722,7 +732,8 @@ each parent's sidecar SHALL record its child's path. The answer SHALL be a `Cont
 the `findings`.
 
 - A document that cannot be read, documents that do not form one tree, and an attribution naming a
-  container the request does not carry or an artwork kind SHALL be 400, and a
+  container the request does not carry or an artwork kind, or whose `read` is not a calendar date,
+  SHALL be 400, and a
   library the silo does not serve or a `parent` it does not hold SHALL be 404.
 - A request with an error-severity finding SHALL be 422, carrying the result with its findings, and
   nothing SHALL be written. Besides the validator's checks on each sidecar, it SHALL be an error
@@ -780,6 +791,11 @@ bearer SHALL be 401.
   outline to provider `tmdb`
 - **THEN** the film's new sidecar holds the outline and its attribution, and the library's container
   reads both
+
+#### Scenario: a film made with an attribution read on no day there is
+- **WHEN** the operator creates a film whose request attributes its outline with a `read` of
+  `2026-02-30`
+- **THEN** the answer is 400, and nothing is made
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`containersAreMadeInALibraryWithoutAFile`,
 `aCreateCarriesItsAttributions`).

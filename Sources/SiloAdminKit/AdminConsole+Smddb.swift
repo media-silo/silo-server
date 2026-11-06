@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloClient
+import SiloKit
 import SmdKit
 import SmdSidecar
 
@@ -351,7 +352,8 @@ extension AdminConsole {
                             container: child.id.value,
                             subject: $0.subject.rawValue,
                             provider: $0.provider.rawValue,
-                            value: $0.value
+                            value: $0.value,
+                            read: $0.read.description
                         )
                     }
                 )
@@ -393,8 +395,9 @@ extension AdminConsole {
         public var record: Container?
         public var offered: [Container]
         public var unavailable: [ContainerID]
-        /// The fields each contributed container's sidecar attributes to a provider, which the
-        /// contribution leaves out: a provider's contributors' writing is not smddb's to hold.
+        /// The fields each contributed container's sidecar attributes to a provider whose content is not
+        /// CC0, which the contribution leaves out: such a provider's contributors' writing is not
+        /// smddb's to hold.
         public var leftOut: [ContainerID: [Attribution]] = [:]
 
         /// The document's difference from smddb's record, line by line; every line added when smddb has none.
@@ -446,15 +449,16 @@ extension AdminConsole {
         )
     }
 
-    /// A sidecar's container as smddb may take it: each field the sidecar attributes to a provider given
-    /// the value smddb's record holds, or none when there is no record; and the attributions it left out.
+    /// A sidecar's container as smddb may take it: each field the sidecar attributes to a provider whose
+    /// content is not CC0 given the value smddb's record holds, or none when there is no record, and
+    /// each attributed to a CC0 provider as it stands; and the attributions it left out.
     public nonisolated static func contributable(
         _ sidecar: Sidecar,
         record: Container?
     ) -> (Container, [Attribution]) {
         var container = sidecar.container
         var left: [Attribution] = []
-        for attribution in sidecar.attributions {
+        for attribution in sidecar.attributions where !attribution.provider.releasesContentAsCC0 {
             if attribution.subject == .outline {
                 container.outline = record?.outline
                 left.append(attribution)

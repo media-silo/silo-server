@@ -698,9 +698,10 @@ The form and its drafts are pinned by nothing yet, as the rest of the shell is.
 ### Requirement: A library's container is proposed to smddb from its sidecar
 SiloAdmin SHALL propose a library's container to smddb by contributing, through the clone, the
 container's own fields as that library's sidecar says them, as a repository document. In each
-container it contributes, a field the library's sidecar attributes to a provider SHALL take instead
-the value the clone's record of the same id holds, or none when the clone has no record, and the
-console SHALL list each field it left out with its provider. Before it contributes, the console
+container it contributes, a field the library's sidecar attributes to a provider whose content is not CC0 SHALL take
+instead the value the clone's record of the same id holds, or none when the clone has no record, and
+the console SHALL list each field it left out with its provider. A field attributed to a provider whose
+content is CC0, as Wikidata's is, SHALL be contributed as it stands, and is not left out. Before it contributes, the console
 SHALL show the document's difference, as it will be contributed, from the clone's record of the same
 id, or say the clone has none, and SHALL offer with it, chosen, the containers it names that the
 clone does not hold, as children beneath it or through a ref, from the library's sidecars; one the
@@ -732,9 +733,15 @@ rules.
 - **THEN** the difference shown has no change to the outline, and the clone's file keeps its own
   outline
 
+#### Scenario: an outline attributed to Wikidata proposed
+- **WHEN** the operator proposes a container whose outline the library attributes to Wikidata, and
+  one of whose alternatives' outlines it attributes to TMDb
+- **THEN** the contribution carries the container's outline as it stands and no outline for the
+  alternative, and lists only the alternative's outline as left out
+
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aLibrarysContainerIsProposedToSmddb`,
-`anAttributedFieldIsLeftOutOfAContribution`). The review before contributing is pinned by nothing yet,
+`anAttributedFieldIsLeftOutOfAContribution`, `aFieldAttributedToACC0ProviderIsContributed`). The review before contributing is pinned by nothing yet,
 as the rest of the shell is.
 
 ### Requirement: The console reads TMDb with a token kept on this Mac, and credits it
@@ -1713,3 +1720,24 @@ from.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aNewStopsArtworkIsOfferedAndPutOnceItIsMade`).
 The new stop's pane showing it is pinned by nothing yet, as the rest of the shell is.
+
+### Requirement: An attribution the console makes says the day its content was read
+Each attribution SiloAdmin makes SHALL carry, as its `read`, the day the console read the content it
+attributes from the provider: an outline taken into a draft from a provider's record, in a drafted
+tree or at a walk's stop, and an image taken from a provider and put as a kind of a container's
+artwork, each read on the day it is taken.
+
+#### Scenario: a drafted outline
+- **WHEN** a collection is drafted from TMDb's record, with TMDb's overview as its outline
+- **THEN** the draft attributes the outline to TMDb's collection, read today
+
+#### Scenario: an outline taken at a stop
+- **WHEN** the operator takes TMDb's outline at a held film's stop and the walk is stored
+- **THEN** the film's draft attributes the outline to TMDb's record, read today
+
+#### Scenario: a poster taken from TMDb
+- **WHEN** the operator takes one of TMDb's posters for a container
+- **THEN** the image is put attributed to TMDb, read today
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aCollectionIsDraftedAndAFilmFiledBeneathTheOneHeld`,
+`aFilmsAndACollectionsFieldsAreTakenFromTMDb`, `artworkIsTakenFromTMDbWithItsAttribution`).

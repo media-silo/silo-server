@@ -184,19 +184,27 @@ package struct ArtworkController {
         try await responseSender.sendAndFinish(HTTPResponse(status: removed ? .noContent : .notFound))
     }
 
-    /// A put's query is malformed: a provider without a value, or a value without a provider.
+    /// A put's query is malformed: some of a provider, a value and a read date without the others, or a
+    /// read date that is not a calendar date.
     private struct HalfAnAttribution: Error {}
 
-    /// The attribution a put's `provider` and `value` ask for, both or neither: nil for neither, and
-    /// refused for one alone.
+    /// The attribution a put's `provider`, `value` and `read` ask for, all or none: nil for none, and
+    /// refused for some alone or for a `read` that is not a `yyyy-mm-dd` calendar date.
     private static func attribution(of kind: String, asked path: String?) throws -> Attribution? {
         let query = URLComponents(string: path ?? "")?.queryItems ?? []
         let provider = query.first { $0.name == "provider" }?.value
         let value = query.first { $0.name == "value" }?.value
-        switch (provider, value) {
-        case (let provider?, let value?) where !provider.isEmpty && !value.isEmpty:
-            return Attribution(subject: .artwork(kind), provider: Provider(rawValue: provider), value: value)
-        case (nil, nil):
+        let read = query.first { $0.name == "read" }?.value
+        switch (provider, value, read) {
+        case (let provider?, let value?, let read?) where !provider.isEmpty && !value.isEmpty:
+            guard let read = CalendarDate(read) else { throw HalfAnAttribution() }
+            return Attribution(
+                subject: .artwork(kind),
+                provider: Provider(rawValue: provider),
+                value: value,
+                read: read
+            )
+        case (nil, nil, nil):
             return nil
         default:
             throw HalfAnAttribution()

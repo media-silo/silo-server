@@ -134,13 +134,7 @@ enum Mapping {
             externalRefs: container.externalRefs.map {
                 Components.Schemas.ExternalRef(provider: $0.provider.rawValue, value: $0.value)
             },
-            attributions: sidecar.attributions.map {
-                Components.Schemas.Attribution(
-                    subject: $0.subject.rawValue,
-                    provider: $0.provider.rawValue,
-                    value: $0.value
-                )
-            }
+            attributions: sidecar.attributions.map(attribution)
         )
     }
 
@@ -311,6 +305,16 @@ enum Mapping {
 }
 
 extension Mapping {
+    /// An attribution as the API serves it, with the day its content was read.
+    static func attribution(_ attribution: Attribution) -> Components.Schemas.Attribution {
+        Components.Schemas.Attribution(
+            subject: attribution.subject.rawValue,
+            provider: attribution.provider.rawValue,
+            value: attribution.value,
+            read: attribution.read.description
+        )
+    }
+
     /// A credit as the API serves it, with the references it carries.
     static func participant(_ participant: Participant) -> Components.Schemas.Participant {
         Components.Schemas.Participant(

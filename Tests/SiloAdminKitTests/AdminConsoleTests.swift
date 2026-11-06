@@ -1921,6 +1921,7 @@ extension AdminConsoleTests {
                         var subject: String
                         var provider: String
                         var value: String
+                        var read: String
                     }
                     var documents: [String]
                     var parent: String?
@@ -1958,7 +1959,8 @@ extension AdminConsoleTests {
                         Attribution(
                             subject: Attribution.Subject(rawValue: $0.subject),
                             provider: Provider(rawValue: $0.provider),
-                            value: $0.value
+                            value: $0.value,
+                            read: CalendarDate($0.read)!
                         )
                     }
                     held.file(Sidecar(container: container, attributions: attributions), in: library)
@@ -1976,13 +1978,15 @@ extension AdminConsoleTests {
                     let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
                     let provider = query.first { $0.name == "provider" }?.value
                     let value = query.first { $0.name == "value" }?.value
+                    let read = query.first { $0.name == "read" }?.value ?? ""
                     var attributions = sidecar.attributions.filter { $0.subject != .artwork(rest[2]) }
                     if let provider, let value {
                         attributions.append(
                             Attribution(
                                 subject: .artwork(rest[2]),
                                 provider: Provider(rawValue: provider),
-                                value: value
+                                value: value,
+                                read: CalendarDate(read)!
                             )
                         )
                     }
@@ -2018,7 +2022,8 @@ extension AdminConsoleTests {
                                 Attribution(
                                     subject: Attribution.Subject(rawValue: $0.subject),
                                     provider: Provider(rawValue: $0.provider),
-                                    value: $0.value
+                                    value: $0.value,
+                                    read: CalendarDate($0.read)!
                                 )
                             } + sidecar.attributions.filter { $0.subject.artworkKind != nil },
                             in: written
@@ -2075,7 +2080,8 @@ extension AdminConsoleTests {
         SiloClient.Container.Attribution(
             subject: attribution.subject.rawValue,
             provider: attribution.provider.rawValue,
-            value: attribution.value
+            value: attribution.value,
+            read: attribution.read.description
         )
     }
 
@@ -2657,7 +2663,7 @@ extension AdminConsoleTests {
             ]
         )
         #expect(alien.outline == "In space no one can hear you scream.")
-        let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "348")]
+        let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "348", read: .today)]
         #expect(film.attributions[film.top] == attributed)
         #expect(try await database.container(alien.id) == nil, "an id the clone has no file for")
         let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
@@ -2931,7 +2937,7 @@ extension AdminConsoleTests {
             title: Title("Alien")!,
             outline: "In space no one can hear you scream."
         )
-        let attribution = Attribution(subject: .outline, provider: .tmdb, value: "348")
+        let attribution = Attribution(subject: .outline, provider: .tmdb, value: "348", read: .today)
         let held = HeldLibrary()
         held.file(Sidecar(container: outlined, attributions: [attribution]), in: "tv")
         let (console, home) = try await Self.smddbConsole(held)
@@ -2980,7 +2986,7 @@ extension AdminConsoleTests {
     @Test func anAttributedFieldIsLeftOutOfAContribution() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let attribution = Attribution(subject: .outline, provider: .tmdb, value: "348")
+        let attribution = Attribution(subject: .outline, provider: .tmdb, value: "348", read: .today)
         let alien = Container(
             id: ContainerID("0000000000000092")!,
             type: .movie,
@@ -3049,7 +3055,9 @@ extension AdminConsoleTests {
         let top = try #require(quadrilogy.container(quadrilogy.top))
         #expect(top.childContainerIDs == quadrilogy.containers.dropFirst().map(\.id), "each film in its order")
         #expect(
-            quadrilogy.attributions[quadrilogy.top] == [Attribution(subject: .outline, provider: .tmdb, value: "9000")]
+            quadrilogy.attributions[quadrilogy.top] == [
+                Attribution(subject: .outline, provider: .tmdb, value: "9000", read: .today)
+            ]
         )
         #expect(quadrilogy.making.described == ["make Quadrilogy and the 2 beneath it"])
 
@@ -3396,7 +3404,7 @@ extension AdminConsoleTests {
         series.sequences = [
             Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("one")!, container: season.id))])
         ]
-        let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "1")]
+        let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "1", read: .today)]
         var tree = TMDbTree(
             library: "tv",
             record: TMDb.Record(.series, 1),
@@ -3435,6 +3443,27 @@ extension AdminConsoleTests {
         #expect(tree.attributions[season.id.value] == nil)
     }
 
+    /// A field attributed to a provider whose content is CC0 goes to smddb as it stands, and is not
+    /// left out; one attributed to any other provider is.
+    @Test func aFieldAttributedToACC0ProviderIsContributed() {
+        var alien = Container(
+            id: ContainerID("0000000000000093")!,
+            type: .movie,
+            title: Title("Alien")!,
+            outline: "Wikidata's words"
+        )
+        alien.alternatives = [Alternative(id: "uk", sequence: "main", outline: "TMDb's words")]
+        let free = Attribution(subject: .outline, provider: .wikidata, value: "Q103569", read: .today)
+        let tmdb = Attribution(subject: .outline(ofAlternative: "uk"), provider: .tmdb, value: "348", read: .today)
+        let (contributed, leftOut) = AdminConsole.contributable(
+            Sidecar(container: alien, attributions: [free, tmdb]),
+            record: nil
+        )
+        #expect(contributed.outline == "Wikidata's words")
+        #expect(contributed.alternatives[0].outline == nil)
+        #expect(leftOut == [tmdb])
+    }
+
     /// An alternative's outline is attributed as the container's is: pruned with it, lost when smddb's
     /// differs, and given smddb's value in a contribution; a draft kept before attributions reads with
     /// none; and a new container's attributions are made with it.
@@ -3444,11 +3473,12 @@ extension AdminConsoleTests {
         let held = HeldLibrary()
         let (console, home) = try await Self.smddbConsole(held)
         let subject = Attribution.Subject.outline(ofAlternative: "uk")
-        let attribution = Attribution(subject: subject, provider: .tmdb, value: "348")
+        let attribution = Attribution(subject: subject, provider: .tmdb, value: "348", read: .today)
         let artwork = Attribution(
             subject: Attribution.Subject(rawValue: "artwork:poster"),
             provider: .tmdb,
-            value: "/a.jpg"
+            value: "/a.jpg",
+            read: .today
         )
         var alien = Container(id: ContainerID("00000000000000f1")!, type: .movie, title: Title("Alien")!)
         alien.alternatives = [Alternative(id: "uk", sequence: "main", outline: "TMDb's words")]
@@ -3729,7 +3759,7 @@ extension AdminConsoleTests {
         #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
         #expect(
             held.sidecar(alien.id)?.attributions == [
-                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "348")
+                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "348", read: .today)
             ]
         )
 
@@ -3773,7 +3803,7 @@ extension AdminConsoleTests {
         #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
         #expect(
             held.sidecar(season.id)?.attributions == [
-                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "901")
+                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "901", read: .today)
             ]
         )
     }
@@ -3818,7 +3848,7 @@ extension AdminConsoleTests {
         let taken = try #require(draft.value)
         #expect(taken.title == Title("Alien")! && taken.year == 1979 && taken.outline == Self.alienRecord.overview)
         #expect(taken.externalRefs == film.externalRefs + [imdb], "the id left is not taken")
-        #expect(draft.attributions == [Attribution(subject: .outline, provider: .tmdb, value: "348")])
+        #expect(draft.attributions == [Attribution(subject: .outline, provider: .tmdb, value: "348", read: .today)])
         #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil, "the edit is stored")
         #expect(held.sidecar(film.id)?.attributions == draft.attributions)
 
@@ -5232,7 +5262,7 @@ extension AdminConsoleTests {
         #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
         #expect(
             held.sidecar(try #require(ContainerID(new)))?.attributions.contains(
-                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "904")
+                Attribution(subject: .artwork("poster"), provider: .tmdb, value: "904", read: .today)
             ) == true
         )
     }

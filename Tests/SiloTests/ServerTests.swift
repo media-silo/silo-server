@@ -2988,6 +2988,7 @@ extension ServerTests {
         var subject: String
         var provider: String
         var value: String
+        var read: String
     }
     struct RefJSON: Codable, Equatable {
         var provider: String
@@ -3015,6 +3016,7 @@ extension ServerTests {
             var subject: String
             var provider: String
             var value: String
+            var read: String
         }
         var documents: [String]
         var attributions: [Attribution]?
@@ -3024,7 +3026,9 @@ extension ServerTests {
         var findings: [Finding]
     }
 
-    static let tmdbOutline = AttributionJSON(subject: "outline", provider: "tmdb", value: "348")
+    /// The day the tests read what they attribute, so that no walk finds it older than its terms allow.
+    static let today = CalendarDate.today.description
+    static let tmdbOutline = AttributionJSON(subject: "outline", provider: "tmdb", value: "348", read: Self.today)
 
     /// A film with an outline, for the attribution tests to make.
     static func attributedFilm(_ id: String) -> Container {
@@ -3063,7 +3067,15 @@ extension ServerTests {
             let create = AttributedCreate(
                 documents: [Self.xml(film)],
                 attributions: attributed
-                    ? [.init(container: film.id.value, subject: "outline", provider: "tmdb", value: "348")] : nil
+                    ? [
+                        .init(
+                            container: film.id.value,
+                            subject: "outline",
+                            provider: "tmdb",
+                            value: "348",
+                            read: Self.today
+                        )
+                    ] : nil
             )
             let made = try await client.send(
                 "POST",
@@ -3203,15 +3215,41 @@ extension ServerTests {
 
             let elsewhere = AttributedCreate(
                 documents: [Self.xml(Self.attributedFilm("0000000000000062"))],
-                attributions: [.init(container: "00000000000000ee", subject: "outline", provider: "tmdb", value: "1")]
+                attributions: [
+                    .init(
+                        container: "00000000000000ee",
+                        subject: "outline",
+                        provider: "tmdb",
+                        value: "1",
+                        read: Self.today
+                    )
+                ]
             )
             let artwork = AttributedCreate(
                 documents: [Self.xml(Self.attributedFilm("0000000000000062"))],
                 attributions: [
-                    .init(container: "0000000000000062", subject: "artwork/poster", provider: "tmdb", value: "1")
+                    .init(
+                        container: "0000000000000062",
+                        subject: "artwork/poster",
+                        provider: "tmdb",
+                        value: "1",
+                        read: Self.today
+                    )
                 ]
             )
-            for refused in [elsewhere, artwork] {
+            let undated = AttributedCreate(
+                documents: [Self.xml(Self.attributedFilm("0000000000000062"))],
+                attributions: [
+                    .init(
+                        container: "0000000000000062",
+                        subject: "outline",
+                        provider: "tmdb",
+                        value: "1",
+                        read: "2026-02-30"
+                    )
+                ]
+            )
+            for refused in [elsewhere, artwork, undated] {
                 let answer = try await client.send(
                     "POST",
                     "/v1/libraries/attributed-create/containers",
@@ -3247,6 +3285,12 @@ extension ServerTests {
             #expect(taken.status == 200)
             read = try await client.get(route).json(AttributedRead.self)
             #expect(read.container.attributions == [Self.tmdbOutline])
+            var undated = Self.tmdbOutline
+            undated.read = "2026-02-30"
+            let refused = try await edit(
+                AttributedEdit(document: Self.xml(outlined), basedOn: read.digest, attributions: [undated])
+            )
+            #expect(refused.status == 400, "an attribution's read is a calendar date")
 
             var redated = outlined
             redated.year = 1980
@@ -3263,7 +3307,7 @@ extension ServerTests {
                 try removed.json(FindingsJSON.self).findings.map(\.text)
                     == ["outline is attributed to tmdb but the container has none"]
             )
-            let artwork = AttributionJSON(subject: "artwork/poster", provider: "tmdb", value: "348")
+            let artwork = AttributionJSON(subject: "artwork/poster", provider: "tmdb", value: "348", read: Self.today)
             #expect(
                 try await edit(
                     AttributedEdit(document: Self.xml(redated), basedOn: read.digest, attributions: [artwork])
@@ -3326,11 +3370,11 @@ extension ServerTests {
         let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0x11, count: 64))
         let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] + Array(repeating: 0x22, count: 64))
         let headers = ["Authorization": "Bearer secret"]
-        let poster = AttributionJSON(subject: "artwork/poster", provider: "tmdb", value: "348")
+        let poster = AttributionJSON(subject: "artwork/poster", provider: "tmdb", value: "348", read: Self.today)
         try await withAttributionLibrary("attributed-artwork", film: film) { client, route in
             let put = try await client.send(
                 "PUT",
-                "\(route)/artwork/poster?provider=tmdb&value=348",
+                "\(route)/artwork/poster?provider=tmdb&value=348&read=\(Self.today)",
                 body: jpeg,
                 headers: headers
             )
@@ -3349,12 +3393,21 @@ extension ServerTests {
                 headers: headers
             )
             #expect(half.status == 400)
+            for query in ["provider=tmdb&value=348", "provider=tmdb&value=348&read=2026-02-30"] {
+                let undated = try await client.send(
+                    "PUT",
+                    "\(route)/artwork/poster?\(query)",
+                    body: jpeg,
+                    headers: headers
+                )
+                #expect(undated.status == 400, "an attribution says the day it was read, as a date")
+            }
             #expect(try await client.get(route).json(AttributedRead.self).digest == read.digest)
             #expect(try await client.get("\(route)/artwork/poster").head?.headerFields[.contentType] == "image/png")
 
             _ = try await client.send(
                 "PUT",
-                "\(route)/artwork/poster?provider=tmdb&value=348",
+                "\(route)/artwork/poster?provider=tmdb&value=348&read=\(Self.today)",
                 body: jpeg,
                 headers: headers
             )

@@ -3,6 +3,7 @@
 
 import Foundation
 import SiloClient
+import SiloKit
 import SmdKit
 import SmdSidecar
 
@@ -119,7 +120,8 @@ extension AdminConsole {
         SiloClient.Container.Attribution(
             subject: attribution.subject.rawValue,
             provider: attribution.provider.rawValue,
-            value: attribution.value
+            value: attribution.value,
+            read: attribution.read.description
         )
     }
 
@@ -133,8 +135,9 @@ extension AdminConsole {
         SiloClient(baseURL: silo.url).artworkURL(kind, of: container, in: library)
     }
 
-    /// Puts an image as a kind of a container's artwork, attributed to a provider's reference when it
-    /// is one of theirs, and with none, which removes any the kind had, when it is the operator's own.
+    /// Puts an image as a kind of a container's artwork, attributed to a provider's reference, read
+    /// today, when it is one of theirs, and with none, which removes any the kind had, when it is the
+    /// operator's own.
     /// The silo's refusal — not a JPEG or a PNG, or too large — comes back as `SettingsRefused` in words.
     public func putArtwork(
         _ image: Data,
@@ -144,7 +147,13 @@ extension AdminConsole {
         on silo: Silo,
         attributedTo attribution: ExternalRef? = nil
     ) async throws {
-        let attributed = attribution.map { (provider: $0.provider.rawValue, value: $0.value) }
+        let attributed = attribution.map {
+            SiloClient.ArtworkAttribution(
+                provider: $0.provider.rawValue,
+                value: $0.value,
+                read: CalendarDate.today.description
+            )
+        }
         do {
             _ = try await withOperator(silo) {
                 try await $0.putArtwork(image, as: kind, of: container, in: library, attributedTo: attributed)

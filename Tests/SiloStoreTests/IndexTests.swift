@@ -3,6 +3,7 @@
 
 import Foundation
 import GRDB
+import SiloKit
 import SiloLibrary
 import SmdKit
 import SmdSidecar
@@ -431,7 +432,7 @@ struct IndexTests {
         try sandbox.place([Self.unlisted], item: "ep1")
         let folder = sandbox.library.root.appendingPathComponent("Behind the Sofa")
         let url = folder.appendingPathComponent("container.smd")
-        let poster = Attribution(subject: .artwork("poster"), provider: .tmdb, value: "348")
+        let poster = Attribution(subject: .artwork("poster"), provider: .tmdb, value: "348", read: .today)
         try SidecarFile.data(settingAttributions: [poster], in: Data(contentsOf: url)).write(to: url)
 
         let index = try Index(at: nil)
@@ -444,6 +445,54 @@ struct IndexTests {
         try Data([0xFF, 0xD8, 0xFF]).write(to: folder.appendingPathComponent("poster.jpg"))
         #expect(try Indexer.scan(sandbox.library, into: index).findings.isEmpty)
         #expect(LibraryWalker.walk(sandbox.library.root).findings.isEmpty)
+    }
+
+    /// An attribution read longer ago than its provider's terms let its content be kept is a warning,
+    /// whether the walk reads the sidecar or finds it unchanged; one whose provider sets no limit never is.
+    @Test func anAttributionKeptLongerThanItsTermsIsAWarning() throws {
+        let sandbox = try Sandbox()
+        defer { sandbox.remove() }
+        try sandbox.place([Self.unlisted], item: "ep1")
+        let url = sandbox.library.root.appendingPathComponent("Behind the Sofa/container.smd")
+        var held = try SidecarFile.sidecar(from: Data(contentsOf: url))
+        held.container.outline = "Stories from behind the sofa."
+        let read = CalendarDate(year: 2026, month: 1, day: 5)!
+        let outline = Attribution(subject: .outline, provider: .tmdb, value: "348", read: read)
+        let free = Attribution(subject: .artwork("logo"), provider: .wikidata, value: "Q1", read: read)
+        try SidecarFile.data(
+            settingAttributions: [outline, free],
+            in: SidecarFile.data(settingContainer: held.container, in: Data(contentsOf: url))
+        )
+        .write(to: url)
+
+        let index = try Index(at: nil)
+        let sixMonths = CalendarDate(year: 2026, month: 7, day: 5)!
+        let dayAfter = CalendarDate(year: 2026, month: 7, day: 6)!
+        let warning =
+            "warning: Behind the Sofa/container.smd: outline was read from tmdb on 2026-01-05, "
+            + "more than 6 months ago, longer than its terms let it be kept"
+        let stale = { (finding: Finding) in finding.text.contains("was read from") }
+        #expect(try Indexer.scan(sandbox.library, into: index, today: sixMonths).findings.filter(stale).isEmpty)
+        #expect(LibraryWalker.walk(sandbox.library.root, today: sixMonths).findings.filter(stale).isEmpty)
+        #expect(
+            try Indexer.scan(sandbox.library, into: index, today: dayAfter).findings.filter(stale).map(\.description)
+                == [warning],
+            "the walk finds the sidecar unchanged, and still reckons its age"
+        )
+        #expect(
+            LibraryWalker.walk(sandbox.library.root, today: dayAfter).findings.filter(stale).map(\.description)
+                == [warning]
+        )
+    }
+
+    @Test(arguments: [
+        ("2026-01-05", 6, "2026-07-05"),
+        ("2026-08-31", 6, "2027-02-28"),
+        ("2027-08-31", 6, "2028-02-29"),
+        ("2026-12-15", 1, "2027-01-15"),
+    ])
+    func aDateMonthsLaterIsTheSameDayOrTheMonthsLast(from: String, months: Int, to: String) {
+        #expect(CalendarDate(from)!.adding(months: months) == CalendarDate(to)!)
     }
 
     /// An unmounted mount point is an empty folder, not a missing one: a walk of it would forget
