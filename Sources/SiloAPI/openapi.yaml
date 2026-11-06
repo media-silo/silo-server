@@ -2916,6 +2916,9 @@ components:
           type: string
         outline:
           type: string
+        premiered:
+          type: string
+          description: The day the container was first broadcast or released, `yyyy-mm-dd`.
         listed:
           type: boolean
         parent:
@@ -2923,7 +2926,7 @@ components:
 
     Container:
       type: object
-      required: [id, library, type, title, displayTitle, listed, alternatives, features, sequences, extras, children, externalRefs, attributions]
+      required: [id, library, type, title, displayTitle, listed, cast, crew, alternatives, features, sequences, extras, children, externalRefs, attributions]
       properties:
         id:
           type: string
@@ -2941,6 +2944,19 @@ components:
           type: string
         outline:
           type: string
+        premiered:
+          type: string
+          description: The day the container was first broadcast or released, `yyyy-mm-dd`.
+        cast:
+          type: array
+          description: Who is in it, in the order credited, each role the character they play.
+          items:
+            $ref: "#/components/schemas/Participant"
+        crew:
+          type: array
+          description: Who made it, in the order credited, each role their job.
+          items:
+            $ref: "#/components/schemas/Participant"
         listed:
           type: boolean
         parent:
@@ -3206,12 +3222,17 @@ components:
 
     Participant:
       type: object
-      required: [name]
+      required: [name, externalRefs]
       properties:
         name:
           type: string
         role:
           type: string
+        externalRefs:
+          type: array
+          description: Who the person is, where a provider knows them.
+          items:
+            $ref: "#/components/schemas/ExternalRef"
 
     Sequence:
       type: object

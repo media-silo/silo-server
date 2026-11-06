@@ -695,6 +695,22 @@ struct PlacementTests {
         )
     }
 
+    @Test func aFirstDateInAnotherYearIsAWarning() {
+        var alien = Container(
+            id: ContainerID("0000000000000041")!,
+            type: .movie,
+            title: Title("Alien")!,
+            year: 1979,
+            premiered: CalendarDate("1979-05-25"),
+            sequences: [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .movie))])]
+        )
+        #expect(Validator.check(Sidecar(container: alien)).isEmpty)
+        alien.premiered = CalendarDate("1978-12-01")
+        let findings = Validator.check(Sidecar(container: alien))
+        #expect(findings.map { $0.text } == ["premiered 1978-12-01 is not in 1979"])
+        #expect(findings.map { $0.severity } == [Finding.Severity.warning])
+    }
+
     @Test func attributionsAreLibraryFacts() throws {
         let sandbox = try Sandbox()
         defer { sandbox.remove() }
