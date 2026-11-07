@@ -122,7 +122,8 @@ extension HeldStopChild {
     /// The key it is moved by, as its entry in the stop's primary sequence goes by.
     public var key: String {
         switch self {
-        case .episode(let episode): "wikidata:\(episode.id)"
+        case .episode(_, let drafted?): "child:\(drafted)"
+        case .episode(let episode, nil): "wikidata:\(episode.id)"
         case .group(let group): "child:\(group.id)"
         case .held(let held): "child:\(held.id)"
         case .entry(let entry): entry.id

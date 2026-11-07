@@ -65,8 +65,10 @@ extension AdminConsole {
 
     /// A draft from Wikidata of each missing child chosen at a stop that the walk has not drafted yet, a
     /// series' season or a season's serial, filed beneath the stop's container after the children it
-    /// holds: what confirming the stop adds as new stops. A season's content is read through the TMDb id
-    /// the stop's series carries.
+    /// holds; of each missing episode chosen there, as a container of its own; and of each group of its
+    /// missing episodes taken, holding them as containers beneath it, drafted again when its episodes
+    /// have changed: what confirming the stop adds as new stops. A season's content is read through the
+    /// TMDb id the stop's series carries, and an episode's outline is TMDb's that the stop's reading read.
     public func drafts(
         confirming id: String,
         in walk: ReviewWalk,
@@ -90,11 +92,13 @@ extension AdminConsole {
                     from: database,
                     wikidata: wikidata,
                     tmdb: tmdb,
-                    tmdbSeries: tmdbSeries
+                    tmdbSeries: tmdbSeries,
+                    outlines: stop.comparison?.episodeOutlines ?? [:]
                 )
             )
         }
         return trees
+            + (try await episodeDrafts(confirming: id, in: walk, from: database, wikidata: wikidata, tmdb: tmdb))
     }
 
     /// The series a library holds that specials may go into as their companion, listed or not: every one
@@ -343,8 +347,9 @@ extension ReviewWalk {
         var grouped: [String: EpisodeGroup] = [:]
         /// The containers held beneath it its missing episodes were handed to, by each episode's Wikidata id.
         var intoHeld: [String: String] = [:]
-        /// The operator's own titles for its missing episodes, by Wikidata id.
-        var titles: [String: String] = [:]
+        /// The episode containers beneath it, held or drafted there and confirmed, by each episode's
+        /// Wikidata id: what a missing episode is named after.
+        var episodes: [String: String] = [:]
         /// The new containers the walk makes beneath it, each with what is beneath it.
         var made: [(creating: ContainerDraft.Creating, making: DraftTree.Making)] = []
     }
@@ -542,6 +547,9 @@ extension ReviewWalk {
             switch (difference, taken.contains(difference.id)) {
             case (.year, false): kept.year = nil
             case (.outline, false): kept.outline = nil
+            case (.premiered, false): kept.premiered = nil
+            case (.cast, false): kept.cast = []
+            case (.crew, false): kept.crew = []
             case (.reference(_, let ref), false): kept.externalRefs.removeAll { $0 == ref }
             case (.artwork(let kind, let path, let record, _), true):
                 gathering.artwork.append(Self.artwork(kind, path, record, at: stop))
@@ -564,26 +572,10 @@ extension ReviewWalk {
         }
         var change = Change(stop: stop, draft: draft, container: held)
         for (sequence, name) in renamedSequences[id] ?? [:] { change.container.renameSequence(sequence, to: name) }
-        change.titles = titles
-        let groups = stop.groups.filter { taken.contains($0.tick) }
-        for group in groups {
-            for episode in group.episodes { change.grouped[episode] = group }
-        }
-        for (child, episodes) in stop.intoHeld {
-            for episode in episodes { change.intoHeld[episode] = child }
-        }
+        gatherEpisodes(at: stop, taking: taken, comparison: comparison, into: &change)
         for difference in comparison.differences {
-            // One handed to a container held beneath is that container's to take.
-            if case .episode(let episode, _) = difference, change.intoHeld[episode.id] != nil { continue }
-            // A group taken is made beneath the stop, named where its first episode would have gone.
-            if case .episode(let episode, let after) = difference, let group = change.grouped[episode.id] {
-                // Made from its stop's draft, with what was placed and shaped there, once that stop is
-                // confirmed, as every new container is; named here where its first episode would have gone.
-                if Self.first(of: group, in: comparison) == episode.id, drafts[group.id] != nil,
-                    stops[group.id]?.taken != nil
-                {
-                    Self.name(group, after: after, in: &change)
-                }
+            if case .episode(let episode, let after) = difference {
+                name(episode, after: after, taken: taken.contains(difference.id), comparison: comparison, in: &change)
                 continue
             }
             guard taken.contains(difference.id) else { continue }
@@ -630,6 +622,52 @@ extension ReviewWalk {
         return change
     }
 
+    /// Where a stop's missing episodes go: the episode containers beneath it, held or drafted there and
+    /// confirmed, the groups it takes, and the containers held beneath it some were handed to.
+    private func gatherEpisodes(
+        at stop: Stop,
+        taking taken: Set<String>,
+        comparison: Comparison,
+        into change: inout Change
+    ) {
+        change.episodes = comparison.episodeContainers ?? [:]
+        for tree in drafts.values where tree.creating.parent == stop.id && stops[tree.top]?.taken != nil {
+            let missing = Self.missing(tree)
+            guard missing.hasPrefix("episode:") else { continue }
+            change.episodes[String(missing.dropFirst("episode:".count))] = tree.top
+        }
+        for group in stop.groups where taken.contains(group.tick) {
+            for episode in group.episodes { change.grouped[episode] = group }
+        }
+        for (child, episodes) in stop.intoHeld {
+            for episode in episodes { change.intoHeld[episode] = child }
+        }
+    }
+
+    /// A missing episode named in the stop's edit, after the one Wikidata puts it after, once the new stop
+    /// made of it is confirmed, since it is made from that stop's draft, with what was placed and shaped
+    /// there: its own container, taken, or the group taken in its place, where its first episode would
+    /// have gone. One handed to a container held beneath is that container's to take.
+    private func name(
+        _ episode: Wikidata.Work,
+        after: ExternalRef?,
+        taken: Bool,
+        comparison: Comparison,
+        in change: inout Change
+    ) {
+        guard change.intoHeld[episode.id] == nil else { return }
+        if let group = change.grouped[episode.id] {
+            if Self.first(of: group, in: comparison) == episode.id, drafts[group.id] != nil,
+                stops[group.id]?.taken != nil
+            {
+                Self.name(group.id, titled: group.title.rawValue, after: after, in: &change)
+            }
+            return
+        }
+        guard taken, let top = change.episodes[episode.id], let made = drafts[top]?.container(top) else { return }
+        Self.name(top, titled: made.title.rawValue, after: after, in: &change)
+    }
+
     /// The outline taken, attributed as read today, or, TMDb having none now, its attribution gone with it.
     private static func attribute(_ outline: Difference, in draft: inout ContainerDraft) {
         switch outline {
@@ -657,17 +695,14 @@ extension ReviewWalk {
         case .year(let year): change.container.year = year
         case .outline(let text, _): change.container.outline = text
         case .staleOutline(let text, _, _): change.container.outline = text
+        case .premiered(let date): change.container.premiered = date
+        case .cast(let cast): change.container.cast = cast.map(\.participant)
+        case .crew(let crew): change.container.crew = AdminConsole.crew(crew, replacing: change.container.crew)
         case .reference(nil, let ref): change.container.externalRefs.append(ref)
         case .reference(let item?, let ref): AdminConsole.add(ref, toItem: item, in: &change.container)
-        case .episode(let episode, let after):
-            AdminConsole.insert(
-                AdminConsole.leaf(episode, in: change.container, title: change.titles[episode.id]),
-                after: Self.anchor(after, in: change),
-                into: &change.container
-            )
         case .order(let sequence, let items): AdminConsole.reorder(sequence, to: items, in: &change.container)
         // A missing child chosen is a new stop of the walk, made with what its own stop keeps.
-        case .child, .heldChild, .unmatchedSeason: break
+        case .child, .heldChild, .unmatchedSeason, .episode: break
         case .artwork(let kind, let path, let record, _), .staleArtwork(let kind, let path?, let record, _, _):
             gathering.artwork.append(Self.artwork(kind, path, record, at: change.stop))
         case .staleArtwork(let kind, nil, _, _, _):
@@ -700,11 +735,12 @@ extension ReviewWalk {
         return group.episodes.first(where: offered.contains)
     }
 
-    /// A group's container named in the stop where the first of its episodes would have gone.
-    private static func name(_ group: EpisodeGroup, after: ExternalRef?, in change: inout Change) {
-        guard let id = ContainerID(group.id) else { return }
+    /// A new container named in the stop after the episode Wikidata puts it after: a missing episode's
+    /// own, or a group's, where the first of its episodes would have gone.
+    private static func name(_ id: String, titled title: String, after: ExternalRef?, in change: inout Change) {
+        guard let id = ContainerID(id), !change.container.childContainerIDs.contains(id) else { return }
         let item = ItemID(
-            Slug.unique(from: group.title.rawValue, avoiding: Set(change.container.itemIDs.map(\.value)))
+            Slug.unique(from: title, avoiding: Set(change.container.itemIDs.map(\.value)))
         )!
         AdminConsole.insert(
             .child(Entry.Child(id: item, container: id)),
@@ -713,12 +749,13 @@ extension ReviewWalk {
         )
     }
 
-    /// What an entry Wikidata puts after an episode goes after in the stop's container: the episode, the
-    /// group taken in its place, or the container held beneath it was handed to.
+    /// What an entry Wikidata puts after an episode goes after in the stop's container: the episode, its
+    /// own container, the group taken in its place, or the container held beneath it was handed to.
     private static func anchor(_ after: ExternalRef?, in change: Change) -> AdminConsole.Anchor? {
         guard let after else { return nil }
         if let group = change.grouped[after.value], let id = ContainerID(group.id) { return .child(id) }
         if let child = change.intoHeld[after.value].flatMap(ContainerID.init) { return .child(child) }
+        if let own = change.episodes[after.value].flatMap(ContainerID.init) { return .child(own) }
         return .ref(after)
     }
 
@@ -810,6 +847,9 @@ extension ReviewWalk {
         if before.title != after.title { parts.append("its title") }
         if before.year != after.year { parts.append("its year") }
         if before.outline != after.outline { parts.append("its outline") }
+        if before.premiered != after.premiered { parts.append("its first date") }
+        if before.cast != after.cast { parts.append("its cast") }
+        if before.crew != after.crew { parts.append("its crew") }
         let refs = Set(after.externalRefs).subtracting(before.externalRefs).count
         if refs > 0 { parts.append(refs == 1 ? "1 reference" : "\(refs) references") }
         // A reference to an item of the container itself, as an alternative plays one, is no entry more.
@@ -838,20 +878,6 @@ extension ReviewWalk {
         }
         if draft.declined != nil { parts.append("what it declines") }
         return parts.isEmpty ? "edit \(stop.title)" : "edit \(stop.title): \(parts.joined(separator: ", "))"
-    }
-}
-
-extension DraftTree.Making.HeldEdit {
-    /// What names the edit among a walk's steps.
-    var key: String {
-        "\(library)/\(container)/\(item ?? entryID ?? "")/\(ref.map { "\($0.provider):\($0.value)" } ?? "")"
-    }
-
-    public var described: String {
-        if ref != nil { return "add the special's id to \(item ?? "") of \(container) in \(library)" }
-        if refer != nil { return "refer to a special from \(container) in \(library)" }
-        if entryType != nil { return "add an extra to \(container) in \(library)" }
-        return "add an entry to \(container) in \(library)"
     }
 }
 

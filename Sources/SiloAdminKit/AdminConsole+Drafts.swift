@@ -94,7 +94,7 @@ extension AdminConsole {
 
     /// A draft of a child a walk's stop lacks, a series' season or a season's serial, filed where it is
     /// said to be, kept nowhere: what a walk makes a missing child into. A season's content is read
-    /// through the TMDb series given.
+    /// through the TMDb series given; a serial's episodes' outlines are those given, its season's.
     // swiftlint:disable:next function_parameter_count
     public func draft(
         of child: Wikidata.Summary,
@@ -103,9 +103,11 @@ extension AdminConsole {
         from database: any ContainerDatabase,
         wikidata: any WikidataSource,
         tmdb: (any TMDbSource)?,
-        tmdbSeries: String? = nil
+        tmdbSeries: String? = nil,
+        outlines: [String: String] = [:]
     ) async throws -> DraftTree {
         var reader = Reader(wikidata: wikidata, tmdb: tmdb, database: database)
+        reader.episodeOutlines = outlines
         let top: Container
         switch child.kind {
         case .season:
@@ -144,6 +146,9 @@ extension AdminConsole {
         var images: [ContainerID: DraftTree.RecordImages] = [:]
         /// The TMDb series the seasons read are TMDb's seasons of.
         var tmdbSeasons: TMDbSeasons?
+        /// TMDb's overviews of the episodes of the seasons read, by TMDb's id for each: each episode's
+        /// outline.
+        var episodeOutlines: [String: String] = [:]
 
         init(wikidata: any WikidataSource, tmdb: (any TMDbSource)?, database: any ContainerDatabase) {
             self.wikidata = wikidata
@@ -151,7 +156,7 @@ extension AdminConsole {
             self.database = database
         }
 
-        func tree(top: Container, item: Wikidata.Item, library: String, creating: ContainerDraft.Creating) -> DraftTree
+        func tree(top: Container, item: Wikidata.Item?, library: String, creating: ContainerDraft.Creating) -> DraftTree
         {
             DraftTree(
                 library: library,
@@ -191,6 +196,7 @@ extension AdminConsole {
             )
             container.sequences = []
             if let content {
+                episodeOutlines.merge(content.episodes) { first, _ in first }
                 if overview != nil {
                     attributions[container.id] = [
                         Attribution(subject: .outline, provider: .tmdb, value: String(content.record.id), read: .today)
@@ -247,22 +253,18 @@ extension AdminConsole {
             return container
         }
 
-        /// A season, holding its episodes as entries and its serials as containers beneath it, in
-        /// Wikidata's order.
+        /// A season, holding its episodes and its serials as containers beneath it, in Wikidata's order.
         mutating func season(_ season: Wikidata.Season) async throws -> Container {
             var container = try await make(.season, season.work)
             containers.append(container)
             var items: [Entry] = []
             for member in season.members {
-                switch member {
-                case .episode(let episode):
-                    items.append(entry(episode, in: items))
-                case .serial(let serial):
-                    let made = try await self.serial(serial)
-                    items.append(
-                        .child(Entry.Child(id: Self.itemID(made.title.rawValue, in: items), container: made.id))
-                    )
-                }
+                let made =
+                    switch member {
+                    case .episode(let episode): try await self.episode(episode)
+                    case .serial(let serial): try await self.serial(serial)
+                    }
+                items.append(.child(Entry.Child(id: Self.itemID(made.title.rawValue, in: items), container: made.id)))
             }
             let serials = season.members.allSatisfy { if case .serial = $0 { true } else { false } }
             container.sequences = [Sequence(id: serials && !items.isEmpty ? "serials" : "episodes", items: items)]
@@ -270,26 +272,39 @@ extension AdminConsole {
             return container
         }
 
-        /// A serial, holding its parts as entries in Wikidata's order.
+        /// A serial, holding its parts as containers beneath it in Wikidata's order.
         mutating func serial(_ serial: Wikidata.Serial) async throws -> Container {
             var container = try await make(.serial, serial.work)
-            var items: [Entry] = []
-            for part in serial.parts { items.append(entry(part, in: items)) }
-            container.sequences = [Sequence(id: "parts", items: items)]
             containers.append(container)
+            var items: [Entry] = []
+            for part in serial.parts {
+                let made = try await episode(part)
+                items.append(.child(Entry.Child(id: Self.itemID(made.title.rawValue, in: items), container: made.id)))
+            }
+            container.sequences = [Sequence(id: "parts", items: items)]
+            replace(container)
             return container
         }
 
-        /// An episode as an entry, carrying its references and no title, since Wikidata has one for it.
-        private mutating func entry(_ episode: Wikidata.Work, in entries: [Entry]) -> Entry {
+        /// An episode as a container of its own, its facts Wikidata's, and its outline TMDb's overview of
+        /// it in its season, read through the TMDb id Wikidata holds for it and attributed to that id.
+        mutating func episode(_ episode: Wikidata.Work, titled title: String? = nil) async throws -> Container {
             note(episode)
-            return .leaf(
-                Entry.Leaf(
-                    id: Self.itemID(episode.title, in: entries),
-                    type: .episode,
-                    externalRefs: Special(episode: episode).refs
-                )
+            let tmdbID = episode.ref(.tmdb)?.value
+            let outline = tmdbID.flatMap { episodeOutlines[$0] }
+            let container = AdminConsole.episode(
+                episode,
+                id: try await database.provisionalID(),
+                title: title,
+                outline: outline
             )
+            if let tmdbID, outline != nil {
+                attributions[container.id] = [
+                    Attribution(subject: .outline, provider: .tmdb, value: tmdbID, read: .today)
+                ]
+            }
+            containers.append(container)
+            return container
         }
 
         private mutating func note(_ episode: Wikidata.Work) {
@@ -523,6 +538,7 @@ extension AdminConsole {
         let collected = ["omnibus", "compilation"].first { title.contains($0) }
         func named(_ entry: Entry) -> String? {
             entry.title ?? entry.externalRefs.first { $0.provider == .wikidata }.flatMap { titles[$0.value] }
+                ?? entry.childContainer.flatMap { child in containers.first { $0.id == child }?.title.rawValue }
         }
         for container in containers {
             if versioned {
@@ -561,11 +577,16 @@ extension AdminConsole {
         return SpecialSuggestion(placement: place, reason: "it aired between \(earlier) and \(later)", basis: .aired)
     }
 
-    /// An entry just after the one carrying a reference, in the container of the tree that holds it.
+    /// An entry just after the one carrying a reference, or naming the episode container that carries it,
+    /// in the container of the tree that holds it.
     private nonisolated static func after(_ ref: ExternalRef, in tree: DraftTree) -> SpecialPlacement? {
+        func carries(_ entry: Entry) -> Bool {
+            entry.externalRefs.contains(ref)
+                || entry.childContainer.flatMap { tree.container($0.value) }?.externalRefs.contains(ref) == true
+        }
         for container in tree.containers {
             for sequence in container.sequences {
-                if let index = sequence.items.firstIndex(where: { $0.externalRefs.contains(ref) }) {
+                if let index = sequence.items.firstIndex(where: carries) {
                     return .entry(in: container.id.value, sequence: sequence.id, position: index + 1)
                 }
             }

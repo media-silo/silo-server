@@ -20,10 +20,18 @@ extension ReviewWalk {
         /// read again, the same or changed, attributed anew when it is taken, or, nil, removed with its
         /// attribution, TMDb having none now.
         case staleOutline(String?, record: String, read: CalendarDate)
+        /// When an episode was first shown, as Wikidata dates it.
+        case premiered(CalendarDate)
+        /// Who is in an episode, as Wikidata lists them, in place of the cast it holds.
+        case cast([Person])
+        /// Who directed and wrote an episode, as Wikidata lists them, in place of the directors and writers
+        /// it holds; crew of any other job is kept.
+        case crew([Person])
         /// A provider's id Wikidata holds that the sidecar lacks: for the container, or for one of its
         /// items.
         case reference(item: String?, ExternalRef)
-        /// An episode no item of the library carries, to go after the one it follows in Wikidata's order.
+        /// An episode nothing in the library carries, drafted as a container of its own beneath the
+        /// container when taken, after the one it follows in Wikidata's order.
         case episode(Wikidata.Work, after: ExternalRef?)
         /// A child Wikidata lists that no container carries, a series' season or a season's serial,
         /// drafted from Wikidata beneath the container when taken.
@@ -52,6 +60,9 @@ extension ReviewWalk {
             case .title: "title"
             case .year: "year"
             case .outline, .staleOutline: "outline"
+            case .premiered: "premiered"
+            case .cast: "cast"
+            case .crew: "crew"
             case .reference(let item, let ref): "ref:\(item ?? ""):\(ref.provider):\(ref.value)"
             case .episode(let episode, _): "episode:\(episode.id)"
             case .child(let child): "child:\(child.id)"
@@ -90,6 +101,12 @@ extension ReviewWalk {
         /// The containers held beneath it, in the order it holds them, read when its missing episodes are:
         /// shown among its children, each one its missing episodes may be added to.
         public var heldChildren: [HeldChild]?
+        /// The episode containers held beneath it, by the Wikidata id of the episode each is: what a missing
+        /// episode is placed after.
+        public var episodeContainers: [String: String]?
+        /// TMDb's overviews of the episodes of its season, by TMDb's id for each: a missing episode's
+        /// outline, when it is drafted.
+        public var episodeOutlines: [String: String]?
 
         init(library: String, container: String, title: String, opened: AdminConsole.OpenedContainer) {
             self.library = library
@@ -218,10 +235,9 @@ extension AdminConsole {
                 progress
             )
         case (.serial, let item?):
-            let serial = try await wikidata.serial(item)
-            comparison.reading = "Wikidata's item \(item)"
-            comparison.differences += Self.facts(of: container, from: serial.work)
-            try await compareEpisodes(serial.parts, in: container, missing: true, into: &comparison, sources, progress)
+            try await compareSerial(item, opened: opened, into: &comparison, sources, progress)
+        case (.episode, _):
+            try await compareEpisode(opened, identified: identified, into: &comparison, sources, progress)
         default:
             let through = try await compareThrough(
                 opened,
@@ -300,6 +316,7 @@ extension AdminConsole {
                 from: content,
                 today: sources.today
             )
+            if !content.episodes.isEmpty { comparison.episodeOutlines = content.episodes }
         } catch let unavailable as TMDb.Unavailable {
             comparison.noContent = unavailable.reason
         } catch {
@@ -532,6 +549,85 @@ extension AdminConsole {
         try await compareEpisodes(episodes, in: container, missing: true, into: &comparison, sources, progress)
     }
 
+    /// A serial's facts and its parts, read from Wikidata's item for it, and TMDb's overviews of its
+    /// season's episodes, which its missing parts are drafted with.
+    private func compareSerial(
+        _ item: String,
+        opened: OpenedContainer,
+        into comparison: inout ReviewWalk.Comparison,
+        _ sources: Sources,
+        _ progress: @Sendable (StepProgress, ReviewWalk.Comparison) async -> Void
+    ) async throws {
+        let container = try SidecarFile.sidecar(from: opened.sidecar).container
+        let serial = try await sources.wikidata.serial(item)
+        comparison.reading = "Wikidata's item \(item)"
+        comparison.differences += Self.facts(of: container, from: serial.work)
+        if let tmdb = sources.tmdb {
+            comparison.episodeOutlines = try? await tmdbOutlines(of: opened, container, from: tmdb, of: sources.silo)
+        }
+        try await compareEpisodes(serial.parts, in: container, missing: true, into: &comparison, sources, progress)
+    }
+
+    /// An episode's container read against Wikidata's item for the episode: its title, its references,
+    /// its first date, cast and crew, and its outline against TMDb's, read through its season. One
+    /// carrying no Wikidata id is read as the episode of what it is beneath that carries one of the other
+    /// ids it carries, and offered Wikidata's id.
+    private func compareEpisode(
+        _ opened: OpenedContainer,
+        identified: [String: String],
+        into comparison: inout ReviewWalk.Comparison,
+        _ sources: Sources,
+        _ progress: @Sendable (StepProgress, ReviewWalk.Comparison) async -> Void
+    ) async throws {
+        let sidecar = try SidecarFile.sidecar(from: opened.sidecar)
+        let container = sidecar.container
+        var carrying = container
+        let work: Wikidata.Work
+        if let own = container.externalRefs.first(where: { $0.provider == .wikidata })?.value {
+            guard let read = try await sources.wikidata.episodes([own]).first else {
+                throw Wikidata.Unavailable.notThere(own)
+            }
+            work = read
+            comparison.reading = "Wikidata's item \(own)"
+        } else {
+            let through = try await compareThrough(
+                opened,
+                container: container,
+                identified: identified,
+                into: &comparison,
+                sources
+            )
+            guard let found = through.first(where: { Self.carries(container.externalRefs, $0) }) else {
+                throw NoReading(
+                    reason:
+                        "\(container.displayTitle) carries no Wikidata id, and none of the ids Wikidata holds for the episodes it is read through"
+                )
+            }
+            work = found
+            comparison.differences.append(.reference(item: nil, found.item))
+            carrying.externalRefs.append(found.item)
+        }
+        comparison.differences += Self.facts(of: carrying, from: work) + Self.credits(of: container, from: work)
+        guard let tmdb = sources.tmdb, let id = work.ref(.tmdb)?.value, let record = Int(id) else { return }
+        await progress(StepProgress("Reading TMDb's outline"), comparison)
+        do {
+            guard let outlines = try await tmdbOutlines(of: opened, container, from: tmdb, of: sources.silo) else {
+                return
+            }
+            comparison.differences += Self.differences(
+                of: container,
+                attributions: sidecar.attributions,
+                artwork: [],
+                from: Content(record: TMDb.Record(.episode, record), overview: outlines[id]),
+                today: sources.today
+            )
+        } catch let unavailable as TMDb.Unavailable {
+            comparison.noContent = unavailable.reason
+        } catch {
+            comparison.noContent = "TMDb could not be reached."
+        }
+    }
+
     /// The episodes a container with no Wikidata id of its own is read against: those of the season or
     /// serial above it, a series above it's specials, or, nothing above it carrying a Wikidata id, the
     /// items its entries' Wikidata ids name, as a breakout's are.
@@ -588,13 +684,19 @@ extension AdminConsole {
 
     /// Whether an entry is an episode: whether it carries any of the ids Wikidata holds for it.
     nonisolated static func carries(_ entry: Entry, _ episode: Wikidata.Work) -> Bool {
-        entry.externalRefs.contains(episode.item) || entry.externalRefs.contains { episode.refs.contains($0) }
+        carries(entry.externalRefs, episode)
+    }
+
+    /// Whether references are an episode's: whether they hold any of the ids Wikidata holds for it.
+    nonisolated static func carries(_ refs: [ExternalRef], _ episode: Wikidata.Work) -> Bool {
+        refs.contains(episode.item) || refs.contains { episode.refs.contains($0) }
     }
 
     /// The entries' differences from Wikidata's episodes: the other ids Wikidata holds for each one the
     /// container carries, items both hold in another order, and, when the container is read as itself,
-    /// each episode nothing covers. What the container holds that is none of the episodes is listed as
-    /// held only.
+    /// each episode nothing covers. An episode held as a container beneath it is that container's: offered
+    /// its ids at its own stop, and in its place in the order. What the container holds that is none of
+    /// the episodes is listed as held only.
     // swiftlint:disable:next function_parameter_count
     private func compareEpisodes(
         _ episodes: [Wikidata.Work],
@@ -607,8 +709,21 @@ extension AdminConsole {
         for episode in episodes { comparison.episodeTitles[episode.id] = episode.title }
         comparison.episodeOrder = episodes.map(\.id)
         let entries = container.sequences.flatMap(\.items) + container.extras
-        let beneath = try await self.entries(beneath: container, in: comparison.library, of: sources.silo)
+        let library = comparison.library
         let silo = sources.silo
+        let children = try await Self.concurrently(container.childContainerIDs) { child in
+            let opened = try await self.open(container: child.value, in: library, of: silo)
+            return (id: child.value, container: try SidecarFile.sidecar(from: opened.sidecar).container)
+        }
+        // An episode container carries its ids itself, and is what its parent's entry names.
+        let own = Dictionary(
+            children.filter { $0.container.type == .episode }.map { ($0.id, $0.container.externalRefs) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        @Sendable func refs(of entry: Entry) -> [ExternalRef] {
+            entry.externalRefs + (entry.childContainer.flatMap { own[$0.value] } ?? [])
+        }
+        let beneath = children.flatMap { $0.container.sequences.flatMap(\.items) + $0.container.extras }
         let found: [[ReviewWalk.Difference]] = try await steps(
             "Looking for Wikidata's episodes in the library",
             Array(episodes.indices),
@@ -616,8 +731,8 @@ extension AdminConsole {
             progress
         ) { index in
             let episode = episodes[index]
-            if let entry = entries.first(where: { Self.carries($0, episode) }) {
-                guard let item = entry.id?.value else { return nil }
+            if let entry = entries.first(where: { Self.carries(refs(of: $0), episode) }) {
+                guard entry.childContainer == nil, let item = entry.id?.value else { return nil }
                 return Self.missing([episode.item] + episode.refs, from: entry.externalRefs, item: item)
             }
             // An item of a container beneath is offered its ids at that container's own stop.
@@ -626,19 +741,17 @@ extension AdminConsole {
             return [.episode(episode, after: index > 0 ? episodes[index - 1].item : nil)]
         }
         comparison.differences += Self.deduplicated(found.flatMap { $0 })
-        if missing {
-            comparison.heldChildren = try await heldChildren(
-                of: container,
-                episodes: episodes,
-                in: comparison.library,
-                of: silo
-            )
+        var held: [String: String] = [:]
+        for episode in episodes {
+            if let child = own.first(where: { Self.carries($0.value, episode) })?.key { held[episode.id] = child }
         }
+        comparison.episodeContainers = held.isEmpty ? nil : held
+        if missing { comparison.heldChildren = children.map { Self.heldChild($0.id, $0.container, among: episodes) } }
         for sequence in container.sequences {
-            let carried = sequence.items.filter { entry in episodes.contains { Self.carries(entry, $0) } }
+            let carried = sequence.items.filter { entry in episodes.contains { Self.carries(refs(of: entry), $0) } }
             let sorted = carried.sorted { lhs, rhs in
-                (episodes.firstIndex { Self.carries(lhs, $0) } ?? 0)
-                    < (episodes.firstIndex { Self.carries(rhs, $0) } ?? 0)
+                (episodes.firstIndex { Self.carries(refs(of: lhs), $0) } ?? 0)
+                    < (episodes.firstIndex { Self.carries(refs(of: rhs), $0) } ?? 0)
             }
             if sorted != carried {
                 comparison.differences.append(.order(sequence: sequence.id, items: sorted.compactMap { $0.id?.value }))
@@ -652,32 +765,29 @@ extension AdminConsole {
         }
     }
 
+    /// A container held beneath one read, placed by the first of the episodes read that it is or holds.
+    private nonisolated static func heldChild(
+        _ id: String,
+        _ container: Container,
+        among episodes: [Wikidata.Work]
+    ) -> ReviewWalk.HeldChild {
+        let entries = container.sequences.flatMap(\.items) + container.extras
+        let first = episodes.firstIndex { episode in
+            carries(container.externalRefs, episode) || entries.contains { carries($0, episode) }
+        }
+        return ReviewWalk.HeldChild(
+            id: id,
+            title: container.displayTitle,
+            type: container.type,
+            typeLabel: container.typeLabel,
+            position: first.map { $0 + 1 }
+        )
+    }
+
     /// The differences in the order found, each once: two episodes carried by one entry offer its ids once.
     private nonisolated static func deduplicated(_ differences: [ReviewWalk.Difference]) -> [ReviewWalk.Difference] {
         var seen: Set<String> = []
         return differences.filter { seen.insert($0.id).inserted }
-    }
-
-    /// The containers held beneath one, each placed by the first of the episodes read it holds.
-    private func heldChildren(
-        of container: Container,
-        episodes: [Wikidata.Work],
-        in library: String,
-        of silo: Silo
-    ) async throws -> [ReviewWalk.HeldChild] {
-        try await Self.concurrently(container.childContainerIDs) { child in
-            let opened = try await self.open(container: child.value, in: library, of: silo)
-            let held = try SidecarFile.sidecar(from: opened.sidecar).container
-            let entries = held.sequences.flatMap(\.items) + held.extras
-            let first = episodes.firstIndex { episode in entries.contains { Self.carries($0, episode) } }
-            return ReviewWalk.HeldChild(
-                id: child.value,
-                title: held.displayTitle,
-                type: held.type,
-                typeLabel: held.typeLabel,
-                position: first.map { $0 + 1 }
-            )
-        }
     }
 
     /// The containers held beneath one that carry one of the Wikidata ids given, by that id.
@@ -751,17 +861,6 @@ extension AdminConsole {
         return Dictionary(matched.compactMap { $0 }) { first, _ in first }
     }
 
-    /// A container's own entries, and those of the containers it holds, one level down.
-    private func entries(beneath container: Container, in library: String, of silo: Silo) async throws -> [Entry] {
-        var entries: [Entry] = []
-        for child in container.childContainerIDs {
-            let opened = try await open(container: child.value, in: library, of: silo)
-            let held = try SidecarFile.sidecar(from: opened.sidecar).container
-            entries += held.sequences.flatMap(\.items) + held.extras
-        }
-        return entries
-    }
-
     // MARK: Taking
 
     nonisolated static func add(_ ref: ExternalRef, toItem item: String, in container: inout Container) {
@@ -787,18 +886,6 @@ extension AdminConsole {
     enum Anchor {
         case ref(ExternalRef)
         case child(ContainerID)
-    }
-
-    /// An episode as the leaf a container gains for it, carrying its references and the operator's own
-    /// title when it has one.
-    nonisolated static func leaf(_ episode: Wikidata.Work, in container: Container, title: String? = nil) -> Entry {
-        var leaf = Entry.Leaf(
-            id: DraftTree.itemID(for: episode.title, in: container),
-            type: .episode,
-            externalRefs: Special(episode: episode).refs
-        )
-        leaf.title = title
-        return .leaf(leaf)
     }
 
     /// An entry put after the one its anchor names, or last when nothing does.

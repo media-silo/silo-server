@@ -43,8 +43,9 @@ public struct SuggestedEpisodes: Hashable, Sendable {
 
 /// One of a held stop's children besides its seasons, as its children list them.
 public enum HeldStopChild: Hashable, Sendable {
-    /// A missing episode grouped in none, and put into no container held beneath.
-    case episode(Wikidata.Work)
+    /// A missing episode grouped in none, and put into no container held beneath, with the new stop
+    /// drafted for it once it is.
+    case episode(Wikidata.Work, drafted: String?)
     case group(EpisodeGroup)
     /// A container held beneath, holding the missing episodes put into it.
     case held(ReviewWalk.HeldChild)
@@ -114,12 +115,24 @@ extension ReviewWalk {
     }
 
     /// Missing episodes of a held stop titled by the word given and the part number each one's title
-    /// gives, as `Part 3`: the titles the entries the walk adds for them carry.
+    /// gives, as `Part 3`: the titles the containers the walk drafts for them carry, those drafted already
+    /// retitled.
     public mutating func title(_ episodes: [String], at stop: String, as word: String) {
         unconfirm(stop)
         for episode in missingEpisodes(at: stop) where episodes.contains(episode.id) {
             guard let number = DraftTree.part(of: episode.title) else { continue }
             titles[episode.id] = "\(word) \(number)"
+            // Drafted already, alone or in a group made here, its container is titled so.
+            for tree in drafts.values where tree.creating.parent == stop {
+                for var container in tree.containers
+                where container.type == .episode && container.externalRefs.contains(episode.item) {
+                    guard let title = Title(titles[episode.id] ?? episode.title), container.title != title else {
+                        continue
+                    }
+                    container.title = title
+                    shape(container.id.value) { $0.set(container) }
+                }
+            }
         }
     }
 
@@ -201,45 +214,6 @@ extension ReviewWalk {
         if ticked { stops[stop]?.chosen.formUnion(group.episodes.map { "episode:\($0)" }) }
     }
 
-    /// Each group a confirmed held stop takes, drafted as a new stop beneath it, as a draft's groups are
-    /// new stops: its specials placed and its parts shaped there, made from the draft once its own stop
-    /// is confirmed. A group whose episodes have changed since it was drafted is drafted again.
-    mutating func draftGroups(of stop: Stop) {
-        guard !isNew(stop.id), let taken = stop.taken, stop.comparison != nil else { return }
-        let missing = missingEpisodes(at: stop.id)
-        for group in stop.groups where taken.contains(group.tick) {
-            let episodes = group.episodes.compactMap { id in missing.first { $0.id == id } }
-            let titles = Dictionary(episodes.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
-            if let drafted = drafts[group.id] {
-                guard Set(drafted.episodeTitles.keys) != Set(titles.keys) else { continue }
-                remove(group.id)
-            }
-            guard let id = ContainerID(group.id), !episodes.isEmpty else { continue }
-            var child = Container(id: id, type: group.type, title: group.title)
-            child.typeLabel = group.typeLabel
-            // Its primary sequence goes by the id of the stop's it was made out of.
-            child.sequences = [Sequence(id: sequenceName(0, at: stop.id), items: [])]
-            for episode in episodes {
-                DraftTree.insert(
-                    AdminConsole.leaf(episode, in: child, title: self.titles[episode.id]),
-                    into: &child,
-                    sequence: nil,
-                    at: nil
-                )
-            }
-            let tree = DraftTree(
-                library: library,
-                item: nil,
-                creating: ContainerDraft.Creating(parent: stop.id),
-                containers: [child],
-                top: id,
-                episodeTitles: titles
-            )
-            drafts[group.id] = tree
-            stops[group.id] = Stop(newIn: tree, group.id, parent: stop.id, offering: offered(group.id, in: tree))
-        }
-    }
-
     /// A held stop's missing episodes as its children list them, in Wikidata's order: each group at its
     /// first episode's place, each container held beneath at the place of the first of the episodes read
     /// it holds, or last when it holds none, and an episode put into one shown in it rather than here.
@@ -263,7 +237,7 @@ extension ReviewWalk {
                 if group.episodes.first == episode.id { children.append(.group(group)) }
                 continue
             }
-            children.append(.episode(episode))
+            children.append(.episode(episode, drafted: drafted(episode: episode.id, at: stop)))
         }
         return children + waiting.map(HeldStopChild.held)
     }
@@ -295,7 +269,7 @@ extension ReviewWalk {
         case .held(let held): held.id
         case .added(let id): id
         case .entry(let entry): entry.id.hasPrefix("child:") ? String(entry.id.dropFirst("child:".count)) : nil
-        case .episode: nil
+        case .episode(_, let drafted): drafted
         case .child(.heldChild(_, let container, _)): container
         case .child(.child(let child)): drafted(child.id, at: stop)
         case .child: nil
@@ -305,6 +279,11 @@ extension ReviewWalk {
     /// The stop drafted beneath a held stop for one of the children Wikidata lists, once it is.
     func drafted(_ child: String, at stop: String) -> String? {
         drafts.values.first { $0.creating.parent == stop && Self.missing($0) == "child:\(child)" }?.top
+    }
+
+    /// The stop drafted beneath a held stop for one of its missing episodes, once it is.
+    public func drafted(episode: String, at stop: String) -> String? {
+        drafts.values.first { $0.creating.parent == stop && Self.missing($0) == "episode:\(episode)" }?.top
     }
 
     /// The containers a held stop holds beneath it, as its reading found them, or, for a reading kept

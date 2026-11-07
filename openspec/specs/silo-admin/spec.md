@@ -1110,12 +1110,12 @@ smddb, and SHALL NOT draft it. Picking one whose reference a container of the li
 NOT draft it, and the console SHALL say the library holds it. Otherwise the console SHALL read the
 item as containers, as Wikidata's statements say them: a film as a `movie`; a series as a `series`
 with a `season` child for each of Wikidata's seasons of it, or for each of those the operator
-chooses; a season as a `season` holding, in Wikidata's order, each of its episodes as an entry and
-each of its serials as a `serial` beneath it, holding the serial's parts as entries in Wikidata's
-order; and a collection as a `collection` with each of its films as a child. Each container SHALL
+chooses; a season as a `season` holding, in Wikidata's order, each of its episodes as an `episode`
+container beneath it and each of its serials as a `serial` beneath it, holding the serial's parts as
+`episode` containers in Wikidata's order, as a walk drafts each episode; and a collection as a `collection` with each of its films as a child. Each container SHALL
 carry its item's label as its title, its year where its type has one, a `wikidata` reference, and a
-reference for each other provider's id Wikidata holds for it. Each episode's entry SHALL carry the
-same references and no title or outline, until the operator titles it. A container's outline SHALL
+reference for each other provider's id Wikidata holds for it. The entry naming an episode's container
+SHALL carry no references of its own: they are the container's. A container's outline SHALL
 be the overview of the TMDb record named by the TMDb id Wikidata holds for its item, attributed to
 `tmdb` with that id: a film's, a collection's or a series' own, and a season's beneath the series
 above it, read by the number TMDb's series gives the season of that id. A container whose item
@@ -1125,8 +1125,7 @@ season 0 SHALL NOT be read: a series' specials are those Wikidata files beneath 
 Each container SHALL be a draft of a new container with an id from the clone's `provisionalID()`,
 kept on this Mac with the walk it roots. The top SHALL be filed beneath the container of the
 library that carries the reference of the record above it, when there is one, or at the top of the
-library. The form SHALL show each episode's title from Wikidata beside its entry, and SHALL store
-none. The operator SHALL be able to shape the tree before it is created: re-type a
+library. The form SHALL show each episode by its container's title. The operator SHALL be able to shape the tree before it is created: re-type a
 container, rename its primary sequence with the alternatives and placed specials naming it, and, when the
 operator says, the primary sequence of each container beneath it, group entries into child containers, and drop what they will not hold. Each entry, and each
 group as one, SHALL be ticked to be made, all of them ticked to begin with; one unticked SHALL be left
@@ -1185,9 +1184,9 @@ children, drafted beneath the series once the series' stop is confirmed.
 - **WHEN** the operator chooses one of Wikidata's seasons of a series the library holds by its
   reference
 - **THEN** the series' walk opens with the season chosen among its missing children; once the series'
-  stop and the season's are confirmed and the walk is stored, the series' sidecar names the season,
-  and the library holds the season with an entry for each episode carrying its references and no
-  title, and no presentations
+  stop, the season's and its episodes' are confirmed and the walk is stored, the series' sidecar
+  names the season, and the library holds the season naming a container for each episode, carrying
+  its title and references, and no presentations
 
 #### Scenario: a season's serials suggested from Wikidata's titles
 - **WHEN** a drafted season's episodes are titled at Wikidata as three parts of one story, two of another,
@@ -1434,14 +1433,14 @@ breakout's are; its differences SHALL be about the entries it holds, and the rea
 was read through. A container none of which carries a Wikidata id SHALL be read through nothing, and
 say why. Picking from Wikidata an item whose reference a container of the library carries SHALL open
 that container's differences. An episode SHALL be matched to an entry carrying its Wikidata id or one
-of the other ids Wikidata holds for it, and SHALL count as covered when the container, a container
-beneath it, or an item the container refers to carries one of them, or when the container's sidecar
-declines one. The console SHALL list how the library's sidecar differs from the reading:
+of the other ids Wikidata holds for it, or naming an episode container that carries one, and SHALL
+count as covered when the container, a container beneath it, or an item the container refers to
+carries one of them, or when the container's sidecar declines one. The console SHALL list how the library's sidecar differs from the reading:
 
 - a title or year that differs from Wikidata's, and an outline that differs from TMDb's, the outline
   shown with its attribution;
 - each provider's id Wikidata holds that the sidecar lacks, for the container and for each entry it
-  holds;
+  holds, an episode container's at its own stop;
 - each of Wikidata's episodes, seasons or serials, other than a special, that is not covered, with
   where Wikidata puts it, and each of its seasons or serials the container holds beneath it, shown
   among its children and never chosen;
@@ -1460,17 +1459,17 @@ field, reference, entry and order differences as one pending edit of the contain
 sidecar its stop read, carrying the outline's attribution when the outline is chosen, and the declined
 refs when a special is declined or placed after all, and stored when the walk is stored. A special
 placed in a duplicate's home or a breakout SHALL be an edit of that container too, and the console
-SHALL list every edit before it stores any. A chosen child container SHALL join the walk as a new stop
-beneath the container. The episodes a held container lacks SHALL be groupable into new containers
+SHALL list every edit before it stores any. A chosen child container, or a chosen missing episode,
+SHALL join the walk as a new stop beneath the container. The episodes a held container lacks SHALL be groupable into new containers
 beneath it as a draft's entries are, a group of the kind, title and label the operator gives, made
 of the episodes selected, its primary sequence going by the id of the held container's as the walk
 leaves it, as a draft's entries are, ticked, or added to a group made there already; runs Wikidata titles as the parts of one
 story SHALL be suggested as a draft's are, but for a run of the story the held container is titled
 as, which is its own parts, and SHALL instead be offered to be titled by its part numbers, as a
-draft's own parts are, the entries the walk adds for them carrying those titles. A group SHALL be chosen whole, its episodes shown in it,
+draft's own parts are, the episode containers the walk drafts for them carrying those titles. A group SHALL be chosen whole, its episodes shown in it,
 each only to be taken out of it or the group ungrouped, each episode then chosen as the group was. A
 group chosen SHALL be made, when the walk is stored, as a container beneath the held one holding its
-episodes in Wikidata's order, named in the held container's edit where the first of them would have gone,
+episodes as episode containers in Wikidata's order, named in the held container's edit where the first of them would have gone,
 and none of its episodes SHALL be added to the held container itself. Confirming the held
 container's stop SHALL add each group it takes to the walk as a new stop beneath it, holding its
 episodes, where specials SHALL be placeable and its parts shaped as in a new stop drafted from Wikidata;
@@ -1535,15 +1534,17 @@ stop to be opened.
 #### Scenario: an episode Wikidata has gained
 - **WHEN** a season the library holds lacks an episode Wikidata's item of the season has, and the
   operator chooses that difference alone, confirms the season's stop and stores the walk
-- **THEN** the season's edit adds one entry carrying the episode's references at Wikidata's position,
-  and changes nothing else
+- **THEN** the episode is a new stop beneath the season; once that stop is confirmed too, storing the
+  walk names the episode's container in the season's edit at Wikidata's position, changing nothing
+  else, and makes it beneath the season
 
 #### Scenario: missing episodes grouped
 - **WHEN** a held season lacks four parts of one story and the first part of the next, the four are
   grouped as a serial, all five are chosen, the season's stop and then the serial's are confirmed, and
   the walk is stored
-- **THEN** the serial is created beneath the season holding the four, the season's edit names it where
-  the first part would have gone, and the next story's part follows it
+- **THEN** the serial is created beneath the season holding the four as episode containers, the
+  season's edit names it where the first part would have gone, and the next story's part, a container
+  of its own, follows it
 
 #### Scenario: a group of missing episodes as a new stop
 - **WHEN** a held season's missing parts of one story are grouped as a serial and chosen, the season's
@@ -1555,10 +1556,10 @@ stop to be opened.
 #### Scenario: missing parts added to a serial held beneath
 - **WHEN** a held season holds a serial beneath it holding the first story's parts, lacks two parts of
   the next story, which are added to that serial, chooses the third part, confirms the serial's
-  stop with both of the two chosen there, and the walk is stored
-- **THEN** the serial is shown among the season's children before the missing parts, the serial gains
-  the two parts after its own, and the season's edit adds the third part after the serial and neither
-  of the two
+  stop with both of the two chosen there, and every new stop, and the walk is stored
+- **THEN** the serial is shown among the season's children before the missing parts, the serial names
+  the two parts' containers after its own, and the season's edit names the third part's after the
+  serial and neither of the two
 
 #### Scenario: an extra Wikidata does not know
 - **WHEN** a container the library holds has an extra that Wikidata's item has nothing for
@@ -1924,3 +1925,73 @@ artwork with its attribution, the walk's plan saying which it removes. Left, not
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`contentKeptLongerThanTMDbsTermsAllowIsReadAgainOrRemoved`). The stop's rows for it are pinned by
 nothing yet, as the rest of the shell is.
+
+### Requirement: A walk drafts each episode as a container, a stop of its own
+Wikidata's reading of a season or a serial SHALL draft each episode it holds as a container of type
+`episode` beneath it, in Wikidata's order, holding one sequence `main` of one leaf `feature` of type
+`episode`. The episode's container SHALL carry its label as its title, its publication date as its
+`premiered`, its cast members as its cast, each with the character they play, its directors and then
+its screenwriters as its crew, with the roles `Director` and `Writer`, a `wikidata` reference and
+each provider's id Wikidata holds for it, and for each participant a `wikidata` reference and the
+other ids Wikidata holds for them. Its outline SHALL be TMDb's overview of the episode in the TMDb
+season it is read through, matched by the TMDb episode id Wikidata holds, and attributed to `tmdb`
+with that id and the day it was read; a reading SHALL go on without it when TMDb does not answer, the
+episode has no TMDb id, or TMDb gives it no overview. Each episode SHALL be a stop of the walk, queued
+when its parent is confirmed as every child is. A new episode's stop SHALL offer its outline, first
+date, cast, crew and references, each chosen to begin with, and the episode SHALL be made with its
+title whatever is left out. A missing episode chosen at a held stop SHALL be drafted so, its outline
+read with the stop, titled with the operator's own title for it when it has one, and SHALL join the
+walk as a new stop beneath the stop once the stop is confirmed; storing the walk SHALL name it in the
+held container's edit after the episode Wikidata puts it after, once its own stop is confirmed, and
+make it right after that edit. An episode container the library holds beneath a season or a serial
+SHALL be matched by the ids it carries: neither missing nor out of order there, and offered its
+references at its own stop. A held episode SHALL be read against Wikidata's item of its `wikidata`
+reference, or, carrying none, as the episode of what it is beneath that carries another id it carries,
+and then offered Wikidata's id. Its differences SHALL list each of its title, outline, first date, cast,
+and directors and writers that its provider has a value for and its container lacks or holds
+differently; crew of another job SHALL NOT be offered for removal. Storing the walk SHALL edit a held
+episode with each field chosen replaced by its provider's, its directors and writers replaced and the
+rest of its crew kept after them, and the rest as the library held them; an outline chosen SHALL be
+attributed to the episode's TMDb id with the day it was read. With no TMDb token, every fact SHALL
+still be offered. Renaming the primary sequences beneath a stop SHALL leave an episode's own sequence
+as it is.
+
+#### Scenario: a season's episodes drafted as containers
+- **WHEN** a season Wikidata holds with three episodes is drafted, TMDb's season giving an overview of
+  the first alone
+- **THEN** the draft holds the season with three episode containers beneath it in Wikidata's order,
+  each holding its feature and carrying its title, first date and references, and only the first an
+  outline, TMDb's, attributed to the episode's TMDb id
+
+#### Scenario: an episode's crew
+- **WHEN** an episode Wikidata lists one director and one screenwriter for is drafted
+- **THEN** its crew holds the director and then the screenwriter, with the roles `Director` and
+  `Writer`, each carrying their Wikidata id
+
+#### Scenario: a new episode with its fields left out
+- **WHEN** a new episode's stop is confirmed with its outline, first date and cast unticked, and the
+  walk is stored
+- **THEN** the episode is made with its title and crew, and no outline, first date or cast
+
+#### Scenario: a held episode's fields
+- **WHEN** a held episode titled otherwise, with no first date and a producer in its crew, is walked,
+  and every difference but its cast is taken
+- **THEN** storing the walk gives it Wikidata's title and first date, Wikidata's directors and writers
+  with the producer after them, and TMDb's outline attributed to the episode's TMDb id, and no cast
+
+#### Scenario: a held episode carrying no Wikidata id
+- **WHEN** a held episode carries only the TMDb id Wikidata holds for one of its season's episodes
+- **THEN** it is read as that episode, and offered its Wikidata id
+
+#### Scenario: a held season's episodes as stops
+- **WHEN** a held season names episode containers for the first and third of Wikidata's episodes,
+  lacks the second, which is chosen, and the season's stop and the second's are confirmed and the walk
+  stored
+- **THEN** nothing of the two is listed at the season, both are stops beneath it with the new one
+  between them, and the season names the second's container between them, made with TMDb's outline
+  of it
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aSeasonsEpisodesAreDraftedAsContainers`,
+`aHeldEpisodeIsOfferedEachFieldItsProviderHas`, `aHeldSeasonsEpisodesAreStopsBeneathIt`,
+`aStopsPrimarySequenceIsRenamedBeneathItAndGivenToItsGroups`);
+`Tests/SiloAdminKitTests/WikidataClientTests.swift` (`aSeasonIsReadAsItsEpisodesInOrder`).

@@ -100,7 +100,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
     public var identified: [String: String] { identifiedSeasons ?? [:] }
 
     /// The operator's own titles for missing episodes of held stops, by Wikidata id, as `Part 3`: what the
-    /// entries the walk adds for them are titled, in place of Wikidata's.
+    /// containers the walk drafts for them are titled, in place of Wikidata's.
     private var episodeTitles: [String: String]?
 
     public var titles: [String: String] {
@@ -355,13 +355,18 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         // Confirmed again after a store made its edit, its edit is to be made again.
         stored.remove("edit:\(id)")
         for top in leaving(confirming: id) { remove(top) }
-        // A season drafted already, by a confirm made twice at once, is not drafted again.
+        // A season drafted already, by a confirm made twice at once, is not drafted again; a group whose
+        // episodes have changed since it was drafted is drafted again in its place.
         let drafted = Set(drafts.values.map(Self.missing))
-        for tree in new where !drafted.contains(Self.missing(tree)) {
+        for tree in new {
+            if drafts[tree.top] != nil {
+                remove(tree.top)
+            } else if drafted.contains(Self.missing(tree)) {
+                continue
+            }
             drafts[tree.top] = tree
             stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
         }
-        draftGroups(of: stop)
         for var child in beneath where stops[child.id] == nil {
             // Found once missing episodes were handed to it, they are ticked to begin with.
             child.chosen.formUnion((stop.intoHeld[child.id] ?? []).map { "episode:\($0)" })
@@ -384,13 +389,15 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         .map(\.top).sorted()
     }
 
-    /// What chosen at its parent keeps a draft in the walk: the missing child it is, by its Wikidata id,
-    /// or, carrying none, the group of a held stop's missing episodes it was drafted from.
+    /// What chosen at its parent keeps a draft in the walk: the missing child or episode it is, by its
+    /// Wikidata id, or, carrying none, the group of a held stop's missing episodes it was drafted from.
     static func missing(_ tree: DraftTree) -> String {
-        guard let ref = tree.container(tree.top)?.externalRefs.first(where: { $0.provider == .wikidata }) else {
+        guard let top = tree.container(tree.top),
+            let ref = top.externalRefs.first(where: { $0.provider == .wikidata })
+        else {
             return "group:\(tree.top)"
         }
-        return "child:\(ref.value)"
+        return top.type == .episode ? "episode:\(ref.value)" : "child:\(ref.value)"
     }
 
     /// A new stop and every container beneath it out of the walk, the specials placed in them unassigned
@@ -420,13 +427,17 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
     }
 
     /// What a new stop is created with that the operator may leave out: its year, its outline, attributed
-    /// to TMDb, its references, and each artwork kind TMDb has an image for.
+    /// to TMDb, an episode's first date, cast and crew, its references, and each artwork kind TMDb has an
+    /// image for. Its title is made whatever is left out.
     public func offered(_ id: String, in tree: DraftTree? = nil) -> [Difference] {
         guard let tree = tree ?? draft(holding: id), let container = tree.container(id) else { return [] }
         var offered: [Difference] = []
         if let year = container.year { offered.append(.year(year)) }
         let record = tree.attributions[id]?.first { $0.subject == .outline }?.value ?? ""
         if let outline = container.outline, !outline.isEmpty { offered.append(.outline(outline, record: record)) }
+        if let premiered = container.premiered { offered.append(.premiered(premiered)) }
+        if !container.cast.isEmpty { offered.append(.cast(container.cast.map(Person.init))) }
+        if !container.crew.isEmpty { offered.append(.crew(container.crew.map(Person.init))) }
         offered += container.externalRefs.map { .reference(item: nil, $0) }
         if let held = tree.images?[id] {
             offered += AdminConsole.artwork(of: held.record, held: [], images: held.images)

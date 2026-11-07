@@ -95,16 +95,19 @@ extension ReviewWalk {
     }
 
     /// The containers beneath a stop the walk knows, at any depth, nearest first: those its container
-    /// lists, and the stops beneath it.
+    /// lists, and the stops beneath it. An episode is none of them: its sequence holds its own feature.
     public func containers(beneath stop: String) -> [String] {
         func children(_ id: String) -> [String] {
             (container(id)?.childContainerIDs.map(\.value) ?? []) + (stops[id]?.children ?? [])
+        }
+        func isEpisode(_ id: String) -> Bool {
+            (container(id)?.type.rawValue ?? stops[id]?.type) == ContainerType.episode.rawValue
         }
         var found: [String] = []
         var queue = children(stop)
         while !queue.isEmpty {
             let child = queue.removeFirst()
-            guard child != stop, !found.contains(child) else { continue }
+            guard child != stop, !found.contains(child), !isEpisode(child) else { continue }
             found.append(child)
             queue += children(child)
         }
