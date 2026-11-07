@@ -53,10 +53,10 @@ extension AdminConsole {
 
     /// What picking a TMDb record to walk comes to: smddb's container to import instead, the library's
     /// container that carries the record's reference already, or a walk rooted at a draft of it.
-    public enum WalkStart: Hashable, Sendable {
+    public enum ReviewWalkStart: Hashable, Sendable {
         case importFromSmddb(Container)
         case held(SiloClient.ContainerSummary)
-        case walk(Walk)
+        case walk(ReviewWalk)
     }
 
     /// Starts a walk of a TMDb record the library does not hold, rooted at a draft of it: smddb's
@@ -70,7 +70,7 @@ extension AdminConsole {
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
-    ) async throws -> WalkStart {
+    ) async throws -> ReviewWalkStart {
         if let known = try await database.containers().first(where: {
             $0.type == record.containerType && $0.externalRefs.contains(record.ref)
         }) {
@@ -97,7 +97,7 @@ extension AdminConsole {
         {
             creating = ContainerDraft.Creating(parent: holder.id)
         }
-        return .walk(Walk(drafting: reader.tree(top: top, record: record, library: library, creating: creating)))
+        return .walk(ReviewWalk(drafting: reader.tree(top: top, record: record, library: library, creating: creating)))
     }
 
     /// A draft of one of a series' seasons, filed where it is said to be, kept nowhere: what a walk makes
@@ -366,12 +366,12 @@ extension AdminConsole {
     /// gains them, and its specials the other ids TMDb holds for them. A walk rooted at no drafted
     /// series is as it was.
     public func suggest(
-        in walk: Walk,
+        in walk: ReviewWalk,
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource,
         progress: @Sendable (StepProgress) async -> Void = { _ in }
-    ) async throws -> Walk {
+    ) async throws -> ReviewWalk {
         guard walk.drafting, walk.series == walk.root, var tree = walk.drafts[walk.root] else { return walk }
         tree.specials = walk.specials
         tree.placements = walk.placements

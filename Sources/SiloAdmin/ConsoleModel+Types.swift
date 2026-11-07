@@ -80,7 +80,7 @@ extension ConsoleModel {
 
         let id = UUID()
         var silo: AdminConsole.Silo
-        var walk: Walk
+        var walk: ReviewWalk
         var open: String
         /// A walk this Mac kept, offered to be resumed or started again before anything is read.
         var resuming = false
@@ -102,13 +102,13 @@ extension ConsoleModel {
         /// containers confirming takes out of the walk are said.
         var nextOnceConfirmed = false
         /// Everything storing the walk will do, listed before any of it is done.
-        var plan: Walk.Plan?
+        var plan: ReviewWalk.Plan?
         /// The step a store under way is on, and how many of the plan's steps it has made.
         var storing: AdminConsole.StepProgress?
-        var stored: AdminConsole.WalkStored?
+        var stored: AdminConsole.ReviewWalkStored?
         var failure: String?
 
-        var stop: Walk.Stop? { walk.stops[open] }
+        var stop: ReviewWalk.Stop? { walk.stops[open] }
     }
 
     /// A record being found at TMDb: for a library, to draft from; or, for a series the library holds by

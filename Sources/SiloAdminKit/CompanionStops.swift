@@ -3,7 +3,7 @@
 
 import SmdKit
 
-extension Walk {
+extension ReviewWalk {
     /// The companion series the walk makes, in the order they were added.
     public var companionStops: [String] { companionOrder ?? [] }
 

@@ -28,7 +28,7 @@ extension ConsoleModel {
     /// the root given is ticked once the root is read.
     func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
         // A walk this Mac keeps for the container is offered to be resumed, or started again.
-        if let kept = console.walks.walk(rootedAt: key.container, in: key.library, of: silo.id) {
+        if let kept = console.reviewWalks.walk(rootedAt: key.container, in: key.library, of: silo.id) {
             walking = Walking(
                 silo: silo,
                 walk: kept,
@@ -43,7 +43,7 @@ extension ConsoleModel {
 
     /// Opens a walk rooted at a draft from TMDb, kept on this Mac from the start: its root opened, and, for
     /// a series, where its specials go suggested beside it.
-    func openDraftWalk(_ walk: Walk, on silo: AdminConsole.Silo, redraft: Walking.Redraft) async {
+    func openDraftWalk(_ walk: ReviewWalk, on silo: AdminConsole.Silo, redraft: Walking.Redraft) async {
         let opening = Walking(silo: silo, walk: walk, open: walk.root, redraft: redraft)
         walking = opening
         keepWalk()
@@ -110,7 +110,7 @@ extension ConsoleModel {
     /// one.
     func startWalkAgain() async {
         guard let current = walking else { return }
-        try? console.walks.remove(current.walk.id, of: current.silo.id)
+        try? console.reviewWalks.remove(current.walk.id, of: current.silo.id)
         if let redraft = current.redraft {
             do {
                 if let said = try await startTMDbDraft(
@@ -136,7 +136,7 @@ extension ConsoleModel {
     /// Discards the walk: off this Mac, and the sheet closed. Nothing it held was stored.
     func discardWalk() {
         guard let current = walking else { return }
-        try? console.walks.remove(current.walk.id, of: current.silo.id)
+        try? console.reviewWalks.remove(current.walk.id, of: current.silo.id)
         walking = nil
     }
 
@@ -153,7 +153,7 @@ extension ConsoleModel {
         guard var walk = walking?.walk, let silo = walking?.silo, walking?.resuming == false else { return }
         walk.edited = .now
         walking?.walk.edited = walk.edited
-        try? console.walks.save(walk, for: silo.id)
+        try? console.reviewWalks.save(walk, for: silo.id)
     }
 
     private func readCompanions(for id: UUID) async {
@@ -167,10 +167,10 @@ extension ConsoleModel {
     }
 
     private func startWalk(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
-        let root = Walk.Stop(id: key.container, title: key.container, type: "")
+        let root = ReviewWalk.Stop(id: key.container, title: key.container, type: "")
         let starting = Walking(
             silo: silo,
-            walk: Walk(library: key.library, root: root),
+            walk: ReviewWalk(library: key.library, root: root),
             open: key.container,
             choosing: choosing
         )
@@ -438,7 +438,7 @@ extension ConsoleModel {
     }
 
     /// Groups the open held stop's missing episodes, or changes the groups made of them.
-    func groupEpisodes(_ change: (inout Walk, String) -> Void) {
+    func groupEpisodes(_ change: (inout ReviewWalk, String) -> Void) {
         guard let open = walking?.open, var walk = walking?.walk else { return }
         change(&walk, open)
         walking?.walk = walk
@@ -447,7 +447,7 @@ extension ConsoleModel {
     }
 
     /// Drafts the walk's alternatives, or edits those drafted.
-    func draftAlternatives(_ change: (inout Walk) -> Void) {
+    func draftAlternatives(_ change: (inout ReviewWalk) -> Void) {
         guard var walk = walking?.walk else { return }
         change(&walk)
         walking?.walk = walk
@@ -480,7 +480,7 @@ extension ConsoleModel {
             walking?.plan = try? stored.walk.plan()
             if stored.refusal == nil {
                 // Stored whole, the walk ends, and this Mac keeps it no longer.
-                try? console.walks.remove(stored.walk.id, of: current.silo.id)
+                try? console.reviewWalks.remove(stored.walk.id, of: current.silo.id)
             } else {
                 keepWalk()
             }

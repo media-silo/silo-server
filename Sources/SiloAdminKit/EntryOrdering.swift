@@ -55,7 +55,7 @@ extension DraftTree {
     }
 }
 
-extension Walk {
+extension ReviewWalk {
     /// One of a new stop's entries moved before another of the same sequence, or, with none, last in it,
     /// as a draft's are; the specials the walk places in the sequence keep after the entries they
     /// followed.

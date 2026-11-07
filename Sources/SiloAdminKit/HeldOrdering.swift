@@ -15,7 +15,7 @@ public struct StopEntry: Hashable, Sendable, Identifiable {
     public let isAdded: Bool
 }
 
-extension Walk {
+extension ReviewWalk {
     /// A held stop's primary sequence as storing would leave it, were the stop confirmed with every child
     /// its children list ticked and what is placed there now, in the order the operator gave it: so an
     /// unticked child keeps its place, to be ticked there.

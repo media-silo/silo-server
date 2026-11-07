@@ -17,7 +17,7 @@ struct WalkChildren: View {
     let comparison: AdminConsole.Comparison
     let tick: (String) -> Binding<Bool>
 
-    private var walk: Walk { current.walk }
+    private var walk: ReviewWalk { current.walk }
     private var stop: String { comparison.container }
     private var groups: [EpisodeGroup] { walk.stops[stop]?.groups ?? [] }
     private var held: [AdminConsole.HeldChild] { walk.heldChildren(at: stop) }

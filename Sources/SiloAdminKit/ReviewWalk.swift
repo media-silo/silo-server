@@ -10,7 +10,7 @@ import Synchronization
 /// each with its reading and what the operator chose, the series' specials beside every stop, and
 /// where each was placed. Nothing of it reaches the silo until the walk is stored, and then only what a
 /// confirmed stop took. `TmdbWalk.md`.
-public struct Walk: Hashable, Sendable, Identifiable, Codable, AlternativeDrafting {
+public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDrafting {
     /// Where a stop stands, as storing the walk would find it: not yet confirmed, or confirmed, said by
     /// the operator to be as it should be, and then what storing does with its container.
     public enum StopState: Hashable, Sendable {
@@ -493,9 +493,9 @@ public struct Walk: Hashable, Sendable, Identifiable, Codable, AlternativeDrafti
 /// The walks this Mac keeps, by the `ServerID` of the silo each is for, until each is stored or
 /// discarded: one JSON object rewritten atomically whole on every change, as the drafts are. The silo
 /// holds nothing of a walk.
-public final class WalkStore: Sendable {
+public final class ReviewWalkStore: Sendable {
     public let file: URL
-    private let entries: Mutex<[String: [Walk]]>
+    private let entries: Mutex<[String: [ReviewWalk]]>
 
     public init(file: URL) {
         self.file = file
@@ -509,22 +509,22 @@ public final class WalkStore: Sendable {
     }
 
     /// A silo's walks, most recently kept first.
-    public func walks(of silo: String) -> [Walk] {
+    public func walks(of silo: String) -> [ReviewWalk] {
         entries.withLock { $0[silo] ?? [] }.sorted { $0.edited > $1.edited }
     }
 
     /// The walk kept for a container's tree, rooted at it.
-    public func walk(rootedAt container: String, in library: String, of silo: String) -> Walk? {
+    public func walk(rootedAt container: String, in library: String, of silo: String) -> ReviewWalk? {
         walks(of: silo).first { $0.root == container && $0.library == library }
     }
 
     /// The walk kept for a record the library does not hold, rooted at a draft of it.
-    public func walk(drafting record: TMDb.Record, in library: String, of silo: String) -> Walk? {
+    public func walk(drafting record: TMDb.Record, in library: String, of silo: String) -> ReviewWalk? {
         walks(of: silo).first { $0.drafting && $0.library == library && $0.drafts[$0.root]?.record == record }
     }
 
     /// Keeps a walk, in place of the one it was and of any other rooted at the same container.
-    public func save(_ walk: Walk, for silo: String) throws {
+    public func save(_ walk: ReviewWalk, for silo: String) throws {
         try entries.withLock { entries in
             var walks = entries[silo] ?? []
             walks.removeAll { $0.id == walk.id || ($0.root == walk.root && $0.library == walk.library) }
@@ -534,7 +534,7 @@ public final class WalkStore: Sendable {
         }
     }
 
-    public func remove(_ id: Walk.ID, of silo: String) throws {
+    public func remove(_ id: ReviewWalk.ID, of silo: String) throws {
         try entries.withLock { entries in
             guard let index = entries[silo]?.firstIndex(where: { $0.id == id }) else { return }
             entries[silo]?.remove(at: index)
@@ -551,7 +551,7 @@ public final class WalkStore: Sendable {
         }
     }
 
-    private static func persist(_ entries: [String: [Walk]], to file: URL) throws {
+    private static func persist(_ entries: [String: [ReviewWalk]], to file: URL) throws {
         guard file.path != "/dev/null" else { return }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
@@ -559,8 +559,8 @@ public final class WalkStore: Sendable {
         try encoder.encode(entries).write(to: file, options: .atomic)
     }
 
-    private static func read(_ file: URL) -> [String: [Walk]] {
-        let read = (try? JSONDecoder().decode([String: [Walk]].self, from: Data(contentsOf: file))) ?? [:]
+    private static func read(_ file: URL) -> [String: [ReviewWalk]] {
+        let read = (try? JSONDecoder().decode([String: [ReviewWalk]].self, from: Data(contentsOf: file))) ?? [:]
         return read.mapValues { walks in
             walks.map { walk in
                 var settled = walk
@@ -572,7 +572,7 @@ public final class WalkStore: Sendable {
     }
 }
 
-extension Walk {
+extension ReviewWalk {
     public var placeable: [Special] { specials + declined }
 
     public mutating func alternativesChanged(at container: String) { unconfirm(container) }

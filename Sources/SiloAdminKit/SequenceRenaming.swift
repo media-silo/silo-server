@@ -64,7 +64,7 @@ extension DraftTree {
     }
 }
 
-extension Walk {
+extension ReviewWalk {
     /// The id a stop's sequence goes by: as the operator renamed it, or as the container has it.
     public func sequenceName(_ index: Int, at stop: String) -> String? {
         if let renamed = renamedSequences[stop]?[index] { return renamed }

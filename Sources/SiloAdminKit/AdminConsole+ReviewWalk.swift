@@ -15,12 +15,12 @@ import SmdSidecar
 extension AdminConsole {
     /// Starts a walk rooted at a held container, its first stop, read when it is opened. The series
     /// whose specials sit beside every stop is the root, or the nearest series above it.
-    public func startWalk(at id: String, in library: String, of silo: Silo) async throws -> Walk {
+    public func startWalk(at id: String, in library: String, of silo: Silo) async throws -> ReviewWalk {
         let opened = try await open(container: id, in: library, of: silo)
         let held = opened.container.container
-        var walk = Walk(
+        var walk = ReviewWalk(
             library: library,
-            root: Walk.Stop(id: id, title: held.displayTitle, type: held.type, parent: held.parent)
+            root: ReviewWalk.Stop(id: id, title: held.displayTitle, type: held.type, parent: held.parent)
         )
         walk.series =
             held.type == ContainerType.series.rawValue ? id : try await seriesContainerAbove(opened, of: silo)?.id
@@ -30,14 +30,14 @@ extension AdminConsole {
     /// The containers the library holds beneath a stop, as the stops confirming it adds, in the order
     /// its sequences hold them; a stop the walk has already is as the walk has it. A stop TMDb could not
     /// read is opened for them, so the walk goes on beneath it.
-    public func stops(beneath id: String, in walk: Walk, of silo: Silo) async throws -> [Walk.Stop] {
+    public func stops(beneath id: String, in walk: ReviewWalk, of silo: Silo) async throws -> [ReviewWalk.Stop] {
         guard walk.stops[id] != nil else { return [] }
         if let tree = walk.draft(holding: id) {
             let beneath = (tree.container(id)?.childContainerIDs ?? []) + tree.alternativeChildren(of: id)
             return beneath.filter { tree.isMade($0.value) }.compactMap { child in
                 walk.stops[child.value]
                     ?? tree.container(child.value).map { _ in
-                        Walk.Stop(
+                        ReviewWalk.Stop(
                             newIn: tree,
                             child.value,
                             parent: id,
@@ -54,12 +54,12 @@ extension AdminConsole {
         }
         let held = try SidecarFile.sidecar(from: sidecar).container
         let (library, known) = (walk.library, walk.stops)
-        let beneath: [Walk.Stop?] = try await Self.concurrently(held.childContainerIDs.map(\.value)) { child in
+        let beneath: [ReviewWalk.Stop?] = try await Self.concurrently(held.childContainerIDs.map(\.value)) { child in
             if let stop = known[child] { return stop }
             // A child the sidecar names and the library does not hold is no stop.
             guard let opened = try? await self.open(container: child, in: library, of: silo) else { return nil }
             let container = opened.container.container
-            return Walk.Stop(id: child, title: container.displayTitle, type: container.type, parent: id)
+            return ReviewWalk.Stop(id: child, title: container.displayTitle, type: container.type, parent: id)
         }
         return beneath.compactMap { $0 }
     }
@@ -69,14 +69,14 @@ extension AdminConsole {
     /// stops.
     public func drafts(
         confirming id: String,
-        in walk: Walk,
+        in walk: ReviewWalk,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
     ) async throws -> [DraftTree] {
         guard let stop = walk.stops[id], let series = stop.comparison?.series else {
             return []
         }
-        let drafted = Set(walk.drafts.values.map(Walk.missing))
+        let drafted = Set(walk.drafts.values.map(ReviewWalk.missing))
         let sequence = walk.container(id)?.sequences.first { $0.items.contains { $0.childContainer != nil } }?.id
         var trees: [DraftTree] = []
         for case .season(let season) in walk.differences(of: id)
@@ -109,11 +109,11 @@ extension AdminConsole {
 
     /// How a store of a walk ended: what it made, and, when the silo refused a step, why, and the steps
     /// it did not make, which the walk keeps.
-    public struct WalkStored: Hashable, Sendable {
-        public var walk: Walk
-        public var stored: [Walk.Step]
+    public struct ReviewWalkStored: Hashable, Sendable {
+        public var walk: ReviewWalk
+        public var stored: [ReviewWalk.Step]
         public var refusal: String?
-        public var rest: [Walk.Step]
+        public var rest: [ReviewWalk.Step]
         /// The stop whose sidecar changed since it was read, which is to be read again and confirmed again.
         public var stale: String?
     }
@@ -121,14 +121,14 @@ extension AdminConsole {
     /// Stores the walk as its plan lists it, step by step, stopping at the first the silo refuses.
     /// `progress` is told each step as it is begun, with how many of the plan's steps are made before it.
     public func store(
-        _ walk: Walk,
+        _ walk: ReviewWalk,
         of silo: Silo,
         tmdb: any TMDbSource,
         progress: @Sendable (StepProgress) async -> Void = { _ in }
-    ) async throws -> WalkStored {
+    ) async throws -> ReviewWalkStored {
         var walk = walk
         let steps = try walk.plan().steps
-        var stored: [Walk.Step] = []
+        var stored: [ReviewWalk.Step] = []
         for (index, step) in steps.enumerated() {
             await progress(StepProgress(step.described, done: index, of: steps.count))
             if let refusal = try await make(step, in: walk.library, of: silo, tmdb: tmdb) {
@@ -140,7 +140,7 @@ extension AdminConsole {
                     walk.stops[draft.container]?.comparison = nil
                     walk.stops[draft.container]?.taken = nil
                 }
-                return WalkStored(
+                return ReviewWalkStored(
                     walk: walk,
                     stored: stored,
                     refusal: refusal,
@@ -151,12 +151,12 @@ extension AdminConsole {
             walk.stored.insert(step.id)
             stored.append(step)
         }
-        return WalkStored(walk: walk, stored: stored, refusal: nil, rest: [])
+        return ReviewWalkStored(walk: walk, stored: stored, refusal: nil, rest: [])
     }
 
     /// Makes one step of a walk's store; the silo's refusal, in its words, or nil when it was made.
     private func make(
-        _ step: Walk.Step,
+        _ step: ReviewWalk.Step,
         in library: String,
         of silo: Silo,
         tmdb: any TMDbSource
@@ -290,7 +290,7 @@ extension AdminConsole {
 
 // MARK: - The store's plan
 
-extension Walk {
+extension ReviewWalk {
     /// Everything storing the walk makes, in the order it makes it, each step said in words before any
     /// is made: the containers the walk makes at the top of the library; the edits of containers outside
     /// the walk that specials placed make, so what the walk refers to is there; each confirmed stop's
@@ -834,7 +834,7 @@ extension DraftTree.Making.HeldEdit {
 
 // MARK: - What a stop is stored as
 
-extension Walk {
+extension ReviewWalk {
     /// One way a stop's container is played, as storing the walk would leave it.
     public struct StopAlternative: Hashable, Sendable, Identifiable {
         public let id: String

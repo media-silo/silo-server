@@ -92,7 +92,7 @@ extension DraftTree {
     }
 }
 
-extension Walk {
+extension ReviewWalk {
     /// A special dropped among a stop's children, before the child whose key is given or last with none:
     /// in a new stop placed in its draft's primary sequence there, and in a held stop placed in its
     /// primary sequence and moved before the child, as the operator would move it after placing it.

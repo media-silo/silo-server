@@ -20,7 +20,7 @@ struct WalkSheet: View {
     @State private var editing = false
 
     private var current: ConsoleModel.Walking { model.walking ?? walking }
-    private var walk: Walk { current.walk }
+    private var walk: ReviewWalk { current.walk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -119,7 +119,7 @@ struct WalkSheet: View {
             .help("Nothing of the walk has been stored unless the store said so; discarded, this Mac keeps none of it.")
             Spacer()
             if current.plan == nil {
-                Button("Store the Walk…") { model.listStore() }
+                Button("Store the ReviewWalk…") { model.listStore() }
                     .disabled(walk.order.allSatisfy { walk.stops[$0]?.taken == nil })
             }
             // On the first stop not yet confirmed, Next confirms it first, in the one click. Either is the
@@ -240,7 +240,7 @@ struct WalkSheet: View {
     // MARK: The store
 
     @ViewBuilder
-    private func storeList(_ plan: Walk.Plan) -> some View {
+    private func storeList(_ plan: ReviewWalk.Plan) -> some View {
         GroupBox("Storing the walk will") {
             VStack(alignment: .leading, spacing: 4) {
                 if let stored = current.stored {
@@ -295,7 +295,7 @@ extension WalkSheet {
 
 /// The artwork a stop offers, each kind with the images TMDb offers for it to choose from.
 private struct StopArtwork: View {
-    let walk: Walk
+    let walk: ReviewWalk
     let model: ConsoleModel
     let stop: String
     let differences: [AdminConsole.Difference]
@@ -316,7 +316,7 @@ private struct StopArtwork: View {
 /// companion series the walk makes follow the root's tree, each a tree of its own, and one is added
 /// beneath the list.
 private struct WalkTree: View {
-    let walk: Walk
+    let walk: ReviewWalk
     let open: String
     let model: ConsoleModel
     @State private var adding = false
@@ -369,7 +369,7 @@ private struct WalkTree: View {
         }
     }
 
-    private func caption(_ id: String, _ stop: Walk.Stop) -> String {
+    private func caption(_ id: String, _ stop: ReviewWalk.Stop) -> String {
         if walk.companionStops.contains(id) { return "companion series, new" }
         return walk.isNew(id) ? "\(stop.type), new" : stop.type
     }
@@ -393,7 +393,7 @@ private struct NewStop: View {
     let stop: String
     let tick: (String) -> Binding<Bool>
 
-    private var walk: Walk { current.walk }
+    private var walk: ReviewWalk { current.walk }
 
     var body: some View {
         // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
@@ -448,14 +448,14 @@ private struct NewStop: View {
 private struct DifferenceGroup: View {
     let title: String
     let differences: [AdminConsole.Difference]
-    let walk: Walk
+    let walk: ReviewWalk
     let tick: (String) -> Binding<Bool>
     let images: ImageChoice?
 
     init(
         _ title: String,
         _ differences: [AdminConsole.Difference],
-        walk: Walk,
+        walk: ReviewWalk,
         tick: @escaping (String) -> Binding<Bool>,
         images: ImageChoice? = nil
     ) {
@@ -499,7 +499,7 @@ private struct DifferenceGroup: View {
 
 /// A stop's alternatives, edited by dragging specials onto them, and its extras, dropped onto by kind.
 private struct StopAlternatives: View {
-    let walk: Walk
+    let walk: ReviewWalk
     let model: ConsoleModel
     let stop: String
 
@@ -524,7 +524,7 @@ private struct StopAlternatives: View {
 /// The specials placed as part of a stop's pending change, held or new, each with where it went and a way
 /// back among the unassigned.
 private struct PlacedSpecials: View {
-    let walk: Walk
+    let walk: ReviewWalk
     let model: ConsoleModel
     let stop: String
 
@@ -552,7 +552,7 @@ private struct PlacedSpecials: View {
 /// is taken into with its attribution marked.
 struct DifferenceLabel: View {
     let difference: AdminConsole.Difference
-    let walk: Walk
+    let walk: ReviewWalk
     var images: ImageChoice?
 
     var body: some View {
@@ -596,8 +596,8 @@ struct DifferenceLabel: View {
 
 /// A stop's state in the walk: pending, or confirmed and what storing does with its container.
 private struct StopState: View {
-    let state: Walk.StopState
-    let walk: Walk
+    let state: ReviewWalk.StopState
+    let walk: ReviewWalk
     var compact = false
 
     var body: some View {
@@ -646,7 +646,7 @@ private struct WalkSpecials: View {
     /// What is being made for a special, asked as it is placed.
     @State private var naming: SpecialNaming?
 
-    private var walk: Walk { current.walk }
+    private var walk: ReviewWalk { current.walk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -843,7 +843,7 @@ private struct WalkSpecials: View {
         return entry.id?.value ?? entry.reference.map { "\($0.container?.value ?? "")#\($0.item)" } ?? "an item"
     }
 
-    static func describe(_ placement: SpecialPlacement, in walk: Walk) -> String {
+    static func describe(_ placement: SpecialPlacement, in walk: ReviewWalk) -> String {
         func title(_ id: String) -> String { walk.stops[id]?.title ?? walk.companion(id)?.displayTitle ?? id }
         switch placement {
         case .entry(let id, let sequence, let position):

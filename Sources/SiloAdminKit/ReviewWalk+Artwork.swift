@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
-extension Walk {
+extension ReviewWalk {
     /// The image a stop puts for an artwork kind when its artwork is ticked: the one the operator chose,
     /// or the one TMDb offers first.
     public func image(for kind: String, at stop: String) -> String? {

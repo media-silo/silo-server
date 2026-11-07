@@ -28,7 +28,7 @@ extension DraftTree {
     }
 }
 
-extension Walk {
+extension ReviewWalk {
     /// A new container beneath a stop, holding nothing yet. Beneath a new stop it is a container of the
     /// stop's draft, as one added to a draft is. Beneath a held stop it is a new stop of the walk, its
     /// primary sequence going by the id of the held one's, ticked there as a missing child is: specials
@@ -123,7 +123,7 @@ extension DraftTree {
     }
 }
 
-extension Walk {
+extension ReviewWalk {
     public mutating func declareContainer(
         _ id: ContainerID,
         type: ContainerType,

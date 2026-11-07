@@ -62,7 +62,7 @@ public enum HeldStopChild: Hashable, Sendable {
 
 /// The missing episodes of a held stop grouped into new containers beneath it, and the groups TMDb's
 /// titles suggest. `TmdbWalk.md`, *A new stop*.
-extension Walk.Stop {
+extension ReviewWalk.Stop {
     /// Absent from a walk kept before groups were asked.
     public var groups: [EpisodeGroup] {
         get { episodeGroups ?? [] }
@@ -76,7 +76,7 @@ extension Walk.Stop {
     }
 }
 
-extension Walk {
+extension ReviewWalk {
     /// The episodes a held stop's reading offers, in TMDb's order, and those its parent handed to it.
     public func missingEpisodes(at stop: String) -> [TMDb.Episode] {
         episodeDifferences(at: stop).compactMap { difference in
