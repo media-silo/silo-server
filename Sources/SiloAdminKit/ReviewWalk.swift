@@ -36,7 +36,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         /// its reading lists them, a new stop's as its draft holds them, and one never read as its
         /// sequences hold them.
         public var children: [String] = []
-        public var comparison: AdminConsole.Comparison?
+        public var comparison: Comparison?
         public var chosen: Set<String> = []
         /// What confirming it last kept; nil until it is confirmed.
         public var taken: Set<String>?
@@ -58,7 +58,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         }
 
         /// A new stop for a container of a draft, everything it is offered with chosen to begin with.
-        init(newIn tree: DraftTree, _ id: String, parent: String?, offering: [AdminConsole.Difference]) {
+        init(newIn tree: DraftTree, _ id: String, parent: String?, offering: [Difference]) {
             let container = tree.container(id)
             self.init(
                 id: id,
@@ -281,7 +281,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
 
     /// A stop's differences as the walk reads them now: a season a held child beneath it was said to be
     /// is held by that child, and one it was only suggested to be, said to be another, is missing again.
-    public func differences(of stop: String) -> [AdminConsole.Difference] {
+    public func differences(of stop: String) -> [Difference] {
         let differences = (stops[stop]?.comparison?.differences ?? []) + handed(to: stop)
         let said = identified.filter { stops[$0.key]?.parent == stop }
         guard !said.isEmpty else { return differences }
@@ -306,7 +306,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
 
     /// A stop's reading, as far as it has got. The series' specials are taken from it to sit beside
     /// every stop, rather than as its own differences.
-    public mutating func read(_ comparison: AdminConsole.Comparison) {
+    public mutating func read(_ comparison: Comparison) {
         stops[comparison.container]?.comparison = comparison
         stops[comparison.container]?.title = comparison.title
         if comparison.container == series {
@@ -318,7 +318,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
 
     /// The series' specials, from its reading, each suggested as an alternative of a stop read already
     /// where that is stronger than the series' reading suggests.
-    public mutating func pool(_ comparison: AdminConsole.Comparison) {
+    public mutating func pool(_ comparison: Comparison) {
         specials = comparison.differences.compactMap { if case .special(let special) = $0 { special } else { nil } }
         declined = comparison.declined
         suggestions = comparison.suggestions
@@ -327,7 +327,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
 
     /// Each unassigned special suggested as another way to play a container a stop read, unless what it
     /// is suggested for already rests on something stronger.
-    private mutating func suggestAlternatives(of readings: [AdminConsole.Comparison]) {
+    private mutating func suggestAlternatives(of readings: [Comparison]) {
         let held = readings.compactMap { reading in
             (try? SidecarFile.sidecar(from: reading.opened.sidecar)).map { (reading, $0.container) }
         }
@@ -423,9 +423,9 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
 
     /// What a new stop is created with that the operator may leave out: its year, its outline, attributed
     /// to TMDb, its references, and each artwork kind TMDb has an image for.
-    public func offered(_ id: String, in tree: DraftTree? = nil) -> [AdminConsole.Difference] {
+    public func offered(_ id: String, in tree: DraftTree? = nil) -> [Difference] {
         guard let tree = tree ?? draft(holding: id), let container = tree.container(id) else { return [] }
-        var offered: [AdminConsole.Difference] = []
+        var offered: [Difference] = []
         if let year = container.year { offered.append(.year(year)) }
         let record = container.externalRefs.first { $0.provider == .tmdb }?.value ?? ""
         if let outline = container.outline, !outline.isEmpty { offered.append(.outline(outline, record: record)) }

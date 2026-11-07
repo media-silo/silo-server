@@ -185,7 +185,7 @@ struct WalkSheet: View {
     }
 
     @ViewBuilder
-    private func differences(_ comparison: AdminConsole.Comparison) -> some View {
+    private func differences(_ comparison: ReviewWalk.Comparison) -> some View {
         // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
         LazyVStack(alignment: .leading, spacing: 10, pinnedViews: [.sectionHeaders]) {
             ForEach(comparison.differences.filter(\.isUnmatched)) { unmatched in
@@ -282,7 +282,7 @@ struct WalkSheet: View {
 
 extension WalkSheet {
     /// The artwork the open held stop offers.
-    fileprivate func artwork(_ comparison: AdminConsole.Comparison) -> some View {
+    fileprivate func artwork(_ comparison: ReviewWalk.Comparison) -> some View {
         StopArtwork(
             walk: walk,
             model: model,
@@ -298,7 +298,7 @@ private struct StopArtwork: View {
     let walk: ReviewWalk
     let model: ConsoleModel
     let stop: String
-    let differences: [AdminConsole.Difference]
+    let differences: [ReviewWalk.Difference]
     let tick: (String) -> Binding<Bool>
 
     var body: some View {
@@ -447,14 +447,14 @@ private struct NewStop: View {
 /// all or none.
 private struct DifferenceGroup: View {
     let title: String
-    let differences: [AdminConsole.Difference]
+    let differences: [ReviewWalk.Difference]
     let walk: ReviewWalk
     let tick: (String) -> Binding<Bool>
     let images: ImageChoice?
 
     init(
         _ title: String,
-        _ differences: [AdminConsole.Difference],
+        _ differences: [ReviewWalk.Difference],
         walk: ReviewWalk,
         tick: @escaping (String) -> Binding<Bool>,
         images: ImageChoice? = nil
@@ -551,7 +551,7 @@ private struct PlacedSpecials: View {
 /// A difference as the walk says it, the same for a held container and a new one: a field TMDb's text
 /// is taken into with its attribution marked.
 struct DifferenceLabel: View {
-    let difference: AdminConsole.Difference
+    let difference: ReviewWalk.Difference
     let walk: ReviewWalk
     var images: ImageChoice?
 

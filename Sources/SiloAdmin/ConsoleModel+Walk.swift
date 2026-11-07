@@ -268,7 +268,7 @@ extension ConsoleModel {
     /// A step of a stop's reading, kept while the walk it was asked for is open.
     private func reading(
         _ step: AdminConsole.StepProgress,
-        _ found: AdminConsole.Comparison,
+        _ found: ReviewWalk.Comparison,
         of stop: String,
         for id: UUID
     ) {
@@ -300,7 +300,7 @@ extension ConsoleModel {
         }
     }
 
-    private func pooling(_ step: AdminConsole.StepProgress, _ found: AdminConsole.Comparison, for id: UUID) {
+    private func pooling(_ step: AdminConsole.StepProgress, _ found: ReviewWalk.Comparison, for id: UUID) {
         guard walking?.id == id else { return }
         walking?.pooling = step
         walking?.walk.pool(found)

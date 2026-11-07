@@ -284,7 +284,7 @@ struct ReadingProgress: View {
     }
 }
 
-extension AdminConsole.Difference {
+extension ReviewWalk.Difference {
     var isField: Bool {
         switch self {
         case .title, .year, .outline: true

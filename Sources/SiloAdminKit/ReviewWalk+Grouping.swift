@@ -47,7 +47,7 @@ public enum HeldStopChild: Hashable, Sendable {
     case episode(TMDb.Episode)
     case group(EpisodeGroup)
     /// A container held beneath, holding the missing episodes put into it.
-    case held(AdminConsole.HeldChild)
+    case held(ReviewWalk.HeldChild)
     /// What the stop holds already, or a special placed there, in its place in the stop's sequence: only
     /// to be moved.
     case entry(StopEntry)
@@ -55,7 +55,7 @@ public enum HeldStopChild: Hashable, Sendable {
     case added(String)
     /// One of a series' seasons, as its reading lists it: held beneath it, or missing, ticked to be
     /// drafted.
-    case season(AdminConsole.Difference)
+    case season(ReviewWalk.Difference)
 }
 
 // MARK: - Grouping a held stop's missing episodes
@@ -87,14 +87,14 @@ extension ReviewWalk {
     /// The missing episodes a held stop's parent handed to it, as the parent offers them: the stop's own
     /// to tick, group and take, as though its reading had offered them, and offered by the parent no
     /// longer.
-    public func handed(to stop: String) -> [AdminConsole.Difference] {
+    public func handed(to stop: String) -> [Difference] {
         guard let parent = stops[stop]?.parent, let handed = stops[parent]?.intoHeld[stop] else { return [] }
         return episodeDifferences(at: parent).filter { difference in
             if case .episode(let episode, _) = difference { handed.contains(episode.id) } else { false }
         }
     }
 
-    private func episodeDifferences(at stop: String) -> [AdminConsole.Difference] {
+    private func episodeDifferences(at stop: String) -> [Difference] {
         (stops[stop]?.comparison?.differences ?? []).filter { difference in
             if case .episode = difference { true } else { false }
         } + handed(to: stop)
@@ -308,12 +308,12 @@ extension ReviewWalk {
 
     /// The containers a held stop holds beneath it, as its reading found them, or, for a reading kept
     /// before they were read, the held stops the walk found beneath it, placed by none of TMDb's episodes.
-    public func heldChildren(at stop: String) -> [AdminConsole.HeldChild] {
+    public func heldChildren(at stop: String) -> [HeldChild] {
         guard let comparison = stops[stop]?.comparison else { return [] }
         if let held = comparison.heldChildren { return held }
         return (stops[stop]?.children ?? []).filter { !isNew($0) }.compactMap { id in
             stops[id].flatMap { child in
-                ContainerType(rawValue: child.type).map { AdminConsole.HeldChild(id: id, title: child.title, type: $0) }
+                ContainerType(rawValue: child.type).map { HeldChild(id: id, title: child.title, type: $0) }
             }
         }
     }

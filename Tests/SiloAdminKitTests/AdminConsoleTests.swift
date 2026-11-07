@@ -4014,7 +4014,7 @@ extension AdminConsoleTests {
             ]
         )
         tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: specials)
-        let told = Mutex<[(AdminConsole.StepProgress, AdminConsole.Comparison)]>([])
+        let told = Mutex<[(AdminConsole.StepProgress, ReviewWalk.Comparison)]>([])
         let compared = try await console.compare(
             series.id.value,
             in: "tv",
@@ -4041,7 +4041,7 @@ extension AdminConsoleTests {
             let told = steps.filter { $0.0.step == step }.map(\.0)
             #expect(told.map(\.done) == Array(0...total) && told.allSatisfy { $0.total == total }, "\(step)")
         }
-        func unassigned(_ comparison: AdminConsole.Comparison) -> [Int] {
+        func unassigned(_ comparison: ReviewWalk.Comparison) -> [Int] {
             comparison.differences.compactMap { if case .special(let special) = $0 { special.id } else { nil } }
         }
         let suggesting = steps.filter { $0.0.step == "Suggesting where the specials go" }.map(\.1)
@@ -5244,7 +5244,7 @@ extension AdminConsoleTests {
 
         var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
         let new = try #require(walk.stops[series.id.value]?.children.last)
-        let poster = AdminConsole.Difference.artwork(
+        let poster = ReviewWalk.Difference.artwork(
             kind: "poster",
             path: "/one.jpg",
             record: TMDb.Record(.season, 904),
@@ -5386,7 +5386,7 @@ extension AdminConsoleTests {
         try await walking.confirm(season.id.value, in: &walk)
         await #expect(throws: AdminConsole.NoTMDbReading.self) { try await walking.read(serial.id.value, in: &walk) }
 
-        func seasons() -> [AdminConsole.Difference] {
+        func seasons() -> [ReviewWalk.Difference] {
             walk.differences(of: series.id.value).filter { if case .reference = $0 { false } else { true } }
         }
         walk.identify(season.id.value, as: 6982)
@@ -5616,7 +5616,7 @@ extension AdminConsoleTests {
         let (stop, held) = (season.id.value, serial.id.value)
         #expect(
             walk.heldChildren(at: stop) == [
-                AdminConsole.HeldChild(id: held, title: "Terror of the Zygons", type: .serial, number: 1)
+                ReviewWalk.HeldChild(id: held, title: "Terror of the Zygons", type: .serial, number: 1)
             ],
             "placed by the first part it holds, found by TMDb's id"
         )
@@ -5652,7 +5652,7 @@ extension AdminConsoleTests {
         keptBefore.stops[stop]?.comparison?.heldChildren = nil
         #expect(
             keptBefore.heldChildren(at: stop) == [
-                AdminConsole.HeldChild(id: held, title: "Terror of the Zygons", type: .serial)
+                ReviewWalk.HeldChild(id: held, title: "Terror of the Zygons", type: .serial)
             ],
             "a reading kept before they were read: the held stops found beneath it"
         )

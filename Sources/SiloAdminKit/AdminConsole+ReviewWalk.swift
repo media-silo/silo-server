@@ -632,9 +632,9 @@ extension ReviewWalk {
     /// One ticked difference taken into a stop's change, or gathered as artwork to put or a season to
     /// draft.
     private static func take(
-        _ difference: AdminConsole.Difference,
+        _ difference: Difference,
         into change: inout Change,
-        comparison: AdminConsole.Comparison,
+        comparison: Comparison,
         gathering: inout Gathering
     ) {
         let id = change.stop.id
@@ -670,7 +670,7 @@ extension ReviewWalk {
     }
 
     /// The first of a group's episodes the stop's reading still offers.
-    private static func first(of group: EpisodeGroup, in comparison: AdminConsole.Comparison) -> Int? {
+    private static func first(of group: EpisodeGroup, in comparison: Comparison) -> Int? {
         let offered = comparison.differences.compactMap { difference -> Int? in
             if case .episode(let episode, _) = difference { episode.id } else { nil }
         }

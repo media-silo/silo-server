@@ -14,17 +14,17 @@ import SwiftUI
 struct WalkChildren: View {
     let current: ConsoleModel.Walking
     let model: ConsoleModel
-    let comparison: AdminConsole.Comparison
+    let comparison: ReviewWalk.Comparison
     let tick: (String) -> Binding<Bool>
 
     private var walk: ReviewWalk { current.walk }
     private var stop: String { comparison.container }
     private var groups: [EpisodeGroup] { walk.stops[stop]?.groups ?? [] }
-    private var held: [AdminConsole.HeldChild] { walk.heldChildren(at: stop) }
+    private var held: [ReviewWalk.HeldChild] { walk.heldChildren(at: stop) }
     private var intoHeld: [String: [Int]] { walk.stops[stop]?.intoHeld ?? [:] }
     /// The missing episodes grouped, or added to a container held beneath.
     private var grouped: Set<Int> { Set(groups.flatMap(\.episodes)).union(intoHeld.values.joined()) }
-    private var seasons: [AdminConsole.Difference] {
+    private var seasons: [ReviewWalk.Difference] {
         walk.differences(of: stop).filter { $0.isChild && !$0.isEpisode }
     }
     private var episodes: [TMDb.Episode] { walk.missingEpisodes(at: stop) }
@@ -207,7 +207,7 @@ struct WalkChildren: View {
     }
 
     /// A season's name, as its drag shows it.
-    private static func name(of season: AdminConsole.Difference) -> String {
+    private static func name(of season: ReviewWalk.Difference) -> String {
         switch season {
         case .season(let season), .heldSeason(let season, _, _): season.name
         default: season.id
@@ -215,7 +215,7 @@ struct WalkChildren: View {
     }
 
     /// A container held beneath, with the missing episodes added to it.
-    private func heldRow(_ child: AdminConsole.HeldChild) -> GroupingRow {
+    private func heldRow(_ child: ReviewWalk.HeldChild) -> GroupingRow {
         let added = intoHeld[child.id] ?? []
         return .group(
             GroupingGroup(
