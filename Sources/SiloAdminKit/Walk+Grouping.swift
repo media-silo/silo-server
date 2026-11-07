@@ -55,14 +55,14 @@ public enum HeldStopChild: Hashable, Sendable {
     case added(String)
     /// One of a series' seasons, as its reading lists it: held beneath it, or missing, ticked to be
     /// drafted.
-    case season(AdminConsole.TMDbDifference)
+    case season(AdminConsole.Difference)
 }
 
 // MARK: - Grouping a held stop's missing episodes
 
 /// The missing episodes of a held stop grouped into new containers beneath it, and the groups TMDb's
 /// titles suggest. `TmdbWalk.md`, *A new stop*.
-extension TMDbWalk.Stop {
+extension Walk.Stop {
     /// Absent from a walk kept before groups were asked.
     public var groups: [EpisodeGroup] {
         get { episodeGroups ?? [] }
@@ -76,7 +76,7 @@ extension TMDbWalk.Stop {
     }
 }
 
-extension TMDbWalk {
+extension Walk {
     /// The episodes a held stop's reading offers, in TMDb's order, and those its parent handed to it.
     public func missingEpisodes(at stop: String) -> [TMDb.Episode] {
         episodeDifferences(at: stop).compactMap { difference in
@@ -87,14 +87,14 @@ extension TMDbWalk {
     /// The missing episodes a held stop's parent handed to it, as the parent offers them: the stop's own
     /// to tick, group and take, as though its reading had offered them, and offered by the parent no
     /// longer.
-    public func handed(to stop: String) -> [AdminConsole.TMDbDifference] {
+    public func handed(to stop: String) -> [AdminConsole.Difference] {
         guard let parent = stops[stop]?.parent, let handed = stops[parent]?.intoHeld[stop] else { return [] }
         return episodeDifferences(at: parent).filter { difference in
             if case .episode(let episode, _) = difference { handed.contains(episode.id) } else { false }
         }
     }
 
-    private func episodeDifferences(at stop: String) -> [AdminConsole.TMDbDifference] {
+    private func episodeDifferences(at stop: String) -> [AdminConsole.Difference] {
         (stops[stop]?.comparison?.differences ?? []).filter { difference in
             if case .episode = difference { true } else { false }
         } + handed(to: stop)
@@ -118,7 +118,7 @@ extension TMDbWalk {
     public mutating func title(_ episodes: [Int], at stop: String, as word: String) {
         unconfirm(stop)
         for episode in missingEpisodes(at: stop) where episodes.contains(episode.id) {
-            guard let number = TMDbTree.part(of: episode.title) else { continue }
+            guard let number = DraftTree.part(of: episode.title) else { continue }
             titles[episode.id] = "\(word) \(number)"
         }
     }
@@ -131,7 +131,7 @@ extension TMDbWalk {
     private func storyRuns(at stop: String) -> [SuggestedEpisodes] {
         let grouped = Set((stops[stop]?.groups ?? []).flatMap(\.episodes))
             .union((stops[stop]?.intoHeld ?? [:]).values.joined())
-        let runs = TMDbTree.runs(
+        let runs = DraftTree.runs(
             of: missingEpisodes(at: stop).map {
                 ($0.id, grouped.contains($0.id) || titles[$0.id] != nil ? nil : $0.title)
             }
@@ -220,14 +220,14 @@ extension TMDbWalk {
             // Its primary sequence goes by the id of the stop's it was made out of.
             child.sequences = [Sequence(id: sequenceName(0, at: stop.id), items: [])]
             for episode in episodes {
-                TMDbTree.insert(
+                DraftTree.insert(
                     AdminConsole.leaf(episode, in: child, title: self.titles[episode.id]),
                     into: &child,
                     sequence: nil,
                     at: nil
                 )
             }
-            let tree = TMDbTree(
+            let tree = DraftTree(
                 library: library,
                 record: TMDb.Record(.series, comparison.series ?? 0),
                 creating: ContainerDraft.Creating(parent: stop.id),
@@ -396,7 +396,7 @@ extension TMDbWalk {
             if let title = entry.title { names.insert(title) }
             for ref in entry.externalRefs where ref.provider == .tmdb {
                 guard let title = titles[ref.value] else { continue }
-                names.insert(TMDbTree.story(of: title) ?? title)
+                names.insert(DraftTree.story(of: title) ?? title)
             }
         }
         return names.filter { $0.count > 2 }

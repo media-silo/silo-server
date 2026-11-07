@@ -95,7 +95,7 @@ extension ConsoleModel {
     ) async throws -> String? {
         guard let database, let tmdb else { return "TMDb or smddb's clone cannot be read." }
         let redraft = Walking.Redraft(record: record, shape: shape, finding: finding)
-        if !again, let kept = console.tmdbWalks.walk(drafting: record, in: finding.library, of: finding.silo.id) {
+        if !again, let kept = console.walks.walk(drafting: record, in: finding.library, of: finding.silo.id) {
             findingInTMDb = nil
             walking = Walking(
                 silo: finding.silo,

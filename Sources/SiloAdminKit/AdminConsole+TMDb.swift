@@ -53,10 +53,10 @@ extension AdminConsole {
 
     /// What picking a TMDb record to walk comes to: smddb's container to import instead, the library's
     /// container that carries the record's reference already, or a walk rooted at a draft of it.
-    public enum TMDbWalkStart: Hashable, Sendable {
+    public enum WalkStart: Hashable, Sendable {
         case importFromSmddb(Container)
         case held(SiloClient.ContainerSummary)
-        case walk(TMDbWalk)
+        case walk(Walk)
     }
 
     /// Starts a walk of a TMDb record the library does not hold, rooted at a draft of it: smddb's
@@ -70,7 +70,7 @@ extension AdminConsole {
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
-    ) async throws -> TMDbWalkStart {
+    ) async throws -> WalkStart {
         if let known = try await database.containers().first(where: {
             $0.type == record.containerType && $0.externalRefs.contains(record.ref)
         }) {
@@ -97,7 +97,7 @@ extension AdminConsole {
         {
             creating = ContainerDraft.Creating(parent: holder.id)
         }
-        return .walk(TMDbWalk(drafting: reader.tree(top: top, record: record, library: library, creating: creating)))
+        return .walk(Walk(drafting: reader.tree(top: top, record: record, library: library, creating: creating)))
     }
 
     /// A draft of one of a series' seasons, filed where it is said to be, kept nowhere: what a walk makes
@@ -109,7 +109,7 @@ extension AdminConsole {
         into library: String,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
-    ) async throws -> TMDbTree {
+    ) async throws -> DraftTree {
         var reader = Reader(tmdb: tmdb, database: database)
         async let images = Reader.images(ofSeason: number, of: series, tmdb: tmdb)
         let season = try await reader.season(try await tmdb.season(number, of: series), images: await images)
@@ -139,7 +139,7 @@ extension AdminConsole {
         var episodeGroups: [String] = []
         var specials: [Special] = []
         /// The images TMDb holds for each container read from a record of its own.
-        var images: [ContainerID: TMDbTree.RecordImages] = [:]
+        var images: [ContainerID: DraftTree.RecordImages] = [:]
         /// The collection a movie read is in, for filing it beneath one the library holds.
         var collectionAbove: Int?
 
@@ -148,8 +148,9 @@ extension AdminConsole {
             self.database = database
         }
 
-        func tree(top: Container, record: TMDb.Record, library: String, creating: ContainerDraft.Creating) -> TMDbTree {
-            TMDbTree(
+        func tree(top: Container, record: TMDb.Record, library: String, creating: ContainerDraft.Creating) -> DraftTree
+        {
+            DraftTree(
                 library: library,
                 record: record,
                 creating: creating,
@@ -167,8 +168,8 @@ extension AdminConsole {
 
         /// The images TMDb holds for a record. Artwork is offered, not needed: a draft is read without
         /// it when TMDb will not say.
-        private func images(of record: TMDb.Record) async -> TMDbTree.RecordImages {
-            TMDbTree.RecordImages(record, (try? await tmdb.images(of: record)) ?? TMDb.Images())
+        private func images(of record: TMDb.Record) async -> DraftTree.RecordImages {
+            DraftTree.RecordImages(record, (try? await tmdb.images(of: record)) ?? TMDb.Images())
         }
 
         /// The images TMDb holds for one of a series' seasons, read through the series, as `images(of:)`
@@ -293,7 +294,7 @@ extension AdminConsole {
                 overview: season.overview,
                 refs: [ExternalRef(provider: .tmdb, value: String(season.id))]
             )
-            self.images[container.id] = TMDbTree.RecordImages(TMDb.Record(.season, season.id), images)
+            self.images[container.id] = DraftTree.RecordImages(TMDb.Record(.season, season.id), images)
             container.sequences = [Sequence(id: "episodes", items: episodes(season.episodes))]
             containers.append(container)
             return container
@@ -365,12 +366,12 @@ extension AdminConsole {
     /// gains them, and its specials the other ids TMDb holds for them. A walk rooted at no drafted
     /// series is as it was.
     public func suggest(
-        in walk: TMDbWalk,
+        in walk: Walk,
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
-    ) async throws -> TMDbWalk {
+        progress: @Sendable (StepProgress) async -> Void = { _ in }
+    ) async throws -> Walk {
         guard walk.drafting, walk.series == walk.root, var tree = walk.drafts[walk.root] else { return walk }
         tree.specials = walk.specials
         tree.placements = walk.placements
@@ -394,12 +395,12 @@ extension AdminConsole {
     /// declined for a trailer. Asking TMDb for each special's other ids, the tree gains them. Nothing is
     /// kept.
     public func suggest(
-        for tree: TMDbTree,
+        for tree: DraftTree,
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
-    ) async throws -> (TMDbTree, [Int: SpecialSuggestion]) {
+        progress: @Sendable (StepProgress) async -> Void = { _ in }
+    ) async throws -> (DraftTree, [Int: SpecialSuggestion]) {
         var tree = tree
         var suggestions: [Int: SpecialSuggestion] = [:]
         let clone = try await database.containers()
@@ -407,7 +408,7 @@ extension AdminConsole {
         var group: TMDb.EpisodeGroup?
         if let first = tree.episodeGroups.first { group = try await tmdb.episodeGroup(first) }
         let step = "Suggesting where the specials go"
-        await progress(TMDbProgress(step, of: unplaced.count))
+        await progress(StepProgress(step, of: unplaced.count))
         // Each special is read on its own, against the tree as it came: none's suggestion rests on another's.
         let reading: @Sendable (Int) async throws -> (Special, SpecialSuggestion?) = { [tree, group] index in
             var special = tree.specials[index]
@@ -427,7 +428,7 @@ extension AdminConsole {
         }
         let read = try await Self.concurrently(
             unplaced,
-            done: { await progress(TMDbProgress(step, done: $0, of: unplaced.count)) },
+            done: { await progress(StepProgress(step, done: $0, of: unplaced.count)) },
             reading
         )
         for (index, (special, suggestion)) in zip(unplaced, read) {
@@ -441,7 +442,7 @@ extension AdminConsole {
     private func suggestion(
         for special: Special,
         at index: Int,
-        in tree: TMDbTree,
+        in tree: DraftTree,
         clone: [Container],
         group: TMDb.EpisodeGroup?,
         of silo: Silo,
@@ -468,7 +469,7 @@ extension AdminConsole {
     private nonisolated func smddbFiling(
         of special: Special,
         in clone: [Container],
-        tree: TMDbTree
+        tree: DraftTree
     ) -> SpecialSuggestion? {
         let drafted = tree.containers
         for container in clone {
@@ -499,7 +500,7 @@ extension AdminConsole {
     }
 
     /// The breakout holding the specials just before and just after it in TMDb's season 0 order.
-    private nonisolated func breakoutBeside(_ index: Int, in tree: TMDbTree) -> SpecialSuggestion? {
+    private nonisolated func breakoutBeside(_ index: Int, in tree: DraftTree) -> SpecialSuggestion? {
         guard index > 0, index + 1 < tree.specials.count,
             case .breakout(let before, let from, let asExtra)? = tree.placements[tree.specials[index - 1].id],
             case .breakout(let after, _, _)? = tree.placements[tree.specials[index + 1].id],
@@ -517,7 +518,7 @@ extension AdminConsole {
     /// for it; advice to draft it first when none holds it.
     private func duplicate(
         of special: Special,
-        in tree: TMDbTree,
+        in tree: DraftTree,
         of silo: Silo,
         tmdb: any TMDbSource
     ) async throws -> SpecialSuggestion? {
@@ -599,7 +600,7 @@ extension AdminConsole {
     /// there, in the container of the tree that holds that episode.
     private nonisolated static func groupPosition(
         of special: Special,
-        in tree: TMDbTree,
+        in tree: DraftTree,
         group: TMDb.EpisodeGroup
     ) -> SpecialSuggestion? {
         for part in group.groups {
@@ -672,7 +673,7 @@ extension AdminConsole {
     }
 
     /// Between the two of the tree's episodes it aired between: an entry after the earlier.
-    private nonisolated func airedPosition(of special: Special, in tree: TMDbTree) -> SpecialSuggestion? {
+    private nonisolated func airedPosition(of special: Special, in tree: DraftTree) -> SpecialSuggestion? {
         guard let aired = special.episode.airDate else { return nil }
         let specials = Set(tree.specials.map { String($0.id) })
         let dated = tree.airDates.filter { !specials.contains($0.key) }
@@ -686,7 +687,7 @@ extension AdminConsole {
     }
 
     /// An entry just after the one carrying a reference, in the container of the tree that holds it.
-    private nonisolated static func after(_ ref: ExternalRef, in tree: TMDbTree) -> SpecialPlacement? {
+    private nonisolated static func after(_ ref: ExternalRef, in tree: DraftTree) -> SpecialPlacement? {
         for container in tree.containers {
             for sequence in container.sequences {
                 if let index = sequence.items.firstIndex(where: { $0.externalRefs.contains(ref) }) {
@@ -699,7 +700,7 @@ extension AdminConsole {
 
     /// For a short special whose title says what it is: an extra of the series of that type, or
     /// declined for a trailer.
-    private nonisolated static func byItsTitle(_ special: Special, in tree: TMDbTree) -> SpecialSuggestion? {
+    private nonisolated static func byItsTitle(_ special: Special, in tree: DraftTree) -> SpecialSuggestion? {
         guard (special.episode.runtime ?? 0) < 30 else { return nil }
         let title = special.episode.title.lowercased()
         if title.contains("trailer") {
@@ -738,7 +739,7 @@ extension AdminConsole {
     }
 
     /// One edit of a container a library holds that a placement makes, onto its sidecar as it is now.
-    func apply(_ edit: TMDbTree.Making.HeldEdit, on silo: Silo) async throws {
+    func apply(_ edit: DraftTree.Making.HeldEdit, on silo: Silo) async throws {
         let opened = try await open(container: edit.container, in: edit.library, of: silo)
         var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
         guard var container = draft.value else { return }
@@ -754,7 +755,7 @@ extension AdminConsole {
     }
 
     /// What an edit a placement makes does to the container it is of.
-    nonisolated static func applying(_ edit: TMDbTree.Making.HeldEdit, to container: inout Container) {
+    nonisolated static func applying(_ edit: DraftTree.Making.HeldEdit, to container: inout Container) {
         if let item = edit.item, let ref = edit.ref {
             container.sequences = container.sequences.map { sequence in
                 var sequence = sequence
@@ -768,7 +769,7 @@ extension AdminConsole {
             if let type = edit.entryType {
                 container.extras.append(.leaf(Entry.Leaf(id: entryID, type: type, externalRefs: special.refs)))
             } else {
-                TMDbTree.insert(
+                DraftTree.insert(
                     .leaf(Entry.Leaf(id: entryID, type: .episode, externalRefs: special.refs)),
                     into: &container,
                     sequence: nil,
@@ -776,7 +777,7 @@ extension AdminConsole {
                 )
             }
         }
-        if let refer = edit.refer { TMDbTree.refer(to: refer, from: &container, asExtra: edit.asExtra) }
+        if let refer = edit.refer { DraftTree.refer(to: refer, from: &container, asExtra: edit.asExtra) }
     }
 
     private nonisolated static func adding(_ ref: ExternalRef, to entry: Entry, if item: String) -> Entry {

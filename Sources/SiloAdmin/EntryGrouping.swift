@@ -585,10 +585,10 @@ private struct BracketLine: Shape {
 /// A draft container's entries, grouped into containers beneath it: each group is a container of the
 /// draft, made with it.
 struct EntryGrouping: View {
-    let tree: TMDbTree
+    let tree: DraftTree
     let parent: String
     /// Changes the draft, as the sheet the grouping is in keeps it.
-    let update: ((inout TMDbTree) -> Void) -> Void
+    let update: ((inout DraftTree) -> Void) -> Void
     let provisionalID: () async -> ContainerID?
     /// Clones the container's primary sequence into a new alternative of the title given.
     let clone: (String) -> Void
@@ -604,7 +604,7 @@ struct EntryGrouping: View {
 
     private var container: Container? { tree.container(parent) }
     private var rows: [GroupingRow] {
-        TMDbTree.children(of: container, placements: placements, specials: specials).compactMap { child in
+        DraftTree.children(of: container, placements: placements, specials: specials).compactMap { child in
             switch child {
             case .entry(let entry): row(entry)
             case .special(let special): .fixed(id: child.key, "\(special.episode.title), placed")
@@ -643,7 +643,7 @@ struct EntryGrouping: View {
                     // A special placed here moves by being placed again.
                     if let special = DraftChild.special(child) { return place(special, before) }
                     guard let item = ItemID(child) else { return }
-                    move(item, TMDbTree.entry(before: before, in: container, placements: placements))
+                    move(item, DraftTree.entry(before: before, in: container, placements: placements))
                 },
                 place: place
             ) {

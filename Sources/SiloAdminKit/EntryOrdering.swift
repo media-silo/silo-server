@@ -22,7 +22,7 @@ extension SpecialPlacement {
     }
 }
 
-extension TMDbTree {
+extension DraftTree {
     /// One of a container's entries moved before another of the same sequence, or, with none, last in
     /// it: an episode, or a group as the entry naming it. The specials placed in the sequence keep after
     /// the entries they followed.
@@ -55,7 +55,7 @@ extension TMDbTree {
     }
 }
 
-extension TMDbWalk {
+extension Walk {
     /// One of a new stop's entries moved before another of the same sequence, or, with none, last in it,
     /// as a draft's are; the specials the walk places in the sequence keep after the entries they
     /// followed.

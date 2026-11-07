@@ -13,7 +13,7 @@ import SmdSidecar
 /// operator opens a container's differences, and follows nothing. `Tmdb.md`, *Differences*.
 extension AdminConsole {
     /// One way a held container differs from TMDb's reading of it.
-    public enum TMDbDifference: Hashable, Sendable, Identifiable, Codable {
+    public enum Difference: Hashable, Sendable, Identifiable, Codable {
         case title(String)
         case year(Int)
         /// TMDb's overview, attributed to the record it came from when it is taken.
@@ -58,7 +58,7 @@ extension AdminConsole {
 
     /// A held container read against TMDb: what was read, the differences, what the library holds that
     /// TMDb has nothing for, the specials it declines, and what each uncovered special is suggested for.
-    public struct TMDbComparison: Hashable, Sendable, Codable {
+    public struct Comparison: Hashable, Sendable, Codable {
         public var library: String
         public var container: String
         public var title: String
@@ -66,7 +66,7 @@ extension AdminConsole {
         public var reading: String
         /// The series the episodes are TMDb's of, for their other ids.
         public var series: Int?
-        public var differences: [TMDbDifference]
+        public var differences: [Difference]
         /// Items the library holds that TMDb's record has nothing for: shown, and never offered for removal.
         public var heldOnly: [String]
         public var declined: [Special]
@@ -119,12 +119,12 @@ extension AdminConsole {
         from database: any ContainerDatabase,
         tmdb: any TMDbSource,
         identified: [String: Int] = [:],
-        progress: @escaping @Sendable (TMDbProgress, TMDbComparison) async -> Void = { _, _ in }
-    ) async throws -> TMDbComparison {
+        progress: @escaping @Sendable (StepProgress, Comparison) async -> Void = { _, _ in }
+    ) async throws -> Comparison {
         let opened = try await open(container: id, in: library, of: silo)
         let sidecar = try SidecarFile.sidecar(from: opened.sidecar)
         let container = sidecar.container
-        var comparison = TMDbComparison(
+        var comparison = Comparison(
             library: library,
             container: id,
             title: container.displayTitle,
@@ -136,7 +136,7 @@ extension AdminConsole {
             episodeTitles: [:],
             opened: opened
         )
-        await progress(TMDbProgress("Reading TMDb"), comparison)
+        await progress(StepProgress("Reading TMDb"), comparison)
         let own = container.externalRefs.first { $0.provider == .tmdb }.flatMap { Int($0.value) }
         let seriesOfSeason = container.type == .season ? try await seriesAbove(opened, of: silo) : nil
         switch (container.type, own) {
@@ -192,10 +192,10 @@ extension AdminConsole {
         _ opened: OpenedContainer,
         container: Container,
         identified: [String: Int],
-        into comparison: inout TMDbComparison,
+        into comparison: inout Comparison,
         of silo: Silo,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+        progress: @Sendable (StepProgress, Comparison) async -> Void
     ) async throws {
         let (episodes, series, reading) = try await readingThrough(
             opened,
@@ -223,9 +223,9 @@ extension AdminConsole {
         _ record: TMDb.Record,
         container: Container,
         artwork held: [String],
-        into comparison: inout TMDbComparison,
+        into comparison: inout Comparison,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+        progress: @Sendable (StepProgress, Comparison) async -> Void
     ) async throws {
         if record.kind == .movie {
             let movie = try await tmdb.movie(record.id)
@@ -249,7 +249,7 @@ extension AdminConsole {
                 record: record.id
             )
         }
-        await progress(TMDbProgress("Reading TMDb's artwork"), comparison)
+        await progress(StepProgress("Reading TMDb's artwork"), comparison)
         comparison.differences += try await artwork(of: record, held: held, tmdb: tmdb)
     }
 
@@ -261,10 +261,10 @@ extension AdminConsole {
         container: Container,
         artwork held: [String],
         identified: Int?,
-        into comparison: inout TMDbComparison,
+        into comparison: inout Comparison,
         of silo: Silo,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+        progress: @Sendable (StepProgress, Comparison) async -> Void
     ) async throws {
         guard let series else {
             throw NoTMDbReading(reason: "the season carries TMDb's id, but no series above it does")
@@ -301,7 +301,7 @@ extension AdminConsole {
             overview: record.overview,
             record: summary.id
         )
-        await progress(TMDbProgress("Reading TMDb's artwork"), comparison)
+        await progress(StepProgress("Reading TMDb's artwork"), comparison)
         let images = try await tmdb.images(ofSeason: summary.number, of: series)
         comparison.differences += Self.artwork(of: TMDb.Record(.season, summary.id), held: held, images: images)
         try await compareEpisodes(
@@ -324,8 +324,8 @@ extension AdminConsole {
         year: Int?,
         overview: String?,
         record: Int
-    ) -> [TMDbDifference] {
-        var differences: [TMDbDifference] = []
+    ) -> [Difference] {
+        var differences: [Difference] = []
         if title != container.title.rawValue { differences.append(.title(title)) }
         if container.type.hasYear, let year, year != container.year { differences.append(.year(year)) }
         if let overview, !overview.isEmpty, overview != container.outline {
@@ -338,13 +338,12 @@ extension AdminConsole {
         _ refs: [ExternalRef],
         from held: [ExternalRef],
         item: String?
-    ) -> [TMDbDifference] {
+    ) -> [Difference] {
         refs.filter { !held.contains($0) }.map { .reference(item: item, $0) }
     }
 
     /// The artwork kinds the folder lacks that TMDb has an image for.
-    private func artwork(of record: TMDb.Record, held: [String], tmdb: any TMDbSource) async throws -> [TMDbDifference]
-    {
+    private func artwork(of record: TMDb.Record, held: [String], tmdb: any TMDbSource) async throws -> [Difference] {
         Self.artwork(of: record, held: held, images: try await tmdb.images(of: record))
     }
 
@@ -353,7 +352,7 @@ extension AdminConsole {
         of record: TMDb.Record,
         held: [String],
         images: TMDb.Images
-    ) -> [TMDbDifference] {
+    ) -> [Difference] {
         ["poster", "fanart", "logo"].compactMap { kind in
             let offered = images.offered(for: kind)
             guard !held.contains(kind), let path = offered.first else { return nil }
@@ -373,14 +372,14 @@ extension AdminConsole {
     private func steps<Item: Sendable, Answer: Sendable>(
         _ step: String,
         _ items: [Item],
-        _ comparison: TMDbComparison,
-        _ progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void,
+        _ comparison: Comparison,
+        _ progress: @Sendable (StepProgress, Comparison) async -> Void,
         _ body: @escaping @Sendable (Item) async throws -> Answer?
     ) async throws -> [Answer] {
-        await progress(TMDbProgress(step, of: items.count), comparison)
+        await progress(StepProgress(step, of: items.count), comparison)
         return try await Self.concurrently(
             items,
-            done: { await progress(TMDbProgress(step, done: $0, of: items.count), comparison) },
+            done: { await progress(StepProgress(step, done: $0, of: items.count), comparison) },
             body
         )
         .compactMap { $0 }
@@ -390,11 +389,11 @@ extension AdminConsole {
         _ series: Int,
         sidecar: Sidecar,
         opened: OpenedContainer,
-        into comparison: inout TMDbComparison,
+        into comparison: inout Comparison,
         of silo: Silo,
         database: any ContainerDatabase,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+        progress: @Sendable (StepProgress, Comparison) async -> Void
     ) async throws {
         let container = sidecar.container
         let record = try await tmdb.series(series)
@@ -424,12 +423,12 @@ extension AdminConsole {
             progress
         ) { season in
             if let (child, suggested) = held[season.id] {
-                return TMDbDifference.heldSeason(season, container: child, suggested: suggested)
+                return Difference.heldSeason(season, container: child, suggested: suggested)
             }
             let ref = ExternalRef(provider: .tmdb, value: String(season.id))
-            return try await self.covered(ref, of: silo) ? nil : TMDbDifference.season(season)
+            return try await self.covered(ref, of: silo) ? nil : Difference.season(season)
         }
-        await progress(TMDbProgress("Reading TMDb's artwork"), comparison)
+        await progress(StepProgress("Reading TMDb's artwork"), comparison)
         comparison.differences += try await artwork(
             of: TMDb.Record(.series, series),
             held: opened.container.artwork,
@@ -452,13 +451,13 @@ extension AdminConsole {
     private func compareSpecials(
         of series: Int,
         sidecar: Sidecar,
-        into comparison: inout TMDbComparison,
+        into comparison: inout Comparison,
         of silo: Silo,
         database: any ContainerDatabase,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+        progress: @Sendable (StepProgress, Comparison) async -> Void
     ) async throws {
-        await progress(TMDbProgress("Reading TMDb's specials"), comparison)
+        await progress(StepProgress("Reading TMDb's specials"), comparison)
         let specials = try await tmdb.season(0, of: series).episodes
         for episode in specials { comparison.episodeTitles[String(episode.id)] = episode.title }
         comparison.declined = specials.filter { sidecar.declined.contains($0.ref) }.map { Special(episode: $0) }
@@ -470,10 +469,10 @@ extension AdminConsole {
             progress
         ) { episode in try await self.covered(episode.ref, of: silo) ? nil : Special(episode: episode) }
         // Listed as they are while their suggestions are read, which is most of a long series' reading.
-        comparison.differences = held + uncovered.map(TMDbDifference.special)
+        comparison.differences = held + uncovered.map(Difference.special)
         let listed = comparison
         // The suggestions a draft's specials get, read against the series as the library holds it.
-        let pool = TMDbTree(
+        let pool = DraftTree(
             library: comparison.library,
             record: TMDb.Record(.series, series),
             creating: ContainerDraft.Creating(),
@@ -488,7 +487,7 @@ extension AdminConsole {
             tmdb: tmdb,
             progress: { await progress($0, listed) }
         )
-        comparison.differences = held + suggested.specials.map(TMDbDifference.special)
+        comparison.differences = held + suggested.specials.map(Difference.special)
         comparison.suggestions = suggestions
     }
 
@@ -500,11 +499,11 @@ extension AdminConsole {
         of silo: Silo,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource,
-        progress: @escaping @Sendable (TMDbProgress, TMDbComparison) async -> Void = { _, _ in }
-    ) async throws -> TMDbComparison {
+        progress: @escaping @Sendable (StepProgress, Comparison) async -> Void = { _, _ in }
+    ) async throws -> Comparison {
         let opened = try await open(container: series, in: library, of: silo)
         let sidecar = try SidecarFile.sidecar(from: opened.sidecar)
-        var comparison = TMDbComparison(
+        var comparison = Comparison(
             library: library,
             container: series,
             title: sidecar.container.displayTitle,
@@ -542,10 +541,10 @@ extension AdminConsole {
         of series: Int?,
         in container: Container,
         missing: Bool,
-        into comparison: inout TMDbComparison,
+        into comparison: inout Comparison,
         of silo: Silo,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress, TMDbComparison) async -> Void
+        progress: @Sendable (StepProgress, Comparison) async -> Void
     ) async throws {
         let tmdbIDs = Set(episodes.map(\.ref))
         for episode in episodes {
@@ -560,7 +559,7 @@ extension AdminConsole {
             of: silo,
             tmdb: tmdb
         )
-        let found: [[TMDbDifference]] = try await steps(
+        let found: [[Difference]] = try await steps(
             "Reading TMDb's episodes",
             Array(episodes.indices),
             comparison,
@@ -863,7 +862,7 @@ extension AdminConsole {
     /// one.
     nonisolated static func leaf(_ episode: TMDb.Episode, in container: Container, title: String? = nil) -> Entry {
         var leaf = Entry.Leaf(
-            id: TMDbTree.itemID(for: episode.title, in: container),
+            id: DraftTree.itemID(for: episode.title, in: container),
             type: .episode,
             externalRefs: [episode.ref]
         )
@@ -887,7 +886,7 @@ extension AdminConsole {
                 }
             }
         }
-        TMDbTree.insert(entry, into: &container, sequence: nil, at: nil)
+        DraftTree.insert(entry, into: &container, sequence: nil, at: nil)
     }
 
     /// A sequence's items carrying TMDb's ids put in the order given, each in a place one of them held,

@@ -5,7 +5,7 @@ extension AdminConsole {
     /// How far a reading against TMDb has got, for the console to show while it runs: the step it is on
     /// and, when the step reads several things, how many of them are read. A long series asks TMDb and
     /// the silo hundreds of questions, and the operator sees each step as it goes.
-    public struct TMDbProgress: Hashable, Sendable {
+    public struct StepProgress: Hashable, Sendable {
         public var step: String
         public var done: Int
         /// How many the step reads; none when it reads one thing.

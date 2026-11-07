@@ -266,7 +266,7 @@ struct FindInTMDbSheet: View {
 /// A reading against TMDb as it goes: the step it is on, and how many of the step's questions are
 /// answered when it asks several.
 struct ReadingProgress: View {
-    let progress: AdminConsole.TMDbProgress
+    let progress: AdminConsole.StepProgress
 
     var body: some View {
         if let total = progress.total, total > 0 {
@@ -284,7 +284,7 @@ struct ReadingProgress: View {
     }
 }
 
-extension AdminConsole.TMDbDifference {
+extension AdminConsole.Difference {
     var isField: Bool {
         switch self {
         case .title, .year, .outline: true
