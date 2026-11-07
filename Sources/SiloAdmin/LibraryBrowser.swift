@@ -110,8 +110,8 @@ private struct LibraryNode: View {
                     Button("New Container…") {
                         model.newContainer = ConsoleModel.NewContainer(silo: silo, library: library, sequences: [])
                     }
-                    Button("Draft from TMDb…") {
-                        model.findingInTMDb = ConsoleModel.FindingInTMDb(silo: silo, library: library)
+                    Button("Draft from Wikidata…") {
+                        model.findingInWikidata = ConsoleModel.FindingInWikidata(silo: silo, library: library)
                     }
                 } label: {
                     Image(systemName: "plus")
@@ -240,21 +240,20 @@ struct ContainerDetail: View {
                     Button("Propose to smddb…") { Task { await model.beginProposal(of: key) } }
                         .disabled(model.database == nil)
                     if container.type == "series",
-                        let tmdb = container.externalRefs.first(where: { $0.provider == "tmdb" }).flatMap({
-                            Int($0.value)
-                        }),
+                        let item = container.externalRefs.first(where: { $0.provider == "wikidata" })?.value,
                         let silo = model.silos.first(where: { $0.id == key.silo })
                     {
-                        Button("Compare with TMDb…") { Task { await model.compareWithTMDb(key, on: silo) } }
-                            .disabled(model.database == nil || model.tmdbProblem != nil)
-                        Button("Add a Season from TMDb…") {
-                            model.findingInTMDb = ConsoleModel.FindingInTMDb(
+                        Button("Review…") { Task { await model.review(key, on: silo) } }
+                            .disabled(model.database == nil)
+                            .help("Its facts read from Wikidata, and its outline and artwork from TMDb")
+                        Button("Add a Season from Wikidata…") {
+                            model.findingInWikidata = ConsoleModel.FindingInWikidata(
                                 silo: silo,
                                 library: key.library,
-                                series: (key.container, container.displayTitle, tmdb)
+                                series: (key.container, container.displayTitle, item)
                             )
                         }
-                        .disabled(model.database == nil || model.tmdbProblem != nil)
+                        .disabled(model.database == nil)
                     }
                 }
 
@@ -266,9 +265,11 @@ struct ContainerDetail: View {
                 }
 
                 if container.type != "series", let silo = model.silos.first(where: { $0.id == key.silo }) {
-                    Button("Compare with TMDb…") { Task { await model.compareWithTMDb(key, on: silo) } }
-                        .disabled(model.database == nil || model.tmdbProblem != nil)
-                        .help("One with no TMDb id is read through the container above it, or its entries' other ids")
+                    Button("Review…") { Task { await model.review(key, on: silo) } }
+                        .disabled(model.database == nil)
+                        .help(
+                            "Its facts read from Wikidata, and its outline and artwork from TMDb. One with no Wikidata id is read through the container above it, or its entries' Wikidata ids"
+                        )
                 }
 
                 ArtworkStrip(

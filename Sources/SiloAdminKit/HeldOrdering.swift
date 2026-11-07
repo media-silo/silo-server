@@ -6,7 +6,7 @@ import SmdKit
 /// One of a held stop's entries, in its primary sequence as storing would leave it.
 public struct StopEntry: Hashable, Sendable, Identifiable {
     /// The key it is moved by: the container it names, the item it is when the container holds it
-    /// already, or the TMDb record it carries.
+    /// already, or the Wikidata item it carries.
     public let id: String
     public let title: String
     /// Whether it names a container beneath the stop.
@@ -48,10 +48,10 @@ extension ReviewWalk {
         // A container its drafted alternatives play is theirs, and none of its primary sequence's.
         let played = Set((draftedAlternatives[stop] ?? []).flatMap(\.containers))
         let added = addedContainers(at: stop).filter { !played.contains($0) }
-        // A series' seasons first, as its reading lists them, ahead of a held stop found beneath it again.
+        // The children its reading lists first, ahead of a held stop found beneath it again.
         let seasons = differences(of: stop).compactMap { difference -> HeldStopChild? in
             switch difference {
-            case .season, .heldSeason: .season(difference)
+            case .child, .heldChild: .child(difference)
             default: nil
             }
         }
@@ -122,13 +122,13 @@ extension HeldStopChild {
     /// The key it is moved by, as its entry in the stop's primary sequence goes by.
     public var key: String {
         switch self {
-        case .episode(let episode): "tmdb:\(episode.id)"
+        case .episode(let episode): "wikidata:\(episode.id)"
         case .group(let group): "child:\(group.id)"
         case .held(let held): "child:\(held.id)"
         case .entry(let entry): entry.id
         case .added(let id): "child:\(id)"
-        case .season(.heldSeason(_, let container, _)): "child:\(container)"
-        case .season(let season): season.id
+        case .child(.heldChild(_, let container, _)): "child:\(container)"
+        case .child(let child): child.id
         }
     }
 }
@@ -138,7 +138,7 @@ extension AdminConsole {
     public static func key(of entry: Entry, held: Set<ItemID>) -> String? {
         if let child = entry.childContainer { return "child:\(child.value)" }
         if let id = entry.id, held.contains(id) { return "item:\(id.value)" }
-        if let ref = entry.externalRefs.first(where: { $0.provider == .tmdb }) { return "tmdb:\(ref.value)" }
+        if let ref = entry.externalRefs.first(where: { $0.provider == .wikidata }) { return "wikidata:\(ref.value)" }
         if let id = entry.id { return "item:\(id.value)" }
         return entry.reference.map { "ref:\($0.container?.value ?? ""):\($0.item.value)" }
     }

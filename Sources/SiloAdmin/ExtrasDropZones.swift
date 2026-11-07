@@ -10,8 +10,8 @@ import SwiftUI
 /// decline it, each with how many specials are placed there.
 struct ExtrasDropZones: View {
     let container: String
-    let placements: [Int: SpecialPlacement]
-    let place: (Int, SpecialPlacement) -> Void
+    let placements: [String: SpecialPlacement]
+    let place: (String, SpecialPlacement) -> Void
     /// Whether a special may be declined from here: for a series' own container.
     var declines = false
     @State private var targeted: String?

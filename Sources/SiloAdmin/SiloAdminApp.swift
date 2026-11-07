@@ -25,7 +25,9 @@ struct SiloAdminApp: App {
             containerDrafts: ContainerDraftStore(
                 file: folder.appending(path: "container-drafts.json", directoryHint: .notDirectory)
             ),
-            reviewWalks: ReviewWalkStore(file: folder.appending(path: "tmdb-walks.json", directoryHint: .notDirectory)),
+            // Walks kept from TMDb's readings, in `tmdb-walks.json`, are not read: they name what they
+            // read by TMDb's ids, and a walk is read again from Wikidata's.
+            reviewWalks: ReviewWalkStore(file: folder.appending(path: "walks.json", directoryHint: .notDirectory)),
             passkeys: KeychainPasskeyStore()
         )
         _model = State(initialValue: ConsoleModel(console: console))

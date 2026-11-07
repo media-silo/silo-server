@@ -23,8 +23,10 @@ extension ReviewWalk {
     private func offeredFirst(_ kind: String, at stop: String) -> String? {
         let differences = isNew(stop) ? offered(stop) : stops[stop]?.comparison?.differences ?? []
         return differences.lazy.compactMap { difference -> String? in
-            guard case .artwork(kind, let path, _, _) = difference else { return nil }
-            return path
+            switch difference {
+            case .artwork(kind, let path, _, _), .staleArtwork(kind, let path?, _, _, _): return path
+            default: return nil
+            }
         }.first
     }
 }

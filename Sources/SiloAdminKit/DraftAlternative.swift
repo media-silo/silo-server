@@ -12,7 +12,7 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
         /// One of the container's items, by its id, referred to as an alternative refers to one.
         case item(String)
         /// A special placed in the alternative, by its TMDb id.
-        case special(Int)
+        case special(String)
         /// A container new beneath the one the alternative is of, by its id, played in its alternatives
         /// alone: none of the container's own sequences names it.
         case container(String)
@@ -29,7 +29,7 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
     }
 
     /// The specials it plays.
-    public var specials: [Int] {
+    public var specials: [String] {
         entries.compactMap { if case .special(let id) = $0 { id } else { nil } }
     }
 
@@ -61,7 +61,7 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
     ) {
         // A special or a new container in more than one is an entry in the first, and referred to from
         // the rest.
-        var made: [Int: ItemID] = [:]
+        var made: [String: ItemID] = [:]
         var named: [String: ItemID] = [:]
         for draft in drafts {
             let held = container.itemIDs
@@ -126,7 +126,7 @@ extension DraftAlternative {
 /// TMDb. A special in a drafted alternative is placed in the first of its container's that plays it; a
 /// clone of an alternative plays its specials too, referring to them where the first does.
 public protocol AlternativeDrafting {
-    var placements: [Int: SpecialPlacement] { get set }
+    var placements: [String: SpecialPlacement] { get set }
     /// The alternatives drafted for each container, by its id, in the order they are made.
     var draftedAlternatives: [String: [DraftAlternative]] { get set }
     /// Every special that may be placed.
@@ -160,7 +160,7 @@ extension AlternativeDrafting {
     public func title(of entry: DraftAlternative.Entry, at container: String) -> String {
         switch entry {
         case .item(let item): title(ofItem: item, at: container)
-        case .special(let id): placeable.first { $0.id == id }?.episode.title ?? String(id)
+        case .special(let id): placeable.first { $0.id == id }?.episode.title ?? id
         case .container(let id): self.container(id)?.displayTitle ?? id
         }
     }
@@ -189,7 +189,7 @@ extension AlternativeDrafting {
     public mutating func draftAlternative(
         at container: String,
         titled title: String,
-        playing special: Int? = nil
+        playing special: String? = nil
     )
         -> String
     {
@@ -227,7 +227,7 @@ extension AlternativeDrafting {
 
     /// A special placed in a drafted alternative at a position, out of wherever it was placed before,
     /// every drafted alternative it was in included.
-    public mutating func insert(_ special: Int, into draft: String, at position: Int, of container: String) {
+    public mutating func insert(_ special: String, into draft: String, at position: Int, of container: String) {
         guard let index = index(of: draft, at: container) else { return }
         var position = position
         if let was = draftedAlternatives[container]?[index].entries.firstIndex(of: .special(special)), was < position {
@@ -242,7 +242,7 @@ extension AlternativeDrafting {
 
     /// A special in a drafted alternative in place of one of its entries; a special it replaces is
     /// unassigned again.
-    public mutating func replace(_ position: Int, in draft: String, with special: Int, of container: String) {
+    public mutating func replace(_ position: Int, in draft: String, with special: String, of container: String) {
         guard let index = index(of: draft, at: container),
             draftedAlternatives[container]![index].entries.indices.contains(position)
         else { return }
@@ -298,7 +298,7 @@ extension AlternativeDrafting {
     }
 
     /// A special out of every drafted alternative it is in, and unassigned.
-    mutating func unplace(_ special: Int) {
+    mutating func unplace(_ special: String) {
         if let home = placements[special]?.container { alternativesChanged(at: home) }
         if case .alternative(let container, _)? = placements[special], var drafts = draftedAlternatives[container] {
             for index in drafts.indices { drafts[index].entries.removeAll { $0 == .special(special) } }
@@ -317,7 +317,7 @@ extension AlternativeDrafting {
 
     /// A special taken out of one of a container's drafted alternatives placed in the first that still
     /// plays it, or unassigned when none does.
-    private mutating func placeInFirst(_ special: Int, at container: String) {
+    private mutating func placeInFirst(_ special: String, at container: String) {
         placements[special] = draftedAlternatives[container]?.first { $0.entries.contains(.special(special)) }
             .map { .alternative(of: container, draft: $0.id) }
     }
@@ -325,7 +325,7 @@ extension AlternativeDrafting {
     /// A placement as it is kept: another version of a container, or of one of its items, as a drafted
     /// alternative the special is placed in; any other as it is. A version of an item the container does
     /// not hold is kept as it is, and makes nothing.
-    mutating func settle(_ special: Int, _ placement: SpecialPlacement?) -> SpecialPlacement? {
+    mutating func settle(_ special: String, _ placement: SpecialPlacement?) -> SpecialPlacement? {
         switch placement {
         case .edition(let container, let title)?:
             let draft = DraftAlternative(title: title, entries: [.special(special)])
@@ -372,14 +372,14 @@ extension DraftTree: AlternativeDrafting {
 
     public mutating func alternativesChanged(at container: String) { edited = .now }
 
-    /// The title of one of a container's items, by its id: its own, or TMDb's for the episode it carries.
+    /// The title of one of a container's items, by its id: its own, or Wikidata's for the episode it carries.
     public func title(ofItem item: String, at id: String) -> String {
         guard let entry = container(id)?.sequences.flatMap(\.items).first(where: { $0.id?.value == item }) else {
             return item
         }
         if let title = entry.title { return title }
-        let ref = entry.externalRefs.first { $0.provider == .tmdb }
-        return ref.flatMap { episodeTitles[$0.value] } ?? specials.first { $0.episode.ref == ref }?.episode.title
+        let ref = entry.externalRefs.first { $0.provider == .wikidata }
+        return ref.flatMap { episodeTitles[$0.value] } ?? specials.first { $0.episode.item == ref }?.episode.title
             ?? item
     }
 }

@@ -35,7 +35,7 @@ struct ChildMoving {
     let order: () -> [String]
     let move: (_ child: String, _ before: String?) -> Void
     /// Places a special dropped before a child, or last with none; nil where none is placed.
-    let place: ((_ special: Int, _ before: String?) -> Void)?
+    let place: ((_ special: String, _ before: String?) -> Void)?
     @Binding var dropping: String?
     @Binding var grabbing: String?
 

@@ -6,13 +6,13 @@ import Foundation
 import SiloAdminKit
 import SmdKit
 
-// MARK: - Walks against TMDb
+// MARK: - Review walks
 
 extension ConsoleModel {
     var walking: Walking? {
         get { tmdbState.walking }
         set {
-            // However the sheet closes, readings nobody is shown stop asking TMDb and the silo.
+            // However the sheet closes, readings nobody is shown stop asking Wikidata, TMDb and the silo.
             if newValue?.id != tmdbState.walking?.id {
                 for reading in tmdbState.readings.values { reading.cancel() }
                 tmdbState.readings = [:]
@@ -23,10 +23,10 @@ extension ConsoleModel {
         }
     }
 
-    /// Starts a walk of a held container's tree against TMDb, rooted at it: its first stop opened and
+    /// Starts a review walk of a held container's tree, rooted at it: its first stop opened and
     /// read, and, for a walk rooted below a series, the series' specials read beside it. A difference of
     /// the root given is ticked once the root is read.
-    func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
+    func review(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
         // A walk this Mac keeps for the container is offered to be resumed, or started again.
         if let kept = console.reviewWalks.walk(rootedAt: key.container, in: key.library, of: silo.id) {
             walking = Walking(
@@ -41,7 +41,7 @@ extension ConsoleModel {
         await startWalk(key, on: silo, choosing: choosing)
     }
 
-    /// Opens a walk rooted at a draft from TMDb, kept on this Mac from the start: its root opened, and, for
+    /// Opens a walk rooted at a draft from Wikidata, kept on this Mac from the start: its root opened, and, for
     /// a series, where its specials go suggested beside it.
     func openDraftWalk(_ walk: ReviewWalk, on silo: AdminConsole.Silo, redraft: Walking.Redraft) async {
         let opening = Walking(silo: silo, walk: walk, open: walk.root, redraft: redraft)
@@ -54,7 +54,7 @@ extension ConsoleModel {
 
     /// Suggests where a drafted series' specials go, while they sit beside the stops.
     private func suggestSpecials(for id: UUID) {
-        guard let current = walking, let database, let tmdb else { return }
+        guard let current = walking, let database else { return }
         walking?.pooling = AdminConsole.StepProgress("Suggesting where the specials go")
         tmdbState.pooling = Task {
             do {
@@ -62,11 +62,9 @@ extension ConsoleModel {
                     in: current.walk,
                     of: current.silo,
                     from: database,
-                    tmdb: tmdb,
                     progress: { step in await self.suggesting(step, for: id) }
                 )
                 if walking?.id == id {
-                    walking?.walk.specials = suggested.specials
                     walking?.walk.suggestions = suggested.suggestions
                     keepWalk()
                 }
@@ -106,15 +104,15 @@ extension ConsoleModel {
         choosePending()
     }
 
-    /// Discards the walk this Mac kept for the container, or for the record it drafted, and starts a new
+    /// Discards the walk this Mac kept for the container, or for the item it drafted, and starts a new
     /// one.
     func startWalkAgain() async {
         guard let current = walking else { return }
         try? console.reviewWalks.remove(current.walk.id, of: current.silo.id)
         if let redraft = current.redraft {
             do {
-                if let said = try await startTMDbDraft(
-                    of: redraft.record,
+                if let said = try await startDraft(
+                    of: redraft.item,
                     shape: redraft.shape,
                     for: redraft.finding,
                     again: true
@@ -175,8 +173,8 @@ extension ConsoleModel {
             choosing: choosing
         )
         walking = starting
-        guard database != nil, tmdb != nil else {
-            walking?.failure = tmdbProblem ?? smddbProblem ?? "TMDb or smddb's clone cannot be read."
+        guard database != nil else {
+            walking?.failure = smddbProblem ?? "smddb's clone cannot be read."
             return
         }
         do {
@@ -192,7 +190,7 @@ extension ConsoleModel {
         await openStop(key.container)
     }
 
-    /// Opens a stop of the walk, reading it against TMDb if it has not been read.
+    /// Opens a stop of the walk, reading it against Wikidata and TMDb if it has not been read.
     func openStop(_ stop: String) async {
         guard walking?.walk.stops[stop] != nil else { return }
         walking?.open = stop
@@ -206,9 +204,9 @@ extension ConsoleModel {
         await read(open)
     }
 
-    /// Says which of TMDb's seasons the open stop, a held season carrying no TMDb id, is, or that it is
+    /// Says which of Wikidata's seasons the open stop, a held season carrying no Wikidata id, is, or that it is
     /// unmatched again, and reads it as that season.
-    func identifySeason(_ season: Int?) async {
+    func identifySeason(_ season: String?) async {
         guard let open = walking?.open, tmdbState.readings[open] == nil else { return }
         walking?.walk.identify(open, as: season)
         walking?.plan = nil
@@ -222,15 +220,15 @@ extension ConsoleModel {
         await openStop(next)
     }
 
-    /// Reads a stop against TMDb, each step shown as it goes with what it has found; a reading already
+    /// Reads a stop against Wikidata and TMDb, each step shown as it goes with what it has found; a reading already
     /// running is waited for, and a stop read already is not read again.
     private func read(_ stop: String) async {
-        guard let current = walking, let database, let tmdb else { return }
+        guard let current = walking, let database else { return }
         if let running = tmdbState.readings[stop] {
             await running.value
             return
         }
-        // A new stop is a draft from TMDb already, with nothing in the library to read.
+        // A new stop is a draft from Wikidata already, with nothing in the library to read.
         guard current.walk.stops[stop]?.comparison == nil, !current.walk.isNew(stop) else { return }
         let (id, silo, library) = (current.id, current.silo, current.walk.library)
         walking?.failures[stop] = nil
@@ -242,6 +240,7 @@ extension ConsoleModel {
                     in: library,
                     of: silo,
                     from: database,
+                    wikidata: wikidata,
                     tmdb: tmdb,
                     identified: current.walk.identified,
                     progress: { step, found in await self.reading(step, found, of: stop, for: id) }
@@ -251,7 +250,7 @@ extension ConsoleModel {
                     keepWalk()
                     choosePending()
                 }
-            } catch let unreadable as AdminConsole.NoTMDbReading {
+            } catch let unreadable as AdminConsole.NoReading {
                 if walking?.id == id { walking?.failures[stop] = unreadable.reason }
             } catch {
                 // A reading stopped by its sheet closing failed at nothing.
@@ -279,7 +278,7 @@ extension ConsoleModel {
 
     /// Reads the specials of the series above a walk's root, to sit beside every stop.
     private func readSpecials(of series: String, for id: UUID) {
-        guard let current = walking, let database, let tmdb else { return }
+        guard let current = walking, let database else { return }
         let (silo, library) = (current.silo, current.walk.library)
         walking?.pooling = AdminConsole.StepProgress("Reading the series' specials")
         tmdbState.pooling = Task {
@@ -289,7 +288,7 @@ extension ConsoleModel {
                     in: library,
                     of: silo,
                     from: database,
-                    tmdb: tmdb,
+                    wikidata: wikidata,
                     progress: { step, found in await self.pooling(step, found, for: id) }
                 )
                 if walking?.id == id { walking?.walk.pool(specials) }
@@ -313,7 +312,7 @@ extension ConsoleModel {
     /// first, and confirms only once the operator says so.
     @discardableResult
     func confirmStop(leavingSaid: Bool = false) async -> Bool {
-        guard let current = walking, !current.confirming, let database, let tmdb else { return false }
+        guard let current = walking, !current.confirming, let database else { return false }
         let leaving = current.walk.leaving(confirming: current.open)
         if !leaving.isEmpty, !leavingSaid {
             walking?.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
@@ -327,6 +326,7 @@ extension ConsoleModel {
                 confirming: current.open,
                 in: current.walk,
                 from: database,
+                wikidata: wikidata,
                 tmdb: tmdb
             )
             let beneath = try await console.stops(beneath: current.open, in: current.walk, of: current.silo)
@@ -363,7 +363,7 @@ extension ConsoleModel {
 
     /// Puts a special where the operator says, or back among the unassigned; a new companion series it
     /// names is kept with the walk.
-    func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
+    func place(_ special: String, _ placement: SpecialPlacement?, companion: Container? = nil) {
         walking?.walk.place(special, placement, companion: companion)
         walking?.plan = nil
         keepWalk()
@@ -390,7 +390,7 @@ extension ConsoleModel {
         keepWalk()
     }
 
-    /// Shapes the open new stop's draft as a draft from TMDb is shaped.
+    /// Shapes the open new stop's draft as a draft from Wikidata is shaped.
     func shapeNewStop(_ change: (inout DraftTree) -> Void) {
         guard let open = walking?.open else { return }
         walking?.walk.shape(open, change)
@@ -422,7 +422,7 @@ extension ConsoleModel {
 
     /// A special dropped among the open stop's children, placed in its primary sequence before the child
     /// whose key is given, or last.
-    func placeAmongChildren(_ special: Int, before target: String?) {
+    func placeAmongChildren(_ special: String, before target: String?) {
         guard let open = walking?.open else { return }
         walking?.walk.place(special, at: open, before: target)
         walking?.plan = nil
@@ -467,7 +467,7 @@ extension ConsoleModel {
     /// Stores the walk as its list says, stopping at the first refusal; what was not stored stays in the
     /// walk, to be stored again. The root is read again in the browser.
     func storeWalk() async {
-        guard let current = walking, let tmdb else { return }
+        guard let current = walking else { return }
         walking?.storing = AdminConsole.StepProgress("Storing the walk")
         defer { if walking?.id == current.id { walking?.storing = nil } }
         do {
@@ -488,7 +488,7 @@ extension ConsoleModel {
                 walking?.open = stale
                 await read(stale)
             }
-            // A root drafted from TMDb is in the library's list once it is made, and not before.
+            // A root drafted from Wikidata is in the library's list once it is made, and not before.
             let root = current.walk.root
             if current.walk.drafting {
                 await loadContainers(for: current.silo)

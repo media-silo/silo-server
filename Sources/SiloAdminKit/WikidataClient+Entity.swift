@@ -161,7 +161,8 @@ struct WikidataEntity: Hashable, Sendable {
             refs: refs,
             directors: credits("P57"),
             screenwriters: credits("P58"),
-            cast: credits("P161")
+            cast: credits("P161"),
+            partOf: items("P179")
         )
     }
 }

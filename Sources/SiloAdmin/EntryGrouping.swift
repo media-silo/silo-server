@@ -50,11 +50,11 @@ enum GroupingRow: Identifiable {
     }
 }
 
-/// A run of entries TMDb titles as the parts of one story, offered as a group titled by it.
+/// A run of entries Wikidata titles as the parts of one story, offered as a group titled by it.
 struct GroupingSuggestion: Hashable {
     let title: String
     let members: [String]
-    /// The part number TMDb gives each member, in their order.
+    /// The part number Wikidata gives each member, in their order.
     let parts: [Int]
 
     /// The parts a renaming titles, by their numbers, as `Part 1 to 6`.
@@ -69,7 +69,7 @@ struct GroupingSuggestion: Hashable {
 /// nothing is selected. A group is never selected, so groups are made of entries alone and a deeper
 /// shape is made a level at a time. A group is ticked whole, and its entries are shown in it, each only
 /// to be taken out of it. A container held beneath already is shown in its place, and entries may be put
-/// into it as into a group, each only to be taken out of it again. A group, and each run TMDb titles as one story's parts, is bracketed on the
+/// into it as into a group, each only to be taken out of it again. A group, and each run Wikidata titles as one story's parts, is bracketed on the
 /// right of its entries' titles, its title or the suggestion beside the bracket's middle. No kind is
 /// assumed: the kind the container's own groups are is offered first, and the operator chooses. The
 /// heading and the actions are the header of a section, pinned while the list scrolls beneath them in a
@@ -93,7 +93,7 @@ struct GroupingList<Heading: View>: View {
     /// children keep the order they are in.
     var move: ((_ child: String, _ before: String?) -> Void)?
     /// Places a special dropped on a child before it, or past the last last; nil when none is.
-    var place: ((_ special: Int, _ before: String?) -> Void)?
+    var place: ((_ special: String, _ before: String?) -> Void)?
     @ViewBuilder let heading: Heading
     /// The entries selected to be grouped.
     @State private var selected: Set<String> = []
@@ -597,9 +597,9 @@ struct EntryGrouping: View {
     /// Moves one of the container's entries before another, or last with none.
     let move: (_ item: ItemID, _ before: ItemID?) -> Void
     /// Places a special dropped on a child before it, or past the last last, by the key the child goes by.
-    let place: (_ special: Int, _ before: String?) -> Void
+    let place: (_ special: String, _ before: String?) -> Void
     /// Where the specials are placed, and the specials, for those placed in the container to be listed.
-    let placements: [Int: SpecialPlacement]
+    let placements: [String: SpecialPlacement]
     let specials: [Special]
 
     private var container: Container? { tree.container(parent) }
@@ -736,10 +736,10 @@ struct EntryGrouping: View {
 
     private func title(of entry: Entry) -> String {
         if let child = entry.childContainer { return tree.container(child.value)?.displayTitle ?? child.value }
-        // The operator's own title, as a part renamed has, before TMDb's.
+        // The operator's own title, as a part renamed has, before Wikidata's.
         if let title = entry.title { return title }
-        let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
-        return tmdb.flatMap { tree.episodeTitles[$0.value] } ?? entry.id?.value ?? "a reference"
+        let wikidata = entry.externalRefs.first { $0.provider == .wikidata }
+        return wikidata.flatMap { tree.episodeTitles[$0.value] } ?? entry.id?.value ?? "a reference"
     }
 
     /// A new container, holding nothing yet, last among the children.

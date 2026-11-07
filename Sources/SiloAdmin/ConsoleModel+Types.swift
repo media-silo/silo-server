@@ -55,12 +55,12 @@ extension ConsoleModel {
         var failure: String?
     }
 
-    /// What the console holds of TMDb between reads: the language it answers in, why it cannot be
-    /// asked when it cannot, and the sheets open over it.
+    /// What the console holds of its providers between reads: the language Wikidata and TMDb answer in,
+    /// why TMDb cannot be asked when it cannot, and the sheets open over them.
     struct TMDbState {
         var language = "en-US"
         var problem: String?
-        var finding: FindingInTMDb?
+        var finding: FindingInWikidata?
         var walking: Walking?
         /// The readings of the walk's stops, by stop, cancelled when its sheet closes.
         var readings: [String: Task<Void, Never>] = [:]
@@ -68,14 +68,14 @@ extension ConsoleModel {
         var pooling: Task<Void, Never>?
     }
 
-    /// A tree being walked against TMDb, held or drafted from it: the walk as it stands, the stop open,
+    /// A tree being walked against Wikidata and TMDb, held or drafted: the walk as it stands, the stop open,
     /// each stop's reading as it goes and why one failed, and the store's list and how storing it ended.
     struct Walking: Identifiable {
         /// What a walk rooted at a draft was drafted from, to draft it again when it is started again.
         struct Redraft {
-            var record: TMDb.Record
-            var shape: AdminConsole.TMDbShape
-            var finding: FindingInTMDb
+            var item: Wikidata.Item
+            var shape: AdminConsole.DraftShape
+            var finding: FindingInWikidata
         }
 
         let id = UUID()
@@ -111,14 +111,14 @@ extension ConsoleModel {
         var stop: ReviewWalk.Stop? { walk.stops[open] }
     }
 
-    /// A record being found at TMDb: for a library, to draft from; or, for a series the library holds by
-    /// its TMDb reference, one of its seasons to draft beneath it.
-    struct FindingInTMDb: Identifiable {
+    /// An item being found at Wikidata: for a library, to draft from; or, for a series the library holds
+    /// by its Wikidata reference, one of its seasons to draft beneath it.
+    struct FindingInWikidata: Identifiable {
         let id = UUID()
         var silo: AdminConsole.Silo
         var library: String
-        /// The held series, and its TMDb number, for a season.
-        var series: (container: String, title: String, tmdb: Int)?
+        /// The held series, and its Wikidata id, for a season.
+        var series: (container: String, title: String, wikidata: String)?
     }
 
     /// An import from smddb into a library being chosen.

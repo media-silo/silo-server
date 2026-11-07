@@ -3,7 +3,7 @@
 
 import SmdKit
 
-/// Episodes TMDb has and a held container lacks, grouped by the operator into a new container beneath
+/// Episodes Wikidata has and a held container lacks, grouped by the operator into a new container beneath
 /// it: made with them when the walk is stored, if its tick is taken, in place of adding them one by one.
 public struct EpisodeGroup: Hashable, Sendable, Codable, Identifiable {
     /// The new container's id, given out by the silo.
@@ -11,10 +11,10 @@ public struct EpisodeGroup: Hashable, Sendable, Codable, Identifiable {
     public var title: Title
     public var type: ContainerType
     public var typeLabel: String?
-    /// TMDb's ids of its episodes, in TMDb's order.
-    public var episodes: [Int]
+    /// Wikidata's ids of its episodes, in Wikidata's order.
+    public var episodes: [String]
 
-    public init(id: String, title: Title, type: ContainerType, typeLabel: String? = nil, episodes: [Int]) {
+    public init(id: String, title: Title, type: ContainerType, typeLabel: String? = nil, episodes: [String]) {
         self.id = id
         self.title = title
         self.type = type
@@ -26,15 +26,15 @@ public struct EpisodeGroup: Hashable, Sendable, Codable, Identifiable {
     public var tick: String { "group:\(id)" }
 }
 
-/// A run of episodes a held container lacks that TMDb titles as the parts of one story: suggested to be
+/// A run of episodes a held container lacks that Wikidata titles as the parts of one story: suggested to be
 /// grouped, titled by the story.
 public struct SuggestedEpisodes: Hashable, Sendable {
     public var title: String
-    public var episodes: [Int]
-    /// The part number TMDb gives each, in the episodes' order.
+    public var episodes: [String]
+    /// The part number its title gives each, in the episodes' order.
     public var parts: [Int]
 
-    public init(title: String, episodes: [Int], parts: [Int]) {
+    public init(title: String, episodes: [String], parts: [Int]) {
         self.title = title
         self.episodes = episodes
         self.parts = parts
@@ -44,7 +44,7 @@ public struct SuggestedEpisodes: Hashable, Sendable {
 /// One of a held stop's children besides its seasons, as its children list them.
 public enum HeldStopChild: Hashable, Sendable {
     /// A missing episode grouped in none, and put into no container held beneath.
-    case episode(TMDb.Episode)
+    case episode(Wikidata.Work)
     case group(EpisodeGroup)
     /// A container held beneath, holding the missing episodes put into it.
     case held(ReviewWalk.HeldChild)
@@ -53,14 +53,14 @@ public enum HeldStopChild: Hashable, Sendable {
     case entry(StopEntry)
     /// A container the operator added beneath it, by its id: a new stop of the walk, shaped there.
     case added(String)
-    /// One of a series' seasons, as its reading lists it: held beneath it, or missing, ticked to be
-    /// drafted.
-    case season(ReviewWalk.Difference)
+    /// One of the children its reading lists, a series' season or a season's serial: held beneath it,
+    /// or missing, ticked to be drafted.
+    case child(ReviewWalk.Difference)
 }
 
 // MARK: - Grouping a held stop's missing episodes
 
-/// The missing episodes of a held stop grouped into new containers beneath it, and the groups TMDb's
+/// The missing episodes of a held stop grouped into new containers beneath it, and the groups their
 /// titles suggest. `TmdbWalk.md`, *A new stop*.
 extension ReviewWalk.Stop {
     /// Absent from a walk kept before groups were asked.
@@ -70,15 +70,15 @@ extension ReviewWalk.Stop {
     }
 
     /// Absent from a walk kept before missing episodes could be added to a held container.
-    public var intoHeld: [String: [Int]] {
+    public var intoHeld: [String: [String]] {
         get { episodesIntoHeld ?? [:] }
         set { episodesIntoHeld = newValue.isEmpty ? nil : newValue }
     }
 }
 
 extension ReviewWalk {
-    /// The episodes a held stop's reading offers, in TMDb's order, and those its parent handed to it.
-    public func missingEpisodes(at stop: String) -> [TMDb.Episode] {
+    /// The episodes a held stop's reading offers, in Wikidata's order, and those its parent handed to it.
+    public func missingEpisodes(at stop: String) -> [Wikidata.Work] {
         episodeDifferences(at: stop).compactMap { difference in
             if case .episode(let episode, _) = difference { episode } else { nil }
         }
@@ -100,7 +100,7 @@ extension ReviewWalk {
         } + handed(to: stop)
     }
 
-    /// The runs of a held stop's missing episodes, grouped in none of its groups, that TMDb titles as the
+    /// The runs of a held stop's missing episodes, grouped in none of its groups, that their titles say are the
     /// parts of one story.
     public func suggestedGroups(at stop: String) -> [SuggestedEpisodes] {
         // A run of the story the stop is titled as is its own parts, not a group to make of them.
@@ -113,9 +113,9 @@ extension ReviewWalk {
         storyRuns(at: stop).first { isOwn($0, at: stop) }
     }
 
-    /// Missing episodes of a held stop titled by the word given and each one's part number at TMDb, as
-    /// `Part 3`: the titles the entries the walk adds for them carry.
-    public mutating func title(_ episodes: [Int], at stop: String, as word: String) {
+    /// Missing episodes of a held stop titled by the word given and the part number each one's title
+    /// gives, as `Part 3`: the titles the entries the walk adds for them carry.
+    public mutating func title(_ episodes: [String], at stop: String, as word: String) {
         unconfirm(stop)
         for episode in missingEpisodes(at: stop) where episodes.contains(episode.id) {
             guard let number = DraftTree.part(of: episode.title) else { continue }
@@ -123,11 +123,11 @@ extension ReviewWalk {
         }
     }
 
-    /// An episode as the walk shows it and adds it: the operator's own title, or TMDb's.
-    public func title(of episode: TMDb.Episode) -> String { titles[episode.id] ?? episode.title }
+    /// An episode as the walk shows it and adds it: the operator's own title, or Wikidata's.
+    public func title(of episode: Wikidata.Work) -> String { titles[episode.id] ?? episode.title }
 
     /// The runs of a held stop's missing episodes, grouped in none and titled by none of the operator's
-    /// own, that TMDb titles as the parts of one story.
+    /// own, that their titles say are the parts of one story.
     private func storyRuns(at stop: String) -> [SuggestedEpisodes] {
         let grouped = Set((stops[stop]?.groups ?? []).flatMap(\.episodes))
             .union((stops[stop]?.intoHeld ?? [:]).values.joined())
@@ -146,7 +146,7 @@ extension ReviewWalk {
     /// Missing episodes of a held stop made a new group beneath it, taken in place of its episodes, and
     /// ticked, since it was selected to be made: each leaves any group it was in.
     public mutating func group(
-        _ episodes: [Int],
+        _ episodes: [String],
         at stop: String,
         into id: String,
         type: ContainerType,
@@ -168,8 +168,8 @@ extension ReviewWalk {
         stops[stop]?.chosen.insert(group.tick)
     }
 
-    /// Missing episodes of a held stop added to a group made there, in TMDb's order among its own.
-    public mutating func add(_ episodes: [Int], toGroup id: String, at stop: String) {
+    /// Missing episodes of a held stop added to a group made there, in Wikidata's order among its own.
+    public mutating func add(_ episodes: [String], toGroup id: String, at stop: String) {
         guard let index = stops[stop]?.groups.firstIndex(where: { $0.id == id }) else { return }
         unconfirm(stop)
         let members = stops[stop]?.groups[index].episodes ?? []
@@ -181,7 +181,7 @@ extension ReviewWalk {
     }
 
     /// One episode out of a group, ticked again as the group was; a group left with none is ungrouped.
-    public mutating func remove(_ episode: Int, fromGroup id: String, at stop: String) {
+    public mutating func remove(_ episode: String, fromGroup id: String, at stop: String) {
         guard let group = stops[stop]?.groups.first(where: { $0.id == id }), group.episodes.contains(episode) else {
             return
         }
@@ -205,11 +205,11 @@ extension ReviewWalk {
     /// new stops: its specials placed and its parts shaped there, made from the draft once its own stop
     /// is confirmed. A group whose episodes have changed since it was drafted is drafted again.
     mutating func draftGroups(of stop: Stop) {
-        guard !isNew(stop.id), let taken = stop.taken, let comparison = stop.comparison else { return }
+        guard !isNew(stop.id), let taken = stop.taken, stop.comparison != nil else { return }
         let missing = missingEpisodes(at: stop.id)
         for group in stop.groups where taken.contains(group.tick) {
             let episodes = group.episodes.compactMap { id in missing.first { $0.id == id } }
-            let titles = Dictionary(episodes.map { (String($0.id), $0.title) }, uniquingKeysWith: { first, _ in first })
+            let titles = Dictionary(episodes.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
             if let drafted = drafts[group.id] {
                 guard Set(drafted.episodeTitles.keys) != Set(titles.keys) else { continue }
                 remove(group.id)
@@ -229,31 +229,32 @@ extension ReviewWalk {
             }
             let tree = DraftTree(
                 library: library,
-                record: TMDb.Record(.series, comparison.series ?? 0),
+                item: nil,
                 creating: ContainerDraft.Creating(parent: stop.id),
                 containers: [child],
                 top: id,
-                episodeTitles: titles,
-                runtimes: comparison.runtimes.filter { titles[$0.key] != nil }
+                episodeTitles: titles
             )
             drafts[group.id] = tree
             stops[group.id] = Stop(newIn: tree, group.id, parent: stop.id, offering: offered(group.id, in: tree))
         }
     }
 
-    /// A held stop's missing episodes as its children list them, in TMDb's order: each group at its first
-    /// episode's place, each container held beneath at the place of the first of TMDb's episodes it
-    /// holds, or last when it holds none, and an episode put into one shown in it rather than here.
+    /// A held stop's missing episodes as its children list them, in Wikidata's order: each group at its
+    /// first episode's place, each container held beneath at the place of the first of the episodes read
+    /// it holds, or last when it holds none, and an episode put into one shown in it rather than here.
     public func children(at stop: String) -> [HeldStopChild] {
         let groups = stops[stop]?.groups ?? []
         let handed = Set((stops[stop]?.intoHeld ?? [:]).values.joined())
         var waiting = heldChildren(at: stop).enumerated().sorted {
-            ($0.element.number ?? .max, $0.offset) < ($1.element.number ?? .max, $1.offset)
+            ($0.element.position ?? .max, $0.offset) < ($1.element.position ?? .max, $1.offset)
         }
         .map(\.element)
+        let order = stops[stop]?.comparison?.episodeOrder ?? []
         var children: [HeldStopChild] = []
         for episode in missingEpisodes(at: stop) {
-            while let next = waiting.first, (next.number ?? .max) < episode.number {
+            let position = order.firstIndex(of: episode.id).map { $0 + 1 } ?? .max
+            while let next = waiting.first, (next.position ?? .max) < position {
                 children.append(.held(next))
                 waiting.removeFirst()
             }
@@ -276,8 +277,8 @@ extension ReviewWalk {
             ? []
             : differences(of: stop).compactMap { difference -> String? in
                 switch difference {
-                case .heldSeason(_, let container, _): container
-                case .season(let season): drafted(season.id, at: stop)
+                case .heldChild(_, let container, _): container
+                case .child(let child): drafted(child.id, at: stop)
                 default: nil
                 }
             }
@@ -295,19 +296,19 @@ extension ReviewWalk {
         case .added(let id): id
         case .entry(let entry): entry.id.hasPrefix("child:") ? String(entry.id.dropFirst("child:".count)) : nil
         case .episode: nil
-        case .season(.heldSeason(_, let container, _)): container
-        case .season(.season(let season)): drafted(season.id, at: stop)
-        case .season: nil
+        case .child(.heldChild(_, let container, _)): container
+        case .child(.child(let child)): drafted(child.id, at: stop)
+        case .child: nil
         }
     }
 
-    /// The stop drafted beneath a series for one of TMDb's seasons, once it is.
-    func drafted(_ season: Int, at stop: String) -> String? {
-        drafts.values.first { $0.creating.parent == stop && Self.missing($0) == "season:\(season)" }?.top
+    /// The stop drafted beneath a held stop for one of the children Wikidata lists, once it is.
+    func drafted(_ child: String, at stop: String) -> String? {
+        drafts.values.first { $0.creating.parent == stop && Self.missing($0) == "child:\(child)" }?.top
     }
 
     /// The containers a held stop holds beneath it, as its reading found them, or, for a reading kept
-    /// before they were read, the held stops the walk found beneath it, placed by none of TMDb's episodes.
+    /// before they were read, the held stops the walk found beneath it, placed by none of the episodes.
     public func heldChildren(at stop: String) -> [HeldChild] {
         guard let comparison = stops[stop]?.comparison else { return [] }
         if let held = comparison.heldChildren { return held }
@@ -318,10 +319,10 @@ extension ReviewWalk {
         }
     }
 
-    /// Missing episodes of a held stop handed to a container it holds beneath it, in TMDb's order after
+    /// Missing episodes of a held stop handed to a container it holds beneath it, in Wikidata's order after
     /// any handed already: that container's own missing episodes from then on, ticked at its stop, and
     /// none of the held stop's. Each leaves any group, or other container, it was in.
-    public mutating func add(_ episodes: [Int], toHeld child: String, at stop: String) {
+    public mutating func add(_ episodes: [String], toHeld child: String, at stop: String) {
         guard heldChildren(at: stop).contains(where: { $0.id == child }), !episodes.isEmpty else { return }
         unconfirm(stop)
         unconfirm(child)
@@ -335,7 +336,7 @@ extension ReviewWalk {
 
     /// One episode out of the held container it was handed to, back among the stop's missing ones and
     /// ticked, as it was there to begin with.
-    public mutating func remove(_ episode: Int, fromHeld child: String, at stop: String) {
+    public mutating func remove(_ episode: String, fromHeld child: String, at stop: String) {
         guard stops[stop]?.intoHeld[child]?.contains(episode) == true else { return }
         unconfirm(stop)
         leave(episode, at: stop)
@@ -344,7 +345,7 @@ extension ReviewWalk {
 
     /// An episode out of whichever group of the stop, or held container, holds it, and a group left with
     /// none gone; out of a held container, it is no longer ticked or grouped there either.
-    private mutating func leave(_ episode: Int, at stop: String) {
+    private mutating func leave(_ episode: String, at stop: String) {
         if let intoHeld = stops[stop]?.intoHeld {
             for (child, handed) in intoHeld where handed.contains(episode) {
                 leave(episode, at: child)
@@ -359,7 +360,7 @@ extension ReviewWalk {
         stops[stop]?.groups = groups.filter { !$0.episodes.isEmpty }
     }
 
-    private func inOrder(_ episodes: Set<Int>, at stop: String) -> [Int] {
+    private func inOrder(_ episodes: Set<String>, at stop: String) -> [String] {
         let order = missingEpisodes(at: stop).map(\.id)
         return order.filter(episodes.contains) + episodes.subtracting(order).sorted()
     }
@@ -382,7 +383,7 @@ extension ReviewWalk {
     }
 
     /// What a special's title may name a stop by: its own title, unless it is the series, the titles of
-    /// its entries and of the stories TMDb titles them parts of, and the titles of the containers beneath
+    /// its entries and of the stories their titles say they are parts of, and the titles of the containers beneath
     /// it.
     private func names(of stop: String) -> Set<String> {
         var names: Set<String> = []
@@ -394,7 +395,7 @@ extension ReviewWalk {
                 continue
             }
             if let title = entry.title { names.insert(title) }
-            for ref in entry.externalRefs where ref.provider == .tmdb {
+            for ref in entry.externalRefs where ref.provider == .wikidata {
                 guard let title = titles[ref.value] else { continue }
                 names.insert(DraftTree.story(of: title) ?? title)
             }

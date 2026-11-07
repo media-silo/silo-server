@@ -8,7 +8,7 @@ import SiloClient
 import SmdKit
 import SmdSidecar
 
-// MARK: - TMDb
+// MARK: - Finding in Wikidata, and TMDb's content
 
 extension ConsoleModel {
     static let tmdbLanguageKey = "tmdbLanguage"
@@ -21,11 +21,11 @@ extension ConsoleModel {
         get { tmdbState.problem }
         set { tmdbState.problem = newValue }
     }
-    var findingInTMDb: FindingInTMDb? {
+    var findingInWikidata: FindingInWikidata? {
         get { tmdbState.finding }
         set { tmdbState.finding = newValue }
     }
-    /// This Mac's language and region, as TMDb names a language: `en-GB`.
+    /// This Mac's language and region, as TMDb and Wikidata name a language: `en-GB`.
     static var macLanguage: String {
         guard let code = Locale.current.language.languageCode?.identifier else { return "en-US" }
         return Locale.current.region.map { "\(code)-\($0.identifier)" } ?? code
@@ -74,29 +74,33 @@ extension ConsoleModel {
             .reason
     }
 
-    func searchTMDb(_ query: String) async throws -> [TMDb.SearchResult] {
-        guard let tmdb, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
-        return try await tmdb.search(query)
+    /// Wikidata as the console reads it, in the language the settings name. It needs no key.
+    var wikidata: any WikidataSource { WikidataClient(language: tmdbLanguage) }
+
+    func searchWikidata(_ query: String) async throws -> [Wikidata.SearchResult] {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        return try await wikidata.search(query)
     }
 
-    /// A series as TMDb has it, for choosing its seasons or an episode group to draft it by.
-    func tmdbSeries(_ id: Int) async throws -> TMDb.Series? {
-        try await tmdb?.series(id)
+    /// A series as Wikidata has it, for choosing its seasons to draft it by.
+    func wikidataSeries(_ id: String) async throws -> Wikidata.Series {
+        try await wikidata.series(id)
     }
 
-    /// Starts a walk of a record for the library being found for, rooted at a draft of it. A record smddb
+    /// Starts a walk of an item for the library being found for, rooted at a draft of it. An item smddb
     /// holds is not drafted, and what holds it is said instead; one the library holds is walked as it is
-    /// held; a walk this Mac kept of the record is offered to be resumed, or started again.
-    func startTMDbDraft(
-        of record: TMDb.Record,
-        shape: AdminConsole.TMDbShape,
-        for finding: FindingInTMDb,
+    /// held; a walk this Mac kept of the item is offered to be resumed, or started again. With no TMDb,
+    /// the draft holds Wikidata's facts and no content.
+    func startDraft(
+        of item: Wikidata.Item,
+        shape: AdminConsole.DraftShape,
+        for finding: FindingInWikidata,
         again: Bool = false
     ) async throws -> String? {
-        guard let database, let tmdb else { return "TMDb or smddb's clone cannot be read." }
-        let redraft = Walking.Redraft(record: record, shape: shape, finding: finding)
-        if !again, let kept = console.reviewWalks.walk(drafting: record, in: finding.library, of: finding.silo.id) {
-            findingInTMDb = nil
+        guard let database else { return "smddb's clone cannot be read." }
+        let redraft = Walking.Redraft(item: item, shape: shape, finding: finding)
+        if !again, let kept = console.reviewWalks.walk(drafting: item, in: finding.library, of: finding.silo.id) {
+            findingInWikidata = nil
             walking = Walking(
                 silo: finding.silo,
                 walk: kept,
@@ -107,39 +111,40 @@ extension ConsoleModel {
             return nil
         }
         switch try await console.startWalk(
-            drafting: record,
+            drafting: item,
             shape: shape,
             into: finding.library,
             of: finding.silo,
             from: database,
+            wikidata: wikidata,
             tmdb: tmdb
         ) {
         case .importFromSmddb(let container):
             return
                 "smddb holds this as \(container.displayTitle), so it is imported from smddb rather than drafted: choose Import from smddb… and find it there."
         case .held(let summary):
-            findingInTMDb = nil
-            await compareWithTMDb(
+            findingInWikidata = nil
+            await review(
                 ContainerKey(silo: finding.silo.id, library: finding.library, container: summary.id),
                 on: finding.silo
             )
             return nil
         case .walk(let walk):
-            findingInTMDb = nil
+            findingInWikidata = nil
             await openDraftWalk(walk, on: finding.silo, redraft: redraft)
             return nil
         }
     }
 
-    /// Walks the held series being found for, the season of TMDb's chosen as a missing child to be
+    /// Walks the held series being found for, the season of Wikidata's chosen as a missing child to be
     /// drafted beneath it once the series' stop is confirmed.
-    func startSeasonDraft(_ season: TMDb.SeasonSummary, for finding: FindingInTMDb) async {
+    func startSeasonDraft(_ season: Wikidata.Summary, for finding: FindingInWikidata) async {
         guard let series = finding.series else { return }
-        findingInTMDb = nil
-        await compareWithTMDb(
+        findingInWikidata = nil
+        await review(
             ContainerKey(silo: finding.silo.id, library: finding.library, container: series.container),
             on: finding.silo,
-            choosing: "season:\(season.id)"
+            choosing: "child:\(season.id)"
         )
     }
 

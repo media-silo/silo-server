@@ -3,12 +3,12 @@
 
 import SmdKit
 
-/// A run of a container's entries that TMDb titles as the parts of one story, as `Terror of the Zygons
+/// A run of a container's entries that its titles say are the parts of one story, as `Terror of the Zygons
 /// (1)` to `(4)` are: suggested to be grouped, titled by the story.
 public struct SuggestedGroup: Hashable, Sendable {
     public var title: String
     public var items: [ItemID]
-    /// The part number TMDb gives each, in the items' order.
+    /// The part number each one's title gives, in the items' order.
     public var parts: [Int]
 
     public init(title: String, items: [ItemID], parts: [Int]) {
@@ -21,7 +21,7 @@ public struct SuggestedGroup: Hashable, Sendable {
 // MARK: - Groups of a draft's entries
 
 /// A draft's entries grouped by the operator into containers beneath the one that holds them, and the
-/// groups TMDb's titles suggest. `Tmdb.md`, *A draft from TMDb*.
+/// groups their titles suggest.
 extension DraftTree {
     /// The groups made of a container's entries: the containers beneath it the tree holds, in its order.
     public func groups(in parentID: String) -> [Container] {
@@ -146,13 +146,13 @@ extension DraftTree {
         edited = .now
     }
 
-    /// The runs of a container's entries TMDb titles as the parts of one story, `Title (1)`, `Title (2)`
+    /// The runs of a container's entries its titles say are the parts of one story, `Title (1)`, `Title (2)`
     /// and on, two or more running together in one sequence.
     public func suggestedGroups(in parentID: String) -> [SuggestedGroup] {
         storyRuns(in: parentID).filter { !isOwnParts($0, parentID) }
     }
 
-    /// The run of a container's entries TMDb titles as the parts of the story the container is titled
+    /// The run of a container's entries its titles say are the parts of the story the container is titled
     /// as, or that is every entry it holds, as a serial grouped from `Planet of Evil (1)` to `(4)` holds
     /// them: already grouped, they are suggested to be titled by their part numbers rather than grouped
     /// again.
@@ -160,15 +160,15 @@ extension DraftTree {
         storyRuns(in: parentID).first { isOwnParts($0, parentID) }
     }
 
-    /// Entries titled by the word given and each one's part number at TMDb, as `Part 1` and on: the
-    /// operator's own titles, which TMDb's no longer stand for.
+    /// Entries titled by the word given and the part number each one's title gives, as `Part 1` and on: the
+    /// operator's own titles, which Wikidata's no longer stand for.
     public mutating func title(_ items: [ItemID], in parentID: String, as word: String) {
         guard var parent = container(parentID) else { return }
         for sequence in parent.sequences.indices {
             for index in parent.sequences[sequence].items.indices {
                 guard case .leaf(var leaf) = parent.sequences[sequence].items[index], items.contains(leaf.id),
-                    let tmdb = leaf.externalRefs.first(where: { $0.provider == .tmdb }),
-                    let number = episodeTitles[tmdb.value].flatMap(Self.part(of:))
+                    let ref = leaf.externalRefs.first(where: { $0.provider == .wikidata }),
+                    let number = episodeTitles[ref.value].flatMap(Self.part(of:))
                 else { continue }
                 leaf.title = "\(word) \(number)"
                 parent.sequences[sequence].items[index] = .leaf(leaf)
@@ -184,16 +184,16 @@ extension DraftTree {
             || run.items.count == parent.sequences.flatMap(\.items).count
     }
 
-    /// The runs of a container's entries whose TMDb titles name the parts of one story; an entry titled
+    /// The runs of a container's entries whose titles name the parts of one story; an entry titled
     /// by the operator ends a run.
     private func storyRuns(in parentID: String) -> [SuggestedGroup] {
         (container(parentID)?.sequences ?? []).flatMap { sequence in
             Self.runs(
                 of: sequence.items.compactMap { entry -> (ItemID, String?)? in
                     guard let item = entry.id else { return nil }
-                    let tmdb = entry.externalRefs.first { $0.provider == .tmdb }
+                    let ref = entry.externalRefs.first { $0.provider == .wikidata }
                     guard entry.childContainer == nil, entry.title == nil else { return (item, nil) }
-                    return (item, tmdb.flatMap { episodeTitles[$0.value] })
+                    return (item, ref.flatMap { episodeTitles[$0.value] })
                 }
             )
             .map { SuggestedGroup(title: $0.title, items: $0.ids, parts: $0.parts) }
@@ -202,7 +202,7 @@ extension DraftTree {
 
     /// The runs of two or more titles together that name the parts of one story, each with what it was
     /// told of each and its part number; a nil title ends a run. A part numbered after the last continues
-    /// the run though TMDb names its story otherwise, as `Invasion (1)` is followed by `Invasion of the
+    /// the run though its title names its story otherwise, as `Invasion (1)` is followed by `Invasion of the
     /// Dinosaurs (2)`, and the run is titled by the story most of its parts name, the later on a tie.
     static func runs<ID>(of titled: [(ID, String?)]) -> [(title: String, ids: [ID], parts: [Int])] {
         var runs: [(title: String, ids: [ID], parts: [Int])] = []

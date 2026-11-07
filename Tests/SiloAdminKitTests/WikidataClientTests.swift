@@ -316,6 +316,25 @@ struct WikidataClientTests {
         #expect(andor.seasons.map(\.id) == ["Q119129258", "Q126908011"])
         #expect(andor.seasons.map(\.ordinal) == [1, 2])
         #expect(andor.seasons.first?.title == "Andor, season 1")
+        #expect(andor.specials.isEmpty, "every episode of Andor's is in a season")
+    }
+
+    /// *Doctor Who*'s specials are the episodes Wikidata files beneath the series and in no season, by
+    /// the date each first aired, one it does not date last.
+    @Test func aSeriesSpecialsAreItsEpisodesInNoSeason() async throws {
+        let client = Self.recorded()
+        let doctorWho = try await client.series("Q34316")
+        #expect(
+            doctorWho.specials.map(\.title) == [
+                "The End of Time – Part Two", "The Night of the Doctor", "The Last Day", "Legend of the Sea Devils",
+                "The Power of the Doctor", "The Giggle", "Destination: Skaro",
+            ]
+        )
+        let giggle = try #require(doctorWho.specials.first { $0.title == "The Giggle" })
+        #expect(giggle.premiered == CalendarDate("2023-12-09"))
+        #expect(giggle.ref(.tmdb) == ExternalRef(provider: .tmdb, value: "4930545"))
+        #expect(giggle.partOf.contains("Q34316"), "and whatever other series Wikidata files it in")
+        #expect(try await client.episodes([giggle.id]) == [giggle], "read again as an episode alone")
     }
 
     @Test func aSeasonIsReadAsItsEpisodesInOrder() async throws {

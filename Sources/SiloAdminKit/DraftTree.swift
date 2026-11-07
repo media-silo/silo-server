@@ -6,18 +6,24 @@ import SiloClient
 import SmdKit
 import SmdSidecar
 
-/// A special, from a series' season 0 at TMDb: unassigned until the operator places it or declines it.
+/// A special: an episode Wikidata files beneath a series and in no season, unassigned until the
+/// operator places it or declines it.
 public struct Special: Hashable, Sendable, Codable, Identifiable {
-    public var episode: TMDb.Episode
-    /// Its references: TMDb's id for it, and the ids other providers give it once TMDb has been asked.
-    public var refs: [ExternalRef]
+    public var episode: Wikidata.Work
 
-    public init(episode: TMDb.Episode, refs: [ExternalRef]? = nil) {
+    public init(episode: Wikidata.Work) {
         self.episode = episode
-        self.refs = refs ?? [episode.ref]
     }
 
-    public var id: Int { episode.id }
+    /// Its id, Wikidata's for the episode.
+    public var id: String { episode.id }
+
+    /// Its references: Wikidata's first, then each other provider's id Wikidata holds for it.
+    public var refs: [ExternalRef] { [episode.item] + episode.refs.filter { $0 != episode.item } }
+
+    /// The id of an entry made for it where nothing else is named: its title, then its Wikidata id, which
+    /// no other title a container holds could have taken.
+    var entryID: ItemID { ItemID("\(Slug.make(from: episode.title))-\(id.lowercased())")! }
 }
 
 /// Where the operator puts a special. Each names containers by id: one in the tree, or, for a
@@ -60,14 +66,15 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
     }
 }
 
-/// A draft from TMDb: the containers a TMDb record reads as, shaped by the operator before any is made,
-/// kept on this Mac as a new container's draft is. Its containers are documents, as a draft's are; the
-/// outline of each is attributed to TMDb; and a series' specials wait in it, unassigned, until the
-/// operator places them. `Tmdb.md`, *A draft from TMDb* and *Specials*.
+/// A draft: the containers a Wikidata item reads as, shaped by the operator before any is made, kept on
+/// this Mac as a new container's draft is. Its containers are documents, as a draft's are; the outline
+/// of each, read from TMDb, is attributed to it; and a series' specials wait in it, unassigned, until
+/// the operator places them. `Proposals/Wikidata.md`.
 public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
     public let id: UUID
     public var library: String
-    public var record: TMDb.Record
+    /// The item the draft was read from; none for a container the operator added, drafted from nothing.
+    public var item: Wikidata.Item?
     /// The top's display title when the draft was made, to list it by.
     public var title: String
     /// Where the top is filed: beneath a container the library holds, or at its top.
@@ -77,20 +84,15 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
     public var documents: [String: String]
     /// The attributions of each container's own fields, by id.
     public var attributions: [String: [Attribution]]
-    /// TMDb's title for each episode the tree holds or the pool lists, by TMDb id: shown as the tree is
-    /// reviewed, and stored nowhere.
+    /// Wikidata's title for each episode the tree holds or the pool lists, by Wikidata id: shown as the
+    /// tree is reviewed, and stored nowhere.
     public var episodeTitles: [String: String]
-    /// When each of the tree's episodes aired, by TMDb id, for suggesting where a special did.
-    public var airDates: [String: String]
-    /// The series' episode groups, for suggesting where one places a special.
-    public var episodeGroups: [String]
-    /// How long each of the tree's episodes runs, in minutes, by TMDb id, for suggesting an omnibus; nil
-    /// for a draft kept before runtimes were.
-    public var runtimes: [String: Int]?
-    /// The series' specials, in TMDb's season 0 order.
+    /// When each of the tree's episodes first aired, by Wikidata id, for suggesting where a special did.
+    public var airDates: [String: CalendarDate]
+    /// The series' specials, by the date each first aired.
     public var specials: [Special]
-    /// Where each special goes, by its TMDb id; one with none is unassigned.
-    public var placements: [Int: SpecialPlacement]
+    /// Where each special goes, by its Wikidata id; one with none is unassigned.
+    public var placements: [String: SpecialPlacement]
     /// The series of the operator's own that placements made, by id, as documents: each made at the
     /// top of the library before the tree, so the refs to it resolve when the tree arrives.
     public var breakouts: [String: String]
@@ -101,27 +103,25 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
     /// The alternatives drafted for the tree's containers, by id; absent from a draft kept before they
     /// were drafted.
     var alternativeDrafts: [String: [DraftAlternative]]?
-    /// The images TMDb holds for each container read from a record of its own, by id: what a new stop's
-    /// artwork is offered from. Absent from a draft kept before artwork was offered.
+    /// The images TMDb holds for each container whose item carries a TMDb id, by id: what a new stop's
+    /// artwork is offered from.
     var images: [String: RecordImages]?
 
     public init(
         library: String,
-        record: TMDb.Record,
+        item: Wikidata.Item?,
         creating: ContainerDraft.Creating,
         containers: [Container],
         top: ContainerID,
         attributions: [ContainerID: [Attribution]] = [:],
         episodeTitles: [String: String] = [:],
-        airDates: [String: String] = [:],
-        episodeGroups: [String] = [],
-        runtimes: [String: Int] = [:],
+        airDates: [String: CalendarDate] = [:],
         specials: [Special] = [],
         images: [ContainerID: RecordImages] = [:]
     ) {
         id = UUID()
         self.library = library
-        self.record = record
+        self.item = item
         self.creating = creating
         self.top = top.value
         documents = Dictionary(
@@ -134,8 +134,6 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
         )
         self.episodeTitles = episodeTitles
         self.airDates = airDates
-        self.episodeGroups = episodeGroups
-        self.runtimes = runtimes
         self.specials = specials
         self.images = images.isEmpty ? nil : Dictionary(uniqueKeysWithValues: images.map { ($0.key.value, $0.value) })
         placements = [:]
@@ -252,7 +250,7 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
 
     /// Puts a special where the operator says, or, with nil, makes it unassigned again. A new breakout
     /// it names is kept with the tree until it is made.
-    public mutating func place(_ special: Int, _ placement: SpecialPlacement?, breakout: Container? = nil) {
+    public mutating func place(_ special: String, _ placement: SpecialPlacement?, breakout: Container? = nil) {
         unplace(special)
         placements[special] = settle(special, placement)
         if let breakout { breakouts[breakout.id.value] = Self.text(breakout) }
@@ -297,10 +295,10 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
             breakouts.map { "make \($0.displayTitle), a series of its own, at the top of the library" }
                 + ["make \(documents.first?.displayTitle ?? "the tree") and the \(documents.count - 1) beneath it"]
                 + (declined.isEmpty
-                    ? [] : ["decline \(declined.count) of TMDb's specials in \(documents.first?.displayTitle ?? "")"])
+                    ? [] : ["decline \(declined.count) of the specials in \(documents.first?.displayTitle ?? "")"])
                 + heldEdits.map {
                     $0.ref != nil
-                        ? "add TMDb's id to \($0.item ?? "") of \($0.container) in \($0.library)"
+                        ? "add the special's id to \($0.item ?? "") of \($0.container) in \($0.library)"
                         : "add an entry to \($0.container) in \($0.library)"
                 }
         }
@@ -361,7 +359,7 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
                         library: library,
                         container: home,
                         item: item,
-                        ref: special.episode.ref,
+                        ref: special.episode.item,
                         entry: nil,
                         entryID: nil
                     )
@@ -376,8 +374,8 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
                     newBreakouts[breakoutID] = made
                 } else {
                     // A breakout made before is not read here, so the entry's id is one no title it
-                    // holds could have taken: the special's title with its TMDb id.
-                    entryID = ItemID("\(Slug.make(from: special.episode.title))-\(special.id)")!
+                    // holds could have taken.
+                    entryID = special.entryID
                     heldEdits.append(
                         .init(
                             library: library,
@@ -403,7 +401,7 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
                 // Made with the alternative it is in, below.
                 continue
             case .declined:
-                declined += special.refs.filter { $0.provider == .tmdb }
+                declined.append(special.episode.item)
             }
         }
         let titles = Dictionary(byID.values.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
@@ -436,7 +434,7 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
 }
 
 extension DraftTree {
-    /// A special as an entry of a container: its references, and no title, since TMDb has one for it.
+    /// A special as an entry of a container: its references, and no title, since Wikidata has one for it.
     static func leaf(_ special: Special, type: EntryType, in container: Container) -> Entry {
         .leaf(
             Entry.Leaf(

@@ -12,10 +12,10 @@ struct AlternativesEditorTests {
     /// A special, and a drafted alternative's entry, survive being dragged as text, and anything else
     /// dropped is no drag of the editor's.
     @Test func aDragIsReadBackFromItsText() {
-        #expect(AlternativeDrag(AlternativeDrag.special(3761).payload) == .special(3761))
+        #expect(AlternativeDrag(AlternativeDrag.special("Q3761").payload) == .special("Q3761"))
         let entry = AlternativeDrag.entry(draft: "4C2A-11:9", position: 2)
         #expect(AlternativeDrag(entry.payload) == entry, "a draft id holding the separator")
-        for stray in ["The Daleks", "silo-special:", "silo-special:pilot", "silo-entry:2", "silo-entry:x:draft"] {
+        for stray in ["The Daleks", "silo-special:", "silo-entry:2", "silo-entry:x:draft"] {
             #expect(AlternativeDrag(stray) == nil, "\(stray)")
         }
     }
@@ -25,7 +25,7 @@ struct AlternativesEditorTests {
         #expect(DraftAlternative.Entry.container("00000000000001e8").symbol == "folder")
         #expect(DraftAlternative.Entry.container("00000000000001e8").removal.contains("gone"))
         #expect(
-            DraftAlternative.Entry.special(3761).symbol == "film"
+            DraftAlternative.Entry.special("Q3761").symbol == "film"
                 && DraftAlternative.Entry.item("part-1").removal == "Not played by the alternative."
         )
     }

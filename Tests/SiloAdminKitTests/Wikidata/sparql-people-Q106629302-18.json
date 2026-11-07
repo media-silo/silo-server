@@ -1,0 +1,272 @@
+{
+  "head" : {
+    "vars" : [ "item", "itemLabel", "imdb", "tmdb", "tvdb" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q214601"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0855039"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "20049"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "David Tennant"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q254766"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0851113"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "47646"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Catherine Tate"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q361981"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0203961"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "95894"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Russell T Davies"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q485310"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0000439"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "41686"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Neil Patrick Harris"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "253954"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2495388"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0172428"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "193356"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Karl Collins"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2719909"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0714876"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "80145"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Jemma Redgrave"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q2987625"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Donna Noble"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q5057914"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Celestial Toymaker"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6120137"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0454800"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1230422"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Jacqueline King"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q21030944"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Sylvia Noble"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q21328948"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Kate Stewart"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q47465812"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm4800248"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1522546"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Chanya Button"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q60618349"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm6967441"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1475239"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Ncuti Gatwa"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q89426158"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Shaun Temple"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q106629302"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm12510592"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "3073079"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Yasmin Finney"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q111907987"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Fifteenth Doctor"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q114834053"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Fourteenth Doctor"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q125917323"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Rose Noble"
+      }
+    } ]
+  }
+}
