@@ -288,7 +288,9 @@ let package = Package(
             dependencies: [
                 "SiloAdminKit", "SiloClient", "SiloKit", .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
-            ]
+            ],
+            // Wikidata's answers, recorded for the client's tests to be answered from.
+            exclude: ["Wikidata"]
         ),
         // The window's model, which the kit's suite cannot see: the order the sheets and the
         // model hand things to each other in, against the same kind of stubbed silo.

@@ -1,0 +1,90 @@
+{
+  "head" : {
+    "vars" : [ "item", "itemLabel", "imdb", "tmdb", "tvdb" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q234539"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0805207"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "207067"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Elisabeth Sladen"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q587725"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Sarah Jane Smith"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q6536621"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0340042"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1220984"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Lewis Greifer"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q7123618"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0751373"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1223025"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Paddy Russell"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q7345586"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0392025"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1213435"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en-gb",
+        "type" : "literal",
+        "value" : "Robert Holmes"
+      }
+    } ]
+  }
+}

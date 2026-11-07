@@ -3,7 +3,7 @@
 
 # Proposals: 0020-wikidata
 
-Modified: 2026-11-05
+Modified: 2026-11-07
 
 # Facts from Wikidata, content from TMDb
 
@@ -140,16 +140,18 @@ when its attribution's provider is CC0.
 
 ### 3. The Wikidata client and its reading
 
-SiloAdminKit's Wikidata client, behind a protocol so that tests answer from recorded responses. The
-reading of a film, a series, a season with its serials or episodes, and a serial with its parts. Search
-from Wikidata. Drafts from Wikidata through 0013's create route, with TMDb's outline and artwork offered
-through the TMDb ids Wikidata holds.
+SiloAdminKit's Wikidata client, behind a protocol so that tests answer from recorded responses. Its
+search, and its reading of a film, a collection, a series with its seasons, a season with its serials
+or episodes, and a serial with its parts, each as Wikidata's statements say them. It reads nothing
+into containers: that is the walk's, in step 4.
 
 ### 4. The walk from both
 
-The walk's facts from Wikidata's reading and its content from TMDb's; specials Wikidata files nowhere
-but the series in 0017's pool; TMDb's season 0 no longer read; a stale attribution offered for reading
-again.
+Search and drafts from Wikidata, a draft read into containers and made through 0013's create route,
+with TMDb's outline and artwork offered through the TMDb ids Wikidata holds. The walk's facts from
+Wikidata's reading and its content from TMDb's; specials Wikidata files nowhere but the series in
+0017's pool; TMDb's season 0 no longer read; a stale attribution offered for reading again. Drafting
+and the walk move together, so that the walk's start is reworked once.
 
 ### 5. Episode details from Wikidata
 
@@ -192,3 +194,8 @@ CC0 could be read beside it.
 3. **Episode cast.** With cast taken from Wikidata, an episode's cast is what its item lists. For most
    episodes that is nothing. The series' cast, which Wikidata often lists with the characters, could be
    offered for each episode instead, as 0019's first open question weighs.
+4. **Billing order.** Wikidata lists a work's cast in the order its editors entered them, which is not
+   the billing: *Alien*'s lists Yaphet Kotto first and Sigourney Weaver sixth. The client honours a
+   series ordinal where editors gave one, and otherwise keeps Wikidata's order. The billing is a fact
+   TMDb holds, and is not taken from it; where the order matters, the operator reorders, or numbers
+   the cast at Wikidata.

@@ -1,0 +1,138 @@
+{
+  "head" : {
+    "vars" : [ "item", "itemLabel", "imdb", "tmdb", "tvdb" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q353117"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0006904"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "19242"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Tony Gilroy"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q1159073"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0319659"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "57113"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Dan Gilroy"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q4877396"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm2802722"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "64817"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Beau Willimon"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q5321636"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm1595284"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "1230430"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Toby Haynes"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q7610474"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0771496"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "59583"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Stephen Schiff"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q7648702"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm1264352"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "113600"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Susanna White"
+      },
+      "tvdb" : {
+        "type" : "literal",
+        "value" : "302190"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q22958724"
+      },
+      "imdb" : {
+        "type" : "literal",
+        "value" : "nm0139081"
+      },
+      "tmdb" : {
+        "type" : "literal",
+        "value" : "136505"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Benjamin Caron"
+      }
+    } ]
+  }
+}

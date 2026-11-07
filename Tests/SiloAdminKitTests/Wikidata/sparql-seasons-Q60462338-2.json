@@ -1,0 +1,41 @@
+{
+  "head" : {
+    "vars" : [ "item", "itemLabel", "ordinal", "date" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q119129258"
+      },
+      "date" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#dateTime",
+        "type" : "literal",
+        "value" : "2022-09-21T00:00:00Z"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "1"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Andor, season 1"
+      }
+    }, {
+      "item" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q126908011"
+      },
+      "ordinal" : {
+        "type" : "literal",
+        "value" : "2"
+      },
+      "itemLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Andor, season 2"
+      }
+    } ]
+  }
+}
