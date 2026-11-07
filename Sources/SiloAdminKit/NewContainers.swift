@@ -60,14 +60,14 @@ extension ReviewWalk {
         title: Title,
         beneath stop: String
     ) -> Bool {
-        guard let comparison = stops[stop]?.comparison, drafts[id.value] == nil, stops[id.value] == nil else {
+        guard stops[stop]?.comparison != nil, drafts[id.value] == nil, stops[id.value] == nil else {
             return false
         }
         var child = Container(id: id, type: type, typeLabel: typeLabel, title: title)
         child.sequences = [Sequence(id: sequenceName(0, at: stop))]
         let tree = DraftTree(
             library: library,
-            record: TMDb.Record(.series, comparison.series ?? 0),
+            item: nil,
             creating: ContainerDraft.Creating(parent: stop),
             containers: [child],
             top: id
@@ -81,7 +81,7 @@ extension ReviewWalk {
     }
 
     /// The containers added beneath a held stop, in its children's order: each a new stop drafted from
-    /// nothing at TMDb, neither a missing season nor a group of its missing episodes.
+    /// nothing, neither a missing child nor a group of its missing episodes.
     public func addedContainers(at stop: String) -> [String] {
         let groups = Set((stops[stop]?.groups ?? []).map(\.id))
         return (stops[stop]?.children ?? []).filter { id in

@@ -2,9 +2,11 @@
 // Copyright (c) 2026 the media-silo project authors
 
 extension AdminConsole {
-    /// How far a reading against TMDb has got, for the console to show while it runs: the step it is on
-    /// and, when the step reads several things, how many of them are read. A long series asks TMDb and
-    /// the silo hundreds of questions, and the operator sees each step as it goes.
+    /// How far a long piece of the console's work has got, for it to show while it runs: a stop's reading
+    /// against Wikidata and TMDb, a draft's specials being suggested, or a walk being stored. It is the
+    /// step the work is on and, when the step does several things, how many of them are done. A long
+    /// series asks the providers and the silo hundreds of questions, and the operator sees each step as it
+    /// goes.
     public struct StepProgress: Hashable, Sendable {
         public var step: String
         public var done: Int
@@ -18,8 +20,9 @@ extension AdminConsole {
         }
     }
 
-    /// How many of a step's questions are asked of TMDb and the silo at once: enough that a series'
-    /// specials are read in seconds rather than minutes, and few enough to stay inside TMDb's rate.
+    /// How many of a step's questions are asked of Wikidata, TMDb and the silo at once: enough that a
+    /// series' specials are read in seconds rather than minutes, and few enough to stay inside the
+    /// providers' limits.
     static let questionsAtOnce = 6
 
     /// `body` for each item, at most `questionsAtOnce` at a time, the results in the items' order. The

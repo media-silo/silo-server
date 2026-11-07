@@ -17,11 +17,11 @@ public enum DraftChild: Hashable, Sendable {
         }
     }
 
-    static func key(of special: Int) -> String { "special:\(special)" }
+    static func key(of special: String) -> String { "special:\(special)" }
 
     /// The special a key names, when it names one.
-    public static func special(_ key: String) -> Int? {
-        key.hasPrefix("special:") ? Int(key.dropFirst("special:".count)) : nil
+    public static func special(_ key: String) -> String? {
+        key.hasPrefix("special:") ? String(key.dropFirst("special:".count)) : nil
     }
 }
 
@@ -30,7 +30,7 @@ extension DraftTree {
     /// before the entry at its position, or after them all with none, then its other sequences' entries.
     public static func children(
         of container: Container?,
-        placements: [Int: SpecialPlacement],
+        placements: [String: SpecialPlacement],
         specials: [Special]
     ) -> [DraftChild] {
         guard let container else { return [] }
@@ -49,7 +49,7 @@ extension DraftTree {
 
     /// Where a special is placed in a container's primary sequence, past its last entry when no position
     /// is given; nil when it is placed elsewhere.
-    static func position(of special: Int, in container: Container, placements: [Int: SpecialPlacement]) -> Int? {
+    static func position(of special: String, in container: Container, placements: [String: SpecialPlacement]) -> Int? {
         guard case .entry(let home, let sequence, let position) = placements[special], home == container.id.value,
             sequence == nil || sequence == container.sequences.first?.id
         else { return nil }
@@ -61,7 +61,7 @@ extension DraftTree {
     static func position(
         before target: String?,
         in container: Container?,
-        placements: [Int: SpecialPlacement]
+        placements: [String: SpecialPlacement]
     ) -> Int? {
         guard let target, let container else { return nil }
         if let special = DraftChild.special(target) {
@@ -75,7 +75,7 @@ extension DraftTree {
     public static func entry(
         before target: String?,
         in container: Container?,
-        placements: [Int: SpecialPlacement]
+        placements: [String: SpecialPlacement]
     ) -> ItemID? {
         guard let target else { return nil }
         guard DraftChild.special(target) != nil else { return ItemID(target) }
@@ -86,7 +86,7 @@ extension DraftTree {
 
     /// A special dropped among a container's children: placed in its primary sequence before the child
     /// whose key is given, or last with none.
-    public mutating func place(_ special: Int, in parent: String, before target: String?) {
+    public mutating func place(_ special: String, in parent: String, before target: String?) {
         let position = Self.position(before: target, in: container(parent), placements: placements)
         place(special, .entry(in: parent, position: position))
     }
@@ -96,7 +96,7 @@ extension ReviewWalk {
     /// A special dropped among a stop's children, before the child whose key is given or last with none:
     /// in a new stop placed in its draft's primary sequence there, and in a held stop placed in its
     /// primary sequence and moved before the child, as the operator would move it after placing it.
-    public mutating func place(_ special: Int, at stop: String, before target: String?) {
+    public mutating func place(_ special: String, at stop: String, before target: String?) {
         guard !isNew(stop) else {
             let position = DraftTree.position(before: target, in: container(stop), placements: placements)
             place(special, .entry(in: stop, position: position))

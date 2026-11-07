@@ -150,8 +150,11 @@ into containers: that is the walk's, in step 4.
 Search and drafts from Wikidata, a draft read into containers and made through 0013's create route,
 with TMDb's outline and artwork offered through the TMDb ids Wikidata holds. The walk's facts from
 Wikidata's reading and its content from TMDb's; specials Wikidata files nowhere but the series in
-0017's pool; TMDb's season 0 no longer read; a stale attribution offered for reading again. Drafting
-and the walk move together, so that the walk's start is reworked once.
+0017's pool; TMDb's season 0 no longer read; a stale attribution offered for reading again, or for
+removal when TMDb no longer has the content. A walk with no TMDb token still reviews every fact. What
+only TMDb gave goes: its episode groups as a series' shape, its runtimes behind a suggested edition,
+and its lookup by external id, a special's duplicate being found instead by the special's other ids
+in the libraries. Drafting and the walk move together, so that the walk's start is reworked once.
 
 ### 5. Episode details from Wikidata
 

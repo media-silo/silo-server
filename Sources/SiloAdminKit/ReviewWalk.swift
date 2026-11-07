@@ -6,7 +6,7 @@ import SmdKit
 import SmdSidecar
 import Synchronization
 
-/// A held container's tree reviewed against TMDb a container at a time: the stops the walk has found,
+/// A held container's tree reviewed against Wikidata and TMDb a container at a time: the stops the walk has found,
 /// each with its reading and what the operator chose, the series' specials beside every stop, and
 /// where each was placed. Nothing of it reaches the silo until the walk is stored, and then only what a
 /// confirmed stop took. `TmdbWalk.md`.
@@ -45,7 +45,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         var episodeGroups: [EpisodeGroup]?
         /// The missing episodes the operator added to containers a held stop holds beneath it, by each
         /// container's id; absent from a walk kept before they were asked.
-        var episodesIntoHeld: [String: [Int]]?
+        var episodesIntoHeld: [String: [String]]?
         /// The image the operator chose for an artwork kind in place of the one TMDb offers first, by kind;
         /// absent from a walk kept before it was asked.
         var images: [String: String]?
@@ -76,35 +76,34 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
     public var stops: [String: Stop]
     /// The series whose specials sit beside every stop: the root, or the nearest series above it.
     public var series: String?
-    /// The series' specials nothing covers, in TMDb's season 0 order, placed or not.
+    /// The series' specials nothing covers, by the date each aired, placed or not.
     public var specials: [Special] = []
     /// The specials the series' sidecar declines, which may be placed after all.
     public var declined: [Special] = []
-    public var suggestions: [Int: AdminConsole.SpecialSuggestion] = [:]
-    /// Where each special goes, by its TMDb id; one with none is unassigned.
-    public var placements: [Int: SpecialPlacement] = [:]
+    public var suggestions: [String: AdminConsole.SpecialSuggestion] = [:]
+    /// Where each special goes, by its Wikidata id; one with none is unassigned.
+    public var placements: [String: SpecialPlacement] = [:]
     /// Series of the operator's own a walk kept before companions were stops made for specials, by id, as
     /// documents: read into companion stops when the walk is read.
     private var companions: [String: String]?
     /// The steps a store made, by id, so a store after a refusal makes only the rest.
     public var stored: Set<String> = []
     /// The containers the walk makes, a missing child chosen at a stop and what is beneath it, each as a
-    /// draft from TMDb by the id of its top: every container of a draft is a new stop.
+    /// draft by the id of its top: every container of a draft is a new stop.
     public var drafts: [String: DraftTree] = [:]
     /// When the walk was last kept on this Mac.
     public var edited: Date
-    /// The season of TMDb's the operator said each held season carrying no TMDb id is, by TMDb id: what
-    /// the season and the containers beneath it are read as. Absent from a walk kept before it was asked.
-    private var identifiedSeasons: [String: Int]?
+    /// The season of Wikidata's the operator said each held season carrying no Wikidata id is, by
+    /// Wikidata id: what the season and the containers beneath it are read as.
+    private var identifiedSeasons: [String: String]?
 
-    public var identified: [String: Int] { identifiedSeasons ?? [:] }
+    public var identified: [String: String] { identifiedSeasons ?? [:] }
 
-    /// The operator's own titles for missing episodes of held stops, by TMDb id, as `Part 3`: what the
-    /// entries the walk adds for them are titled, in place of TMDb's. Absent from a walk kept before they
-    /// were asked.
-    private var episodeTitles: [Int: String]?
+    /// The operator's own titles for missing episodes of held stops, by Wikidata id, as `Part 3`: what the
+    /// entries the walk adds for them are titled, in place of Wikidata's.
+    private var episodeTitles: [String: String]?
 
-    public var titles: [Int: String] {
+    public var titles: [String: String] {
         get { episodeTitles ?? [:] }
         set { episodeTitles = newValue.isEmpty ? nil : newValue }
     }
@@ -156,7 +155,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         edited = .now
     }
 
-    /// A walk of a record the library does not hold, rooted at a draft from TMDb: its top is the first
+    /// A walk of an item the library does not hold, rooted at a draft of it: its top is the first
     /// stop, new, filed where the draft is, at the top of the library or beneath the container that holds
     /// the record above it. A series is the one whose specials sit beside every stop, placed where the
     /// draft placed them; each new breakout the draft made for them is a companion series of the walk.
@@ -183,7 +182,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         }
     }
 
-    /// Whether the walk's root is a draft from TMDb the library does not hold yet.
+    /// Whether the walk's root is a draft the library does not hold yet.
     public var drafting: Bool { isNew(root) }
 
     /// The walk's stops depth first, each container's children in the order its children list them: the
@@ -263,14 +262,14 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
 
     public var unassigned: [Special] { specials.filter { placements[$0.id] == nil } }
 
-    /// Says which of TMDb's seasons a held season carrying no TMDb id is, or, given none, that it is
-    /// unmatched again. The season and every stop read beneath it are to be read again, and the season's
-    /// TMDb id is chosen to be taken.
-    public mutating func identify(_ stop: String, as season: Int?) {
+    /// Says which of Wikidata's seasons a held season carrying no Wikidata id is, or, given none, that it
+    /// is unmatched again. The season and every stop read beneath it are to be read again, and the
+    /// season's Wikidata id is chosen to be taken.
+    public mutating func identify(_ stop: String, as season: String?) {
         var identified = identified
         identified[stop] = season
         identifiedSeasons = identified
-        stops[stop]?.chosen = season.map { ["ref::tmdb:\($0)"] } ?? []
+        stops[stop]?.chosen = season.map { ["ref::wikidata:\($0)"] } ?? []
         for id in [stop] + beneath(stop) where !isNew(id) {
             stops[id]?.comparison = nil
             stops[id]?.taken = nil
@@ -286,14 +285,14 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         let said = identified.filter { stops[$0.key]?.parent == stop }
         guard !said.isEmpty else { return differences }
         return differences.map { difference in
-            if case .heldSeason(let season, let container, _) = difference, let identified = said[container] {
+            if case .heldChild(let season, let container, _) = difference, let identified = said[container] {
                 return identified == season.id
-                    ? .heldSeason(season, container: container, suggested: false) : .season(season)
+                    ? .heldChild(season, container: container, suggested: false) : .child(season)
             }
-            if case .season(let season) = difference,
+            if case .child(let season) = difference,
                 let container = said.first(where: { $0.value == season.id })?.key
             {
-                return .heldSeason(season, container: container, suggested: false)
+                return .heldChild(season, container: container, suggested: false)
             }
             return difference
         }
@@ -338,8 +337,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
                     let suggestion = AdminConsole.alternative(
                         of: special,
                         in: [container],
-                        titles: reading.episodeTitles,
-                        runtimes: reading.runtimes
+                        titles: reading.episodeTitles
                     )
                 else { continue }
                 suggestions[special.id] = suggestion
@@ -386,13 +384,13 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         .map(\.top).sorted()
     }
 
-    /// What chosen at its parent keeps a draft in the walk: the missing season it is, or, carrying no
-    /// TMDb id, the group of a held stop's missing episodes it was drafted from.
+    /// What chosen at its parent keeps a draft in the walk: the missing child it is, by its Wikidata id,
+    /// or, carrying none, the group of a held stop's missing episodes it was drafted from.
     static func missing(_ tree: DraftTree) -> String {
-        guard let ref = tree.container(tree.top)?.externalRefs.first(where: { $0.provider == .tmdb }) else {
+        guard let ref = tree.container(tree.top)?.externalRefs.first(where: { $0.provider == .wikidata }) else {
             return "group:\(tree.top)"
         }
-        return "season:\(ref.value)"
+        return "child:\(ref.value)"
     }
 
     /// A new stop and every container beneath it out of the walk, the specials placed in them unassigned
@@ -427,7 +425,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         guard let tree = tree ?? draft(holding: id), let container = tree.container(id) else { return [] }
         var offered: [Difference] = []
         if let year = container.year { offered.append(.year(year)) }
-        let record = container.externalRefs.first { $0.provider == .tmdb }?.value ?? ""
+        let record = tree.attributions[id]?.first { $0.subject == .outline }?.value ?? ""
         if let outline = container.outline, !outline.isEmpty { offered.append(.outline(outline, record: record)) }
         offered += container.externalRefs.map { .reference(item: nil, $0) }
         if let held = tree.images?[id] {
@@ -436,7 +434,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         return offered
     }
 
-    /// Reshapes a new stop's draft, as a draft from TMDb is shaped: a container of it set, or its entries
+    /// Reshapes a new stop's draft, as a draft is shaped: a container of it set, or its entries
     /// regrouped. Each container the shaping makes beneath a new stop is a new stop once that stop is
     /// confirmed.
     public mutating func shape(_ id: String, _ change: (inout DraftTree) -> Void) {
@@ -462,7 +460,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
 
     /// Puts a special where the operator says, or, with nil, back among the unassigned. A new companion
     /// series it names joins the walk as a stop of its own.
-    public mutating func place(_ special: Int, _ placement: SpecialPlacement?, companion: Container? = nil) {
+    public mutating func place(_ special: String, _ placement: SpecialPlacement?, companion: Container? = nil) {
         if let companion { addCompanion(companion) }
         // Where it was and where it goes are each pending again.
         for home in [placements[special], placement].compactMap({ $0.flatMap(home) }) { unconfirm(home) }
@@ -518,9 +516,9 @@ public final class ReviewWalkStore: Sendable {
         walks(of: silo).first { $0.root == container && $0.library == library }
     }
 
-    /// The walk kept for a record the library does not hold, rooted at a draft of it.
-    public func walk(drafting record: TMDb.Record, in library: String, of silo: String) -> ReviewWalk? {
-        walks(of: silo).first { $0.drafting && $0.library == library && $0.drafts[$0.root]?.record == record }
+    /// The walk kept for an item the library does not hold, rooted at a draft of it.
+    public func walk(drafting item: Wikidata.Item, in library: String, of silo: String) -> ReviewWalk? {
+        walks(of: silo).first { $0.drafting && $0.library == library && $0.drafts[$0.root]?.item == item }
     }
 
     /// Keeps a walk, in place of the one it was and of any other rooted at the same container.

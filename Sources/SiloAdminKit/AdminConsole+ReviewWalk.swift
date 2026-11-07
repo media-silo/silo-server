@@ -3,14 +3,13 @@
 
 import Foundation
 import SiloClient
-import SiloKit
 import SmdKit
 import SmdSidecar
 
-// MARK: - A walk against TMDb
+// MARK: - A review walk
 
-/// A held tree reviewed against TMDb as a walk: its stops found as each is confirmed, its specials
-/// placed where they belong, and one store at the end, listed first and made in an order that has
+/// A held tree reviewed against Wikidata and TMDb as a walk: its stops found as each is confirmed, its
+/// specials placed where they belong, and one store at the end, listed first and made in an order that has
 /// everything a change refers to there before it. `TmdbWalk.md`.
 extension AdminConsole {
     /// Starts a walk rooted at a held container, its first stop, read when it is opened. The series
@@ -23,12 +22,12 @@ extension AdminConsole {
             root: ReviewWalk.Stop(id: id, title: held.displayTitle, type: held.type, parent: held.parent)
         )
         walk.series =
-            held.type == ContainerType.series.rawValue ? id : try await seriesContainerAbove(opened, of: silo)?.id
+            held.type == ContainerType.series.rawValue ? id : try await above(opened, ofType: .series, of: silo)?.id
         return walk
     }
 
     /// The containers the library holds beneath a stop, as the stops confirming it adds, in the order
-    /// its sequences hold them; a stop the walk has already is as the walk has it. A stop TMDb could not
+    /// its sequences hold them; a stop the walk has already is as the walk has it. A stop that could not be
     /// read is opened for them, so the walk goes on beneath it.
     public func stops(beneath id: String, in walk: ReviewWalk, of silo: Silo) async throws -> [ReviewWalk.Stop] {
         guard walk.stops[id] != nil else { return [] }
@@ -64,31 +63,34 @@ extension AdminConsole {
         return beneath.compactMap { $0 }
     }
 
-    /// A draft from TMDb of each missing season chosen at a stop that the walk has not drafted yet, filed
-    /// beneath the stop's container after the seasons it holds: what confirming the stop adds as new
-    /// stops.
+    /// A draft from Wikidata of each missing child chosen at a stop that the walk has not drafted yet, a
+    /// series' season or a season's serial, filed beneath the stop's container after the children it
+    /// holds: what confirming the stop adds as new stops. A season's content is read through the TMDb id
+    /// the stop's series carries.
     public func drafts(
         confirming id: String,
         in walk: ReviewWalk,
         from database: any ContainerDatabase,
-        tmdb: any TMDbSource
+        wikidata: any WikidataSource,
+        tmdb: (any TMDbSource)?
     ) async throws -> [DraftTree] {
-        guard let stop = walk.stops[id], let series = stop.comparison?.series else {
-            return []
-        }
+        guard let stop = walk.stops[id], stop.comparison != nil else { return [] }
         let drafted = Set(walk.drafts.values.map(ReviewWalk.missing))
-        let sequence = walk.container(id)?.sequences.first { $0.items.contains { $0.childContainer != nil } }?.id
+        let held = walk.container(id)
+        let sequence = held?.sequences.first { $0.items.contains { $0.childContainer != nil } }?.id
+        let tmdbSeries = held?.type == .series ? held?.externalRefs.first { $0.provider == .tmdb }?.value : nil
         var trees: [DraftTree] = []
-        for case .season(let season) in walk.differences(of: id)
-        where stop.chosen.contains("season:\(season.id)") && !drafted.contains("season:\(season.id)") {
+        for case .child(let child) in walk.differences(of: id)
+        where stop.chosen.contains("child:\(child.id)") && !drafted.contains("child:\(child.id)") {
             trees.append(
                 try await draft(
-                    ofSeason: season.number,
-                    of: series,
+                    of: child,
                     at: ContainerDraft.Creating(parent: id, sequence: sequence),
                     into: walk.library,
                     from: database,
-                    tmdb: tmdb
+                    wikidata: wikidata,
+                    tmdb: tmdb,
+                    tmdbSeries: tmdbSeries
                 )
             )
         }
@@ -123,7 +125,7 @@ extension AdminConsole {
     public func store(
         _ walk: ReviewWalk,
         of silo: Silo,
-        tmdb: any TMDbSource,
+        tmdb: (any TMDbSource)?,
         progress: @Sendable (StepProgress) async -> Void = { _ in }
     ) async throws -> ReviewWalkStored {
         var walk = walk
@@ -159,7 +161,7 @@ extension AdminConsole {
         _ step: ReviewWalk.Step,
         in library: String,
         of silo: Silo,
-        tmdb: any TMDbSource
+        tmdb: (any TMDbSource)?
     ) async throws -> String? {
         do {
             switch step.kind {
@@ -195,6 +197,7 @@ extension AdminConsole {
             case .decline(let refs, let series):
                 try await decline(refs, in: series, of: library, on: silo)
             case .artwork(let kind, let path, let record, let container):
+                guard let tmdb else { return TMDb.Unavailable.noToken.reason }
                 try await putArtwork(
                     try await tmdb.image(at: path),
                     as: kind,
@@ -203,6 +206,8 @@ extension AdminConsole {
                     on: silo,
                     attributedTo: record.ref
                 )
+            case .removeArtwork(let kind, let container):
+                try await removeArtwork(kind, of: container, in: library, on: silo)
             }
             return nil
         } catch SiloClientError.status(422, let body) {
@@ -236,7 +241,6 @@ extension AdminConsole {
         edits: inout [DraftTree.Making.HeldEdit],
         children: inout [Container]
     ) {
-        func entryID(in title: String) -> String { "\(Slug.make(from: title))-\(special.id)" }
         switch placement {
         case .entry(_, let sequence, let position):
             DraftTree.insert(
@@ -257,11 +261,11 @@ extension AdminConsole {
             child.sequences = [Sequence(id: "parts", items: [DraftTree.leaf(special, type: .episode, in: child)])]
             children.append(child)
         case .duplicate(let home, let item, let homeLibrary, _, let asExtra):
-            edits.append(.init(library: homeLibrary, container: home, item: item, ref: special.episode.ref))
+            edits.append(.init(library: homeLibrary, container: home, item: item, ref: special.episode.item))
             guard let homeID = ContainerID(home), let itemID = ItemID(item) else { return }
             DraftTree.refer(to: EntryRef(container: homeID, item: itemID), from: &container, asExtra: asExtra)
         case .breakout(let breakout, _, let asExtra):
-            let item = ItemID(entryID(in: special.episode.title))!
+            let item = special.entryID
             if var companion = made[breakout] {
                 DraftTree.insert(
                     .leaf(Entry.Leaf(id: item, type: .episode, externalRefs: special.refs)),
@@ -283,7 +287,7 @@ extension AdminConsole {
             // Made with the alternative it is in, once the stop's specials are placed.
             break
         case .declined:
-            if !declined.contains(special.episode.ref) { declined.append(special.episode.ref) }
+            if !declined.contains(special.episode.item) { declined.append(special.episode.item) }
         }
     }
 }
@@ -325,6 +329,8 @@ extension ReviewWalk {
         /// References the series declines, when the series is no stop of the walk, or one the walk makes.
         case decline([ExternalRef], in: String)
         case artwork(kind: String, path: String, record: TMDb.Record, of: String)
+        /// An artwork kind removed, its image and attribution gone, TMDb having none for it now.
+        case removeArtwork(kind: String, of: String)
     }
 
     /// A confirmed stop's pending change as the plan gathers it.
@@ -333,12 +339,12 @@ extension ReviewWalk {
         var draft: ContainerDraft
         var container: Container
         var children: [Container] = []
-        /// The groups of its missing episodes taken, by each episode's TMDb id.
+        /// The groups of its missing episodes taken, by each episode's Wikidata id.
         var grouped: [String: EpisodeGroup] = [:]
-        /// The containers held beneath it its missing episodes were handed to, by each episode's TMDb id.
+        /// The containers held beneath it its missing episodes were handed to, by each episode's Wikidata id.
         var intoHeld: [String: String] = [:]
-        /// The operator's own titles for its missing episodes, by TMDb id.
-        var titles: [Int: String] = [:]
+        /// The operator's own titles for its missing episodes, by Wikidata id.
+        var titles: [String: String] = [:]
         /// The new containers the walk makes beneath it, each with what is beneath it.
         var made: [(creating: ContainerDraft.Creating, making: DraftTree.Making)] = []
     }
@@ -431,11 +437,11 @@ extension ReviewWalk {
         case .held: break
         case .name(_, let parent, _): plan.edited.insert(parent)
         case .decline(_, let series): plan.edited.insert(series)
-        case .artwork(_, _, _, let container): plan.edited.insert(container)
+        case .artwork(_, _, _, let container), .removeArtwork(_, let container): plan.edited.insert(container)
         }
     }
 
-    /// What storing makes of a root drafted from TMDb, once it is confirmed: named first in the container
+    /// What storing makes of a drafted root, once it is confirmed: named first in the container
     /// that holds the record above it, when it is filed beneath one, then made with what is beneath it in
     /// one creation, and then, for a series, the specials declined in it.
     private func rootSteps(_ drafted: (creating: ContainerDraft.Creating, making: DraftTree.Making)) -> [Step] {
@@ -465,7 +471,7 @@ extension ReviewWalk {
                 Step(
                     id: "decline:\(top.id)",
                     kind: .decline(making.declined, in: top.id.value),
-                    described: "decline \(making.declined.count) of TMDb's specials in \(top.displayTitle)"
+                    described: "decline \(making.declined.count) of the specials in \(top.displayTitle)"
                 )
             )
         }
@@ -507,7 +513,7 @@ extension ReviewWalk {
             guard case .breakout(let id, _, _)? = placements[special.id], var companion = gathering.made[id] else {
                 continue
             }
-            let item = ItemID("\(Slug.make(from: special.episode.title))-\(special.id)")!
+            let item = special.entryID
             DraftTree.insert(
                 .leaf(Entry.Leaf(id: item, type: .episode, externalRefs: special.refs)),
                 into: &companion,
@@ -561,16 +567,16 @@ extension ReviewWalk {
         change.titles = titles
         let groups = stop.groups.filter { taken.contains($0.tick) }
         for group in groups {
-            for episode in group.episodes { change.grouped[String(episode)] = group }
+            for episode in group.episodes { change.grouped[episode] = group }
         }
         for (child, episodes) in stop.intoHeld {
-            for episode in episodes { change.intoHeld[String(episode)] = child }
+            for episode in episodes { change.intoHeld[episode] = child }
         }
         for difference in comparison.differences {
             // One handed to a container held beneath is that container's to take.
-            if case .episode(let episode, _) = difference, change.intoHeld[String(episode.id)] != nil { continue }
+            if case .episode(let episode, _) = difference, change.intoHeld[episode.id] != nil { continue }
             // A group taken is made beneath the stop, named where its first episode would have gone.
-            if case .episode(let episode, let after) = difference, let group = change.grouped[String(episode.id)] {
+            if case .episode(let episode, let after) = difference, let group = change.grouped[episode.id] {
                 // Made from its stop's draft, with what was placed and shaped there, once that stop is
                 // confirmed, as every new container is; named here where its first episode would have gone.
                 if Self.first(of: group, in: comparison) == episode.id, drafts[group.id] != nil,
@@ -613,20 +619,28 @@ extension ReviewWalk {
         // A declined special placed after all, wherever it went, is no longer declined.
         if id == series {
             for special in self.declined where placements[special.id].map({ $0 != .declined }) ?? false {
-                declined.removeAll { $0 == special.episode.ref }
+                declined.removeAll { $0 == special.episode.item }
             }
         }
-        if taken.contains("outline"),
-            case .outline(_, let record)? = comparison.differences.first(where: {
-                $0.id == "outline"
-            })
-        {
-            draft.attributions.removeAll { $0.subject == .outline }
-            draft.attributions.append(Attribution(subject: .outline, provider: .tmdb, value: record, read: .today))
+        if taken.contains("outline"), let outline = comparison.differences.first(where: { $0.id == "outline" }) {
+            Self.attribute(outline, in: &draft)
         }
         if declined != sidecar.declined { draft.declined = declined }
         change.draft = draft
         return change
+    }
+
+    /// The outline taken, attributed as read today, or, TMDb having none now, its attribution gone with it.
+    private static func attribute(_ outline: Difference, in draft: inout ContainerDraft) {
+        switch outline {
+        case .outline(_, let record), .staleOutline(_?, let record, _):
+            draft.attributions.removeAll { $0.subject == .outline }
+            draft.attributions.append(Attribution(subject: .outline, provider: .tmdb, value: record, read: .today))
+        case .staleOutline(nil, _, _):
+            draft.attributions.removeAll { $0.subject == .outline }
+        default:
+            break
+        }
     }
 
     /// One ticked difference taken into a stop's change, or gathered as artwork to put or a season to
@@ -642,6 +656,7 @@ extension ReviewWalk {
         case .title(let title): if let title = Title(title) { change.container.title = title }
         case .year(let year): change.container.year = year
         case .outline(let text, _): change.container.outline = text
+        case .staleOutline(let text, _, _): change.container.outline = text
         case .reference(nil, let ref): change.container.externalRefs.append(ref)
         case .reference(let item?, let ref): AdminConsole.add(ref, toItem: item, in: &change.container)
         case .episode(let episode, let after):
@@ -651,10 +666,18 @@ extension ReviewWalk {
                 into: &change.container
             )
         case .order(let sequence, let items): AdminConsole.reorder(sequence, to: items, in: &change.container)
-        // A missing season chosen is a new stop of the walk, made with what its own stop keeps.
-        case .season, .heldSeason, .unmatchedSeason: break
-        case .artwork(let kind, let path, let record, _):
+        // A missing child chosen is a new stop of the walk, made with what its own stop keeps.
+        case .child, .heldChild, .unmatchedSeason: break
+        case .artwork(let kind, let path, let record, _), .staleArtwork(let kind, let path?, let record, _, _):
             gathering.artwork.append(Self.artwork(kind, path, record, at: change.stop))
+        case .staleArtwork(let kind, nil, _, _, _):
+            gathering.artwork.append(
+                Step(
+                    id: "artwork:\(id):\(kind)",
+                    kind: .removeArtwork(kind: kind, of: id),
+                    described: "remove \(change.stop.title)'s \(kind), which TMDb no longer has"
+                )
+            )
         case .special: break
         }
     }
@@ -670,8 +693,8 @@ extension ReviewWalk {
     }
 
     /// The first of a group's episodes the stop's reading still offers.
-    private static func first(of group: EpisodeGroup, in comparison: Comparison) -> Int? {
-        let offered = comparison.differences.compactMap { difference -> Int? in
+    private static func first(of group: EpisodeGroup, in comparison: Comparison) -> String? {
+        let offered = comparison.differences.compactMap { difference -> String? in
             if case .episode(let episode, _) = difference { episode.id } else { nil }
         }
         return group.episodes.first(where: offered.contains)
@@ -690,7 +713,7 @@ extension ReviewWalk {
         )
     }
 
-    /// What an entry TMDb puts after an episode goes after in the stop's container: the episode, the
+    /// What an entry Wikidata puts after an episode goes after in the stop's container: the episode, the
     /// group taken in its place, or the container held beneath it was handed to.
     private static func anchor(_ after: ExternalRef?, in change: Change) -> AdminConsole.Anchor? {
         guard let after else { return nil }
@@ -770,12 +793,12 @@ extension ReviewWalk {
     private var decline: Step? {
         // A series the walk makes declines what it declines as it is made, or, not confirmed, nothing.
         guard let series, stops[series]?.taken == nil, !isNew(series) else { return nil }
-        let refs = specials.filter { placements[$0.id] == .declined }.map(\.episode.ref)
+        let refs = specials.filter { placements[$0.id] == .declined }.map(\.episode.item)
         guard !refs.isEmpty else { return nil }
         return Step(
             id: "decline:\(series)",
             kind: .decline(refs, in: series),
-            described: "decline \(refs.count) of TMDb's specials in the series"
+            described: "decline \(refs.count) of its specials in the series"
         )
     }
 
@@ -825,7 +848,7 @@ extension DraftTree.Making.HeldEdit {
     }
 
     public var described: String {
-        if ref != nil { return "add TMDb's id to \(item ?? "") of \(container) in \(library)" }
+        if ref != nil { return "add the special's id to \(item ?? "") of \(container) in \(library)" }
         if refer != nil { return "refer to a special from \(container) in \(library)" }
         if entryType != nil { return "add an extra to \(container) in \(library)" }
         return "add an entry to \(container) in \(library)"
@@ -875,15 +898,15 @@ extension ReviewWalk {
         return title(of: entry, in: container, at: id)
     }
 
-    /// An entry by its title: its own, TMDb's for the episode or special it carries, the operator's for a
-    /// missing episode, the stop's beneath it for a child, or the title of the item it refers to.
+    /// An entry by its title: its own, Wikidata's for the episode or special it carries, the operator's
+    /// for a missing episode, the stop's beneath it for a child, or the title of the item it refers to.
     func title(of entry: Entry, in container: Container, at id: String) -> String {
         if let title = entry.title { return title }
-        if let ref = entry.externalRefs.first(where: { $0.provider == .tmdb }) {
-            if let episode = Int(ref.value), let title = titles[episode] { return title }
+        if let ref = entry.externalRefs.first(where: { $0.provider == .wikidata }) {
+            if let title = titles[ref.value] { return title }
             let episodes = stops[id]?.comparison?.episodeTitles ?? draft(holding: id)?.episodeTitles ?? [:]
             if let title = episodes[ref.value] { return title }
-            if let special = (specials + declined).first(where: { $0.episode.ref == ref }) {
+            if let special = (specials + declined).first(where: { $0.episode.item == ref }) {
                 return special.episode.title
             }
         }
@@ -906,7 +929,7 @@ extension ReviewWalk {
         let drafted = drafts.values.filter { $0.creating.parent == id }
         let missing = differences(of: id).filter { difference in
             switch difference {
-            case .episode, .season: true
+            case .episode, .child: true
             default: false
             }
         }

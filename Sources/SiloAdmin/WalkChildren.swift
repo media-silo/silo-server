@@ -7,7 +7,7 @@ import SmdKit
 import SwiftUI
 
 /// A held stop's children, one list in the order storing leaves them, each moved by its grab handle: the
-/// seasons TMDb has, those the library holds shown ticked and never chosen, what the stop holds already,
+/// seasons or serials Wikidata lists, those the library holds shown ticked and never chosen, what the stop holds already,
 /// and the episodes it lacks, which may be grouped into new containers beneath it or added to one it
 /// holds beneath it, each held one shown in its place among them. What ticking each does is said once,
 /// above them.
@@ -21,13 +21,13 @@ struct WalkChildren: View {
     private var stop: String { comparison.container }
     private var groups: [EpisodeGroup] { walk.stops[stop]?.groups ?? [] }
     private var held: [ReviewWalk.HeldChild] { walk.heldChildren(at: stop) }
-    private var intoHeld: [String: [Int]] { walk.stops[stop]?.intoHeld ?? [:] }
+    private var intoHeld: [String: [String]] { walk.stops[stop]?.intoHeld ?? [:] }
     /// The missing episodes grouped, or added to a container held beneath.
-    private var grouped: Set<Int> { Set(groups.flatMap(\.episodes)).union(intoHeld.values.joined()) }
+    private var grouped: Set<String> { Set(groups.flatMap(\.episodes)).union(intoHeld.values.joined()) }
     private var seasons: [ReviewWalk.Difference] {
         walk.differences(of: stop).filter { $0.isChild && !$0.isEpisode }
     }
-    private var episodes: [TMDb.Episode] { walk.missingEpisodes(at: stop) }
+    private var episodes: [Wikidata.Work] { walk.missingEpisodes(at: stop) }
 
     var body: some View {
         if rows.isEmpty {
@@ -41,7 +41,7 @@ struct WalkChildren: View {
     /// The containers the operator added beneath it.
     private var added: [String] { walk.addedContainers(at: stop) }
 
-    /// The children that may be ticked: each season and each episode the library lacks, the episodes
+    /// The children that may be ticked: each season or serial and each episode the library lacks, the episodes
     /// grouped in none, and each group as one, which is what the heading's tick ticks.
     private var tickable: [String] {
         seasons.filter { !$0.isHeld }.map(\.id)
@@ -95,7 +95,7 @@ struct WalkChildren: View {
     private var missing: some View {
         if !seasons.isEmpty {
             Text(
-                "Ticked, each season the library lacks is drafted from TMDb when this is confirmed, and looked at in the walk after it. Those it holds are looked at whatever is ticked."
+                "Ticked, each season or serial the library lacks is drafted from Wikidata when this is confirmed, and looked at in the walk after it. Those it holds are looked at whatever is ticked."
             )
             .font(.caption).foregroundStyle(.secondary)
         }
@@ -106,7 +106,7 @@ struct WalkChildren: View {
         GroupingList(
             rows: rows,
             suggestions: walk.suggestedGroups(at: stop).map {
-                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init), parts: $0.parts)
+                GroupingSuggestion(title: $0.title, members: $0.episodes, parts: $0.parts)
             },
             defaultKind: defaultKind,
             chosen: ticked,
@@ -115,7 +115,7 @@ struct WalkChildren: View {
                 guard let id = try? await model.provisionalID() else { return }
                 model.groupEpisodes { walk, stop in
                     walk.group(
-                        members.compactMap(Int.init),
+                        members,
                         at: stop,
                         into: id.value,
                         type: type,
@@ -125,7 +125,7 @@ struct WalkChildren: View {
                 }
             },
             add: { members, group in
-                let episodes = members.compactMap(Int.init)
+                let episodes = members
                 if held.contains(where: { $0.id == group }) {
                     model.groupEpisodes { $0.add(episodes, toHeld: group, at: $1) }
                 } else {
@@ -133,7 +133,7 @@ struct WalkChildren: View {
                 }
             },
             remove: { member, group in
-                guard let episode = Int(member) else { return }
+                let episode = member
                 if held.contains(where: { $0.id == group }) {
                     model.groupEpisodes { $0.remove(episode, fromHeld: group, at: $1) }
                 } else {
@@ -148,7 +148,7 @@ struct WalkChildren: View {
                 }
             },
             renaming: walk.suggestedRenaming(at: stop).map {
-                GroupingSuggestion(title: $0.title, members: $0.episodes.map(String.init), parts: $0.parts)
+                GroupingSuggestion(title: $0.title, members: $0.episodes, parts: $0.parts)
             },
             rename: { word in
                 guard let episodes = walk.suggestedRenaming(at: stop)?.episodes else { return }
@@ -195,7 +195,7 @@ struct WalkChildren: View {
                 )
             case .held(let held):
                 return heldRow(held)
-            case .season(let season):
+            case .child(let season):
                 return .toggled(
                     id: child.key,
                     title: Self.name(of: season),
@@ -206,10 +206,10 @@ struct WalkChildren: View {
         }
     }
 
-    /// A season's name, as its drag shows it.
+    /// A season's or serial's name, as its drag shows it.
     private static func name(of season: ReviewWalk.Difference) -> String {
         switch season {
-        case .season(let season), .heldSeason(let season, _, _): season.name
+        case .child(let season), .heldChild(let season, _, _): season.title
         default: season.id
         }
     }
@@ -229,8 +229,8 @@ struct WalkChildren: View {
         )
     }
 
-    private func member(_ episode: TMDb.Episode, key: String? = nil) -> GroupingMember {
-        GroupingMember(id: String(episode.id), title: walk.title(of: episode), key: key)
+    private func member(_ episode: Wikidata.Work, key: String? = nil) -> GroupingMember {
+        GroupingMember(id: episode.id, title: walk.title(of: episode), key: key)
     }
 
     /// The episodes not grouped, ticked as the stop has them.
@@ -239,10 +239,10 @@ struct WalkChildren: View {
         return Binding(
             get: {
                 let chosen = walk.stops[stop]?.chosen ?? []
-                return Set(loose.filter { chosen.contains("episode:\($0)") }.map(String.init))
+                return Set(loose.filter { chosen.contains("episode:\($0)") })
             },
             set: { members in
-                for episode in loose { tick("episode:\(episode)").wrappedValue = members.contains(String(episode)) }
+                for episode in loose { tick("episode:\(episode)").wrappedValue = members.contains(episode) }
             }
         )
     }

@@ -101,7 +101,16 @@ public struct WikidataClient: WikidataSource {
 
     public func series(_ id: String) async throws -> Wikidata.Series {
         try await expect(id, is: .series)
-        async let work = works(entities([id])) { _ in .series }
+        async let specials = select(
+            "specials",
+            """
+            SELECT ?item WHERE {
+              ?item wdt:P179 wd:\(id) .
+              ?item wdt:P31/wdt:P279* wd:\(Wikidata.Kind.episode.itemClass) .
+              FILTER NOT EXISTS { ?item wdt:P4908 ?season }
+            }
+            """
+        )
         let rows = try await select(
             "seasons",
             """
@@ -114,11 +123,11 @@ public struct WikidataClient: WikidataSource {
             }
             """
         )
-        var seasons: [String: (summary: Wikidata.SeasonSummary, first: String?)] = [:]
+        var seasons: [String: (summary: Wikidata.Summary, first: String?)] = [:]
         for row in rows {
             guard let item = row["item"] else { continue }
             let title = row["itemLabel"].flatMap { $0 == item ? nil : $0 } ?? item
-            var season = seasons[item] ?? (Wikidata.SeasonSummary(id: item, ordinal: nil, title: title), nil)
+            var season = seasons[item] ?? (Wikidata.Summary(id: item, ordinal: nil, title: title), nil)
             season.summary.ordinal = season.summary.ordinal ?? row["ordinal"].flatMap(Int.init)
             if let date = row["date"], season.first.map({ date < $0 }) ?? true { season.first = date }
             seasons[item] = season
@@ -127,7 +136,13 @@ public struct WikidataClient: WikidataSource {
             Self.order($0.summary.ordinal, $0.first, $0.summary.id)
                 < Self.order($1.summary.ordinal, $1.first, $1.summary.id)
         }
-        return Wikidata.Series(work: try await work[0], seasons: ordered.map(\.summary))
+        // The series and its specials in one read; the specials by first date, as Wikidata dates them.
+        let unfiled = Numbered(try await specials).items
+        let read = try await works(entities([id] + unfiled)) { $0.id == id ? .series : .episode }
+        let byDate = read.dropFirst().sorted {
+            Self.order(nil, $0.premiered?.description, $0.id) < Self.order(nil, $1.premiered?.description, $1.id)
+        }
+        return Wikidata.Series(work: read[0], seasons: ordered.map(\.summary), specials: byDate)
     }
 
     public func season(_ id: String) async throws -> Wikidata.Season {
@@ -205,6 +220,11 @@ public struct WikidataClient: WikidataSource {
                 < Self.order(ordinals[$1] ?? listed.firstIndex(of: $1), works[$1]?.premiered?.description, $1)
         }
         return Wikidata.Serial(work: read[0], parts: ordered.compactMap { works[$0] })
+    }
+
+    public func episodes(_ ids: [String]) async throws -> [Wikidata.Work] {
+        guard !ids.isEmpty else { return [] }
+        return try await works(entities(ids)) { _ in .episode }
     }
 
     public func collection(_ id: String) async throws -> Wikidata.Collection {

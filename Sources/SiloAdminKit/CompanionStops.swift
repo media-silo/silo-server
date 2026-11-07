@@ -16,7 +16,7 @@ extension ReviewWalk {
         guard series.type == .series, drafts[id] == nil, stops[id] == nil else { return false }
         let tree = DraftTree(
             library: library,
-            record: TMDb.Record(.series, 0),
+            item: nil,
             creating: ContainerDraft.Creating(),
             containers: [series],
             top: series.id

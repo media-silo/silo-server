@@ -7,10 +7,11 @@ import SmdKit
 import SmdSidecar
 import SwiftUI
 
-/// A container's tree walked against TMDb, held or drafted from it: the walk's tree beside the open
-/// stop, with each stop's state; the open stop's differences, each with a tick and none ticked to begin
-/// with; and the series' unassigned specials beside every stop, to be placed in the one they belong to.
-/// What the library holds and TMDb lacks is shown, and never offered for removal. Nothing is stored
+/// A container's tree reviewed, held or drafted: its facts against Wikidata's and its content against
+/// TMDb's, the walk's tree beside the open stop, with each stop's state; the open stop's differences,
+/// each with a tick and none ticked to begin with; and the series' unassigned specials beside every
+/// stop, to be placed in the one they belong to. What the library holds and Wikidata lacks is shown,
+/// and never offered for removal. Nothing is stored
 /// until the walk is, and the store lists everything it will do first.
 struct WalkSheet: View {
     let walking: ConsoleModel.Walking
@@ -95,7 +96,7 @@ struct WalkSheet: View {
 
     private var heading: String {
         let title = walk.stops[walk.root]?.title ?? walk.root
-        return walk.drafting ? "\(title) from TMDb, into \(walk.library)" : "\(title) against TMDb"
+        return walk.drafting ? "\(title) from Wikidata, into \(walk.library)" : "\(title) reviewed"
     }
 
     private var counts: String {
@@ -195,9 +196,13 @@ struct WalkSheet: View {
                     }
                 }
             }
+            if let noContent = comparison.noContent {
+                Label("No outline or artwork read: \(noContent)", systemImage: "info.circle").font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let season = walk.identified[comparison.container] {
                 HStack {
-                    Text("Read as TMDb's season \(season), as you said it is.").font(.caption)
+                    Text("Read as Wikidata's season \(season), as you said it is.").font(.caption)
                     Button("Unmatched Again") { Task { await model.identifySeason(nil) } }
                         .buttonStyle(.borderless).font(.caption)
                 }
@@ -210,7 +215,7 @@ struct WalkSheet: View {
             StopAlternatives(walk: walk, model: model, stop: comparison.container)
             PlacedSpecials(walk: walk, model: model, stop: comparison.container)
             if !comparison.heldOnly.isEmpty {
-                GroupBox("Held here, and nothing at TMDb: nothing is offered for removal") {
+                GroupBox("Held here, and nothing at Wikidata: nothing is offered for removal") {
                     ForEach(comparison.heldOnly, id: \.self) { Text($0).font(.caption) }
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -220,7 +225,9 @@ struct WalkSheet: View {
             }),
                 current.progress[comparison.container] == nil
             {
-                Label("Nothing differs from TMDb's record", systemImage: "checkmark.seal").foregroundStyle(.green)
+                Label("Nothing differs from Wikidata's or TMDb's", systemImage: "checkmark.seal").foregroundStyle(
+                    .green
+                )
             }
         }
     }
@@ -350,7 +357,7 @@ private struct WalkTree: View {
             Button("Add a Companion Series…", systemImage: "plus") { adding = true }
                 .buttonStyle(.borderless)
                 .help(
-                    "A series of your own beside this one, for specials TMDb has no series for: shaped here as any new container is, and made at the top of the library when the walk is stored."
+                    "A series of your own beside this one, for specials Wikidata has no series for: shaped here as any new container is, and made at the top of the library when the walk is stored."
                 )
                 .padding(6)
         }
@@ -386,7 +393,7 @@ private struct WalkTree: View {
 }
 
 /// A new stop: what it will be created with, each ticked to begin with, and its draft shaped as a
-/// draft from TMDb is, its container's form and its entries regrouped into containers beneath it.
+/// draft from Wikidata is, its container's form and its entries regrouped into containers beneath it.
 private struct NewStop: View {
     let current: ConsoleModel.Walking
     let model: ConsoleModel
@@ -407,7 +414,7 @@ private struct NewStop: View {
                         .help("Every stop beneath it leaves too, and the specials placed in it are unassigned again.")
                 }
             } else {
-                Text("New: drafted from TMDb, and made when the walk is stored.").font(.caption)
+                Text("New: drafted from Wikidata, and made when the walk is stored.").font(.caption)
                     .foregroundStyle(.secondary)
             }
             let offered = walk.offered(stop)
@@ -475,9 +482,7 @@ private struct DifferenceGroup: View {
                             DifferenceLabel(difference: difference, walk: walk, images: images)
                         }
                         // Outside the toggle's label, so that choosing an image is not a click on the toggle.
-                        if case .artwork(let kind, let path, _, let offered?) = difference, offered.count > 1,
-                            let images
-                        {
+                        if let (kind, path, offered) = Self.choosable(difference), offered.count > 1, let images {
                             ImageStrip(
                                 kind: kind,
                                 offered: offered,
@@ -493,6 +498,16 @@ private struct DifferenceGroup: View {
                 // Ticks the group's every difference or none, and shows as mixed while some are ticked.
                 Toggle(sources: differences.map { tick($0.id) }, isOn: \.self) { Text(title) }
             }
+        }
+    }
+
+    /// An artwork kind offered with the images TMDb offers for it to choose among: one the folder lacks,
+    /// or one read again once TMDb's terms no longer let it be kept.
+    static func choosable(_ difference: ReviewWalk.Difference) -> (String, String, [String])? {
+        switch difference {
+        case .artwork(let kind, let path, _, let offered?), .staleArtwork(let kind, let path?, _, let offered, _):
+            (kind, path, offered)
+        default: nil
         }
     }
 }
@@ -548,8 +563,9 @@ private struct PlacedSpecials: View {
     }
 }
 
-/// A difference as the walk says it, the same for a held container and a new one: a field TMDb's text
-/// is taken into with its attribution marked.
+/// A difference as the walk says it, the same for a held container and a new one: a fact as Wikidata
+/// states it, and TMDb's outline and artwork taken with their attribution marked, or read again once
+/// TMDb's terms no longer let them be kept.
 struct DifferenceLabel: View {
     let difference: ReviewWalk.Difference
     let walk: ReviewWalk
@@ -569,25 +585,51 @@ struct DifferenceLabel: View {
             }
         case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
         case .episode(let episode, _): Text(walk.title(of: episode))
-        case .season(let season): Text(season.name)
-        case .heldSeason(let season, let container, let suggested):
+        case .staleOutline(let text, _, let read):
+            VStack(alignment: .leading) {
+                if let text {
+                    Text(text).font(.callout)
+                    HStack(spacing: 4) {
+                        TMDbMark()
+                        Text("read from TMDb \(read), longer ago than TMDb's terms let it be kept: read again")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(
+                        "The outline read from TMDb \(read) is kept longer than TMDb's terms allow, and TMDb no longer has one: removed"
+                    )
+                }
+            }
+        case .child(let child): Text(child.title)
+        case .heldChild(let child, let container, let suggested):
             let held = walk.stops[container]?.title ?? container
             if suggested {
                 Text(
-                    "\(season.name): perhaps \(held), which the library holds with no TMDb id; say which season it is when the walk reaches it"
+                    "\(child.title): perhaps \(held), which the library holds with no Wikidata id; say which season it is when the walk reaches it"
                 )
             } else if walk.identified[container] != nil {
-                Text("\(season.name): held as \(held), as you said it is")
+                Text("\(child.title): held as \(held), as you said it is")
             } else {
-                Text("\(season.name): held as \(held)")
+                Text("\(child.title): held as \(held)")
             }
         case .unmatchedSeason: EmptyView()
         case .order(let sequence, let items):
-            Text("\(sequence ?? "The sequence") in TMDb's order: \(items.joined(separator: ", "))")
+            Text("\(sequence ?? "The sequence") in Wikidata's order: \(items.joined(separator: ", "))")
         case .artwork(let kind, let path, _, _):
             HStack {
                 TMDbImage(path: images.flatMap { walk.image(for: kind, at: $0.stop) } ?? path, size: 60)
                 Text("\(kind), credited to TMDb")
+            }
+        case .staleArtwork(let kind, let path, _, _, let read):
+            if let path {
+                HStack {
+                    TMDbImage(path: images.flatMap { walk.image(for: kind, at: $0.stop) } ?? path, size: 60)
+                    Text("\(kind), read from TMDb \(read), longer ago than TMDb's terms let it be kept: read again")
+                }
+            } else {
+                Text(
+                    "\(kind), read from TMDb \(read) and kept longer than TMDb's terms allow; TMDb no longer has one: removed"
+                )
             }
         case .special(let special): Text(special.episode.title)
         }
@@ -712,12 +754,13 @@ private struct WalkSpecials: View {
                 Text(special.episode.title).lineLimit(2)
                     .draggable(special: special.id, title: special.episode.title)
                     .help("Drag among the open stop's children, or onto its alternatives or extras.")
-                TMDbMark()
                 if isSuggestedHere(special) {
                     Text("suggested here").font(.caption2.bold()).foregroundStyle(.orange)
                 }
             }
-            if let aired = special.episode.airDate { Text(aired).font(.caption2).foregroundStyle(.secondary) }
+            if let aired = special.episode.premiered {
+                Text(aired.description).font(.caption2).foregroundStyle(.secondary)
+            }
             if let suggestion = walk.suggestions[special.id] {
                 Text("Suggested: \(suggestion.reason)").font(.caption).foregroundStyle(.secondary)
             }
@@ -837,7 +880,7 @@ private struct WalkSpecials: View {
         if let title = entry.title { return title }
         let titles =
             current.stop?.comparison?.episodeTitles ?? walk.draft(holding: current.open)?.episodeTitles ?? [:]
-        if let ref = entry.externalRefs.first(where: { $0.provider == .tmdb }), let title = titles[ref.value] {
+        if let ref = entry.externalRefs.first(where: { $0.provider == .wikidata }), let title = titles[ref.value] {
             return title
         }
         return entry.id?.value ?? entry.reference.map { "\($0.container?.value ?? "")#\($0.item)" } ?? "an item"
@@ -864,34 +907,34 @@ private struct WalkSpecials: View {
     }
 }
 
-/// A held season carrying no TMDb id, which matches nothing at TMDb: said plainly, with TMDb's seasons to
-/// say which it is, the one its title or episodes suggest chosen to begin with.
+/// A held season carrying no Wikidata id, which matches nothing at Wikidata: said plainly, with the
+/// series' seasons at Wikidata to say which it is, the one its title or episodes suggest chosen to begin with.
 private struct UnmatchedSeason: View {
     let title: String
-    let seasons: [TMDb.SeasonSummary]
-    let suggested: Int?
-    let identify: (Int) -> Void
-    @State private var chosen: Int?
+    let seasons: [Wikidata.Summary]
+    let suggested: String?
+    let identify: (String) -> Void
+    @State private var chosen: String?
 
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 6) {
                 Text(
-                    "\(title) carries no TMDb id, so nothing at TMDb is read against it. Say which of TMDb's seasons it is, and it is read as that season and offered its id."
+                    "\(title) carries no Wikidata id, so nothing at Wikidata is read against it. Say which of Wikidata's seasons it is, and it is read as that season and offered its id."
                 )
                 .font(.callout)
                 if let suggested, let season = seasons.first(where: { $0.id == suggested }) {
-                    Text("Its title or an episode beneath it suggests \(season.name).").font(.caption)
+                    Text("Its title or an episode beneath it suggests \(season.title).").font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Nothing about it suggests which.").font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
-                    Picker("TMDb's season", selection: $chosen) {
-                        Text("Choose…").tag(Int?.none)
+                    Picker("Wikidata's season", selection: $chosen) {
+                        Text("Choose…").tag(String?.none)
                         ForEach(seasons, id: \.id) { season in
-                            Text(season.id == suggested ? "\(season.name), suggested" : season.name).tag(
-                                Int?.some(season.id)
+                            Text(season.id == suggested ? "\(season.title), suggested" : season.title).tag(
+                                String?.some(season.id)
                             )
                         }
                     }
@@ -901,7 +944,7 @@ private struct UnmatchedSeason: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } label: {
-            Label("Matches nothing at TMDb", systemImage: "questionmark.circle").foregroundStyle(.orange)
+            Label("Matches nothing at Wikidata", systemImage: "questionmark.circle").foregroundStyle(.orange)
         }
         .onAppear { chosen = chosen ?? suggested }
     }

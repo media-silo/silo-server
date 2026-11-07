@@ -36,6 +36,32 @@ public enum Wikidata {
 
         /// The kinds a search offers: the ones a library's top-level container is drafted from.
         public static let searched: [Kind] = [.film, .series, .collection]
+
+        /// The container type an item of the kind is read as.
+        public var containerType: ContainerType {
+            switch self {
+            case .film: .movie
+            case .collection: .collection
+            case .series: .series
+            case .season: .season
+            case .serial: .serial
+            case .episode: .episode
+            }
+        }
+    }
+
+    /// An item a draft is read from: its id, and the kind it is read as.
+    public struct Item: Hashable, Sendable, Codable {
+        public var kind: Kind
+        public var id: String
+
+        public init(_ kind: Kind, _ id: String) {
+            self.kind = kind
+            self.id = id
+        }
+
+        /// The reference a container read from it carries.
+        public var ref: ExternalRef { ExternalRef(provider: .wikidata, value: id) }
     }
 
     /// An item a search found: its id, kind, label and Wikidata's description of it, which tells apart
@@ -59,7 +85,7 @@ public enum Wikidata {
     /// A person credited for a work: who, as Wikidata names them, the character played, for a member of
     /// the cast, and the ids providers know the person by. Credits are in the order the item lists
     /// them, which is the order its editors gave them rather than a billing, unless they numbered them.
-    public struct Credit: Hashable, Sendable {
+    public struct Credit: Hashable, Sendable, Codable {
         public var person: String
         public var name: String
         public var character: String?
@@ -76,7 +102,7 @@ public enum Wikidata {
     /// A film, a series, a season, a serial or an episode, as its own statements say it: its label,
     /// its first date, to the day when Wikidata knows the day and to the year when it knows only the
     /// year, its credits, and its references — Wikidata's own first, then IMDb's, TMDb's and TVDB's.
-    public struct Work: Hashable, Sendable {
+    public struct Work: Hashable, Sendable, Codable {
         public var id: String
         public var title: String
         public var description: String?
@@ -86,6 +112,8 @@ public enum Wikidata {
         public var directors: [Credit]
         public var screenwriters: [Credit]
         public var cast: [Credit]
+        /// The items it is part of the series of: a film's collection, an episode's series.
+        public var partOf: [String]
 
         public init(
             id: String,
@@ -96,7 +124,8 @@ public enum Wikidata {
             refs: [ExternalRef] = [],
             directors: [Credit] = [],
             screenwriters: [Credit] = [],
-            cast: [Credit] = []
+            cast: [Credit] = [],
+            partOf: [String] = []
         ) {
             self.id = id
             self.title = title
@@ -107,37 +136,56 @@ public enum Wikidata {
             self.directors = directors
             self.screenwriters = screenwriters
             self.cast = cast
+            self.partOf = partOf
         }
 
         /// The reference a provider gives the work, if it gives one.
         public func ref(_ provider: Provider) -> ExternalRef? {
             refs.first { $0.provider == provider }
         }
+
+        /// Wikidata's own reference for it.
+        public var item: ExternalRef { ExternalRef(provider: .wikidata, value: id) }
     }
 
-    /// One of a series' seasons as the series lists them: the number the series gives it, if any, and
-    /// its label.
-    public struct SeasonSummary: Hashable, Sendable {
+    /// One of the items a work holds, as the work lists them: a series' season, or a season's serial;
+    /// its kind, the number the work gives it, if any, and its label.
+    public struct Summary: Hashable, Sendable, Codable {
         public var id: String
+        public var kind: Kind
         public var ordinal: Int?
         public var title: String
 
-        public init(id: String, ordinal: Int?, title: String) {
+        public init(id: String, kind: Kind = .season, ordinal: Int?, title: String) {
             self.id = id
+            self.kind = kind
             self.ordinal = ordinal
             self.title = title
+        }
+
+        /// What a season's member is, as one of the children the season lists.
+        public init(_ member: Member, ordinal: Int? = nil) {
+            switch member {
+            case .episode(let work): self.init(id: work.id, kind: .episode, ordinal: ordinal, title: work.title)
+            case .serial(let serial):
+                self.init(id: serial.work.id, kind: .serial, ordinal: ordinal, title: serial.work.title)
+            }
         }
     }
 
     /// A series and its seasons in order: by the number the series gives each, then by first date,
-    /// and those it numbers not after the rest, by first date.
+    /// and those it numbers not after the rest, by first date. Its specials are the episodes Wikidata
+    /// files beneath the series and in no season, by first date: a special that aired in a season is
+    /// one of that season's episodes.
     public struct Series: Hashable, Sendable {
         public var work: Work
-        public var seasons: [SeasonSummary]
+        public var seasons: [Summary]
+        public var specials: [Work]
 
-        public init(work: Work, seasons: [SeasonSummary]) {
+        public init(work: Work, seasons: [Summary], specials: [Work] = []) {
             self.work = work
             self.seasons = seasons
+            self.specials = specials
         }
     }
 
@@ -209,4 +257,6 @@ public protocol WikidataSource: Sendable {
     func season(_ id: String) async throws -> Wikidata.Season
     func serial(_ id: String) async throws -> Wikidata.Serial
     func collection(_ id: String) async throws -> Wikidata.Collection
+    /// Items read as episodes, in the order asked, each whatever it is an instance of.
+    func episodes(_ ids: [String]) async throws -> [Wikidata.Work]
 }

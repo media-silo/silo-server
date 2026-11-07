@@ -94,49 +94,51 @@ struct AttributionsLine: View {
     }
 }
 
-/// Finding a record at TMDb to draft from: a movie or a series for a library, read the way the operator
-/// chooses and walked from the draft; or one of a held series' seasons, chosen in the series' walk. A
-/// record smddb holds is not drafted, and the sheet says what holds it; one the library holds is walked
-/// as it is held.
-struct FindInTMDbSheet: View {
-    let finding: ConsoleModel.FindingInTMDb
+/// Finding an item at Wikidata to draft from: a film, a series or a collection for a library, the most
+/// widely known first, told apart by Wikidata's description, read the way the operator chooses and walked
+/// from the draft; or one of a held series' seasons, chosen in the series' walk. An item smddb holds is
+/// not drafted, and the sheet says what holds it; one the library holds is walked as it is held. Its
+/// facts are Wikidata's; its outline and artwork are TMDb's, when this Mac has a token for TMDb.
+struct FindInWikidataSheet: View {
+    let finding: ConsoleModel.FindingInWikidata
     let model: ConsoleModel
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var results: [TMDb.SearchResult] = []
-    @State private var picked: TMDb.SearchResult?
-    @State private var series: TMDb.Series?
+    @State private var results: [Wikidata.SearchResult] = []
+    @State private var picked: Wikidata.SearchResult?
+    @State private var series: Wikidata.Series?
     @State private var allSeasons = true
-    @State private var seasons: Set<Int> = []
-    @State private var group = ""
-    @State private var groupType: ContainerType = .serial
+    @State private var seasons: Set<String> = []
     @State private var message: String?
     @State private var working = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(
-                    finding.series.map { "A season of \($0.title) from TMDb" }
-                        ?? "Draft into \(finding.library) from TMDb"
-                )
-                .font(.title3.bold())
-                Spacer()
-                TMDbMark()
-            }
+            Text(
+                finding.series.map { "A season of \($0.title) from Wikidata" }
+                    ?? "Draft into \(finding.library) from Wikidata"
+            )
+            .font(.title3.bold())
             if finding.series == nil {
                 HStack {
                     TextField("Title", text: $query).onSubmit { Task { await search() } }
                     Button("Search") { Task { await search() } }
                 }
-                List(results, id: \.record, selection: Binding(get: { picked?.record }, set: { pick($0) })) { result in
+                List(results, id: \.id, selection: Binding(get: { picked?.id }, set: { pick($0) })) { result in
                     HStack {
-                        Text(result.title)
-                        if let year = result.year { Text(String(year)).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading) {
+                            HStack {
+                                Text(result.title)
+                                if let year = result.year { Text(String(year)).foregroundStyle(.secondary) }
+                            }
+                            if let description = result.description {
+                                Text(description).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer()
-                        Text(result.record.kind.rawValue).font(.caption).foregroundStyle(.secondary)
+                        Text(result.kind.rawValue).font(.caption).foregroundStyle(.secondary)
                     }
-                    .tag(result.record)
+                    .tag(result.id)
                 }
                 .frame(minHeight: 160)
             }
@@ -148,11 +150,14 @@ struct FindInTMDbSheet: View {
             }
             if let series = finding.series {
                 Text(
-                    "\(series.title) is walked against TMDb with the season chosen among its missing children, drafted beneath it once its stop is confirmed."
+                    "\(series.title) is walked with the season chosen among its missing children, drafted beneath it once its stop is confirmed."
                 )
                 .font(.caption).foregroundStyle(.secondary)
             }
-            Text(TMDb.notice).font(.caption2).foregroundStyle(.secondary)
+            if model.tmdb == nil {
+                Text("With no TMDb token, the draft holds Wikidata's facts and no outline or artwork.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -165,14 +170,14 @@ struct FindInTMDbSheet: View {
         .frame(minWidth: 560, minHeight: 440)
         .task {
             guard let held = finding.series else { return }
-            series = try? await model.tmdbSeries(held.tmdb)
+            series = try? await model.wikidataSeries(held.wikidata)
             allSeasons = false
         }
     }
 
     @ViewBuilder
-    private func shapeOptions(_ series: TMDb.Series) -> some View {
-        GroupBox(finding.series == nil ? "Read \(series.name) as" : "The season to draft") {
+    private func shapeOptions(_ series: Wikidata.Series) -> some View {
+        GroupBox(finding.series == nil ? "Read \(series.work.title) as" : "The season to draft") {
             VStack(alignment: .leading) {
                 if finding.series == nil {
                     Toggle("Every season", isOn: $allSeasons)
@@ -180,17 +185,17 @@ struct FindInTMDbSheet: View {
                 if !allSeasons {
                     ScrollView {
                         VStack(alignment: .leading) {
-                            ForEach(series.seasons.filter { $0.number != 0 }, id: \.number) { season in
+                            ForEach(series.seasons, id: \.id) { season in
                                 Toggle(
-                                    season.name,
+                                    season.title,
                                     isOn: Binding(
-                                        get: { seasons.contains(season.number) },
+                                        get: { seasons.contains(season.id) },
                                         set: { on in
                                             if finding.series != nil { seasons = [] }
                                             if on {
-                                                seasons.insert(season.number)
+                                                seasons.insert(season.id)
                                             } else {
-                                                seasons.remove(season.number)
+                                                seasons.remove(season.id)
                                             }
                                         }
                                     )
@@ -200,20 +205,11 @@ struct FindInTMDbSheet: View {
                     }
                     .frame(maxHeight: 140)
                 }
-                if finding.series == nil, !series.episodeGroups.isEmpty {
-                    Picker("Shape", selection: $group) {
-                        Text("TMDb's seasons").tag("")
-                        ForEach(series.episodeGroups, id: \.id) { Text($0.name).tag($0.id) }
-                    }
-                    if !group.isEmpty {
-                        Picker("Each group is a", selection: $groupType) {
-                            ForEach(ContainerType.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }
-                    }
-                }
-                if finding.series == nil, series.seasons.contains(where: { $0.number == 0 }) {
-                    Text("Season 0 is read as the series' specials, unassigned until you place them.")
-                        .font(.caption).foregroundStyle(.secondary)
+                if finding.series == nil, !series.specials.isEmpty {
+                    Text(
+                        "Wikidata files \(series.specials.count) episodes beneath the series and in no season: they are its specials, unassigned until you place them."
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -224,36 +220,35 @@ struct FindInTMDbSheet: View {
         working = true
         defer { working = false }
         do {
-            results = try await model.searchTMDb(query)
-            message = results.isEmpty ? "TMDb finds nothing by that title." : nil
+            results = try await model.searchWikidata(query)
+            message = results.isEmpty ? "Wikidata finds no film, series or collection by that title." : nil
         } catch {
             message = model.describe(error)
         }
     }
 
-    private func pick(_ record: TMDb.Record?) {
-        picked = results.first { $0.record == record }
+    private func pick(_ id: String?) {
+        picked = results.first { $0.id == id }
         series = nil
         message = nil
-        guard let record, record.kind == .series else { return }
-        Task { series = try? await model.tmdbSeries(record.id) }
+        guard let picked, picked.kind == .series else { return }
+        Task { series = try? await model.wikidataSeries(picked.id) }
     }
 
     private func draft() async {
         working = true
         defer { working = false }
         do {
-            if finding.series != nil, let number = seasons.first,
-                let season = series?.seasons.first(where: { $0.number == number })
+            if finding.series != nil, let id = seasons.first, let season = series?.seasons.first(where: { $0.id == id })
             {
                 await model.startSeasonDraft(season, for: finding)
             } else if let picked {
-                let shape = AdminConsole.TMDbShape(
-                    seasons: allSeasons ? nil : seasons,
-                    group: group.isEmpty ? nil : group,
-                    groupType: groupType
+                let shape = AdminConsole.DraftShape(seasons: allSeasons ? nil : seasons)
+                message = try await model.startDraft(
+                    of: Wikidata.Item(picked.kind, picked.id),
+                    shape: shape,
+                    for: finding
                 )
-                message = try await model.startTMDbDraft(of: picked.record, shape: shape, for: finding)
             }
         } catch {
             message = model.describe(error)
@@ -263,7 +258,7 @@ struct FindInTMDbSheet: View {
 #endif
 
 #if canImport(SwiftUI)
-/// A reading against TMDb as it goes: the step it is on, and how many of the step's questions are
+/// A reading as it goes: the step it is on, and how many of the step's questions are
 /// answered when it asks several.
 struct ReadingProgress: View {
     let progress: AdminConsole.StepProgress
@@ -287,7 +282,7 @@ struct ReadingProgress: View {
 extension ReviewWalk.Difference {
     var isField: Bool {
         switch self {
-        case .title, .year, .outline: true
+        case .title, .year, .outline, .staleOutline: true
         default: false
         }
     }
@@ -299,14 +294,14 @@ extension ReviewWalk.Difference {
 
     var isChild: Bool {
         switch self {
-        case .episode, .season, .heldSeason: true
+        case .episode, .child, .heldChild: true
         default: false
         }
     }
 
     /// A child the library holds, shown among the children and never chosen.
     var isHeld: Bool {
-        if case .heldSeason = self { return true }
+        if case .heldChild = self { return true }
         return false
     }
 
@@ -326,8 +321,10 @@ extension ReviewWalk.Difference {
     }
 
     var isArtwork: Bool {
-        if case .artwork = self { return true }
-        return false
+        switch self {
+        case .artwork, .staleArtwork: true
+        default: false
+        }
     }
 
     var isSpecial: Bool {

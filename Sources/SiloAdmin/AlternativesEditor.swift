@@ -7,9 +7,9 @@ import SmdKit
 import SwiftUI
 
 /// What is dragged between the specials and a container's alternatives and extras, as text: a special,
-/// by its TMDb id, or one of a drafted alternative's entries, by the draft and its position.
+/// by its Wikidata id, or one of a drafted alternative's entries, by the draft and its position.
 enum AlternativeDrag: Equatable {
-    case special(Int)
+    case special(String)
     case entry(draft: String, position: Int)
 
     var payload: String {
@@ -23,8 +23,7 @@ enum AlternativeDrag: Equatable {
         let parts = payload.split(separator: ":", maxSplits: 2).map(String.init)
         switch parts.first {
         case "silo-special" where parts.count == 2:
-            guard let id = Int(parts[1]) else { return nil }
-            self = .special(id)
+            self = .special(parts[1])
         case "silo-entry" where parts.count == 3:
             guard let index = Int(parts[1]) else { return nil }
             self = .entry(draft: parts[2], position: index)
@@ -36,7 +35,7 @@ enum AlternativeDrag: Equatable {
 
 extension View {
     /// Dragged as a special, onto a container's alternatives or extras.
-    func draggable(special: Int, title: String) -> some View {
+    func draggable(special: String, title: String) -> some View {
         draggable(AlternativeDrag.special(special).payload) {
             Label(title, systemImage: "film").padding(6).background(.regularMaterial, in: .rect(cornerRadius: 6))
         }
@@ -272,7 +271,7 @@ struct AlternativesEditor<Drafting: AlternativeDrafting>: View {
 /// What an alternative being drafted is asked to be called.
 private enum AlternativeNaming: Identifiable {
     /// A new alternative playing a special alone, titled from the special's own to begin with.
-    case playing(Int, String)
+    case playing(String, String)
     /// A new alternative cloned from one of the container's sequences.
     case cloning(Int, String)
     /// A new alternative cloned from one drafted already, its specials included.
