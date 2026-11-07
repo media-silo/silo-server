@@ -119,7 +119,7 @@ struct WalkSheet: View {
             .help("Nothing of the walk has been stored unless the store said so; discarded, this Mac keeps none of it.")
             Spacer()
             if current.plan == nil {
-                Button("Store the ReviewWalk…") { model.listStore() }
+                Button("Store the Walk…") { model.listStore() }
                     .disabled(walk.order.allSatisfy { walk.stops[$0]?.taken == nil })
             }
             // On the first stop not yet confirmed, Next confirms it first, in the one click. Either is the
