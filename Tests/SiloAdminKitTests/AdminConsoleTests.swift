@@ -2566,12 +2566,12 @@ extension AdminConsoleTests {
         var library = "tv"
 
         /// Opens a stop: its container read against TMDb.
-        func read(_ id: String, in walk: inout TMDbWalk) async throws {
+        func read(_ id: String, in walk: inout ReviewWalk) async throws {
             walk.read(try await console.compare(id, in: library, of: home, from: database, tmdb: tmdb))
         }
 
         /// Opens a stop, ticks what is given, and confirms it.
-        func confirm(_ id: String, choosing chosen: Set<String> = [], in walk: inout TMDbWalk) async throws {
+        func confirm(_ id: String, choosing chosen: Set<String> = [], in walk: inout ReviewWalk) async throws {
             if walk.stops[id]?.comparison == nil, !walk.isNew(id) { try await read(id, in: &walk) }
             walk.stops[id]?.chosen = chosen
             let drafts = try await console.drafts(confirming: id, in: walk, from: database, tmdb: tmdb)
@@ -2580,8 +2580,8 @@ extension AdminConsoleTests {
 
         /// A draft from TMDb made as the walk rooted at it makes it: every stop confirmed with what it is
         /// offered, and the walk stored.
-        func make(_ tree: TMDbTree) async throws -> AdminConsole.TMDbWalkStored {
-            var walk = TMDbWalk(drafting: tree)
+        func make(_ tree: DraftTree) async throws -> AdminConsole.ReviewWalkStored {
+            var walk = ReviewWalk(drafting: tree)
             while let next = walk.next {
                 try await confirm(next, choosing: walk.stops[next]?.chosen ?? [], in: &walk)
             }
@@ -2589,7 +2589,7 @@ extension AdminConsoleTests {
         }
 
         /// A walk rooted at a held container, its root read, ticked as given, and confirmed.
-        func walk(_ id: String, choosing chosen: Set<String> = []) async throws -> TMDbWalk {
+        func walk(_ id: String, choosing chosen: Set<String> = []) async throws -> ReviewWalk {
             var walk = try await console.startWalk(at: id, in: library, of: home)
             try await confirm(id, choosing: chosen, in: &walk)
             return walk
@@ -2597,13 +2597,13 @@ extension AdminConsoleTests {
     }
 
     /// The draft a walk from TMDb is rooted at, or nil when the record is not drafted.
-    private static func drafted(_ start: AdminConsole.TMDbWalkStart) -> TMDbTree? {
+    private static func drafted(_ start: AdminConsole.ReviewWalkStart) -> DraftTree? {
         guard case .walk(let walk) = start else { return nil }
         return walk.drafts[walk.root]
     }
 
     /// The edit a walk's store makes of a container.
-    private static func edit(of id: String, in plan: TMDbWalk.Plan) -> ContainerDraft? {
+    private static func edit(of id: String, in plan: ReviewWalk.Plan) -> ContainerDraft? {
         plan.steps.lazy.compactMap { step in
             if case .edit(let draft) = step.kind, draft.container == id { draft } else { nil }
         }
@@ -3367,7 +3367,7 @@ extension AdminConsoleTests {
         let (console, home) = try await Self.smddbConsole(HeldLibrary())
         let tmdb = FakeTMDb(movies: [348: Self.alienRecord, 349: TMDb.Movie(id: 349, title: "Refused")])
         let walking = Walking(console: console, home: home, database: database, tmdb: tmdb)
-        func draft(_ number: Int) async throws -> TMDbTree? {
+        func draft(_ number: Int) async throws -> DraftTree? {
             Self.drafted(
                 try await console.startWalk(
                     drafting: TMDb.Record(.movie, number),
@@ -3405,7 +3405,7 @@ extension AdminConsoleTests {
             Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("one")!, container: season.id))])
         ]
         let attributed = [Attribution(subject: .outline, provider: .tmdb, value: "1", read: .today)]
-        var tree = TMDbTree(
+        var tree = DraftTree(
             library: "tv",
             record: TMDb.Record(.series, 1),
             creating: ContainerDraft.Creating(),
@@ -4014,7 +4014,7 @@ extension AdminConsoleTests {
             ]
         )
         tmdb.seasons["121/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: specials)
-        let told = Mutex<[(AdminConsole.TMDbProgress, AdminConsole.TMDbComparison)]>([])
+        let told = Mutex<[(AdminConsole.StepProgress, AdminConsole.Comparison)]>([])
         let compared = try await console.compare(
             series.id.value,
             in: "tv",
@@ -4041,7 +4041,7 @@ extension AdminConsoleTests {
             let told = steps.filter { $0.0.step == step }.map(\.0)
             #expect(told.map(\.done) == Array(0...total) && told.allSatisfy { $0.total == total }, "\(step)")
         }
-        func unassigned(_ comparison: AdminConsole.TMDbComparison) -> [Int] {
+        func unassigned(_ comparison: AdminConsole.Comparison) -> [Int] {
             comparison.differences.compactMap { if case .special(let special) = $0 { special.id } else { nil } }
         }
         let suggesting = steps.filter { $0.0.step == "Suggesting where the specials go" }.map(\.1)
@@ -4597,14 +4597,14 @@ extension AdminConsoleTests {
             ]
         )
 
-        let told = Mutex<[AdminConsole.TMDbProgress]>([])
+        let told = Mutex<[AdminConsole.StepProgress]>([])
         let stored = try await console.store(walk, of: home, tmdb: tmdb) { step in told.withLock { $0.append(step) } }
         #expect(stored.stored.map(\.id) == ["edit:\(series.id)"])
         #expect(stored.refusal == "the validator refuses it")
         #expect(
             told.withLock { $0 } == [
-                AdminConsole.TMDbProgress("edit Doctor Who: its outline", done: 0, of: 3),
-                AdminConsole.TMDbProgress("edit Season 1: its title", done: 1, of: 3),
+                AdminConsole.StepProgress("edit Doctor Who: its outline", done: 0, of: 3),
+                AdminConsole.StepProgress("edit Season 1: its title", done: 1, of: 3),
             ],
             "each step said as it is begun, and none past the refusal"
         )
@@ -4682,8 +4682,11 @@ extension AdminConsoleTests {
 
     /// Walks to the serial: the series confirmed, and its seasons until the serial is a stop, which is
     /// read.
-    private func walkToTheSerial(_ walking: Walking, _ series: Container, _ serial: Container) async throws -> TMDbWalk
-    {
+    private func walkToTheSerial(
+        _ walking: Walking,
+        _ series: Container,
+        _ serial: Container
+    ) async throws -> ReviewWalk {
         var walk = try await walking.walk(series.id.value)
         for season in walk.order.dropFirst() where walk.stops[serial.id.value] == nil {
             try await walking.confirm(season, in: &walk)
@@ -4769,7 +4772,7 @@ extension AdminConsoleTests {
 
         var walk = try await walkToTheSerial(walking, series, serial)
         let id = serial.id.value
-        let broadcast = TMDbWalk.StopAlternative(
+        let broadcast = ReviewWalk.StopAlternative(
             id: "broadcast",
             title: "As broadcast",
             plays: ["The Dead Planet"],
@@ -4783,13 +4786,13 @@ extension AdminConsoleTests {
         #expect(
             shown == [
                 broadcast,
-                TMDbWalk.StopAlternative(
+                ReviewWalk.StopAlternative(
                     id: "pilot",
                     title: "Pilot",
                     plays: ["The Dead Planet (Unaired Pilot)", "The Survivors", "The Escape", "The Ambush"],
                     isPlaced: true
                 ),
-                TMDbWalk.StopAlternative(
+                ReviewWalk.StopAlternative(
                     id: "in-colour",
                     title: "In colour",
                     plays: ["The Daleks in Colour"],
@@ -4853,7 +4856,7 @@ extension AdminConsoleTests {
         #expect(walk.suggestions[omnibus.id]?.placement.flatMap(walk.home) == id, "suggested at the serial")
 
         // A draft's specials are suggested the same way, against its containers.
-        var tree = TMDbTree(
+        var tree = DraftTree(
             library: "tv",
             record: TMDb.Record(.series, 121),
             creating: ContainerDraft.Creating(),
@@ -5029,9 +5032,9 @@ extension AdminConsoleTests {
         let file = folder.appending(path: "walks.json")
         var proms = Container(id: ContainerID("00000000000001d1")!, type: .series, title: Title("At the Proms")!)
         proms.sequences = [Sequence(id: "concerts", items: [])]
-        let walk = TMDbWalk(
+        let walk = ReviewWalk(
             library: "tv",
-            root: TMDbWalk.Stop(id: "00000000000001d0", title: "Doctor Who", type: "series")
+            root: ReviewWalk.Stop(id: "00000000000001d0", title: "Doctor Who", type: "series")
         )
         var kept = try #require(
             try JSONSerialization.jsonObject(with: JSONEncoder().encode(walk)) as? [String: Any]
@@ -5040,7 +5043,7 @@ extension AdminConsoleTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: ["home": [kept]]).write(to: file)
 
-        let read = try #require(TMDbWalkStore(file: file).walks(of: "home").first)
+        let read = try #require(ReviewWalkStore(file: file).walks(of: "home").first)
         #expect(read.companionStops == [proms.id.value] && read.companion(proms.id.value) == proms)
         #expect(read.stops[proms.id.value]?.taken == [] && read.order == [walk.root, proms.id.value])
         #expect(try read.plan().made == [proms.id.value])
@@ -5086,9 +5089,9 @@ extension AdminConsoleTests {
         #expect(walk.drafting && walk.isNew(root) && walk.series == root && walk.stops[root]?.parent == nil)
         #expect(walk.order == [root] && walk.state(of: root) == .pending)
         #expect(walk.specials.map(\.id) == [special.id], "its specials beside every stop")
-        try console.tmdbWalks.save(walk, for: home.id)
-        #expect(console.tmdbWalks.walk(drafting: record, in: "tv", of: home.id)?.id == walk.id)
-        #expect(console.tmdbWalks.walk(drafting: TMDb.Record(.series, 122), in: "tv", of: home.id) == nil)
+        try console.reviewWalks.save(walk, for: home.id)
+        #expect(console.reviewWalks.walk(drafting: record, in: "tv", of: home.id)?.id == walk.id)
+        #expect(console.reviewWalks.walk(drafting: TMDb.Record(.series, 122), in: "tv", of: home.id) == nil)
 
         #expect(try walk.plan().steps.isEmpty, "not confirmed, it makes nothing")
         walk.place(special.id, .declined)
@@ -5153,7 +5156,7 @@ extension AdminConsoleTests {
         tmdb.seasons["900/1"] = TMDb.Season(id: 51, number: 1, name: "Series 1", year: 2005, episodes: [first, second])
         let christmas = Self.episode(3001, 0, 1, "Children in Need", aired: "2005-04-02", runtime: 7)
         tmdb.seasons["900/0"] = TMDb.Season(id: 50, number: 0, name: "Specials", episodes: [christmas])
-        func start(_ number: Int) async throws -> AdminConsole.TMDbWalkStart {
+        func start(_ number: Int) async throws -> AdminConsole.ReviewWalkStart {
             try await console.startWalk(
                 drafting: TMDb.Record(.series, number),
                 into: "tv",
@@ -5177,9 +5180,9 @@ extension AdminConsoleTests {
         let suggested = try await console.suggest(in: walk, of: home, from: database, tmdb: tmdb)
         #expect(suggested.suggestions[3001]?.placement == .entry(in: season, sequence: "episodes", position: 1))
         #expect(suggested.suggestions[3001]?.reason == "it aired between Rose and The End of the World")
-        let held = TMDbWalk(
+        let held = ReviewWalk(
             library: "tv",
-            root: TMDbWalk.Stop(id: doctorWho.id.value, title: "Doctor Who", type: "series")
+            root: ReviewWalk.Stop(id: doctorWho.id.value, title: "Doctor Who", type: "series")
         )
         #expect(try await console.suggest(in: held, of: home, from: database, tmdb: tmdb) == held)
 
@@ -5241,7 +5244,7 @@ extension AdminConsoleTests {
 
         var walk = try await walking.walk(series.id.value, choosing: ["season:904"])
         let new = try #require(walk.stops[series.id.value]?.children.last)
-        let poster = AdminConsole.TMDbDifference.artwork(
+        let poster = AdminConsole.Difference.artwork(
             kind: "poster",
             path: "/one.jpg",
             record: TMDb.Record(.season, 904),
@@ -5383,7 +5386,7 @@ extension AdminConsoleTests {
         try await walking.confirm(season.id.value, in: &walk)
         await #expect(throws: AdminConsole.NoTMDbReading.self) { try await walking.read(serial.id.value, in: &walk) }
 
-        func seasons() -> [AdminConsole.TMDbDifference] {
+        func seasons() -> [AdminConsole.Difference] {
             walk.differences(of: series.id.value).filter { if case .reference = $0 { false } else { true } }
         }
         walk.identify(season.id.value, as: 6982)
@@ -5877,7 +5880,7 @@ extension AdminConsoleTests {
         #expect(walk.title(of: .item("part-2"), at: id) == "The Survivors")
         #expect(
             walk.alternatives(at: id).last
-                == TMDbWalk.StopAlternative(
+                == ReviewWalk.StopAlternative(
                     id: "the-pilot",
                     title: "The pilot",
                     plays: ["The Dead Planet (Unaired Pilot)", "The Ambush", "The Survivors", "A Pilot Coda"],
@@ -6033,8 +6036,8 @@ extension AdminConsoleTests {
         #expect(walk.storedEntries(at: id).map(\.id) == ["tmdb:3792", "tmdb:3791"] + keys.dropFirst() + [keys[0]])
 
         let file = folder.appendingPathComponent("walks.json")
-        try TMDbWalkStore(file: file).save(walk, for: "silo")
-        walk = try #require(TMDbWalkStore(file: file).walk(rootedAt: walk.root, in: walk.library, of: "silo"))
+        try ReviewWalkStore(file: file).save(walk, for: "silo")
+        walk = try #require(ReviewWalkStore(file: file).walk(rootedAt: walk.root, in: walk.library, of: "silo"))
         #expect(walk.arrangedEntries[id]?.last == keys[0], "kept with the walk")
         var undone = walk
         undone.unarrange(id)
@@ -6436,7 +6439,7 @@ extension AdminConsoleTests {
         #expect(newWalk.placements[special.id] == .entry(in: new, position: 2))
         // Listed in its place among the entries, an entry moved before it going before the one after it.
         let specialKey = "special:\(special.id)"
-        let listed = TMDbTree.children(
+        let listed = DraftTree.children(
             of: newWalk.container(new),
             placements: newWalk.placements,
             specials: newWalk.specials
@@ -6445,26 +6448,26 @@ extension AdminConsoleTests {
         let expectedKeys: [String] = items[..<2].map(\.value) + [specialKey] + items[2...].map(\.value)
         #expect(listedKeys == expectedKeys)
         let container = newWalk.container(new)
-        #expect(TMDbTree.entry(before: specialKey, in: container, placements: newWalk.placements) == items[2])
-        #expect(TMDbTree.entry(before: items[1].value, in: container, placements: newWalk.placements) == items[1])
-        #expect(TMDbTree.entry(before: nil, in: container, placements: newWalk.placements) == nil)
+        #expect(DraftTree.entry(before: specialKey, in: container, placements: newWalk.placements) == items[2])
+        #expect(DraftTree.entry(before: items[1].value, in: container, placements: newWalk.placements) == items[1])
+        #expect(DraftTree.entry(before: nil, in: container, placements: newWalk.placements) == nil)
         newWalk.place(4242, at: new, before: specialKey)
         #expect(newWalk.placements[4242] == .entry(in: new, position: 2), "before the special, at its place")
         newWalk.place(special.id, at: new, before: nil)
         #expect(newWalk.placements[special.id] == .entry(in: new))
-        let last = TMDbTree.children(of: container, placements: newWalk.placements, specials: newWalk.specials)
+        let last = DraftTree.children(of: container, placements: newWalk.placements, specials: newWalk.specials)
         #expect(last.last == .special(Special(episode: special)))
-        #expect(TMDbTree.entry(before: specialKey, in: container, placements: newWalk.placements) == nil)
+        #expect(DraftTree.entry(before: specialKey, in: container, placements: newWalk.placements) == nil)
 
         // A container holding nothing yet lists the special placed in it alone; one placed elsewhere is not.
         let empty = Container(id: ContainerID("00000000000005f1")!, type: .episode, title: Title("The Five Doctors")!)
-        let alone = TMDbTree.children(
+        let alone = DraftTree.children(
             of: empty,
             placements: [special.id: .entry(in: empty.id.value), 4242: .extra(of: empty.id.value, type: "trailer")],
             specials: [Special(episode: special)]
         )
         #expect(alone == [.special(Special(episode: special))])
-        #expect(TMDbTree.children(of: nil, placements: [:], specials: [Special(episode: special)]).isEmpty)
+        #expect(DraftTree.children(of: nil, placements: [:], specials: [Special(episode: special)]).isEmpty)
         #expect(DraftChild.special("part-1") == nil)
 
         var tree = try #require(newWalk.drafts[new])
@@ -6488,8 +6491,8 @@ extension AdminConsoleTests {
         walk.placements[pilot.id] = .version(of: id, item: "part-1", title: "Pilot")
         walk.placements[colour.id] = .edition(of: id, title: "In colour")
         let file = folder.appendingPathComponent("walks.json")
-        try TMDbWalkStore(file: file).save(walk, for: "silo")
-        let read = try #require(TMDbWalkStore(file: file).walk(rootedAt: walk.root, in: walk.library, of: "silo"))
+        try ReviewWalkStore(file: file).save(walk, for: "silo")
+        let read = try #require(ReviewWalkStore(file: file).walk(rootedAt: walk.root, in: walk.library, of: "silo"))
         let drafts = read.alternatives(draftedAt: id)
         #expect(drafts.map(\.title) == ["Pilot", "In colour"])
         #expect(drafts.first?.entries == [.special(pilot.id), .item("part-2"), .item("part-3"), .item("part-4")])
@@ -6604,7 +6607,7 @@ extension AdminConsoleTests {
             "Terror of the Zygons (1)", "Terror of the Zygons (2)", "Terror of the Zygons (3)", "Planet of Evil (1)",
             "Planet of Evil (2)", "Pyramids of Mars",
         ]
-    ) -> (TMDbTree, season: String, items: [ItemID]) {
+    ) -> (DraftTree, season: String, items: [ItemID]) {
         let items = titles.indices.map { ItemID("e\($0 + 1)")! }
         var season = Container(id: ContainerID("00000000000001e1")!, type: .season, title: Title("Season 13")!)
         season.sequences = [
@@ -6621,7 +6624,7 @@ extension AdminConsoleTests {
                 }
             )
         ]
-        let tree = TMDbTree(
+        let tree = DraftTree(
             library: "tv",
             record: TMDb.Record(.series, 121),
             creating: ContainerDraft.Creating(),
@@ -6642,8 +6645,8 @@ extension AdminConsoleTests {
                 SuggestedGroup(title: "Planet of Evil", items: Array(items[3...4]), parts: [1, 2]),
             ]
         )
-        #expect(TMDbTree.story(of: "The Five Doctors") == nil && TMDbTree.story(of: "(1)") == nil)
-        #expect(TMDbTree.story(of: "Dimensions in Time (2)") == "Dimensions in Time")
+        #expect(DraftTree.story(of: "The Five Doctors") == nil && DraftTree.story(of: "(1)") == nil)
+        #expect(DraftTree.story(of: "Dimensions in Time (2)") == "Dimensions in Time")
     }
 
     /// A group made of a story's parts is not suggested as a group of them again: its parts are
@@ -6669,7 +6672,7 @@ extension AdminConsoleTests {
         tree.title(Array(items[0...2]), in: zygons.value, as: "Part")
         #expect(tree.container(zygons.value)?.sequences[0].items.map(\.title) == ["Part 1", "Part 2", "Part 3"])
         #expect(tree.suggestedRenaming(in: zygons.value) == nil, "titled, suggested as nothing")
-        #expect(TMDbTree.part(of: "Planet of Evil (2)") == 2 && TMDbTree.part(of: "Planet of Evil (+2)") == nil)
+        #expect(DraftTree.part(of: "Planet of Evil (2)") == 2 && DraftTree.part(of: "Planet of Evil (+2)") == nil)
     }
 
     /// A draft's entries are moved one at a time, a group as the entry naming it, each before another or
@@ -6951,23 +6954,23 @@ extension AdminConsoleTests {
         walk.stops[serials[0].id.value]?.chosen = ["something ticked"]
 
         let file = folder.appending(path: "tmdb-walks.json")
-        try TMDbWalkStore(file: file).save(walk, for: home.id)
-        let resumed = try #require(TMDbWalkStore(file: file).walk(rootedAt: series.id.value, in: "tv", of: home.id))
+        try ReviewWalkStore(file: file).save(walk, for: home.id)
+        let resumed = try #require(ReviewWalkStore(file: file).walk(rootedAt: series.id.value, in: "tv", of: home.id))
         #expect(resumed == walk, "its stops, states, ticks and placements, as they were")
         #expect(resumed.order.map(resumed.state) == walk.order.map(walk.state))
-        func said(_ plan: TMDbWalk.Plan) -> [String] {
+        func said(_ plan: ReviewWalk.Plan) -> [String] {
             plan.steps.map { step in if case .edit(let draft) = step.kind { draft.text } else { step.described } }
         }
         #expect(try said(resumed.plan()) == said(walk.plan()), "and stores the same")
-        #expect(TMDbWalkStore(file: file).walk(rootedAt: season, in: "tv", of: home.id) == nil, "kept by its root")
+        #expect(ReviewWalkStore(file: file).walk(rootedAt: season, in: "tv", of: home.id) == nil, "kept by its root")
 
-        var again = TMDbWalk(
+        var again = ReviewWalk(
             library: "tv",
-            root: TMDbWalk.Stop(id: series.id.value, title: "Doctor Who", type: "series")
+            root: ReviewWalk.Stop(id: series.id.value, title: "Doctor Who", type: "series")
         )
         again.edited = walk.edited.addingTimeInterval(1)
-        try TMDbWalkStore(file: file).save(again, for: home.id)
-        #expect(TMDbWalkStore(file: file).walks(of: home.id).map(\.id) == [again.id], "one walk for each root")
+        try ReviewWalkStore(file: file).save(again, for: home.id)
+        #expect(ReviewWalkStore(file: file).walks(of: home.id).map(\.id) == [again.id], "one walk for each root")
     }
 
     /// A discarded walk is gone from this Mac, and opening its root's differences starts a new walk.
@@ -6975,19 +6978,19 @@ extension AdminConsoleTests {
         let folder = FileManager.default.temporaryDirectory.appending(path: "walks-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appending(path: "tmdb-walks.json")
-        let walk = TMDbWalk(
+        let walk = ReviewWalk(
             library: "tv",
-            root: TMDbWalk.Stop(id: "00000000000001a0", title: "Doctor Who", type: "series")
+            root: ReviewWalk.Stop(id: "00000000000001a0", title: "Doctor Who", type: "series")
         )
-        let store = TMDbWalkStore(file: file)
+        let store = ReviewWalkStore(file: file)
         try store.save(walk, for: "home")
-        #expect(TMDbWalkStore(file: file).walks(of: "home").map(\.id) == [walk.id])
+        #expect(ReviewWalkStore(file: file).walks(of: "home").map(\.id) == [walk.id])
         try store.remove(walk.id, of: "home")
         #expect(store.walk(rootedAt: walk.root, in: "tv", of: "home") == nil)
-        #expect(TMDbWalkStore(file: file).walks(of: "home").isEmpty, "and off this Mac")
+        #expect(ReviewWalkStore(file: file).walks(of: "home").isEmpty, "and off this Mac")
         try store.save(walk, for: "home")
         try store.removeAll(of: "home")
-        #expect(TMDbWalkStore(file: file).walks(of: "home").isEmpty, "a forgotten silo's walks go with it")
+        #expect(ReviewWalkStore(file: file).walks(of: "home").isEmpty, "a forgotten silo's walks go with it")
     }
 
     /// A stop's sidecar changed in the library after the stop was read: its edit is refused as a stale

@@ -15,12 +15,12 @@ import SmdSidecar
 extension AdminConsole {
     /// Starts a walk rooted at a held container, its first stop, read when it is opened. The series
     /// whose specials sit beside every stop is the root, or the nearest series above it.
-    public func startWalk(at id: String, in library: String, of silo: Silo) async throws -> TMDbWalk {
+    public func startWalk(at id: String, in library: String, of silo: Silo) async throws -> ReviewWalk {
         let opened = try await open(container: id, in: library, of: silo)
         let held = opened.container.container
-        var walk = TMDbWalk(
+        var walk = ReviewWalk(
             library: library,
-            root: TMDbWalk.Stop(id: id, title: held.displayTitle, type: held.type, parent: held.parent)
+            root: ReviewWalk.Stop(id: id, title: held.displayTitle, type: held.type, parent: held.parent)
         )
         walk.series =
             held.type == ContainerType.series.rawValue ? id : try await seriesContainerAbove(opened, of: silo)?.id
@@ -30,14 +30,14 @@ extension AdminConsole {
     /// The containers the library holds beneath a stop, as the stops confirming it adds, in the order
     /// its sequences hold them; a stop the walk has already is as the walk has it. A stop TMDb could not
     /// read is opened for them, so the walk goes on beneath it.
-    public func stops(beneath id: String, in walk: TMDbWalk, of silo: Silo) async throws -> [TMDbWalk.Stop] {
+    public func stops(beneath id: String, in walk: ReviewWalk, of silo: Silo) async throws -> [ReviewWalk.Stop] {
         guard walk.stops[id] != nil else { return [] }
         if let tree = walk.draft(holding: id) {
             let beneath = (tree.container(id)?.childContainerIDs ?? []) + tree.alternativeChildren(of: id)
             return beneath.filter { tree.isMade($0.value) }.compactMap { child in
                 walk.stops[child.value]
                     ?? tree.container(child.value).map { _ in
-                        TMDbWalk.Stop(
+                        ReviewWalk.Stop(
                             newIn: tree,
                             child.value,
                             parent: id,
@@ -54,12 +54,12 @@ extension AdminConsole {
         }
         let held = try SidecarFile.sidecar(from: sidecar).container
         let (library, known) = (walk.library, walk.stops)
-        let beneath: [TMDbWalk.Stop?] = try await Self.concurrently(held.childContainerIDs.map(\.value)) { child in
+        let beneath: [ReviewWalk.Stop?] = try await Self.concurrently(held.childContainerIDs.map(\.value)) { child in
             if let stop = known[child] { return stop }
             // A child the sidecar names and the library does not hold is no stop.
             guard let opened = try? await self.open(container: child, in: library, of: silo) else { return nil }
             let container = opened.container.container
-            return TMDbWalk.Stop(id: child, title: container.displayTitle, type: container.type, parent: id)
+            return ReviewWalk.Stop(id: child, title: container.displayTitle, type: container.type, parent: id)
         }
         return beneath.compactMap { $0 }
     }
@@ -69,16 +69,16 @@ extension AdminConsole {
     /// stops.
     public func drafts(
         confirming id: String,
-        in walk: TMDbWalk,
+        in walk: ReviewWalk,
         from database: any ContainerDatabase,
         tmdb: any TMDbSource
-    ) async throws -> [TMDbTree] {
+    ) async throws -> [DraftTree] {
         guard let stop = walk.stops[id], let series = stop.comparison?.series else {
             return []
         }
-        let drafted = Set(walk.drafts.values.map(TMDbWalk.missing))
+        let drafted = Set(walk.drafts.values.map(ReviewWalk.missing))
         let sequence = walk.container(id)?.sequences.first { $0.items.contains { $0.childContainer != nil } }?.id
-        var trees: [TMDbTree] = []
+        var trees: [DraftTree] = []
         for case .season(let season) in walk.differences(of: id)
         where stop.chosen.contains("season:\(season.id)") && !drafted.contains("season:\(season.id)") {
             trees.append(
@@ -109,11 +109,11 @@ extension AdminConsole {
 
     /// How a store of a walk ended: what it made, and, when the silo refused a step, why, and the steps
     /// it did not make, which the walk keeps.
-    public struct TMDbWalkStored: Hashable, Sendable {
-        public var walk: TMDbWalk
-        public var stored: [TMDbWalk.Step]
+    public struct ReviewWalkStored: Hashable, Sendable {
+        public var walk: ReviewWalk
+        public var stored: [ReviewWalk.Step]
         public var refusal: String?
-        public var rest: [TMDbWalk.Step]
+        public var rest: [ReviewWalk.Step]
         /// The stop whose sidecar changed since it was read, which is to be read again and confirmed again.
         public var stale: String?
     }
@@ -121,16 +121,16 @@ extension AdminConsole {
     /// Stores the walk as its plan lists it, step by step, stopping at the first the silo refuses.
     /// `progress` is told each step as it is begun, with how many of the plan's steps are made before it.
     public func store(
-        _ walk: TMDbWalk,
+        _ walk: ReviewWalk,
         of silo: Silo,
         tmdb: any TMDbSource,
-        progress: @Sendable (TMDbProgress) async -> Void = { _ in }
-    ) async throws -> TMDbWalkStored {
+        progress: @Sendable (StepProgress) async -> Void = { _ in }
+    ) async throws -> ReviewWalkStored {
         var walk = walk
         let steps = try walk.plan().steps
-        var stored: [TMDbWalk.Step] = []
+        var stored: [ReviewWalk.Step] = []
         for (index, step) in steps.enumerated() {
-            await progress(TMDbProgress(step.described, done: index, of: steps.count))
+            await progress(StepProgress(step.described, done: index, of: steps.count))
             if let refusal = try await make(step, in: walk.library, of: silo, tmdb: tmdb) {
                 var stale: String?
                 // An edit based on a sidecar the library has changed since: its stop is to be read again,
@@ -140,7 +140,7 @@ extension AdminConsole {
                     walk.stops[draft.container]?.comparison = nil
                     walk.stops[draft.container]?.taken = nil
                 }
-                return TMDbWalkStored(
+                return ReviewWalkStored(
                     walk: walk,
                     stored: stored,
                     refusal: refusal,
@@ -151,12 +151,12 @@ extension AdminConsole {
             walk.stored.insert(step.id)
             stored.append(step)
         }
-        return TMDbWalkStored(walk: walk, stored: stored, refusal: nil, rest: [])
+        return ReviewWalkStored(walk: walk, stored: stored, refusal: nil, rest: [])
     }
 
     /// Makes one step of a walk's store; the silo's refusal, in its words, or nil when it was made.
     private func make(
-        _ step: TMDbWalk.Step,
+        _ step: ReviewWalk.Step,
         in library: String,
         of silo: Silo,
         tmdb: any TMDbSource
@@ -166,7 +166,7 @@ extension AdminConsole {
             case .create(let containers, let parent, let attributions):
                 _ = try await withOperator(silo) {
                     try await $0.create(
-                        containers: containers.map(TMDbTree.text),
+                        containers: containers.map(DraftTree.text),
                         parent: parent,
                         in: library,
                         attributions: attributions
@@ -233,37 +233,37 @@ extension AdminConsole {
         in container: inout Container,
         declined: inout [ExternalRef],
         made: inout [String: Container],
-        edits: inout [TMDbTree.Making.HeldEdit],
+        edits: inout [DraftTree.Making.HeldEdit],
         children: inout [Container]
     ) {
         func entryID(in title: String) -> String { "\(Slug.make(from: title))-\(special.id)" }
         switch placement {
         case .entry(_, let sequence, let position):
-            TMDbTree.insert(
-                TMDbTree.leaf(special, type: .episode, in: container),
+            DraftTree.insert(
+                DraftTree.leaf(special, type: .episode, in: container),
                 into: &container,
                 sequence: sequence,
                 at: position
             )
         case .extra(_, let type):
             container.extras.append(
-                TMDbTree.leaf(special, type: EntryType(rawValue: type) ?? .featurette, in: container)
+                DraftTree.leaf(special, type: EntryType(rawValue: type) ?? .featurette, in: container)
             )
         case .child(_, let id, let type):
             guard let childID = ContainerID(id), let title = Title(special.episode.title) ?? Title("Special") else {
                 return
             }
             var child = Container(id: childID, type: ContainerType(rawValue: type) ?? .serial, title: title)
-            child.sequences = [Sequence(id: "parts", items: [TMDbTree.leaf(special, type: .episode, in: child)])]
+            child.sequences = [Sequence(id: "parts", items: [DraftTree.leaf(special, type: .episode, in: child)])]
             children.append(child)
         case .duplicate(let home, let item, let homeLibrary, _, let asExtra):
             edits.append(.init(library: homeLibrary, container: home, item: item, ref: special.episode.ref))
             guard let homeID = ContainerID(home), let itemID = ItemID(item) else { return }
-            TMDbTree.refer(to: EntryRef(container: homeID, item: itemID), from: &container, asExtra: asExtra)
+            DraftTree.refer(to: EntryRef(container: homeID, item: itemID), from: &container, asExtra: asExtra)
         case .breakout(let breakout, _, let asExtra):
             let item = ItemID(entryID(in: special.episode.title))!
             if var companion = made[breakout] {
-                TMDbTree.insert(
+                DraftTree.insert(
                     .leaf(Entry.Leaf(id: item, type: .episode, externalRefs: special.refs)),
                     into: &companion,
                     sequence: nil,
@@ -274,11 +274,11 @@ extension AdminConsole {
                 edits.append(.init(library: library, container: breakout, entry: special, entryID: item.value))
             }
             guard let breakoutID = ContainerID(breakout) else { return }
-            TMDbTree.refer(to: EntryRef(container: breakoutID, item: item), from: &container, asExtra: asExtra)
+            DraftTree.refer(to: EntryRef(container: breakoutID, item: item), from: &container, asExtra: asExtra)
         case .edition(_, let title):
-            TMDbTree.edition(special, titled: title, in: &container)
+            DraftTree.edition(special, titled: title, in: &container)
         case .version(_, let item, let title):
-            TMDbTree.version(special, of: item, titled: title, in: &container)
+            DraftTree.version(special, of: item, titled: title, in: &container)
         case .alternative:
             // Made with the alternative it is in, once the stop's specials are placed.
             break
@@ -290,7 +290,7 @@ extension AdminConsole {
 
 // MARK: - The store's plan
 
-extension TMDbWalk {
+extension ReviewWalk {
     /// Everything storing the walk makes, in the order it makes it, each step said in words before any
     /// is made: the containers the walk makes at the top of the library; the edits of containers outside
     /// the walk that specials placed make, so what the walk refers to is there; each confirmed stop's
@@ -318,7 +318,7 @@ extension TMDbWalk {
         /// A stop's edit, based on the sidecar its reading found.
         case edit(ContainerDraft)
         /// An edit of a container outside the walk, onto its sidecar as it is then.
-        case held(TMDbTree.Making.HeldEdit)
+        case held(DraftTree.Making.HeldEdit)
         /// A container outside the walk that names the walk's drafted root, edited onto its sidecar as it
         /// is then, before the root is made beneath it.
         case name(Container, in: String, at: ContainerDraft.Creating)
@@ -340,7 +340,7 @@ extension TMDbWalk {
         /// The operator's own titles for its missing episodes, by TMDb id.
         var titles: [Int: String] = [:]
         /// The new containers the walk makes beneath it, each with what is beneath it.
-        var made: [(creating: ContainerDraft.Creating, making: TMDbTree.Making)] = []
+        var made: [(creating: ContainerDraft.Creating, making: DraftTree.Making)] = []
     }
 
     /// What the plan gathers across the stops besides their own edits.
@@ -349,7 +349,7 @@ extension TMDbWalk {
         /// its first sequence, by id.
         var made: [String: Container]
         /// The edits of other containers that placed specials make.
-        var edits: [TMDbTree.Making.HeldEdit] = []
+        var edits: [DraftTree.Making.HeldEdit] = []
         var artwork: [Step] = []
     }
 
@@ -368,7 +368,7 @@ extension TMDbWalk {
     /// what an earlier store made. A stop never confirmed contributes nothing.
     public func plan() throws -> Plan {
         var gathering = gathering
-        var companions: [(creating: ContainerDraft.Creating, making: TMDbTree.Making)] = []
+        var companions: [(creating: ContainerDraft.Creating, making: DraftTree.Making)] = []
         for id in companionStops {
             if let made = making(of: id, gathering: &gathering) { companions.append(made) }
         }
@@ -387,7 +387,7 @@ extension TMDbWalk {
         }
         // An edit of a container that is a confirmed stop is made in that stop's edit, which is based on
         // the sidecar its reading found; any other is made onto the sidecar as it is when it is stored.
-        var outside: [TMDbTree.Making.HeldEdit] = []
+        var outside: [DraftTree.Making.HeldEdit] = []
         for edit in gathering.edits {
             if edit.library == library, let index = changes.firstIndex(where: { $0.stop.id == edit.container }) {
                 AdminConsole.applying(edit, to: &changes[index].container)
@@ -399,7 +399,7 @@ extension TMDbWalk {
         var steps = companions.compactMap { _, making -> Step? in
             guard var top = making.documents.first else { return nil }
             for entry in gathering.made[top.id.value]?.sequences.first?.items ?? [] {
-                TMDbTree.insert(entry, into: &top, sequence: nil, at: nil)
+                DraftTree.insert(entry, into: &top, sequence: nil, at: nil)
             }
             let beneath = making.documents.count - 1
             return Step(
@@ -438,7 +438,7 @@ extension TMDbWalk {
     /// What storing makes of a root drafted from TMDb, once it is confirmed: named first in the container
     /// that holds the record above it, when it is filed beneath one, then made with what is beneath it in
     /// one creation, and then, for a series, the specials declined in it.
-    private func rootSteps(_ drafted: (creating: ContainerDraft.Creating, making: TMDbTree.Making)) -> [Step] {
+    private func rootSteps(_ drafted: (creating: ContainerDraft.Creating, making: DraftTree.Making)) -> [Step] {
         let (creating, making) = drafted
         guard let top = making.documents.first else { return [] }
         let beneath = making.documents.count - 1
@@ -478,7 +478,7 @@ extension TMDbWalk {
     private func making(
         of top: String,
         gathering: inout Gathering
-    ) -> (creating: ContainerDraft.Creating, making: TMDbTree.Making)? {
+    ) -> (creating: ContainerDraft.Creating, making: DraftTree.Making)? {
         guard var tree = drafts[top], stops[top]?.taken != nil else { return nil }
         for container in tree.containers {
             guard let stop = stops[container.id.value], let taken = stop.taken else {
@@ -508,7 +508,7 @@ extension TMDbWalk {
                 continue
             }
             let item = ItemID("\(Slug.make(from: special.episode.title))-\(special.id)")!
-            TMDbTree.insert(
+            DraftTree.insert(
                 .leaf(Entry.Leaf(id: item, type: .episode, externalRefs: special.refs)),
                 into: &companion,
                 sequence: nil,
@@ -526,7 +526,7 @@ extension TMDbWalk {
     /// artwork it took gathered to put once it is made.
     private func kept(
         _ container: Container,
-        in tree: TMDbTree,
+        in tree: DraftTree,
         taking taken: Set<String>,
         at stop: Stop,
         gathering: inout Gathering
@@ -632,9 +632,9 @@ extension TMDbWalk {
     /// One ticked difference taken into a stop's change, or gathered as artwork to put or a season to
     /// draft.
     private static func take(
-        _ difference: AdminConsole.TMDbDifference,
+        _ difference: AdminConsole.Difference,
         into change: inout Change,
-        comparison: AdminConsole.TMDbComparison,
+        comparison: AdminConsole.Comparison,
         gathering: inout Gathering
     ) {
         let id = change.stop.id
@@ -670,7 +670,7 @@ extension TMDbWalk {
     }
 
     /// The first of a group's episodes the stop's reading still offers.
-    private static func first(of group: EpisodeGroup, in comparison: AdminConsole.TMDbComparison) -> Int? {
+    private static func first(of group: EpisodeGroup, in comparison: AdminConsole.Comparison) -> Int? {
         let offered = comparison.differences.compactMap { difference -> Int? in
             if case .episode(let episode, _) = difference { episode.id } else { nil }
         }
@@ -818,7 +818,7 @@ extension TMDbWalk {
     }
 }
 
-extension TMDbTree.Making.HeldEdit {
+extension DraftTree.Making.HeldEdit {
     /// What names the edit among a walk's steps.
     var key: String {
         "\(library)/\(container)/\(item ?? entryID ?? "")/\(ref.map { "\($0.provider):\($0.value)" } ?? "")"
@@ -834,7 +834,7 @@ extension TMDbTree.Making.HeldEdit {
 
 // MARK: - What a stop is stored as
 
-extension TMDbWalk {
+extension ReviewWalk {
     /// One way a stop's container is played, as storing the walk would leave it.
     public struct StopAlternative: Hashable, Sendable, Identifiable {
         public let id: String

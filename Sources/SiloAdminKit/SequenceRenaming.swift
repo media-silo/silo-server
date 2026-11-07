@@ -32,7 +32,7 @@ extension SpecialPlacement {
     }
 }
 
-extension TMDbTree {
+extension DraftTree {
     /// A container's sequence under a new id, as a sequence id is written: the name given, made one.
     /// The alternatives and the placed specials that name it are renamed with it.
     /// With `beneath`, the primary sequence of each container of the tree beneath it is renamed too,
@@ -64,7 +64,7 @@ extension TMDbTree {
     }
 }
 
-extension TMDbWalk {
+extension ReviewWalk {
     /// The id a stop's sequence goes by: as the operator renamed it, or as the container has it.
     public func sequenceName(_ index: Int, at stop: String) -> String? {
         if let renamed = renamedSequences[stop]?[index] { return renamed }

@@ -79,7 +79,7 @@ public struct DraftAlternative: Hashable, Sendable, Codable, Identifiable {
                         continue
                     }
                     guard let special = specials.first(where: { $0.id == id }) else { continue }
-                    let leaf = TMDbTree.leaf(special, type: .episode, in: container)
+                    let leaf = DraftTree.leaf(special, type: .episode, in: container)
                     made[id] = leaf.id
                     container.sequences[index].items.append(leaf)
                 case .container(let id):
@@ -362,7 +362,7 @@ extension AlternativeDrafting {
     }
 }
 
-extension TMDbTree: AlternativeDrafting {
+extension DraftTree: AlternativeDrafting {
     public var draftedAlternatives: [String: [DraftAlternative]] {
         get { alternativeDrafts ?? [:] }
         set { alternativeDrafts = newValue.isEmpty ? nil : newValue }

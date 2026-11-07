@@ -80,7 +80,7 @@ extension ConsoleModel {
 
         let id = UUID()
         var silo: AdminConsole.Silo
-        var walk: TMDbWalk
+        var walk: ReviewWalk
         var open: String
         /// A walk this Mac kept, offered to be resumed or started again before anything is read.
         var resuming = false
@@ -88,10 +88,10 @@ extension ConsoleModel {
         var redraft: Redraft?
         /// A difference of the root to tick once the root is read, as a season asked for of a held series.
         var choosing: String?
-        var progress: [String: AdminConsole.TMDbProgress] = [:]
+        var progress: [String: AdminConsole.StepProgress] = [:]
         var failures: [String: String] = [:]
         /// The step the series' specials are on while they are read through the series above the root.
-        var pooling: AdminConsole.TMDbProgress?
+        var pooling: AdminConsole.StepProgress?
         /// The series the library holds that a special may go into as its companion.
         var companions: [SiloClient.ContainerSummary] = []
         /// The new stops confirming the open stop would take out of the walk, said before it does.
@@ -102,13 +102,13 @@ extension ConsoleModel {
         /// containers confirming takes out of the walk are said.
         var nextOnceConfirmed = false
         /// Everything storing the walk will do, listed before any of it is done.
-        var plan: TMDbWalk.Plan?
+        var plan: ReviewWalk.Plan?
         /// The step a store under way is on, and how many of the plan's steps it has made.
-        var storing: AdminConsole.TMDbProgress?
-        var stored: AdminConsole.TMDbWalkStored?
+        var storing: AdminConsole.StepProgress?
+        var stored: AdminConsole.ReviewWalkStored?
         var failure: String?
 
-        var stop: TMDbWalk.Stop? { walk.stops[open] }
+        var stop: ReviewWalk.Stop? { walk.stops[open] }
     }
 
     /// A record being found at TMDb: for a library, to draft from; or, for a series the library holds by

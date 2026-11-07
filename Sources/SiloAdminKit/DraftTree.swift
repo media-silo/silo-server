@@ -64,7 +64,7 @@ public enum SpecialPlacement: Hashable, Sendable, Codable {
 /// kept on this Mac as a new container's draft is. Its containers are documents, as a draft's are; the
 /// outline of each is attributed to TMDb; and a series' specials wait in it, unassigned, until the
 /// operator places them. `Tmdb.md`, *A draft from TMDb* and *Specials*.
-public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
+public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
     public let id: UUID
     public var library: String
     public var record: TMDb.Record
@@ -435,7 +435,7 @@ public struct TMDbTree: Hashable, Sendable, Codable, Identifiable {
     }
 }
 
-extension TMDbTree {
+extension DraftTree {
     /// A special as an entry of a container: its references, and no title, since TMDb has one for it.
     static func leaf(_ special: Special, type: EntryType, in container: Container) -> Entry {
         .leaf(
@@ -501,7 +501,7 @@ extension TMDbTree {
     }
 }
 
-extension TMDbTree {
+extension DraftTree {
     /// The images TMDb holds for a record, and the record, which artwork put from them is credited to.
     public struct RecordImages: Hashable, Sendable, Codable {
         public var record: TMDb.Record

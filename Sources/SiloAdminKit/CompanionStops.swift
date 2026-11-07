@@ -3,7 +3,7 @@
 
 import SmdKit
 
-extension TMDbWalk {
+extension ReviewWalk {
     /// The companion series the walk makes, in the order they were added.
     public var companionStops: [String] { companionOrder ?? [] }
 
@@ -14,7 +14,7 @@ extension TMDbWalk {
     public mutating func addCompanion(_ series: Container) -> Bool {
         let id = series.id.value
         guard series.type == .series, drafts[id] == nil, stops[id] == nil else { return false }
-        let tree = TMDbTree(
+        let tree = DraftTree(
             library: library,
             record: TMDb.Record(.series, 0),
             creating: ContainerDraft.Creating(),

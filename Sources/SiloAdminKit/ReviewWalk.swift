@@ -10,7 +10,7 @@ import Synchronization
 /// each with its reading and what the operator chose, the series' specials beside every stop, and
 /// where each was placed. Nothing of it reaches the silo until the walk is stored, and then only what a
 /// confirmed stop took. `TmdbWalk.md`.
-public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDrafting {
+public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDrafting {
     /// Where a stop stands, as storing the walk would find it: not yet confirmed, or confirmed, said by
     /// the operator to be as it should be, and then what storing does with its container.
     public enum StopState: Hashable, Sendable {
@@ -36,7 +36,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         /// its reading lists them, a new stop's as its draft holds them, and one never read as its
         /// sequences hold them.
         public var children: [String] = []
-        public var comparison: AdminConsole.TMDbComparison?
+        public var comparison: AdminConsole.Comparison?
         public var chosen: Set<String> = []
         /// What confirming it last kept; nil until it is confirmed.
         public var taken: Set<String>?
@@ -58,7 +58,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
         }
 
         /// A new stop for a container of a draft, everything it is offered with chosen to begin with.
-        init(newIn tree: TMDbTree, _ id: String, parent: String?, offering: [AdminConsole.TMDbDifference]) {
+        init(newIn tree: DraftTree, _ id: String, parent: String?, offering: [AdminConsole.Difference]) {
             let container = tree.container(id)
             self.init(
                 id: id,
@@ -90,7 +90,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     public var stored: Set<String> = []
     /// The containers the walk makes, a missing child chosen at a stop and what is beneath it, each as a
     /// draft from TMDb by the id of its top: every container of a draft is a new stop.
-    public var drafts: [String: TMDbTree] = [:]
+    public var drafts: [String: DraftTree] = [:]
     /// When the walk was last kept on this Mac.
     public var edited: Date
     /// The season of TMDb's the operator said each held season carrying no TMDb id is, by TMDb id: what
@@ -161,7 +161,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     /// the record above it. A series is the one whose specials sit beside every stop, placed where the
     /// draft placed them; each new breakout the draft made for them is a companion series of the walk.
     /// The alternatives drafted for its containers are the walk's.
-    public init(drafting tree: TMDbTree) {
+    public init(drafting tree: DraftTree) {
         let top = tree.top
         var draft = tree
         draft.breakouts = [:]
@@ -281,7 +281,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     /// A stop's differences as the walk reads them now: a season a held child beneath it was said to be
     /// is held by that child, and one it was only suggested to be, said to be another, is missing again.
-    public func differences(of stop: String) -> [AdminConsole.TMDbDifference] {
+    public func differences(of stop: String) -> [AdminConsole.Difference] {
         let differences = (stops[stop]?.comparison?.differences ?? []) + handed(to: stop)
         let said = identified.filter { stops[$0.key]?.parent == stop }
         guard !said.isEmpty else { return differences }
@@ -306,7 +306,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     /// A stop's reading, as far as it has got. The series' specials are taken from it to sit beside
     /// every stop, rather than as its own differences.
-    public mutating func read(_ comparison: AdminConsole.TMDbComparison) {
+    public mutating func read(_ comparison: AdminConsole.Comparison) {
         stops[comparison.container]?.comparison = comparison
         stops[comparison.container]?.title = comparison.title
         if comparison.container == series {
@@ -318,7 +318,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     /// The series' specials, from its reading, each suggested as an alternative of a stop read already
     /// where that is stronger than the series' reading suggests.
-    public mutating func pool(_ comparison: AdminConsole.TMDbComparison) {
+    public mutating func pool(_ comparison: AdminConsole.Comparison) {
         specials = comparison.differences.compactMap { if case .special(let special) = $0 { special } else { nil } }
         declined = comparison.declined
         suggestions = comparison.suggestions
@@ -327,7 +327,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     /// Each unassigned special suggested as another way to play a container a stop read, unless what it
     /// is suggested for already rests on something stronger.
-    private mutating func suggestAlternatives(of readings: [AdminConsole.TMDbComparison]) {
+    private mutating func suggestAlternatives(of readings: [AdminConsole.Comparison]) {
         let held = readings.compactMap { reading in
             (try? SidecarFile.sidecar(from: reading.opened.sidecar)).map { (reading, $0.container) }
         }
@@ -351,7 +351,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     /// Keeps what is ticked as the stop's pending change, and adds the stops found beneath it: the
     /// containers the library holds there, then each missing child chosen, as a new stop. A missing child
     /// no longer chosen leaves, with every stop beneath it.
-    public mutating func confirm(_ id: String, beneath: [Stop], drafts new: [TMDbTree] = []) {
+    public mutating func confirm(_ id: String, beneath: [Stop], drafts new: [DraftTree] = []) {
         guard var stop = stops[id] else { return }
         stop.taken = stop.chosen
         // Confirmed again after a store made its edit, its edit is to be made again.
@@ -388,7 +388,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     /// What chosen at its parent keeps a draft in the walk: the missing season it is, or, carrying no
     /// TMDb id, the group of a held stop's missing episodes it was drafted from.
-    static func missing(_ tree: TMDbTree) -> String {
+    static func missing(_ tree: DraftTree) -> String {
         guard let ref = tree.container(tree.top)?.externalRefs.first(where: { $0.provider == .tmdb }) else {
             return "group:\(tree.top)"
         }
@@ -409,7 +409,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     }
 
     /// The draft a new stop is a container of.
-    public func draft(holding id: String) -> TMDbTree? {
+    public func draft(holding id: String) -> DraftTree? {
         drafts.values.first { $0.documents[id] != nil }
     }
 
@@ -423,9 +423,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 
     /// What a new stop is created with that the operator may leave out: its year, its outline, attributed
     /// to TMDb, its references, and each artwork kind TMDb has an image for.
-    public func offered(_ id: String, in tree: TMDbTree? = nil) -> [AdminConsole.TMDbDifference] {
+    public func offered(_ id: String, in tree: DraftTree? = nil) -> [AdminConsole.Difference] {
         guard let tree = tree ?? draft(holding: id), let container = tree.container(id) else { return [] }
-        var offered: [AdminConsole.TMDbDifference] = []
+        var offered: [AdminConsole.Difference] = []
         if let year = container.year { offered.append(.year(year)) }
         let record = container.externalRefs.first { $0.provider == .tmdb }?.value ?? ""
         if let outline = container.outline, !outline.isEmpty { offered.append(.outline(outline, record: record)) }
@@ -439,7 +439,7 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
     /// Reshapes a new stop's draft, as a draft from TMDb is shaped: a container of it set, or its entries
     /// regrouped. Each container the shaping makes beneath a new stop is a new stop once that stop is
     /// confirmed.
-    public mutating func shape(_ id: String, _ change: (inout TMDbTree) -> Void) {
+    public mutating func shape(_ id: String, _ change: (inout DraftTree) -> Void) {
         guard let top = draft(holding: id)?.top, var tree = drafts[top] else { return }
         unconfirm(id)
         let before = Set(tree.containers.map(\.id.value))
@@ -493,9 +493,9 @@ public struct TMDbWalk: Hashable, Sendable, Identifiable, Codable, AlternativeDr
 /// The walks this Mac keeps, by the `ServerID` of the silo each is for, until each is stored or
 /// discarded: one JSON object rewritten atomically whole on every change, as the drafts are. The silo
 /// holds nothing of a walk.
-public final class TMDbWalkStore: Sendable {
+public final class ReviewWalkStore: Sendable {
     public let file: URL
-    private let entries: Mutex<[String: [TMDbWalk]]>
+    private let entries: Mutex<[String: [ReviewWalk]]>
 
     public init(file: URL) {
         self.file = file
@@ -509,22 +509,22 @@ public final class TMDbWalkStore: Sendable {
     }
 
     /// A silo's walks, most recently kept first.
-    public func walks(of silo: String) -> [TMDbWalk] {
+    public func walks(of silo: String) -> [ReviewWalk] {
         entries.withLock { $0[silo] ?? [] }.sorted { $0.edited > $1.edited }
     }
 
     /// The walk kept for a container's tree, rooted at it.
-    public func walk(rootedAt container: String, in library: String, of silo: String) -> TMDbWalk? {
+    public func walk(rootedAt container: String, in library: String, of silo: String) -> ReviewWalk? {
         walks(of: silo).first { $0.root == container && $0.library == library }
     }
 
     /// The walk kept for a record the library does not hold, rooted at a draft of it.
-    public func walk(drafting record: TMDb.Record, in library: String, of silo: String) -> TMDbWalk? {
+    public func walk(drafting record: TMDb.Record, in library: String, of silo: String) -> ReviewWalk? {
         walks(of: silo).first { $0.drafting && $0.library == library && $0.drafts[$0.root]?.record == record }
     }
 
     /// Keeps a walk, in place of the one it was and of any other rooted at the same container.
-    public func save(_ walk: TMDbWalk, for silo: String) throws {
+    public func save(_ walk: ReviewWalk, for silo: String) throws {
         try entries.withLock { entries in
             var walks = entries[silo] ?? []
             walks.removeAll { $0.id == walk.id || ($0.root == walk.root && $0.library == walk.library) }
@@ -534,7 +534,7 @@ public final class TMDbWalkStore: Sendable {
         }
     }
 
-    public func remove(_ id: TMDbWalk.ID, of silo: String) throws {
+    public func remove(_ id: ReviewWalk.ID, of silo: String) throws {
         try entries.withLock { entries in
             guard let index = entries[silo]?.firstIndex(where: { $0.id == id }) else { return }
             entries[silo]?.remove(at: index)
@@ -551,7 +551,7 @@ public final class TMDbWalkStore: Sendable {
         }
     }
 
-    private static func persist(_ entries: [String: [TMDbWalk]], to file: URL) throws {
+    private static func persist(_ entries: [String: [ReviewWalk]], to file: URL) throws {
         guard file.path != "/dev/null" else { return }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
@@ -559,8 +559,8 @@ public final class TMDbWalkStore: Sendable {
         try encoder.encode(entries).write(to: file, options: .atomic)
     }
 
-    private static func read(_ file: URL) -> [String: [TMDbWalk]] {
-        let read = (try? JSONDecoder().decode([String: [TMDbWalk]].self, from: Data(contentsOf: file))) ?? [:]
+    private static func read(_ file: URL) -> [String: [ReviewWalk]] {
+        let read = (try? JSONDecoder().decode([String: [ReviewWalk]].self, from: Data(contentsOf: file))) ?? [:]
         return read.mapValues { walks in
             walks.map { walk in
                 var settled = walk
@@ -572,7 +572,7 @@ public final class TMDbWalkStore: Sendable {
     }
 }
 
-extension TMDbWalk {
+extension ReviewWalk {
     public var placeable: [Special] { specials + declined }
 
     public mutating func alternativesChanged(at container: String) { unconfirm(container) }
