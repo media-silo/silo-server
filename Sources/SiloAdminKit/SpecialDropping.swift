@@ -25,7 +25,7 @@ public enum DraftChild: Hashable, Sendable {
     }
 }
 
-extension TMDbTree {
+extension DraftTree {
     /// A drafted container's children: its primary sequence's entries with each special placed in it
     /// before the entry at its position, or after them all with none, then its other sequences' entries.
     public static func children(
@@ -92,13 +92,13 @@ extension TMDbTree {
     }
 }
 
-extension TMDbWalk {
+extension ReviewWalk {
     /// A special dropped among a stop's children, before the child whose key is given or last with none:
     /// in a new stop placed in its draft's primary sequence there, and in a held stop placed in its
     /// primary sequence and moved before the child, as the operator would move it after placing it.
     public mutating func place(_ special: Int, at stop: String, before target: String?) {
         guard !isNew(stop) else {
-            let position = TMDbTree.position(before: target, in: container(stop), placements: placements)
+            let position = DraftTree.position(before: target, in: container(stop), placements: placements)
             place(special, .entry(in: stop, position: position))
             return
         }

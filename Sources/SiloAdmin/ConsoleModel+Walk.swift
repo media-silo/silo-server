@@ -28,7 +28,7 @@ extension ConsoleModel {
     /// the root given is ticked once the root is read.
     func compareWithTMDb(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
         // A walk this Mac keeps for the container is offered to be resumed, or started again.
-        if let kept = console.tmdbWalks.walk(rootedAt: key.container, in: key.library, of: silo.id) {
+        if let kept = console.reviewWalks.walk(rootedAt: key.container, in: key.library, of: silo.id) {
             walking = Walking(
                 silo: silo,
                 walk: kept,
@@ -43,7 +43,7 @@ extension ConsoleModel {
 
     /// Opens a walk rooted at a draft from TMDb, kept on this Mac from the start: its root opened, and, for
     /// a series, where its specials go suggested beside it.
-    func openDraftWalk(_ walk: TMDbWalk, on silo: AdminConsole.Silo, redraft: Walking.Redraft) async {
+    func openDraftWalk(_ walk: ReviewWalk, on silo: AdminConsole.Silo, redraft: Walking.Redraft) async {
         let opening = Walking(silo: silo, walk: walk, open: walk.root, redraft: redraft)
         walking = opening
         keepWalk()
@@ -55,7 +55,7 @@ extension ConsoleModel {
     /// Suggests where a drafted series' specials go, while they sit beside the stops.
     private func suggestSpecials(for id: UUID) {
         guard let current = walking, let database, let tmdb else { return }
-        walking?.pooling = AdminConsole.TMDbProgress("Suggesting where the specials go")
+        walking?.pooling = AdminConsole.StepProgress("Suggesting where the specials go")
         tmdbState.pooling = Task {
             do {
                 let suggested = try await console.suggest(
@@ -77,7 +77,7 @@ extension ConsoleModel {
         }
     }
 
-    private func suggesting(_ step: AdminConsole.TMDbProgress, for id: UUID) {
+    private func suggesting(_ step: AdminConsole.StepProgress, for id: UUID) {
         guard walking?.id == id else { return }
         walking?.pooling = step
     }
@@ -110,7 +110,7 @@ extension ConsoleModel {
     /// one.
     func startWalkAgain() async {
         guard let current = walking else { return }
-        try? console.tmdbWalks.remove(current.walk.id, of: current.silo.id)
+        try? console.reviewWalks.remove(current.walk.id, of: current.silo.id)
         if let redraft = current.redraft {
             do {
                 if let said = try await startTMDbDraft(
@@ -136,7 +136,7 @@ extension ConsoleModel {
     /// Discards the walk: off this Mac, and the sheet closed. Nothing it held was stored.
     func discardWalk() {
         guard let current = walking else { return }
-        try? console.tmdbWalks.remove(current.walk.id, of: current.silo.id)
+        try? console.reviewWalks.remove(current.walk.id, of: current.silo.id)
         walking = nil
     }
 
@@ -153,7 +153,7 @@ extension ConsoleModel {
         guard var walk = walking?.walk, let silo = walking?.silo, walking?.resuming == false else { return }
         walk.edited = .now
         walking?.walk.edited = walk.edited
-        try? console.tmdbWalks.save(walk, for: silo.id)
+        try? console.reviewWalks.save(walk, for: silo.id)
     }
 
     private func readCompanions(for id: UUID) async {
@@ -167,10 +167,10 @@ extension ConsoleModel {
     }
 
     private func startWalk(_ key: ContainerKey, on silo: AdminConsole.Silo, choosing: String? = nil) async {
-        let root = TMDbWalk.Stop(id: key.container, title: key.container, type: "")
+        let root = ReviewWalk.Stop(id: key.container, title: key.container, type: "")
         let starting = Walking(
             silo: silo,
-            walk: TMDbWalk(library: key.library, root: root),
+            walk: ReviewWalk(library: key.library, root: root),
             open: key.container,
             choosing: choosing
         )
@@ -234,7 +234,7 @@ extension ConsoleModel {
         guard current.walk.stops[stop]?.comparison == nil, !current.walk.isNew(stop) else { return }
         let (id, silo, library) = (current.id, current.silo, current.walk.library)
         walking?.failures[stop] = nil
-        walking?.progress[stop] = AdminConsole.TMDbProgress("Opening the container")
+        walking?.progress[stop] = AdminConsole.StepProgress("Opening the container")
         let reading = Task {
             do {
                 let comparison = try await console.compare(
@@ -267,8 +267,8 @@ extension ConsoleModel {
 
     /// A step of a stop's reading, kept while the walk it was asked for is open.
     private func reading(
-        _ step: AdminConsole.TMDbProgress,
-        _ found: AdminConsole.TMDbComparison,
+        _ step: AdminConsole.StepProgress,
+        _ found: ReviewWalk.Comparison,
         of stop: String,
         for id: UUID
     ) {
@@ -281,7 +281,7 @@ extension ConsoleModel {
     private func readSpecials(of series: String, for id: UUID) {
         guard let current = walking, let database, let tmdb else { return }
         let (silo, library) = (current.silo, current.walk.library)
-        walking?.pooling = AdminConsole.TMDbProgress("Reading the series' specials")
+        walking?.pooling = AdminConsole.StepProgress("Reading the series' specials")
         tmdbState.pooling = Task {
             do {
                 let specials = try await console.specials(
@@ -300,7 +300,7 @@ extension ConsoleModel {
         }
     }
 
-    private func pooling(_ step: AdminConsole.TMDbProgress, _ found: AdminConsole.TMDbComparison, for id: UUID) {
+    private func pooling(_ step: AdminConsole.StepProgress, _ found: ReviewWalk.Comparison, for id: UUID) {
         guard walking?.id == id else { return }
         walking?.pooling = step
         walking?.walk.pool(found)
@@ -391,7 +391,7 @@ extension ConsoleModel {
     }
 
     /// Shapes the open new stop's draft as a draft from TMDb is shaped.
-    func shapeNewStop(_ change: (inout TMDbTree) -> Void) {
+    func shapeNewStop(_ change: (inout DraftTree) -> Void) {
         guard let open = walking?.open else { return }
         walking?.walk.shape(open, change)
         walking?.plan = nil
@@ -438,7 +438,7 @@ extension ConsoleModel {
     }
 
     /// Groups the open held stop's missing episodes, or changes the groups made of them.
-    func groupEpisodes(_ change: (inout TMDbWalk, String) -> Void) {
+    func groupEpisodes(_ change: (inout ReviewWalk, String) -> Void) {
         guard let open = walking?.open, var walk = walking?.walk else { return }
         change(&walk, open)
         walking?.walk = walk
@@ -447,7 +447,7 @@ extension ConsoleModel {
     }
 
     /// Drafts the walk's alternatives, or edits those drafted.
-    func draftAlternatives(_ change: (inout TMDbWalk) -> Void) {
+    func draftAlternatives(_ change: (inout ReviewWalk) -> Void) {
         guard var walk = walking?.walk else { return }
         change(&walk)
         walking?.walk = walk
@@ -468,7 +468,7 @@ extension ConsoleModel {
     /// walk, to be stored again. The root is read again in the browser.
     func storeWalk() async {
         guard let current = walking, let tmdb else { return }
-        walking?.storing = AdminConsole.TMDbProgress("Storing the walk")
+        walking?.storing = AdminConsole.StepProgress("Storing the walk")
         defer { if walking?.id == current.id { walking?.storing = nil } }
         do {
             let stored = try await console.store(current.walk, of: current.silo, tmdb: tmdb) { step in
@@ -480,7 +480,7 @@ extension ConsoleModel {
             walking?.plan = try? stored.walk.plan()
             if stored.refusal == nil {
                 // Stored whole, the walk ends, and this Mac keeps it no longer.
-                try? console.tmdbWalks.remove(stored.walk.id, of: current.silo.id)
+                try? console.reviewWalks.remove(stored.walk.id, of: current.silo.id)
             } else {
                 keepWalk()
             }
@@ -500,7 +500,7 @@ extension ConsoleModel {
         }
     }
 
-    private func storing(_ step: AdminConsole.TMDbProgress, for id: UUID) {
+    private func storing(_ step: AdminConsole.StepProgress, for id: UUID) {
         guard walking?.id == id else { return }
         walking?.storing = step
     }

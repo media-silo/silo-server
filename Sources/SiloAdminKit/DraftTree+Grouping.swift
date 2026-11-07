@@ -22,7 +22,7 @@ public struct SuggestedGroup: Hashable, Sendable {
 
 /// A draft's entries grouped by the operator into containers beneath the one that holds them, and the
 /// groups TMDb's titles suggest. `Tmdb.md`, *A draft from TMDb*.
-extension TMDbTree {
+extension DraftTree {
     /// The groups made of a container's entries: the containers beneath it the tree holds, in its order.
     public func groups(in parentID: String) -> [Container] {
         (container(parentID)?.childContainerIDs ?? []).compactMap {

@@ -20,7 +20,7 @@ struct WalkSheet: View {
     @State private var editing = false
 
     private var current: ConsoleModel.Walking { model.walking ?? walking }
-    private var walk: TMDbWalk { current.walk }
+    private var walk: ReviewWalk { current.walk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -185,7 +185,7 @@ struct WalkSheet: View {
     }
 
     @ViewBuilder
-    private func differences(_ comparison: AdminConsole.TMDbComparison) -> some View {
+    private func differences(_ comparison: ReviewWalk.Comparison) -> some View {
         // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
         LazyVStack(alignment: .leading, spacing: 10, pinnedViews: [.sectionHeaders]) {
             ForEach(comparison.differences.filter(\.isUnmatched)) { unmatched in
@@ -240,7 +240,7 @@ struct WalkSheet: View {
     // MARK: The store
 
     @ViewBuilder
-    private func storeList(_ plan: TMDbWalk.Plan) -> some View {
+    private func storeList(_ plan: ReviewWalk.Plan) -> some View {
         GroupBox("Storing the walk will") {
             VStack(alignment: .leading, spacing: 4) {
                 if let stored = current.stored {
@@ -282,7 +282,7 @@ struct WalkSheet: View {
 
 extension WalkSheet {
     /// The artwork the open held stop offers.
-    fileprivate func artwork(_ comparison: AdminConsole.TMDbComparison) -> some View {
+    fileprivate func artwork(_ comparison: ReviewWalk.Comparison) -> some View {
         StopArtwork(
             walk: walk,
             model: model,
@@ -295,10 +295,10 @@ extension WalkSheet {
 
 /// The artwork a stop offers, each kind with the images TMDb offers for it to choose from.
 private struct StopArtwork: View {
-    let walk: TMDbWalk
+    let walk: ReviewWalk
     let model: ConsoleModel
     let stop: String
-    let differences: [AdminConsole.TMDbDifference]
+    let differences: [ReviewWalk.Difference]
     let tick: (String) -> Binding<Bool>
 
     var body: some View {
@@ -316,7 +316,7 @@ private struct StopArtwork: View {
 /// companion series the walk makes follow the root's tree, each a tree of its own, and one is added
 /// beneath the list.
 private struct WalkTree: View {
-    let walk: TMDbWalk
+    let walk: ReviewWalk
     let open: String
     let model: ConsoleModel
     @State private var adding = false
@@ -369,7 +369,7 @@ private struct WalkTree: View {
         }
     }
 
-    private func caption(_ id: String, _ stop: TMDbWalk.Stop) -> String {
+    private func caption(_ id: String, _ stop: ReviewWalk.Stop) -> String {
         if walk.companionStops.contains(id) { return "companion series, new" }
         return walk.isNew(id) ? "\(stop.type), new" : stop.type
     }
@@ -393,7 +393,7 @@ private struct NewStop: View {
     let stop: String
     let tick: (String) -> Binding<Bool>
 
-    private var walk: TMDbWalk { current.walk }
+    private var walk: ReviewWalk { current.walk }
 
     var body: some View {
         // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
@@ -447,15 +447,15 @@ private struct NewStop: View {
 /// all or none.
 private struct DifferenceGroup: View {
     let title: String
-    let differences: [AdminConsole.TMDbDifference]
-    let walk: TMDbWalk
+    let differences: [ReviewWalk.Difference]
+    let walk: ReviewWalk
     let tick: (String) -> Binding<Bool>
     let images: ImageChoice?
 
     init(
         _ title: String,
-        _ differences: [AdminConsole.TMDbDifference],
-        walk: TMDbWalk,
+        _ differences: [ReviewWalk.Difference],
+        walk: ReviewWalk,
         tick: @escaping (String) -> Binding<Bool>,
         images: ImageChoice? = nil
     ) {
@@ -499,7 +499,7 @@ private struct DifferenceGroup: View {
 
 /// A stop's alternatives, edited by dragging specials onto them, and its extras, dropped onto by kind.
 private struct StopAlternatives: View {
-    let walk: TMDbWalk
+    let walk: ReviewWalk
     let model: ConsoleModel
     let stop: String
 
@@ -524,7 +524,7 @@ private struct StopAlternatives: View {
 /// The specials placed as part of a stop's pending change, held or new, each with where it went and a way
 /// back among the unassigned.
 private struct PlacedSpecials: View {
-    let walk: TMDbWalk
+    let walk: ReviewWalk
     let model: ConsoleModel
     let stop: String
 
@@ -551,8 +551,8 @@ private struct PlacedSpecials: View {
 /// A difference as the walk says it, the same for a held container and a new one: a field TMDb's text
 /// is taken into with its attribution marked.
 struct DifferenceLabel: View {
-    let difference: AdminConsole.TMDbDifference
-    let walk: TMDbWalk
+    let difference: ReviewWalk.Difference
+    let walk: ReviewWalk
     var images: ImageChoice?
 
     var body: some View {
@@ -596,8 +596,8 @@ struct DifferenceLabel: View {
 
 /// A stop's state in the walk: pending, or confirmed and what storing does with its container.
 private struct StopState: View {
-    let state: TMDbWalk.StopState
-    let walk: TMDbWalk
+    let state: ReviewWalk.StopState
+    let walk: ReviewWalk
     var compact = false
 
     var body: some View {
@@ -646,7 +646,7 @@ private struct WalkSpecials: View {
     /// What is being made for a special, asked as it is placed.
     @State private var naming: SpecialNaming?
 
-    private var walk: TMDbWalk { current.walk }
+    private var walk: ReviewWalk { current.walk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -843,7 +843,7 @@ private struct WalkSpecials: View {
         return entry.id?.value ?? entry.reference.map { "\($0.container?.value ?? "")#\($0.item)" } ?? "an item"
     }
 
-    static func describe(_ placement: SpecialPlacement, in walk: TMDbWalk) -> String {
+    static func describe(_ placement: SpecialPlacement, in walk: ReviewWalk) -> String {
         func title(_ id: String) -> String { walk.stops[id]?.title ?? walk.companion(id)?.displayTitle ?? id }
         switch placement {
         case .entry(let id, let sequence, let position):

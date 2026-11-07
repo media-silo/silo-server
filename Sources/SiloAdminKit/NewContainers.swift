@@ -3,7 +3,7 @@
 
 import SmdKit
 
-extension TMDbTree {
+extension DraftTree {
     /// A new container beneath one of the tree's, holding nothing yet, named last in its primary sequence
     /// and made with it: entries are added to it as to a group, and its primary sequence goes by the id
     /// of the one's it is beneath.
@@ -28,7 +28,7 @@ extension TMDbTree {
     }
 }
 
-extension TMDbWalk {
+extension ReviewWalk {
     /// A new container beneath a stop, holding nothing yet. Beneath a new stop it is a container of the
     /// stop's draft, as one added to a draft is. Beneath a held stop it is a new stop of the walk, its
     /// primary sequence going by the id of the held one's, ticked there as a missing child is: specials
@@ -65,7 +65,7 @@ extension TMDbWalk {
         }
         var child = Container(id: id, type: type, typeLabel: typeLabel, title: title)
         child.sequences = [Sequence(id: sequenceName(0, at: stop))]
-        let tree = TMDbTree(
+        let tree = DraftTree(
             library: library,
             record: TMDb.Record(.series, comparison.series ?? 0),
             creating: ContainerDraft.Creating(parent: stop),
@@ -91,7 +91,7 @@ extension TMDbWalk {
     }
 }
 
-extension TMDbTree {
+extension DraftTree {
     public mutating func declareContainer(
         _ id: ContainerID,
         type: ContainerType,
@@ -123,7 +123,7 @@ extension TMDbTree {
     }
 }
 
-extension TMDbWalk {
+extension ReviewWalk {
     public mutating func declareContainer(
         _ id: ContainerID,
         type: ContainerType,
