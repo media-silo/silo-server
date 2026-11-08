@@ -101,6 +101,11 @@ extension ConsoleModel {
         /// The next stop to be opened once the open one is confirmed, as Confirm and Next asked, while the
         /// containers confirming takes out of the walk are said.
         var nextOnceConfirmed = false
+        /// Confirm with everything beneath asked, while the containers confirming takes out of the walk
+        /// are said.
+        var beneathOnceConfirmed = false
+        /// Confirm with everything beneath under way, the sheet's stops not to be changed until it is done.
+        var confirmingBeneath = false
         /// Everything storing the walk will do, listed before any of it is done.
         var plan: ReviewWalk.Plan?
         /// The step a store under way is on, and how many of the plan's steps it has made.

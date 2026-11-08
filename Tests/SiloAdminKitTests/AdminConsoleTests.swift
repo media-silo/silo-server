@@ -2729,6 +2729,22 @@ extension AdminConsoleTests {
             return walk
         }
 
+        /// A stop confirmed with everything beneath it, as the sheet's action does; the stops beneath that
+        /// could not be read, left pending.
+        @discardableResult
+        func confirmBeneath(_ id: String, in walk: inout ReviewWalk) async throws -> [String: any Error] {
+            let confirmed = try await console.confirm(
+                id,
+                withEverythingBeneath: walk,
+                of: home,
+                from: database,
+                wikidata: wikidata,
+                tmdb: tmdb
+            )
+            walk = confirmed.walk
+            return confirmed.unread
+        }
+
         /// Each new stop the walk drafts confirmed with what it is offered, as each is found.
         func confirmDrafted(in walk: inout ReviewWalk) async throws {
             while let next = walk.order.first(where: { walk.isNew($0) && walk.stops[$0]?.taken == nil }) {
@@ -3522,6 +3538,192 @@ extension AdminConsoleTests {
             matched.differences == [.reference(item: nil, read[1].item), .premiered(read[1].premiered!)],
             "Wikidata's id offered, and TMDb having no overview of it, no outline"
         )
+    }
+
+    /// Doctor Who's first series as a library holds it: the series and its season, carrying Wikidata's
+    /// and TMDb's ids, and the season's first and third episodes, each carrying Wikidata's id and nothing
+    /// else, so neither has its first date; its second is missing.
+    private static func heldSeriesOne(
+        _ read: [Wikidata.Work]
+    ) -> (series: Container, season: Container, episodes: [Container]) {
+        let episodes = [("00000000000006e1", read[0]), ("00000000000006e3", read[2])].map { id, work in
+            var episode = Container(
+                id: ContainerID(id)!,
+                type: .episode,
+                title: Title(work.title)!,
+                externalRefs: [work.item]
+            )
+            episode.sequences = [
+                Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])
+            ]
+            return episode
+        }
+        var season = Container(
+            id: ContainerID("00000000000006c1")!,
+            type: .season,
+            title: Title("Series 1")!,
+            year: 2005,
+            externalRefs: [
+                ExternalRef(provider: .wikidata, value: "Q6100"), ExternalRef(provider: .tmdb, value: "9061"),
+            ]
+        )
+        season.sequences = [
+            Sequence(
+                id: "episodes",
+                items: episodes.map {
+                    .child(Entry.Child(id: ItemID(Slug.make(from: $0.title.rawValue))!, container: $0.id))
+                }
+            )
+        ]
+        var series = Container(
+            id: ContainerID("00000000000006a1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q906"), ExternalRef(provider: .tmdb, value: "906")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s1")!, container: season.id))])
+        ]
+        return (series, season, episodes)
+    }
+
+    /// A field ticked in a held season's Episodes group is ticked at each of its episodes' stops as they
+    /// join the walk, and at each already there; unticked at one episode's own stop, the others keep it.
+    @Test func anEpisodesFieldTickedAcrossItsSeason() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (wikidata, tmdb, read) = Self.seriesOne()
+        let (series, season, episodes) = Self.heldSeriesOne(read)
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season] + episodes))
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+        let (rose, unquiet) = (episodes[0].id.value, episodes[1].id.value)
+
+        var walk = try await console.startWalk(at: season.id.value, in: "tv", of: home)
+        try await walking.read(season.id.value, in: &walk)
+        #expect(walk.episodes(beneath: season.id.value) == [rose, unquiet])
+        let unread = walk.episodeFields(at: season.id.value)
+        #expect(unread.unread == 2 && unread.fields.map(\.id) == ReviewWalk.episodeFields)
+        #expect(unread.fields.allSatisfy { $0.episodes == 0 && $0.ticked == false }, "nothing known of them yet")
+
+        walk.choose(episodes: "premiered", true, at: season.id.value)
+        #expect(walk.stops[season.id.value]?.taken == nil && walk.stops[rose] == nil, "nothing confirmed")
+        try await walking.confirm(season.id.value, choosing: [], in: &walk)
+        #expect(walk.stops[rose]?.chosen == ["premiered"] && walk.stops[unquiet]?.chosen == ["premiered"])
+
+        try await walking.read(rose, in: &walk)
+        #expect(walk.differences(of: rose).contains(.premiered(read[0].premiered!)))
+        walk.choose("premiered", false, at: rose)
+        #expect(walk.stops[unquiet]?.chosen == ["premiered"], "the others keep it")
+        let mixed = try #require(walk.episodeFields(at: season.id.value).fields.first { $0.id == "premiered" })
+        #expect(mixed.episodes == 1 && mixed.ticked == nil, "one read, and ticked at some")
+
+        walk.choose(episodes: "title", true, at: season.id.value)
+        #expect(walk.stops[rose]?.chosen == [], "its title is Wikidata's, so nothing ticked there")
+        #expect(walk.stops[unquiet]?.chosen == ["premiered", "title"], "not read, so ticked")
+    }
+
+    /// A missing season chosen at a held series, and its new stop confirmed with everything beneath:
+    /// each of its episodes is confirmed and marked confirmed from above, and storing the walk makes the
+    /// season, then each episode with its title, first date, cast and crew, and its outline TMDb's.
+    @Test func aNewSeasonConfirmedWithEverythingBeneath() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (wikidata, tmdb, read) = Self.seriesOne()
+        tmdb.add(
+            season: 9061,
+            number: 1,
+            episodes: [61001: "Rose meets the Doctor.", 61002: "The Earth ends."],
+            of: 906
+        )
+        var (series, _, _) = Self.heldSeriesOne(read)
+        series.sequences = [Sequence(id: "seasons", items: [])]
+        let held = HeldLibrary([series])
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value, choosing: ["child:Q6100"])
+        let season = try #require(walk.stops[series.id.value]?.children.first)
+        #expect(try await walking.confirmBeneath(season, in: &walk).isEmpty)
+        let episodes = walk.stops[season]?.children ?? []
+        #expect(episodes.count == 3 && walk.next == nil, "every stop confirmed")
+        #expect(episodes.allSatisfy(walk.confirmedFromAbove) && !walk.confirmedFromAbove(season))
+        walk.opened(episodes[0])
+        #expect(!walk.confirmedFromAbove(episodes[0]), "no longer, once opened")
+
+        #expect(
+            try walk.plan().steps.map(\.id) == ["edit:\(series.id)", "create:\(season)"],
+            "the season made with its episodes beneath it, in the one draft"
+        )
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        let made1 = try #require(held.sidecar(ContainerID(episodes[0])!))
+        #expect(made1.container.title.rawValue == "Rose" && made1.container.premiered == read[0].premiered)
+        #expect(made1.container.cast == AdminConsole.cast(of: read[0]))
+        #expect(made1.container.crew == AdminConsole.crew(of: read[0]))
+        #expect(made1.container.outline == "Rose meets the Doctor.")
+        #expect(made1.attributions == [Attribution(subject: .outline, provider: .tmdb, value: "61001", read: .today)])
+        #expect(held.container(ContainerID(episodes[1])!)?.outline == "The Earth ends.")
+        #expect(held.container(ContainerID(season)!)?.childContainerIDs.map(\.value) == episodes)
+    }
+
+    /// A held season with nothing ticked, at it or at any of its episodes, confirmed with everything
+    /// beneath: each episode is confirmed with nothing taken, and storing the walk stores nothing for them.
+    /// One that cannot be read is left pending with why, and the rest confirmed.
+    @Test func aHeldSeasonConfirmedWithNothingTickedStoresNothing() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (wikidata, tmdb, read) = Self.seriesOne()
+        let (series, season, episodes) = Self.heldSeriesOne(read)
+        var stray = Container(
+            id: ContainerID("00000000000006e9")!,
+            type: .episode,
+            title: Title("Stray")!,
+            externalRefs: [ExternalRef(provider: .imdb, value: "tt9999999")]
+        )
+        stray.sequences = episodes[0].sequences
+        var holding = season
+        holding.sequences[0].items.append(.child(Entry.Child(id: ItemID("stray")!, container: stray.id)))
+        let held = HeldLibrary([series, holding, stray] + episodes)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+
+        var walk = try await console.startWalk(at: season.id.value, in: "tv", of: home)
+        try await walking.read(season.id.value, in: &walk)
+        let unread = try await walking.confirmBeneath(season.id.value, in: &walk)
+        #expect(Array(unread.keys) == [stray.id.value] && unread.values.first is AdminConsole.NoReading)
+        #expect(walk.stops[stray.id.value]?.taken == nil, "left pending")
+        for episode in episodes {
+            #expect(walk.stops[episode.id.value]?.taken == [] && walk.confirmedFromAbove(episode.id.value))
+        }
+        #expect(walk.stops[season.id.value]?.taken == [] && walk.stops[episodes[0].id.value]?.comparison != nil)
+        #expect(try walk.plan().steps.isEmpty, "nothing to store")
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(held.container(episodes[0].id) == episodes[0])
+    }
+
+    /// A season's first date ticked in its Episodes group and unticked at one episode's own stop, then the
+    /// season confirmed with everything beneath: storing sets every other episode's first date, and leaves
+    /// that episode's as the library held it.
+    @Test func anEpisodesOwnTicksStandThroughTheFastPath() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (wikidata, tmdb, read) = Self.seriesOne()
+        let (series, season, episodes) = Self.heldSeriesOne(read)
+        let held = HeldLibrary([series, season] + episodes)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+        let (rose, unquiet) = (episodes[0].id, episodes[1].id)
+
+        var walk = try await walking.walk(season.id.value)
+        walk.choose(episodes: "premiered", true, at: season.id.value)
+        try await walking.read(rose.value, in: &walk)
+        walk.opened(rose.value)
+        walk.choose("premiered", false, at: rose.value)
+        #expect(try await walking.confirmBeneath(season.id.value, in: &walk).isEmpty)
+        #expect(walk.next == nil)
+        #expect(!walk.confirmedFromAbove(rose.value) && walk.confirmedFromAbove(unquiet.value), "opened, so not")
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(held.container(unquiet)?.premiered == read[2].premiered)
+        #expect(held.container(rose)?.premiered == nil, "as the library held it")
     }
 
     /// A held serial carrying a Wikidata id is read against Wikidata's item for it: its episode containers
