@@ -2568,13 +2568,21 @@ extension AdminConsoleTests {
             try collections[id] ?? { throw TMDb.Unavailable.answered(404) }()
         }
 
-        /// A season's outline, beneath its series, by TMDb's id for it and its number there.
-        mutating func add(season id: Int, number: Int, overview: String? = nil, of series: Int) {
+        /// A season's outline, beneath its series, by TMDb's id for it and its number there, and its
+        /// episodes' overviews, by TMDb's id for each.
+        mutating func add(
+            season id: Int,
+            number: Int,
+            overview: String? = nil,
+            episodes: [Int: String] = [:],
+            of series: Int
+        ) {
             seasons["\(series)/\(number)"] = TMDb.Season(
                 id: id,
                 number: number,
                 name: "Season \(number)",
-                overview: overview
+                overview: overview,
+                episodes: episodes
             )
             self.series[series, default: TMDb.Series(id: series, name: "")].seasons.append(
                 TMDb.SeasonSummary(id: id, number: number, name: "Season \(number)")
@@ -2720,12 +2728,24 @@ extension AdminConsoleTests {
             try await confirm(id, choosing: chosen, in: &walk)
             return walk
         }
+
+        /// Each new stop the walk drafts confirmed with what it is offered, as each is found.
+        func confirmDrafted(in walk: inout ReviewWalk) async throws {
+            while let next = walk.order.first(where: { walk.isNew($0) && walk.stops[$0]?.taken == nil }) {
+                try await confirm(next, choosing: walk.stops[next]?.chosen ?? [], in: &walk)
+            }
+        }
     }
 
     /// The draft a walk is rooted at, or nil when the item is not drafted.
     private static func drafted(_ start: AdminConsole.ReviewWalkStart) -> DraftTree? {
         guard case .walk(let walk) = start else { return nil }
         return walk.drafts[walk.root]
+    }
+
+    /// What each entry is by its ids: its own, or, naming an episode's container, that container's.
+    private static func ids(_ entries: [Entry], in containers: (ContainerID) -> Container?) -> [[ExternalRef]] {
+        entries.map { entry in entry.childContainer.flatMap(containers)?.externalRefs ?? entry.externalRefs }
     }
 
     /// The edit a walk's store makes of a container.
@@ -2818,9 +2838,11 @@ extension AdminConsoleTests {
         #expect(fourteen.outline == "Sarah Jane leaves.")
         #expect(season.attributions[season.top]?.map(\.value) == ["3644"], "credited to TMDb's season")
         let entries = fourteen.sequences.flatMap(\.items)
-        #expect(entries.map(\.externalRefs) == parts.map { [$0.item] })
-        #expect(entries.allSatisfy { $0.title == nil }, "Wikidata has a title for each, so none is stored")
-        #expect(season.episodeTitles["Q1001"] == "The Robots of Death: Part One", "but each is shown")
+        let episodes = entries.compactMap(\.childContainer).compactMap { season.container($0.value) }
+        #expect(episodes.map(\.externalRefs) == parts.map { [$0.item] }, "each a container of its own, in order")
+        #expect(episodes.map(\.title.rawValue) == parts.map(\.title), "titled as Wikidata titles it")
+        #expect(entries.allSatisfy { $0.externalRefs.isEmpty }, "its ids are its own container's")
+        #expect(season.episodeTitles["Q1001"] == "The Robots of Death: Part One")
         #expect(season.airDates["Q1001"] == CalendarDate(year: 1977, month: 1, day: 29))
         #expect(try await walking.make(season).refusal == nil, "the season is made beneath the series")
         #expect(held.container(doctorWho.id)?.childContainerIDs.contains(fourteen.id) == true)
@@ -2858,9 +2880,9 @@ extension AdminConsoleTests {
         #expect(try await walking.make(regrouped).refusal == nil, "the regrouped season is made")
         #expect(held.container(ContainerID(regrouped.top)!)?.childContainerIDs == [robots, talons])
         #expect(
-            held.container(robots)?.sequences.flatMap(\.items).map(\.externalRefs) == [
-                [parts[0].item], [parts[1].item],
-            ],
+            held.container(robots)?.sequences.flatMap(\.items).compactMap(\.childContainer).map {
+                held.container($0)?.externalRefs
+            } == [[parts[0].item], [parts[1].item]],
             "in Wikidata's order"
         )
 
@@ -2990,11 +3012,15 @@ extension AdminConsoleTests {
             Issue.record("the series is drafted")
             return
         }
-        #expect(tree.containers.map(\.type) == [.series, .season], "TMDb's season 0 is not a season")
-        #expect(tree.containers.last?.outline == "Rose meets the Doctor.")
+        #expect(
+            tree.containers.map(\.type) == [.series, .season, .episode, .episode],
+            "TMDb's season 0 is not a season"
+        )
+        let drafted = try #require(tree.containers.first { $0.type == .season })
+        #expect(drafted.outline == "Rose meets the Doctor.")
         #expect(tree.specials.map(\.id) == ["Q3001", "Q3002", "Q3003", "Q3004", "Q3005"])
         #expect(tree.unassigned.count == 5)
-        let season = try #require(tree.containers.last).id.value
+        let season = drafted.id.value
 
         var suggestions = try await console.suggest(for: tree, of: home, from: database)
         #expect(suggestions["Q3001"]?.placement == .entry(in: season, sequence: "episodes", position: 1))
@@ -3028,7 +3054,7 @@ extension AdminConsoleTests {
         #expect(madeSofa.sequences.flatMap(\.items).map(\.externalRefs) == [[sofaOne.item], [sofaTwo.item]])
         let madeSeason = try #require(held.container(ContainerID(season)!))
         #expect(
-            madeSeason.sequences.flatMap(\.items).map(\.externalRefs) == [
+            Self.ids(madeSeason.sequences.flatMap(\.items), in: held.container) == [
                 [first.item], [christmas.item], [second.item],
             ]
         )
@@ -3263,9 +3289,411 @@ extension AdminConsoleTests {
         #expect(held.container(alienCollection.id)?.childContainerIDs == [ContainerID(film.top)!])
     }
 
+    /// Series 1 of Doctor Who as Wikidata states it, each episode with TMDb's id for it but the third,
+    /// and the first with its cast and crew; and TMDb's season, with an overview of the first episode
+    /// alone.
+    private static func seriesOne() -> (FakeWikidata, FakeTMDb, [Wikidata.Work]) {
+        var rose = Self.episode("Q6101", "Rose", aired: "2005-03-26", tmdb: 61001)
+        rose.directors = [
+            Wikidata.Credit(person: "Q6110", name: "Keith Boak", refs: [ExternalRef(provider: .tmdb, value: "6110")])
+        ]
+        rose.screenwriters = [Wikidata.Credit(person: "Q6111", name: "Russell T Davies")]
+        rose.cast = [Wikidata.Credit(person: "Q6112", name: "Billie Piper", character: "Rose Tyler")]
+        let world = Self.episode("Q6102", "The End of the World", aired: "2005-04-02", tmdb: 61002)
+        let unquiet = Self.episode("Q6103", "The Unquiet Dead", aired: "2005-04-09")
+        var wikidata = FakeWikidata()
+        wikidata.series["Q906"] = Wikidata.Series(
+            work: Wikidata.Work(id: "Q906", title: "Doctor Who", refs: [ExternalRef(provider: .tmdb, value: "906")]),
+            seasons: []
+        )
+        wikidata.add(Self.season("Q6100", 1, "Series 1", [rose, world, unquiet], tmdb: 9061), to: "Q906")
+        var tmdb = FakeTMDb()
+        tmdb.add(season: 9061, number: 1, episodes: [61001: "Rose meets the Doctor."], of: 906)
+        return (wikidata, tmdb, [rose, world, unquiet])
+    }
+
+    /// A season drafted from Wikidata holds each of its episodes as a container of its own, in Wikidata's
+    /// order, holding its feature: its title, first date, cast and crew Wikidata's, each person known by
+    /// their Wikidata id, and its outline TMDb's overview of it in its season, attributed to the episode's
+    /// TMDb id. Each is a new stop of a walk from the draft, made with what its stop keeps, its title
+    /// whatever is left out.
+    @Test func aSeasonsEpisodesAreDraftedAsContainers() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let held = HeldLibrary()
+        let (console, home) = try await Self.smddbConsole(held)
+        let (wikidata, tmdb, read) = Self.seriesOne()
+        guard
+            let tree = Self.drafted(
+                try await console.startWalk(
+                    drafting: Wikidata.Item(.series, "Q906"),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    wikidata: wikidata,
+                    tmdb: tmdb
+                )
+            )
+        else {
+            Issue.record("the series is drafted")
+            return
+        }
+        let season = try #require(tree.containers.first { $0.type == .season })
+        let episodes = season.childContainerIDs.compactMap { tree.container($0.value) }
+        #expect(episodes.map(\.type) == [.episode, .episode, .episode])
+        #expect(episodes.map(\.title.rawValue) == read.map(\.title), "in Wikidata's order")
+        #expect(episodes.map(\.premiered) == read.map(\.premiered))
+        #expect(episodes.map(\.externalRefs) == read.map { Special(episode: $0).refs })
+        #expect(
+            episodes.allSatisfy { $0.year == nil && $0.sequences.flatMap(\.items).map(\.id?.value) == ["feature"] },
+            "each holding its feature"
+        )
+        let rose = episodes[0]
+        let wikidataID = { (id: String) in ExternalRef(provider: .wikidata, value: id) }
+        #expect(
+            rose.cast == [Participant(name: "Billie Piper", role: "Rose Tyler", externalRefs: [wikidataID("Q6112")])]
+        )
+        #expect(
+            rose.crew == [
+                Participant(
+                    name: "Keith Boak",
+                    role: "Director",
+                    externalRefs: [wikidataID("Q6110"), ExternalRef(provider: .tmdb, value: "6110")]
+                ),
+                Participant(name: "Russell T Davies", role: "Writer", externalRefs: [wikidataID("Q6111")]),
+            ],
+            "its directors, then its writers"
+        )
+        #expect(rose.outline == "Rose meets the Doctor.")
+        #expect(
+            tree.attributions[rose.id.value]
+                == [Attribution(subject: .outline, provider: .tmdb, value: "61001", read: .today)],
+            "credited to TMDb's episode"
+        )
+        #expect(episodes[1].outline == nil && tree.attributions[episodes[1].id.value] == nil, "TMDb has none of it")
+        #expect(episodes[2].outline == nil, "no TMDb id, so read without one")
+
+        var walk = ReviewWalk(drafting: tree)
+        #expect(
+            walk.offered(rose.id.value).map(\.id)
+                == ["outline", "premiered", "cast", "crew", "ref::wikidata:Q6101", "ref::tmdb:61001"]
+        )
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+        while let next = walk.next {
+            var chosen = walk.stops[next]?.chosen ?? []
+            if next == rose.id.value { chosen.subtract(["outline", "premiered", "cast"]) }
+            try await walking.confirm(next, choosing: chosen, in: &walk)
+        }
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(held.container(season.id)?.childContainerIDs == episodes.map(\.id))
+        let madeRose = try #require(held.sidecar(rose.id))
+        #expect(madeRose.container.title == rose.title, "made with its title whatever is left out")
+        #expect(madeRose.container.premiered == nil && madeRose.container.cast.isEmpty)
+        #expect(madeRose.container.outline == nil && madeRose.attributions.isEmpty)
+        #expect(madeRose.container.crew == rose.crew, "what was kept")
+        let madeWorld = try #require(held.container(episodes[1].id))
+        #expect(madeWorld.premiered == read[1].premiered && madeWorld.externalRefs == episodes[1].externalRefs)
+    }
+
+    /// A held episode is read against Wikidata's item for it and its outline against TMDb's overview of
+    /// it in its season: each of its title, first date, cast, and directors and writers that Wikidata has
+    /// and it lacks or holds otherwise is offered, crew of another job kept, and an episode carrying no
+    /// Wikidata id is read as the one of its season carrying another id it carries. With no TMDb token,
+    /// every fact is still offered.
+    @Test func aHeldEpisodeIsOfferedEachFieldItsProviderHas() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (wikidata, tmdb, read) = Self.seriesOne()
+        var rose = Container(
+            id: ContainerID("00000000000006e1")!,
+            type: .episode,
+            title: Title("Episode 1")!,
+            externalRefs: [read[0].item]
+        )
+        rose.crew = [Participant(name: "Phil Collinson", role: "Producer")]
+        rose.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])]
+        var world = Container(
+            id: ContainerID("00000000000006e2")!,
+            type: .episode,
+            title: Title("The End of the World")!,
+            externalRefs: [ExternalRef(provider: .tmdb, value: "61002")]
+        )
+        world.sequences = rose.sequences
+        var lost = Container(
+            id: ContainerID("00000000000006e8")!,
+            type: .episode,
+            title: Title("Lost")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q6199")]
+        )
+        lost.sequences = rose.sequences
+        var stray = Container(
+            id: ContainerID("00000000000006e9")!,
+            type: .episode,
+            title: Title("Stray")!,
+            externalRefs: [ExternalRef(provider: .imdb, value: "tt9999999")]
+        )
+        stray.sequences = rose.sequences
+        var season = Container(
+            id: ContainerID("00000000000006c1")!,
+            type: .season,
+            title: Title("Series 1")!,
+            year: 2005,
+            externalRefs: [
+                ExternalRef(provider: .wikidata, value: "Q6100"), ExternalRef(provider: .tmdb, value: "9061"),
+            ]
+        )
+        season.sequences = [
+            Sequence(
+                id: "episodes",
+                items: [
+                    .child(Entry.Child(id: ItemID("rose")!, container: rose.id)),
+                    .child(Entry.Child(id: ItemID("world")!, container: world.id)),
+                    .child(Entry.Child(id: ItemID("lost")!, container: lost.id)),
+                    .child(Entry.Child(id: ItemID("stray")!, container: stray.id)),
+                ]
+            )
+        ]
+        var series = Container(
+            id: ContainerID("00000000000006a1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q906"), ExternalRef(provider: .tmdb, value: "906")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s1")!, container: season.id))])
+        ]
+        let held = HeldLibrary([series, season, rose, world, lost, stray])
+        let (console, home) = try await Self.smddbConsole(held)
+        func compare(_ id: ContainerID, tmdb: (any TMDbSource)?) async throws -> ReviewWalk.Comparison {
+            try await console.compare(id.value, in: "tv", of: home, from: database, wikidata: wikidata, tmdb: tmdb)
+        }
+
+        let compared = try await compare(rose.id, tmdb: tmdb)
+        #expect(compared.reading == "Wikidata's item Q6101")
+        let crew = AdminConsole.crew(of: read[0]).map(ReviewWalk.Person.init)
+        #expect(
+            compared.differences == [
+                .title("Rose"), .reference(item: nil, ExternalRef(provider: .tmdb, value: "61001")),
+                .premiered(read[0].premiered!), .cast(AdminConsole.cast(of: read[0]).map(ReviewWalk.Person.init)),
+                .crew(crew), .outline("Rose meets the Doctor.", record: "61001"),
+            ]
+        )
+        let factsAlone = try await compare(rose.id, tmdb: nil)
+        #expect(factsAlone.differences == Array(compared.differences.dropLast()), "every fact, and no content")
+        #expect(factsAlone.noContent == TMDb.Unavailable.noToken.reason)
+        var down = tmdb
+        down.unreachable = true
+        let unanswered = try await compare(rose.id, tmdb: down)
+        #expect(unanswered.differences == factsAlone.differences, "every fact, and no content")
+        #expect(unanswered.noContent == TMDb.Unavailable.answered(503).reason)
+        await #expect(throws: Wikidata.Unavailable.self, "its own id not Wikidata's") {
+            try await compare(lost.id, tmdb: tmdb)
+        }
+        await #expect(throws: AdminConsole.NoReading.self, "no id of its season's episodes") {
+            try await compare(stray.id, tmdb: tmdb)
+        }
+
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+        let walk = try await walking.walk(
+            rose.id.value,
+            choosing: Set(compared.differences.map(\.id)).subtracting(["cast"])
+        )
+        let plan = try walk.plan()
+        let edit = try #require(Self.edit(of: rose.id.value, in: plan))
+        #expect(
+            plan.steps.map(\.described) == [
+                "edit Episode 1: its title, its outline, its first date, its crew, 1 reference"
+            ]
+        )
+        let taken = try #require(edit.value)
+        #expect(taken.title == Title("Rose")! && taken.premiered == read[0].premiered && taken.cast.isEmpty)
+        #expect(
+            taken.crew == crew.map(\.participant) + rose.crew,
+            "Wikidata's directors and writers, and the producer kept after them"
+        )
+        #expect(edit.attributions == [Attribution(subject: .outline, provider: .tmdb, value: "61001", read: .today)])
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(held.container(rose.id)?.premiered == read[0].premiered)
+        #expect(held.sidecar(rose.id)?.attributions == edit.attributions)
+
+        let matched = try await compare(world.id, tmdb: tmdb)
+        #expect(matched.reading == "through Series 1, Wikidata's item Q6100")
+        #expect(
+            matched.differences == [.reference(item: nil, read[1].item), .premiered(read[1].premiered!)],
+            "Wikidata's id offered, and TMDb having no overview of it, no outline"
+        )
+    }
+
+    /// A held serial carrying a Wikidata id is read against Wikidata's item for it: its episode containers
+    /// are found by the ids they carry, an episode Wikidata lists that it lacks is missing, and the
+    /// outlines TMDb gives its season's episodes are read for the episodes it would draft.
+    @Test func aHeldSerialsEpisodesAreReadAgainstItsItem() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (wikidata, tmdb, read) = Self.seriesOne()
+        wikidata.serials["Q6200"] = Wikidata.Serial(
+            work: Wikidata.Work(id: "Q6200", title: "Arrival"),
+            parts: Array(read[0...1])
+        )
+        tmdb.add(
+            season: 9061,
+            number: 1,
+            episodes: [61001: "Rose meets the Doctor.", 61002: "The Earth ends."],
+            of: 906
+        )
+        var rose = Container(
+            id: ContainerID("00000000000006e1")!,
+            type: .episode,
+            title: Title("Rose")!,
+            externalRefs: [read[0].item]
+        )
+        rose.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])]
+        var serial = Container(
+            id: ContainerID("00000000000006d1")!,
+            type: .serial,
+            title: Title("Arrival")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q6200")]
+        )
+        serial.sequences = [
+            Sequence(id: "parts", items: [.child(Entry.Child(id: ItemID("rose")!, container: rose.id))])
+        ]
+        var season = Container(
+            id: ContainerID("00000000000006c1")!,
+            type: .season,
+            title: Title("Series 1")!,
+            year: 2005,
+            externalRefs: [
+                ExternalRef(provider: .wikidata, value: "Q6100"), ExternalRef(provider: .tmdb, value: "9061"),
+            ]
+        )
+        season.sequences = [
+            Sequence(id: "serials", items: [.child(Entry.Child(id: ItemID("arrival")!, container: serial.id))])
+        ]
+        var series = Container(
+            id: ContainerID("00000000000006a1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q906"), ExternalRef(provider: .tmdb, value: "906")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s1")!, container: season.id))])
+        ]
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial, rose]))
+        let compared = try await console.compare(
+            serial.id.value,
+            in: "tv",
+            of: home,
+            from: database,
+            wikidata: wikidata,
+            tmdb: tmdb
+        )
+        #expect(compared.reading == "Wikidata's item Q6200")
+        #expect(compared.differences == [.episode(read[1], after: read[0].item)])
+        #expect(compared.episodeContainers == ["Q6101": rose.id.value])
+        #expect(compared.episodeOutlines == ["61001": "Rose meets the Doctor.", "61002": "The Earth ends."])
+    }
+
+    /// A held season's episode containers are found by the ids they carry: none is missing or out of
+    /// order, each is offered its ids at its own stop, and each is a stop beneath the season once it is
+    /// confirmed. A missing episode ticked is drafted as a new stop of its own, its outline TMDb's from
+    /// the season's reading, and named after the episode it follows once its stop is confirmed.
+    @Test func aHeldSeasonsEpisodesAreStopsBeneathIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (wikidata, tmdb, read) = Self.seriesOne()
+        func episode(_ id: String, _ work: Wikidata.Work) -> Container {
+            var episode = Container(
+                id: ContainerID(id)!,
+                type: .episode,
+                title: Title(work.title)!,
+                externalRefs: [work.item]
+            )
+            episode.sequences = [
+                Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])
+            ]
+            return episode
+        }
+        let rose = episode("00000000000006e1", read[0])
+        var tmdbWorld = read[1]
+        tmdbWorld.refs = [ExternalRef(provider: .tmdb, value: "61002")]
+        let unquiet = episode("00000000000006e3", read[2])
+        var season = Container(
+            id: ContainerID("00000000000006c1")!,
+            type: .season,
+            title: Title("Series 1")!,
+            year: 2005,
+            externalRefs: [
+                ExternalRef(provider: .wikidata, value: "Q6100"), ExternalRef(provider: .tmdb, value: "9061"),
+            ]
+        )
+        season.sequences = [
+            Sequence(
+                id: "episodes",
+                items: [
+                    .child(Entry.Child(id: ItemID("rose")!, container: rose.id)),
+                    .child(Entry.Child(id: ItemID("unquiet")!, container: unquiet.id)),
+                ]
+            )
+        ]
+        var series = Container(
+            id: ContainerID("00000000000006a1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q906"), ExternalRef(provider: .tmdb, value: "906")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s1")!, container: season.id))])
+        ]
+        let held = HeldLibrary([series, season, rose, unquiet])
+        var outlines = tmdb
+        outlines.add(
+            season: 9061,
+            number: 1,
+            episodes: [61001: "Rose meets the Doctor.", 61002: "The Earth ends."],
+            of: 906
+        )
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: outlines)
+
+        let compared = try await console.compare(
+            season.id.value,
+            in: "tv",
+            of: home,
+            from: database,
+            wikidata: wikidata,
+            tmdb: outlines
+        )
+        #expect(compared.differences == [.episode(read[1], after: read[0].item)], "nothing else of its episodes")
+        #expect(compared.episodeContainers == ["Q6101": rose.id.value, "Q6103": unquiet.id.value])
+        #expect(compared.heldOnly.isEmpty)
+
+        var walk = try await walking.walk(season.id.value, choosing: ["episode:Q6102"])
+        let world = try #require(walk.drafted(episode: "Q6102", at: season.id.value))
+        #expect(
+            walk.stops[season.id.value]?.children == [rose.id.value, world, unquiet.id.value],
+            "in Wikidata's order"
+        )
+        #expect(walk.stops[rose.id.value]?.type == "episode" && !walk.isNew(rose.id.value))
+        #expect(walk.container(world)?.outline == "The Earth ends.", "TMDb's, read with the season")
+        #expect(walk.container(world)?.premiered == read[1].premiered)
+        try await walking.confirm(world, choosing: walk.stops[world]?.chosen ?? [], in: &walk)
+        let plan = try walk.plan()
+        #expect(plan.steps.map(\.id) == ["edit:\(season.id)", "create:\(world)"])
+        #expect(plan.steps.last?.described == "make The End of the World beneath Series 1")
+        #expect(try await console.store(walk, of: home, tmdb: outlines).refusal == nil)
+        #expect(
+            held.container(season.id)?.childContainerIDs.map(\.value) == [rose.id.value, world, unquiet.id.value],
+            "named after the episode it follows"
+        )
+        #expect(
+            held.sidecar(ContainerID(world)!)?.attributions
+                == [Attribution(subject: .outline, provider: .tmdb, value: "61002", read: .today)]
+        )
+    }
+
     /// A season Wikidata lists serials in is drafted as serials beneath it, each holding its parts in
-    /// order; a season holding episodes holds them as entries. A special named for what it is is
-    /// suggested as an extra of that type.
+    /// order, each part a container of its own. A special named for what it is is suggested as an extra
+    /// of that type.
     @Test func aSeasonOfSerialsIsDraftedAsItsSerials() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -3310,13 +3738,17 @@ extension AdminConsoleTests {
             Issue.record("the series is drafted")
             return
         }
-        #expect(tree.containers.map(\.type) == [.series, .season, .serial, .serial])
+        #expect(
+            tree.containers.map(\.type) == [.series, .season, .serial, .serial, .episode, .episode, .episode],
+            "each part a container of its own beneath its serial"
+        )
         let season = tree.containers[1]
         #expect(season.sequences.map(\.id) == ["serials"])
         #expect(season.childContainerIDs == [tree.containers[2].id, tree.containers[3].id])
         #expect(tree.containers[2].sequences.map(\.id) == ["parts"])
         #expect(
-            tree.containers[2].sequences.flatMap(\.items).map(\.externalRefs) == [[parts[0].item], [parts[1].item]]
+            Self.ids(tree.containers[2].sequences.flatMap(\.items)) { tree.container($0.value) }
+                == [[parts[0].item], [parts[1].item]]
         )
 
         let suggestions = try await console.suggest(for: tree, of: home, from: database)
@@ -3732,20 +4164,29 @@ extension AdminConsoleTests {
         #expect(!compared.differences.contains { if case .order = $0 { true } else { false } })
         #expect(compared.heldOnly == ["making-of: The Making Of"], "shown, and offered for nothing")
         let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: nil)
-        let walk = try await walking.walk(season.id.value, choosing: ["episode:Q1002"])
+        var walk = try await walking.walk(season.id.value, choosing: ["episode:Q1002"])
+        let partTwo = try #require(walk.drafted(episode: "Q1002", at: season.id.value))
+        #expect(walk.stops[season.id.value]?.children == [partTwo], "the missing episode a stop of its own")
+        try await walking.confirmDrafted(in: &walk)
         let plan = try walk.plan()
         let draft = try #require(Self.edit(of: season.id.value, in: plan))
-        #expect(draft.value?.sequences[0].items.map(\.externalRefs) == [[one.item], [two.item], [three.item]])
+        #expect(
+            Self.ids(draft.value?.sequences[0].items ?? []) { walk.container($0.value) }
+                == [[one.item], [two.item], [three.item]],
+            "named after the episode it follows"
+        )
         #expect(
             draft.value?.extras == season.extras && draft.value?.externalRefs == season.externalRefs,
             "nothing else"
         )
-        #expect(plan.steps.count == 1, "the season's edit and nothing else")
+        #expect(plan.steps.count == 2, "the season's edit, then the episode made beneath it")
         let stored = try await console.store(walk, of: home, tmdb: nil)
         #expect(stored.refusal == nil && stored.rest.isEmpty)
         #expect(
-            held.container(season.id)?.sequences[0].items.map(\.externalRefs) == [[one.item], [two.item], [three.item]]
+            Self.ids(held.container(season.id)?.sequences[0].items ?? [], in: held.container)
+                == [[one.item], [two.item], [three.item]]
         )
+        #expect(held.container(ContainerID(partTwo)!)?.title == Title("Part Two")!)
 
         // The same season with its episodes regrouped into a serial beneath it, which carries no
         // Wikidata id of its own and is read through the season.
@@ -4207,11 +4648,13 @@ extension AdminConsoleTests {
 
         let fourteen = try await compare(season.id)
         #expect(fourteen.differences == [.episode(robots, after: nil)])
-        let gained = try await walking.walk(season.id.value, choosing: ["episode:Q1001"])
+        var gained = try await walking.walk(season.id.value, choosing: ["episode:Q1001"])
+        try await walking.confirmDrafted(in: &gained)
+        let items = try #require(Self.edit(of: season.id.value, in: try gained.plan())?.value).sequences[0].items
+        #expect(items.map(\.externalRefs) == [[talons.item], []])
         #expect(
-            Self.edit(of: season.id.value, in: try gained.plan())?.value?.sequences[0].items.map(\.externalRefs)
-                == [[talons.item], [robots.item]],
-            "with nothing before it at Wikidata, last"
+            items.last?.childContainer.flatMap { gained.container($0.value) }?.externalRefs == [robots.item],
+            "with nothing before it at Wikidata, a container of its own, last"
         )
     }
 
@@ -4656,7 +5099,8 @@ extension AdminConsoleTests {
         #expect(walk.state(of: stop) == .pending && walk.state(of: held) == .pending, "handed: both")
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
         try await walking.confirm(held, choosing: ["episode:\(evil[1])"], in: &walk)
-        #expect(walk.state(of: held) == .willEdit)
+        try await walking.confirmDrafted(in: &walk)
+        #expect(walk.state(of: held) == .willEdit, "naming the episode's own container")
         walk.group([evil[1]], at: stop, into: "00000000000001d4", type: .serial, title: Title("Evil")!)
         #expect(walk.state(of: held) == .pending, "taken back from it to be grouped")
     }
@@ -5433,7 +5877,7 @@ extension AdminConsoleTests {
             Issue.record("a series neither smddb nor the library holds is walked from a draft")
             return
         }
-        let season = try #require(walk.drafts[walk.root]?.containers.last).id.value
+        let season = try #require(walk.drafts[walk.root]?.containers.first { $0.type == .season }).id.value
         let suggested = try await console.suggest(in: walk, of: home, from: database)
         #expect(suggested.suggestions["Q3001"]?.placement == .entry(in: season, sequence: "episodes", position: 1))
         #expect(suggested.suggestions["Q3001"]?.reason == "it aired between Rose and The End of the World")
@@ -5776,23 +6220,22 @@ extension AdminConsoleTests {
         #expect(Self.edit(of: stop, in: unmade)?.value?.childContainerIDs.map(\.value) == [serial.id.value])
         try await walking.confirm(group, choosing: walk.stops[group]?.chosen ?? [], in: &walk)
         #expect(walk.state(of: group) == .willCreate && walk.state(of: stop) == .willEdit)
+        try await walking.confirmDrafted(in: &walk)
+        let gained = try #require(walk.drafted(episode: pyramids[0], at: stop))
         let plan = try walk.plan()
         let edit = try #require(Self.edit(of: stop, in: plan)?.value)
         #expect(
-            edit.sequences.first?.items.map { $0.childContainer?.value ?? $0.externalRefs.first?.value ?? "" } == [
-                serial.id.value, group, pyramids[0],
-            ],
-            "the group where its first part would have gone, and what Wikidata puts after it following it"
+            edit.sequences.first?.items.compactMap(\.childContainer?.value) == [serial.id.value, group, gained],
+            "the group where its first part would have gone, and the episode Wikidata puts after it following it"
         )
-        let made = plan.steps.compactMap { step -> Container? in
-            if case .create(let containers, let parent, _) = step.kind, parent == stop { containers.first } else { nil }
+        let made = plan.steps.compactMap { step -> [Container]? in
+            if case .create(let containers, let parent, _) = step.kind, parent == stop { containers } else { nil }
         }
-        #expect(made.map(\.id.value) == [group] && made.first?.type == .serial)
-        #expect(
-            made.first?.sequences.flatMap(\.items).map { $0.externalRefs }
-                == evil.map { [ExternalRef(provider: .wikidata, value: $0)] }
-        )
-        #expect(made.first?.sequences.flatMap(\.items).map(\.title) == (1...4).map { "Part \($0)" }, "as titled")
+        #expect(made.map { $0.first?.id.value } == [group, gained] && made.first?.first?.type == .serial)
+        let parts = Array((made.first ?? []).dropFirst())
+        #expect(made.first?.first?.childContainerIDs == parts.map(\.id), "made with its parts beneath it")
+        #expect(parts.map(\.externalRefs) == evil.map { [ExternalRef(provider: .wikidata, value: $0)] })
+        #expect(parts.map(\.title.rawValue) == (1...4).map { "Part \($0)" }, "as titled")
     }
 
     /// A group a held season takes is a new stop beneath it once the season is confirmed: specials placed
@@ -5823,42 +6266,51 @@ extension AdminConsoleTests {
         walk.group(evil, at: stop, into: group, type: .serial, title: Title("Planet of Evil")!)
         walk.stops[stop]?.chosen.insert("episode:\(pyramids[0])")
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
-        #expect(walk.stops[stop]?.children == [serial.id.value, group])
+        let gained = try #require(walk.drafted(episode: pyramids[0], at: stop))
+        #expect(walk.stops[stop]?.children == [serial.id.value, group, gained])
         #expect(walk.isNew(group) && walk.stops[group]?.title == "Planet of Evil" && walk.next == serial.id.value)
         let refs = { (ids: [String]) in ids.map { [ExternalRef(provider: .wikidata, value: $0)] } }
-        #expect(walk.container(group)?.sequences.first?.items.map(\.externalRefs) == refs(evil))
+        let parts = { Self.ids(walk.container(group)?.sequences.first?.items ?? []) { walk.container($0.value) } }
+        #expect(parts() == refs(evil), "its parts containers of their own")
 
         let special = Special(episode: Self.episode("Q9100", "The Making of Planet of Evil"))
         walk.specials.append(special)
         walk.place(special.id, .extra(of: group, type: "featurette"))
         try await walking.confirm(group, in: &walk)
+        try await walking.confirmDrafted(in: &walk)
         let plan = try walk.plan()
         let edit = try #require(Self.edit(of: stop, in: plan)?.value)
         #expect(
-            edit.sequences.first?.items.map { $0.childContainer?.value ?? $0.externalRefs.first?.value ?? "" } == [
-                serial.id.value, group, pyramids[0],
-            ],
+            edit.sequences.first?.items.compactMap(\.childContainer?.value) == [serial.id.value, group, gained],
             "named where its first part would have gone"
         )
-        let made = plan.steps.compactMap { step -> Container? in
-            if case .create(let containers, let parent, _) = step.kind, parent == stop { containers.first } else { nil }
+        let made = plan.steps.compactMap { step -> [Container]? in
+            if case .create(let containers, let parent, _) = step.kind, parent == stop { containers } else { nil }
         }
-        #expect(made.map(\.id.value) == [group], "made once, from its draft")
-        #expect(made.first?.sequences.first?.items.map(\.externalRefs) == refs(evil))
-        #expect(made.first?.extras.map(\.externalRefs) == [[special.episode.item]], "with the special placed there")
+        #expect(made.map { $0.first?.id.value } == [group, gained], "made once, from its draft")
+        #expect(made.first?.dropFirst().map(\.externalRefs) == refs(evil))
+        #expect(
+            made.first?.first?.extras.map(\.externalRefs) == [[special.episode.item]],
+            "with the special placed there"
+        )
 
         let drafted = walk.drafts[group]?.id
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
         #expect(walk.drafts[group]?.id == drafted, "not drafted again while its parts are the same")
         walk.remove(evil[3], fromGroup: group, at: stop)
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
-        #expect(walk.container(group)?.sequences.first?.items.map(\.externalRefs) == refs(Array(evil.prefix(3))))
+        #expect(parts() == refs(Array(evil.prefix(3))))
         #expect(walk.placements[special.id] == nil, "drafted again, what was placed in it unassigned")
 
         walk.ungroup(group, at: stop)
         #expect(walk.leaving(confirming: stop) == [group])
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
-        #expect(walk.stops[group] == nil && walk.stops[stop]?.children == [serial.id.value])
+        let ungrouped = evil.compactMap { walk.drafted(episode: $0, at: stop) }
+        #expect(walk.stops[group] == nil && ungrouped.count == evil.count)
+        #expect(
+            walk.stops[stop]?.children == [serial.id.value] + ungrouped + [gained],
+            "its parts each a stop of its own again, ticked as the group was, in Wikidata's order"
+        )
     }
 
     /// A container held beneath a held season is among its children, at the place of the first episode it
@@ -5928,14 +6380,14 @@ extension AdminConsoleTests {
             "a reading kept before they were read: the held stops found beneath it"
         )
 
+        let gained = try #require(walk.drafted(episode: evil[2], at: stop))
+        try await walking.confirm(gained, choosing: walk.stops[gained]?.chosen ?? [], in: &walk)
         var plan = try walk.plan()
         #expect(Self.edit(of: held, in: plan) == nil, "nothing added to the serial until its stop is confirmed")
         let edit = try #require(Self.edit(of: stop, in: plan)?.value)
         #expect(
-            edit.sequences.first?.items.map { $0.childContainer?.value ?? $0.externalRefs.first?.value ?? "" } == [
-                held, evil[2],
-            ],
-            "neither added to the season, and what Wikidata puts after them following the serial"
+            edit.sequences.first?.items.compactMap(\.childContainer?.value) == [held, gained],
+            "neither added to the season, and the episode Wikidata puts after them following the serial"
         )
 
         walk.remove(evil[1], fromHeld: held, at: stop)
@@ -5955,21 +6407,23 @@ extension AdminConsoleTests {
         )
         #expect(walk.missingEpisodes(at: held).map(\.id) == [evil[0], evil[1]], "read again, still its own")
         try await walking.confirm(held, choosing: ticks([evil[0], evil[1]]), in: &walk)
+        let handed = [evil[0], evil[1]].compactMap { walk.drafted(episode: $0, at: held) }
+        #expect(handed.count == 2, "each a new stop beneath the serial")
+        for id in handed { try await walking.confirm(id, choosing: walk.stops[id]?.chosen ?? [], in: &walk) }
         plan = try walk.plan()
         #expect(!plan.steps.contains { if case .held = $0.kind { true } else { false } })
         let serialEdit = try #require(Self.edit(of: held, in: plan)?.value)
         #expect(
-            serialEdit.sequences.first?.items.suffix(2).map(\.externalRefs)
-                == [evil[0], evil[1]].map { [ExternalRef(provider: .wikidata, value: $0)] },
+            serialEdit.sequences.first?.items.suffix(2).compactMap(\.childContainer?.value) == handed,
             "in the serial's own edit, after the parts it holds"
         )
         try await walking.confirm(held, choosing: ticks([evil[1]]), in: &walk)
         let unticked = try #require(Self.edit(of: held, in: try walk.plan())?.value)
         #expect(
-            unticked.sequences.first?.items.last?.externalRefs
-                == [ExternalRef(provider: .wikidata, value: evil[1])],
+            unticked.sequences.first?.items.last?.childContainer?.value == walk.drafted(episode: evil[1], at: held),
             "one unticked at the serial is added nowhere"
         )
+        #expect(walk.drafted(episode: evil[0], at: held) == nil, "and leaves the walk")
         #expect(unticked.sequences.first?.items.count == serial.sequences.first.map { $0.items.count + 1 })
     }
 
@@ -6090,14 +6544,15 @@ extension AdminConsoleTests {
         walk.place(special.id, .entry(in: new, sequence: "episodes", position: 1))
         #expect(walk.placed(in: new).map(\.id) == [special.id])
         try await walking.confirm(new, choosing: ["ref::wikidata:Q904"], in: &walk)
+        try await walking.confirmDrafted(in: &walk)
         let plan = try walk.plan()
         #expect(plan.steps.map(\.id) == ["edit:\(series.id)", "create:\(new)"])
-        #expect(plan.steps[1].described == "make Season 4 beneath Doctor Who")
+        #expect(plan.steps[1].described == "make Season 4 and the \(episodes.count) beneath it beneath Doctor Who")
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
 
         let made = try #require(held.container(ContainerID(new)!))
         #expect(
-            made.sequences[0].items.map(\.externalRefs) == [[episodes[0].item], [special.item]]
+            Self.ids(made.sequences[0].items, in: held.container) == [[episodes[0].item], [special.item]]
                 + episodes.dropFirst().map { [$0.item] }
         )
         #expect(made.year == nil, "the year left out")
@@ -6518,8 +6973,10 @@ extension AdminConsoleTests {
         walk.stops[stop]?.chosen.insert("episode:\(evil[1])")
         #expect(keys(walk.sequence(at: stop)) == [listed.last!] + listed.dropLast(), "ticked where it was")
 
-        // At the serial's own stop, the parts it holds are listed before the missing parts put into it.
+        // At the serial's own stop, the parts it holds are listed before the missing parts put into it;
+        // the rest are left out, so the stops beneath the season are the group and the serial.
         walk.add([evil[0]], toHeld: held, at: stop)
+        walk.stops[stop]?.chosen.subtract(evil.dropFirst().map { "episode:\($0)" })
         try await walking.confirm(stop, choosing: walk.stops[stop]?.chosen ?? [], in: &walk)
         walk.read(
             try await console.compare(
@@ -6671,10 +7128,13 @@ extension AdminConsoleTests {
         #expect(walk.sequenceName(9, at: new) == nil)
 
         try await walking.confirm(new, choosing: ["ref::wikidata:Q904"], in: &walk)
+        try await walking.confirmDrafted(in: &walk)
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
         let made = try #require(held.container(ContainerID(new)!))
         #expect(made.sequences.first?.id == "broadcast-order")
-        #expect(made.sequences.first?.items[1].externalRefs == [special.item])
+        #expect(
+            made.sequences.first.map { Array($0.items.dropFirst().prefix(1)) }?.map(\.externalRefs) == [[special.item]]
+        )
     }
 
     /// A new stop's entry moved is stored where it was moved to, and a special placed after it is
@@ -6702,6 +7162,7 @@ extension AdminConsoleTests {
         #expect(walk.storedEntries(at: new).isEmpty, "moved in its draft instead")
 
         try await walking.confirm(new, choosing: ["ref::wikidata:Q904"], in: &walk)
+        try await walking.confirmDrafted(in: &walk)
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
         let made = try #require(held.container(ContainerID(new)!)?.sequences.first?.items)
         #expect(made.compactMap(\.id).filter(items.contains) == Array(items[1...]) + [items[0]])
@@ -6876,9 +7337,12 @@ extension AdminConsoleTests {
         unconfirmed.unconfirm(new)
         #expect(unconfirmed.state(of: second.value) == .waiting(on: new), "waiting on the season above it")
 
+        // The serials' parts, each a stop of its own, confirmed too, so the serials are made holding them.
+        try await walking.confirmDrafted(in: &walk)
         let plan = try walk.plan()
+        let beneath = (walk.drafts[new]?.containers.count ?? 0) - 1
         #expect(plan.steps.map(\.id) == ["create:\(proms.id)", "edit:\(series.id)", "create:\(new)"])
-        #expect(plan.steps.last?.described == "make Season 4 and the 2 beneath it beneath Doctor Who")
+        #expect(plan.steps.last?.described == "make Season 4 and the \(beneath) beneath it beneath Doctor Who")
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
         #expect(held.container(first)?.sequences[0].items.count == 2)
         #expect(held.container(second)?.extras.map(\.externalRefs) == [[special.item]])

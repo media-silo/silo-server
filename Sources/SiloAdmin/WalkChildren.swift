@@ -166,7 +166,7 @@ struct WalkChildren: View {
     private var rows: [GroupingRow] {
         walk.sequence(at: stop).map { child in
             switch child {
-            case .episode(let episode):
+            case .episode(let episode, _):
                 return .member(member(episode, key: child.key))
             case .entry(let entry):
                 return .fixed(id: entry.id, entry.isAdded ? "\(entry.title), added" : entry.title)

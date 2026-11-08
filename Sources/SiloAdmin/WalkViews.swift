@@ -583,6 +583,9 @@ struct DifferenceLabel: View {
                     Text("taken with its attribution to TMDb \(record)").font(.caption).foregroundStyle(.secondary)
                 }
             }
+        case .premiered(let date): Text("First shown: \(date.description)")
+        case .cast(let cast): Text("Cast: \(Self.named(cast, joining: " as "))")
+        case .crew(let crew): Text("Crew: \(Self.named(crew, joining: ", "))")
         case .reference(let item, let ref): Text("\(ref.provider.title) \(ref.value)\(item.map { " for \($0)" } ?? "")")
         case .episode(let episode, _): Text(walk.title(of: episode))
         case .staleOutline(let text, _, let read):
@@ -633,6 +636,12 @@ struct DifferenceLabel: View {
             }
         case .special(let special): Text(special.episode.title)
         }
+    }
+
+    /// People credited, each with the character they play or the job they did.
+    private static func named(_ people: [ReviewWalk.Person], joining: String) -> String {
+        people.map { person in person.role.map { "\(person.name)\(joining)\($0)" } ?? person.name }
+            .joined(separator: "; ")
     }
 }
 

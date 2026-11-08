@@ -25,6 +25,9 @@ public enum TMDb {
             /// A season, by TMDb's own id for it: read only through its series, so never what a draft is
             /// read from, but what the season's outline and artwork are credited to.
             case season
+            /// An episode, by TMDb's own id for it: read only within its season, so never what a draft
+            /// is read from, but what the episode's outline is credited to.
+            case episode
         }
 
         public var kind: Kind
@@ -42,6 +45,7 @@ public enum TMDb {
             case .series: .series
             case .collection: .collection
             case .season: .season
+            case .episode: .episode
             }
         }
 
@@ -80,12 +84,16 @@ public enum TMDb {
         public var number: Int
         public var name: String
         public var overview: String?
+        /// Its episodes' overviews, by TMDb's id for each episode: an episode's content, which TMDb
+        /// gives no route of its own by that id.
+        public var episodes: [Int: String]
 
-        public init(id: Int, number: Int, name: String, overview: String? = nil) {
+        public init(id: Int, number: Int, name: String, overview: String? = nil, episodes: [Int: String] = [:]) {
             self.id = id
             self.number = number
             self.name = name
             self.overview = overview
+            self.episodes = episodes
         }
     }
 
@@ -210,7 +218,13 @@ public struct TMDbClient: TMDbSource {
             id: season.id,
             number: season.season_number,
             name: season.name,
-            overview: season.overview.flatMap(Self.nonEmpty)
+            overview: season.overview.flatMap(Self.nonEmpty),
+            episodes: Dictionary(
+                (season.episodes ?? []).compactMap { episode in
+                    episode.overview.flatMap(Self.nonEmpty).map { (episode.id, $0) }
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
         )
     }
 
@@ -229,8 +243,9 @@ public struct TMDbClient: TMDbSource {
             case .movie: "movie"
             case .series: "tv"
             case .collection: "collection"
-            // TMDb serves a season's images only beneath its series, by its number there.
-            case .season: throw TMDb.Unavailable.answered(404)
+            // TMDb serves a season's images only beneath its series, by its number there, and an
+            // episode's still is not asked for.
+            case .season, .episode: throw TMDb.Unavailable.answered(404)
             }
         return try await images(at: "\(kind)/\(record.id)/images")
     }
@@ -319,10 +334,15 @@ public struct TMDbClient: TMDbSource {
         var seasons: [Season]
     }
     private struct SeasonJSON: Decodable {
+        struct Episode: Decodable {
+            var id: Int
+            var overview: String?
+        }
         var id: Int
         var season_number: Int
         var name: String
         var overview: String?
+        var episodes: [Episode]?
     }
     private struct CollectionJSON: Decodable {
         var id: Int

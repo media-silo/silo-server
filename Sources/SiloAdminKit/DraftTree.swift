@@ -511,3 +511,17 @@ extension DraftTree {
         }
     }
 }
+
+extension DraftTree.Making.HeldEdit {
+    /// What names the edit among a walk's steps.
+    var key: String {
+        "\(library)/\(container)/\(item ?? entryID ?? "")/\(ref.map { "\($0.provider):\($0.value)" } ?? "")"
+    }
+
+    public var described: String {
+        if ref != nil { return "add the special's id to \(item ?? "") of \(container) in \(library)" }
+        if refer != nil { return "refer to a special from \(container) in \(library)" }
+        if entryType != nil { return "add an extra to \(container) in \(library)" }
+        return "add an entry to \(container) in \(library)"
+    }
+}

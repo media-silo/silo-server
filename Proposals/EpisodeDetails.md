@@ -3,7 +3,7 @@
 
 # Proposals: 0019-episode-details
 
-Modified: 2026-11-05
+Modified: 2026-11-08
 
 # An episode is a container of its own
 
@@ -165,8 +165,9 @@ feature, mapped in each part's presentations.
 
 ## What this asks of an implementation
 
-Each step is a pull request carrying its spec change. The silo's two are in `openspec/changes/`:
-`episode-containers-2-served` and `episode-containers-3-walk`.
+Each step is a pull request carrying its spec change, but the third, which is three. The silo's are in
+`openspec/changes/`: `episode-containers-2-served`, and `episode-containers-3a-stops`,
+`episode-containers-3b-fast-path` and `episode-containers-3c-specials`.
 
 ### 1. Premiered and credits, in SmdKit
 
@@ -208,6 +209,11 @@ library holds it; confirming a held season with everything beneath, nothing tick
 a new season confirmed with everything beneath makes its episodes with their fields and outline once it
 is made; the crew offered holds the episode's directors and screenwriters, each with their Wikidata id;
 a special placed as a version of an episode is an alternative of the episode's container.
+
+It lands in three pull requests. The first drafts episodes as containers, makes each a stop with its
+fields among its differences, and stores what each stop took; a missing episode a held stop takes,
+alone or grouped, is drafted as a container of its own. The second adds the *Episodes* group and
+*Confirm with everything beneath*. The third places specials as containers.
 
 ## What comes next
 

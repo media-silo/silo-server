@@ -112,14 +112,15 @@ struct TMDbClientTests {
         let client = Self.client([
             "tv/121":
                 #"{"id":121,"name":"Doctor Who","overview":"A time traveller.","seasons":[{"id":50,"season_number":0,"name":"Specials"},{"id":51,"season_number":1,"name":"Season 1"}]}"#,
-            "tv/121/season/1": #"{"id":51,"season_number":1,"name":"Season 1","overview":"The first."}"#,
+            "tv/121/season/1":
+                #"{"id":51,"season_number":1,"name":"Season 1","overview":"The first.","episodes":[{"id":5101,"overview":"Rose."},{"id":5102,"overview":" "},{"id":5103}]}"#,
         ])
         let series = try await client.series(121)
         #expect(series.name == "Doctor Who" && series.overview == "A time traveller.")
         #expect(series.seasons.map(\.id) == [50, 51] && series.seasons.map(\.number) == [0, 1])
         #expect(
             try await client.season(1, of: 121)
-                == TMDb.Season(id: 51, number: 1, name: "Season 1", overview: "The first.")
+                == TMDb.Season(id: 51, number: 1, name: "Season 1", overview: "The first.", episodes: [5101: "Rose."])
         )
     }
 

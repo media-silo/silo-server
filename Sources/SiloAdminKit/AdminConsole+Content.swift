@@ -11,16 +11,24 @@ import SmdSidecar
 /// and a walk with no TMDb token reads every fact and no content. `Proposals/Wikidata.md`.
 extension AdminConsole {
     /// The content TMDb holds for a container: the record it is read from, which what is taken from it
-    /// is credited to, its overview, and its images, best first.
+    /// is credited to, its overview, its images, best first, and, for a season, its episodes' overviews
+    /// by TMDb's id for each episode.
     public struct Content: Hashable, Sendable {
         public var record: TMDb.Record
         public var overview: String?
         public var images: TMDb.Images
+        public var episodes: [String: String]
 
-        public init(record: TMDb.Record, overview: String? = nil, images: TMDb.Images = TMDb.Images()) {
+        public init(
+            record: TMDb.Record,
+            overview: String? = nil,
+            images: TMDb.Images = TMDb.Images(),
+            episodes: [String: String] = [:]
+        ) {
             self.record = record
             self.overview = overview
             self.images = images
+            self.episodes = episodes
         }
     }
 
@@ -44,9 +52,10 @@ extension AdminConsole {
     }
 
     /// The content of the TMDb record a container of a type is read from, by the TMDb id of its item: a
-    /// film's, a collection's or a series' own, and a season's through its series. Nil for a type TMDb
-    /// gives no record of its own here, as a serial or an episode, or for an id it does not list. The
-    /// images are offered, not needed: they are none when TMDb will not say.
+    /// film's, a collection's or a series' own, and a season's through its series, with its episodes'
+    /// overviews. Nil for a type TMDb gives no record of its own here, as a serial or an episode, whose
+    /// outline is its season's to give, or for an id it does not list. The images are offered, not
+    /// needed: they are none when TMDb will not say.
     nonisolated static func content(
         of type: ContainerType,
         tmdb id: String?,
@@ -78,10 +87,12 @@ extension AdminConsole {
         case .season:
             guard let seasons, let number = seasons.numbers[id] else { return nil }
             async let images = try? tmdb.images(ofSeason: number, of: seasons.series)
+            let season = try await tmdb.season(number, of: seasons.series)
             return Content(
                 record: TMDb.Record(.season, id),
-                overview: try await tmdb.season(number, of: seasons.series).overview,
-                images: await images ?? .init()
+                overview: season.overview,
+                images: await images ?? .init(),
+                episodes: Dictionary(uniqueKeysWithValues: season.episodes.map { (String($0.key), $0.value) })
             )
         default:
             return nil
