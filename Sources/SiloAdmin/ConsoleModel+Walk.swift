@@ -194,6 +194,8 @@ extension ConsoleModel {
     func openStop(_ stop: String) async {
         guard walking?.walk.stops[stop] != nil else { return }
         walking?.open = stop
+        // Looked at, it is not one only confirmed from above.
+        walking?.walk.opened(stop)
         await read(stop)
     }
 
@@ -351,6 +353,77 @@ extension ConsoleModel {
         guard confirmed || walking?.leaving == nil else { return }
         walking?.nextOnceConfirmed = false
         if confirmed { await nextStop() }
+    }
+
+    /// Confirms the open stop, unless it is confirmed already, then reads and confirms each stop beneath
+    /// it with the ticks it holds, the reading shown at the open stop as it goes. A stop beneath that
+    /// cannot be read is left pending, with why. As Confirm does, the console says first which new stops
+    /// confirming the open one takes out of the walk.
+    func confirmWithEverythingBeneath(leavingSaid: Bool = false) async {
+        guard let current = walking, !current.confirming, let database else { return }
+        let open = current.open
+        let leaving = current.walk.stops[open]?.taken == nil ? current.walk.leaving(confirming: open) : []
+        if !leaving.isEmpty, !leavingSaid {
+            walking?.beneathOnceConfirmed = true
+            walking?.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
+            return
+        }
+        walking?.leaving = nil
+        walking?.beneathOnceConfirmed = false
+        walking?.confirming = true
+        walking?.confirmingBeneath = true
+        walking?.progress[open] = AdminConsole.StepProgress("Confirming everything beneath")
+        defer {
+            if walking?.id == current.id {
+                walking?.confirming = false
+                walking?.confirmingBeneath = false
+                walking?.progress[open] = nil
+            }
+        }
+        do {
+            let confirmed = try await console.confirm(
+                open,
+                withEverythingBeneath: current.walk,
+                of: current.silo,
+                from: database,
+                wikidata: wikidata,
+                tmdb: tmdb,
+                progress: { stop, step in await self.confirmingBeneath(step, at: stop, from: open, for: current.id) }
+            )
+            guard walking?.id == current.id else { return }
+            walking?.walk = confirmed.walk
+            for (stop, error) in confirmed.unread {
+                walking?.failures[stop] = (error as? AdminConsole.NoReading)?.reason ?? describe(error)
+            }
+            walking?.plan = nil
+            keepWalk()
+        } catch {
+            if walking?.id == current.id, !Task.isCancelled { walking?.failure = describe(error) }
+        }
+    }
+
+    /// A step of Confirm with everything beneath, shown at the stop it was asked at.
+    private func confirmingBeneath(
+        _ step: AdminConsole.StepProgress,
+        at stop: String,
+        from open: String,
+        for id: UUID
+    ) {
+        guard walking?.id == id else { return }
+        let title = walking?.walk.stops[stop]?.title ?? stop
+        walking?.progress[open] = AdminConsole.StepProgress(
+            "Confirming everything beneath: \(title), \(step.step.prefix(1).lowercased() + step.step.dropFirst())",
+            done: step.done,
+            of: step.total
+        )
+    }
+
+    /// A field ticked or unticked in the open stop's Episodes group, at each episode beneath it.
+    func chooseEpisodes(_ field: String, _ chosen: Bool) {
+        guard let open = walking?.open else { return }
+        walking?.walk.choose(episodes: field, chosen, at: open)
+        walking?.plan = nil
+        keepWalk()
     }
 
     /// The open stop pending again, its choices kept, as though nothing were confirmed there.

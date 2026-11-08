@@ -52,7 +52,7 @@ struct WalkSheet: View {
                 }
             }
             .frame(minHeight: 380)
-            .disabled(current.resuming)
+            .disabled(current.resuming || current.confirmingBeneath)
             if let plan = current.plan { storeList(plan) }
             if let failure = current.failure {
                 Label(failure, systemImage: "exclamationmark.octagon").foregroundStyle(.red).font(.caption)
@@ -77,7 +77,9 @@ struct WalkSheet: View {
             )
         ) {
             Button("Confirm", role: .destructive) {
-                if current.nextOnceConfirmed {
+                if current.beneathOnceConfirmed {
+                    Task { await model.confirmWithEverythingBeneath(leavingSaid: true) }
+                } else if current.nextOnceConfirmed {
                     Task { await model.confirmAndNext(leavingSaid: true) }
                 } else {
                     Task { await model.confirmStop(leavingSaid: true) }
@@ -86,6 +88,7 @@ struct WalkSheet: View {
             Button("Cancel", role: .cancel) {
                 model.walking?.leaving = nil
                 model.walking?.nextOnceConfirmed = false
+                model.walking?.beneathOnceConfirmed = false
             }
         } message: {
             Text(
@@ -159,6 +162,13 @@ struct WalkSheet: View {
                         Button("Unconfirm") { model.unconfirmStop() }
                             .help("Pending again, with its choices as they are. Changing anything here does the same.")
                     }
+                    Button("Confirm with Everything Beneath") { Task { await model.confirmWithEverythingBeneath() } }
+                        .help(
+                            "Confirms this stop, then reads and confirms each stop beneath it with what is ticked there: "
+                                + "what you ticked, here or in a group above it, and otherwise nothing at a held container "
+                                + "and everything at a new one."
+                        )
+                        .disabled(current.resuming || current.confirming || current.progress[stop.id] != nil)
                 }
                 if let progress = current.progress[stop.id] { ReadingProgress(progress: progress) }
                 if let failure = current.failures[stop.id] {
@@ -209,6 +219,7 @@ struct WalkSheet: View {
             }
             DifferenceGroup("Fields", comparison.differences.filter(\.isField), walk: walk, tick: tick)
             DifferenceGroup("References", comparison.differences.filter(\.isReference), walk: walk, tick: tick)
+            EpisodeFields(walk: walk, model: model, stop: comparison.container)
             WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
             DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
             artwork(comparison)
@@ -378,7 +389,8 @@ private struct WalkTree: View {
 
     private func caption(_ id: String, _ stop: ReviewWalk.Stop) -> String {
         if walk.companionStops.contains(id) { return "companion series, new" }
-        return walk.isNew(id) ? "\(stop.type), new" : stop.type
+        let caption = walk.isNew(id) ? "\(stop.type), new" : stop.type
+        return walk.confirmedFromAbove(id) ? "\(caption), confirmed from above" : caption
     }
 
     private func depth(of id: String) -> Int {
@@ -421,6 +433,7 @@ private struct NewStop: View {
             DifferenceGroup("Fields", offered.filter(\.isField), walk: walk, tick: tick)
             DifferenceGroup("References", offered.filter(\.isReference), walk: walk, tick: tick)
             StopArtwork(walk: walk, model: model, stop: stop, differences: offered, tick: tick)
+            EpisodeFields(walk: walk, model: model, stop: stop)
             if let container = walk.container(stop), let tree = walk.draft(holding: stop) {
                 Text(
                     "Ticked, each child is made with this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed."

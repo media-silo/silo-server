@@ -49,6 +49,13 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         /// The image the operator chose for an artwork kind in place of the one TMDb offers first, by kind;
         /// absent from a walk kept before it was asked.
         var images: [String: String]?
+        /// The fields the operator ticked or unticked in its Episodes group, by difference id: what each
+        /// episode's stop beneath it is ticked with as it joins the walk. Absent from a walk kept before
+        /// they were asked.
+        var episodeFields: [String: Bool]?
+        /// True once Confirm with everything beneath confirmed it without the operator having opened it,
+        /// until they do; false once they have opened it. Absent from a walk kept before it was asked.
+        var fromAbove: Bool?
 
         public init(id: String, title: String, type: String, parent: String? = nil) {
             self.id = id
@@ -238,6 +245,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
     /// confirmed stop is always one nothing has changed at since it was confirmed.
     public mutating func unconfirm(_ id: String) {
         stops[id]?.taken = nil
+        if stops[id]?.fromAbove == true { stops[id]?.fromAbove = nil }
     }
 
     /// One of a stop's differences ticked or not, the stop pending again if that changes anything.
@@ -365,11 +373,14 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
                 continue
             }
             drafts[tree.top] = tree
-            stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
+            var top = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
+            Self.tick(stop.episodeFields, at: &top)
+            stops[tree.top] = top
         }
         for var child in beneath where stops[child.id] == nil {
             // Found once missing episodes were handed to it, they are ticked to begin with.
             child.chosen.formUnion((stop.intoHeld[child.id] ?? []).map { "episode:\($0)" })
+            Self.tick(stop.episodeFields, at: &child)
             stops[child.id] = child
         }
         let tops = drafts.values.filter { $0.creating.parent == id }.map(\.top).sorted()
