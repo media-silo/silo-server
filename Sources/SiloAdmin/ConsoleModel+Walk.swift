@@ -314,33 +314,36 @@ extension ConsoleModel {
     /// first, and confirms only once the operator says so.
     @discardableResult
     func confirmStop(leavingSaid: Bool = false) async -> Bool {
-        guard let current = walking, !current.confirming, let database else { return false }
-        let leaving = current.walk.leaving(confirming: current.open)
+        guard var current = walking, !current.confirming, let database else { return false }
+        let (id, open) = (current.id, current.open)
+        let leaving = current.walk.leaving(confirming: open)
         if !leaving.isEmpty, !leavingSaid {
-            walking?.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
+            current.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
+            walking = current
             return false
         }
-        walking?.leaving = nil
-        walking?.confirming = true
-        defer { if walking?.id == current.id { walking?.confirming = false } }
+        current.leaving = nil
+        current.confirming = true
+        walking = current
+        defer { if walking?.id == id { walking?.confirming = false } }
         do {
             let drafts = try await console.drafts(
-                confirming: current.open,
+                confirming: open,
                 in: current.walk,
                 from: database,
                 wikidata: wikidata,
                 tmdb: tmdb
             )
-            let beneath = try await console.stops(beneath: current.open, in: current.walk, of: current.silo)
-            guard walking?.id == current.id else { return false }
-            walking?.walk.confirm(current.open, beneath: beneath, drafts: drafts)
+            let beneath = try await console.stops(beneath: open, in: current.walk, of: current.silo)
+            guard walking?.id == id else { return false }
+            walking?.walk.confirm(open, beneath: beneath, drafts: drafts)
             walking?.plan = nil
             keepWalk()
         } catch {
-            walking?.failure = describe(error)
+            if walking?.id == id { walking?.failure = describe(error) }
             return false
         }
-        if let next = walking?.walk.next, next != current.open { Task { await read(next) } }
+        if let next = walking?.walk.next, next != open { Task { await read(next) } }
         return true
     }
 
@@ -360,24 +363,27 @@ extension ConsoleModel {
     /// cannot be read is left pending, with why. As Confirm does, the console says first which new stops
     /// confirming the open one takes out of the walk.
     func confirmWithEverythingBeneath(leavingSaid: Bool = false) async {
-        guard let current = walking, !current.confirming, let database else { return }
-        let open = current.open
+        guard var current = walking, !current.confirming, let database else { return }
+        let (id, open) = (current.id, current.open)
         let leaving = current.walk.stops[open]?.taken == nil ? current.walk.leaving(confirming: open) : []
         if !leaving.isEmpty, !leavingSaid {
-            walking?.beneathOnceConfirmed = true
-            walking?.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
+            current.beneathOnceConfirmed = true
+            current.leaving = leaving.compactMap { current.walk.stops[$0]?.title }
+            walking = current
             return
         }
-        walking?.leaving = nil
-        walking?.beneathOnceConfirmed = false
-        walking?.confirming = true
-        walking?.confirmingBeneath = true
-        walking?.progress[open] = AdminConsole.StepProgress("Confirming everything beneath")
+        current.leaving = nil
+        current.beneathOnceConfirmed = false
+        current.confirming = true
+        current.confirmingBeneath = true
+        current.progress[open] = AdminConsole.StepProgress("Confirming everything beneath")
+        walking = current
         defer {
-            if walking?.id == current.id {
-                walking?.confirming = false
-                walking?.confirmingBeneath = false
-                walking?.progress[open] = nil
+            if var finished = walking, finished.id == id {
+                finished.confirming = false
+                finished.confirmingBeneath = false
+                finished.progress[open] = nil
+                walking = finished
             }
         }
         do {
@@ -388,9 +394,9 @@ extension ConsoleModel {
                 from: database,
                 wikidata: wikidata,
                 tmdb: tmdb,
-                progress: { stop, step in await self.confirmingBeneath(step, at: stop, from: open, for: current.id) }
+                progress: { stop, step in await self.confirmingBeneath(step, at: stop, from: open, for: id) }
             )
-            guard walking?.id == current.id else { return }
+            guard walking?.id == id else { return }
             walking?.walk = confirmed.walk
             for (stop, error) in confirmed.unread {
                 walking?.failures[stop] = (error as? AdminConsole.NoReading)?.reason ?? describe(error)
@@ -398,7 +404,7 @@ extension ConsoleModel {
             walking?.plan = nil
             keepWalk()
         } catch {
-            if walking?.id == current.id, !Task.isCancelled { walking?.failure = describe(error) }
+            if walking?.id == id, !Task.isCancelled { walking?.failure = describe(error) }
         }
     }
 
