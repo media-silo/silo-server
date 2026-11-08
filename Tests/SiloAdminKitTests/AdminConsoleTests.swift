@@ -3419,6 +3419,20 @@ extension AdminConsoleTests {
             externalRefs: [ExternalRef(provider: .tmdb, value: "61002")]
         )
         world.sequences = rose.sequences
+        var lost = Container(
+            id: ContainerID("00000000000006e8")!,
+            type: .episode,
+            title: Title("Lost")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q6199")]
+        )
+        lost.sequences = rose.sequences
+        var stray = Container(
+            id: ContainerID("00000000000006e9")!,
+            type: .episode,
+            title: Title("Stray")!,
+            externalRefs: [ExternalRef(provider: .imdb, value: "tt9999999")]
+        )
+        stray.sequences = rose.sequences
         var season = Container(
             id: ContainerID("00000000000006c1")!,
             type: .season,
@@ -3434,6 +3448,8 @@ extension AdminConsoleTests {
                 items: [
                     .child(Entry.Child(id: ItemID("rose")!, container: rose.id)),
                     .child(Entry.Child(id: ItemID("world")!, container: world.id)),
+                    .child(Entry.Child(id: ItemID("lost")!, container: lost.id)),
+                    .child(Entry.Child(id: ItemID("stray")!, container: stray.id)),
                 ]
             )
         ]
@@ -3446,7 +3462,7 @@ extension AdminConsoleTests {
         series.sequences = [
             Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s1")!, container: season.id))])
         ]
-        let held = HeldLibrary([series, season, rose, world])
+        let held = HeldLibrary([series, season, rose, world, lost, stray])
         let (console, home) = try await Self.smddbConsole(held)
         func compare(_ id: ContainerID, tmdb: (any TMDbSource)?) async throws -> ReviewWalk.Comparison {
             try await console.compare(id.value, in: "tv", of: home, from: database, wikidata: wikidata, tmdb: tmdb)
@@ -3465,6 +3481,17 @@ extension AdminConsoleTests {
         let factsAlone = try await compare(rose.id, tmdb: nil)
         #expect(factsAlone.differences == Array(compared.differences.dropLast()), "every fact, and no content")
         #expect(factsAlone.noContent == TMDb.Unavailable.noToken.reason)
+        var down = tmdb
+        down.unreachable = true
+        let unanswered = try await compare(rose.id, tmdb: down)
+        #expect(unanswered.differences == factsAlone.differences, "every fact, and no content")
+        #expect(unanswered.noContent == TMDb.Unavailable.answered(503).reason)
+        await #expect(throws: Wikidata.Unavailable.self, "its own id not Wikidata's") {
+            try await compare(lost.id, tmdb: tmdb)
+        }
+        await #expect(throws: AdminConsole.NoReading.self, "no id of its season's episodes") {
+            try await compare(stray.id, tmdb: tmdb)
+        }
 
         let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
         let walk = try await walking.walk(
@@ -3495,6 +3522,75 @@ extension AdminConsoleTests {
             matched.differences == [.reference(item: nil, read[1].item), .premiered(read[1].premiered!)],
             "Wikidata's id offered, and TMDb having no overview of it, no outline"
         )
+    }
+
+    /// A held serial carrying a Wikidata id is read against Wikidata's item for it: its episode containers
+    /// are found by the ids they carry, an episode Wikidata lists that it lacks is missing, and the
+    /// outlines TMDb gives its season's episodes are read for the episodes it would draft.
+    @Test func aHeldSerialsEpisodesAreReadAgainstItsItem() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (wikidata, tmdb, read) = Self.seriesOne()
+        wikidata.serials["Q6200"] = Wikidata.Serial(
+            work: Wikidata.Work(id: "Q6200", title: "Arrival"),
+            parts: Array(read[0...1])
+        )
+        tmdb.add(
+            season: 9061,
+            number: 1,
+            episodes: [61001: "Rose meets the Doctor.", 61002: "The Earth ends."],
+            of: 906
+        )
+        var rose = Container(
+            id: ContainerID("00000000000006e1")!,
+            type: .episode,
+            title: Title("Rose")!,
+            externalRefs: [read[0].item]
+        )
+        rose.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])]
+        var serial = Container(
+            id: ContainerID("00000000000006d1")!,
+            type: .serial,
+            title: Title("Arrival")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q6200")]
+        )
+        serial.sequences = [
+            Sequence(id: "parts", items: [.child(Entry.Child(id: ItemID("rose")!, container: rose.id))])
+        ]
+        var season = Container(
+            id: ContainerID("00000000000006c1")!,
+            type: .season,
+            title: Title("Series 1")!,
+            year: 2005,
+            externalRefs: [
+                ExternalRef(provider: .wikidata, value: "Q6100"), ExternalRef(provider: .tmdb, value: "9061"),
+            ]
+        )
+        season.sequences = [
+            Sequence(id: "serials", items: [.child(Entry.Child(id: ItemID("arrival")!, container: serial.id))])
+        ]
+        var series = Container(
+            id: ContainerID("00000000000006a1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q906"), ExternalRef(provider: .tmdb, value: "906")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s1")!, container: season.id))])
+        ]
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season, serial, rose]))
+        let compared = try await console.compare(
+            serial.id.value,
+            in: "tv",
+            of: home,
+            from: database,
+            wikidata: wikidata,
+            tmdb: tmdb
+        )
+        #expect(compared.reading == "Wikidata's item Q6200")
+        #expect(compared.differences == [.episode(read[1], after: read[0].item)])
+        #expect(compared.episodeContainers == ["Q6101": rose.id.value])
+        #expect(compared.episodeOutlines == ["61001": "Rose meets the Doctor.", "61002": "The Earth ends."])
     }
 
     /// A held season's episode containers are found by the ids they carry: none is missing or out of
