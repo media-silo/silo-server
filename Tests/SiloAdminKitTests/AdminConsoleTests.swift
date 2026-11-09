@@ -3726,6 +3726,73 @@ extension AdminConsoleTests {
         #expect(held.container(rose)?.premiered == nil, "as the library held it")
     }
 
+    /// A special placed as a version of an episode, at the episode's stop or at its season's, is an
+    /// alternative of the episode's container: storing adds to it a sequence holding the special and an
+    /// alternative naming it, and the season's sequences are unchanged.
+    @Test func aSpecialAsAVersionIsAnAlternativeOfTheEpisode() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (wikidata, tmdb, read) = Self.seriesOne()
+        let edition = Self.episode("Q6190", "Rose: Special Edition")
+        let colour = Self.episode("Q6191", "Rose: Recoloured")
+        wikidata.series["Q906"]?.specials = [edition, colour]
+        let (series, season, episodes) = Self.heldSeriesOne(read)
+        let held = HeldLibrary([series, season] + episodes)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+        let rose = episodes[0].id.value
+
+        var walk = try await walking.walk(series.id.value)
+        #expect(Set(walk.unassigned.map(\.id)) == [edition.id, colour.id])
+        try await walking.confirm(season.id.value, in: &walk)
+        try await walking.read(rose, in: &walk)
+        walk.place(edition.id, .version(of: rose, item: "feature", title: "Special edition"))
+        walk.place(colour.id, .version(of: season.id.value, item: "rose", title: "Recoloured"))
+        #expect(walk.placements[colour.id]?.container == rose, "the episode's, not the season's")
+        try await walking.confirm(season.id.value, in: &walk)
+        try await walking.confirm(rose, in: &walk)
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let made = try #require(held.container(episodes[0].id))
+        #expect(made.sequences.map(\.id) == ["main", "special-edition", "recoloured"])
+        #expect(made.sequences[0] == episodes[0].sequences[0], "its feature as it was")
+        #expect(made.sequences[1].items.map(\.externalRefs) == [[edition.item]])
+        #expect(made.sequences[2].items.map(\.externalRefs) == [[colour.item]])
+        #expect(made.alternatives.map(\.title) == ["Special edition", "Recoloured"])
+        #expect(held.container(season.id)?.sequences == season.sequences, "the season's unchanged")
+    }
+
+    /// A special placed among a held season's episode containers is an episode container of its own
+    /// where it was placed, drafted as an episode is, made after the season's edit.
+    @Test func aSpecialAmongASeasonsEpisodesIsAnEpisodeContainer() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (wikidata, tmdb, read) = Self.seriesOne()
+        var special = Self.episode("Q6195", "Children in Need", aired: "2005-11-18")
+        special.cast = [Wikidata.Credit(person: "Q6112", name: "Billie Piper", character: "Rose Tyler")]
+        wikidata.series["Q906"]?.specials = [special]
+        let (series, season, episodes) = Self.heldSeriesOne(read)
+        let held = HeldLibrary([series, season] + episodes)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+
+        var walk = try await walking.walk(series.id.value)
+        try await walking.read(season.id.value, in: &walk)
+        walk.place(special.id, .entry(in: season.id.value, position: 1))
+        try await walking.confirm(season.id.value, in: &walk)
+        let id = Special(episode: special).containerID
+        #expect(try walk.plan().steps.map(\.id) == ["edit:\(season.id)", "create:\(id)"])
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+
+        let items = try #require(held.container(season.id)?.sequences[0].items)
+        #expect(items.map(\.childContainer) == [episodes[0].id, id, episodes[1].id], "where it was placed")
+        let made = try #require(held.container(id))
+        #expect(made.type == .episode && made.title.rawValue == "Children in Need")
+        #expect(made.premiered == special.premiered && made.cast == AdminConsole.cast(of: special))
+        #expect(made.externalRefs == Special(episode: special).refs)
+        #expect(made.sequences.flatMap(\.items).map(\.id?.value) == ["feature"], "holding its feature")
+    }
+
     /// A held serial carrying a Wikidata id is read against Wikidata's item for it: its episode containers
     /// are found by the ids they carry, an episode Wikidata lists that it lacks is missing, and the
     /// outlines TMDb gives its season's episodes are read for the episodes it would draft.
@@ -5045,8 +5112,9 @@ extension AdminConsoleTests {
         #expect(
             plan.steps.map(\.id).filter { !$0.hasPrefix("held:") } == [
                 "create:\(confidential.id)", "edit:\(series.id)", "create:\(ownID)", "edit:\(home14)",
+                "create:\(Special(episode: there).containerID)",
             ],
-            "the companion first, then each stop's edit, the series' followed by the container it names"
+            "the companion first, then each stop's edit, each followed by the containers it names"
         )
         #expect(
             plan.steps.filter { $0.id.hasPrefix("held:") }.map(\.described) == [
@@ -5074,7 +5142,10 @@ extension AdminConsoleTests {
         #expect(held.container(sofa.id)?.sequences.flatMap(\.items).map(\.externalRefs) == [[heldBreakout.item]])
         #expect(held.container(ownID)?.sequences.flatMap(\.items).map(\.externalRefs) == [[own.item]])
         let madeSeason = try #require(held.container(season.id))
-        #expect(madeSeason.sequences[0].items.map(\.externalRefs) == [[there.item], [], []])
+        #expect(
+            Self.ids(madeSeason.sequences[0].items, in: held.container) == [[there.item], [], []],
+            "the special an episode container of its own in the season's run"
+        )
         #expect(
             madeSeason.sequences[0].items.compactMap(\.reference).map(\.container) == [film.id, sofa.id],
             "referring to the film's item and the breakout's entry"
@@ -5389,9 +5460,11 @@ extension AdminConsoleTests {
         #expect(walk.state(of: season) == .willEdit)
 
         let stored = try await console.store(walk, of: home, tmdb: fakes.tmdb)
-        #expect(stored.refusal == nil && stored.stored.map(\.id) == ["edit:\(season)"])
+        let made = Special(episode: k9).containerID
+        #expect(stored.refusal == nil && stored.stored.map(\.id) == ["edit:\(season)", "create:\(made)"])
         let items = try #require(held.container(seasons[0].id)?.sequences[0].items)
-        #expect(items.map(\.externalRefs) == [[], [k9.item], []], "at the position it was placed")
+        #expect(items[1].childContainer == made, "an episode container among the serials, where it was placed")
+        #expect(held.container(made)?.type == .episode && held.container(made)?.externalRefs == [k9.item])
         let again = try await console.compare(
             series.id.value,
             in: "tv",
@@ -6749,7 +6822,10 @@ extension AdminConsoleTests {
         try await walking.confirmDrafted(in: &walk)
         let plan = try walk.plan()
         #expect(plan.steps.map(\.id) == ["edit:\(series.id)", "create:\(new)"])
-        #expect(plan.steps[1].described == "make Season 4 and the \(episodes.count) beneath it beneath Doctor Who")
+        #expect(
+            plan.steps[1].described == "make Season 4 and the \(episodes.count + 1) beneath it beneath Doctor Who",
+            "its episodes and the special, each a container"
+        )
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
 
         let made = try #require(held.container(ContainerID(new)!))
@@ -7335,7 +7411,8 @@ extension AdminConsoleTests {
         let made = try #require(held.container(ContainerID(new)!))
         #expect(made.sequences.first?.id == "broadcast-order")
         #expect(
-            made.sequences.first.map { Array($0.items.dropFirst().prefix(1)) }?.map(\.externalRefs) == [[special.item]]
+            made.sequences.first.map { Self.ids(Array($0.items.dropFirst().prefix(1)), in: held.container) }
+                == [[special.item]]
         )
     }
 
@@ -7368,7 +7445,7 @@ extension AdminConsoleTests {
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
         let made = try #require(held.container(ContainerID(new)!)?.sequences.first?.items)
         #expect(made.compactMap(\.id).filter(items.contains) == Array(items[1...]) + [items[0]])
-        #expect(made.last?.externalRefs == [special.item])
+        #expect(Self.ids(made.suffix(1), in: held.container) == [[special.item]])
     }
 
     /// A special dropped among a stop's children is placed in its primary sequence before the child it was

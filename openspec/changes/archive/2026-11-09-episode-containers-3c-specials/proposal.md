@@ -11,7 +11,8 @@ rather than of its season. Proposal:
 three pull requests.
 
 ## What Changes
-- A special placed in a season's run is an episode container among its siblings, drafted as an
-  episode is.
+- A special placed in a season's run is an episode container among its siblings, with its title,
+  first date, cast, crew and references Wikidata's. A season still holding episodes as entries of their
+  own takes a special as one too.
 - A special placed as a version of an episode is an alternative of that episode's container, in a
   sequence of the container's own.
