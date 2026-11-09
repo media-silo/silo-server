@@ -24,6 +24,17 @@ public struct Special: Hashable, Sendable, Codable, Identifiable {
     /// The id of an entry made for it where nothing else is named: its title, then its Wikidata id, which
     /// no other title a container holds could have taken.
     var entryID: ItemID { ItemID("\(Slug.make(from: episode.title))-\(id.lowercased())")! }
+
+    /// The id of the episode container made for it where it is placed in a season's run: derived from its
+    /// Wikidata id, FNV-1a's 64 bits as a container id is written, so every plan of a walk, and a store
+    /// made again after a refusal, makes the same container, and a second walk placing it so is refused
+    /// as making one the library holds.
+    public var containerID: ContainerID {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in "special-episode:\(id)".utf8 { hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3 }
+        let digits = String(hash, radix: 16)
+        return ContainerID(String(repeating: "0", count: 16 - digits.count) + digits)!
+    }
 }
 
 /// Where the operator puts a special. Each names containers by id: one in the tree, or, for a
@@ -321,12 +332,18 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
             switch placement {
             case .entry(let id, let sequence, let position):
                 guard var container = byID[id] else { continue }
-                Self.insert(
-                    Self.leaf(special, type: .episode, in: container),
-                    into: &container,
-                    sequence: sequence,
-                    at: position
-                )
+                if Self.runsEpisodes(container) {
+                    let episode = Self.episode(special, into: &container, sequence: sequence, at: position)
+                    byID[episode.id.value] = episode
+                    order.append(episode.id.value)
+                } else {
+                    Self.insert(
+                        Self.leaf(special, type: .episode, in: container),
+                        into: &container,
+                        sequence: sequence,
+                        at: position
+                    )
+                }
                 byID[id] = container
             case .extra(let id, let type):
                 guard var container = byID[id], let type = EntryType(rawValue: type) else { continue }
@@ -443,6 +460,35 @@ extension DraftTree {
                 externalRefs: special.refs
             )
         )
+    }
+
+    /// Whether a container is a season's or a serial's run of episode containers: one holding no episode
+    /// as an entry of its own in any of its sequences. One that does, held from before its episodes were
+    /// containers, takes a special as an entry of its own still.
+    static func runsEpisodes(_ container: Container) -> Bool {
+        guard container.type == .season || container.type == .serial else { return false }
+        return !container.sequences.flatMap(\.items).contains { entry in
+            if case .leaf(let leaf) = entry { leaf.type == .episode } else { false }
+        }
+    }
+
+    /// A special placed in a season's run, as an episode is drafted: a container of its own holding its
+    /// one feature, with its title, first date, cast and crew and its references, Wikidata's, and a child
+    /// entry naming it where the special's entry would have gone.
+    static func episode(
+        _ special: Special,
+        into container: inout Container,
+        sequence: String?,
+        at position: Int?
+    ) -> Container {
+        let episode = AdminConsole.episode(special.episode, id: special.containerID)
+        insert(
+            .child(Entry.Child(id: itemID(for: episode.title.rawValue, in: container), container: episode.id)),
+            into: &container,
+            sequence: sequence,
+            at: position
+        )
+        return episode
     }
 
     static func itemID(for title: String, in container: Container) -> ItemID {

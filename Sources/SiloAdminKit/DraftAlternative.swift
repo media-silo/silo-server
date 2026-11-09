@@ -324,8 +324,10 @@ extension AlternativeDrafting {
 
     /// A placement as it is kept: another version of a container, or of one of its items, as a drafted
     /// alternative the special is placed in; any other as it is. A version of an item the container does
-    /// not hold is kept as it is, and makes nothing.
+    /// not hold is kept as it is, and makes nothing. A version of an item naming an episode's container
+    /// is one of that episode, an alternative of its container rather than of the season.
     mutating func settle(_ special: String, _ placement: SpecialPlacement?) -> SpecialPlacement? {
+        if let episode = episodeVersion(placement) { return settle(special, episode) }
         switch placement {
         case .edition(let container, let title)?:
             let draft = DraftAlternative(title: title, entries: [.special(special)])
@@ -344,6 +346,18 @@ extension AlternativeDrafting {
         default:
             return placement
         }
+    }
+
+    /// A version of an item naming an episode's container as the version of that episode's feature; nil
+    /// for any other placement, or an episode not known.
+    private func episodeVersion(_ placement: SpecialPlacement?) -> SpecialPlacement? {
+        guard case .version(let container, let item, let title)? = placement,
+            let child = self.container(container)?.sequences.flatMap(\.items)
+                .first(where: { $0.id?.value == item })?.childContainer,
+            let episode = self.container(child.value), episode.type == .episode,
+            let feature = episode.sequences.first?.items.first?.id
+        else { return nil }
+        return .version(of: child.value, item: feature.value, title: title)
     }
 
     /// Every special kept as another version of a container, or of one of its items, placed again as a

@@ -232,9 +232,10 @@ extension AdminConsole {
     }
 
     /// A special put where the operator placed it, as part of the change of the container it is placed
-    /// in: an entry or an extra of it, a container of its own beneath it, a ref from it to a duplicate's
-    /// home or a breakout's entry, or, in the series, declined. What it makes of other containers is
-    /// gathered as their edits; a new breakout gains the entry itself.
+    /// in: an entry or an extra of it, an episode container of its own in a season's run of them, made
+    /// beneath it, a container of its own beneath it, a ref from it to a duplicate's home or a breakout's
+    /// entry, or, in the series, declined. What it makes of other containers is gathered as their edits;
+    /// a new breakout gains the entry itself.
     nonisolated static func place(
         _ special: Special,
         _ placement: SpecialPlacement,
@@ -246,6 +247,8 @@ extension AdminConsole {
         children: inout [Container]
     ) {
         switch placement {
+        case .entry(_, let sequence, let position) where DraftTree.runsEpisodes(container):
+            children.append(DraftTree.episode(special, into: &container, sequence: sequence, at: position))
         case .entry(_, let sequence, let position):
             DraftTree.insert(
                 DraftTree.leaf(special, type: .episode, in: container),
