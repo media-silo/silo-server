@@ -202,7 +202,6 @@ struct WalkPane: View {
             }
             DifferenceGroup("Fields", comparison.differences.filter(\.isField), walk: walk, tick: tick)
             DifferenceGroup("References", comparison.differences.filter(\.isReference), walk: walk, tick: tick)
-            EpisodeFields(walk: walk, model: model, stop: comparison.container)
             WalkChildren(current: current, model: model, comparison: comparison, tick: tick)
             DifferenceGroup("Order", comparison.differences.filter(\.isOrder), walk: walk, tick: tick)
             artwork(comparison)
@@ -306,7 +305,7 @@ extension WalkPane {
                 ? "Says this is as it should be, so the walk need not come back to it before storing."
                 : "Pending again, with its choices as they are. Changing anything here does the same.")
                 + " Its menu confirms this stop, then reads and confirms each stop beneath it with what is ticked there: "
-                + "what you ticked, here or in a group above it, and otherwise nothing at a held container "
+                + "what you ticked there, and otherwise nothing at a held container "
                 + "and everything at a new one."
         )
     }
@@ -447,7 +446,6 @@ private struct NewStop: View {
             DifferenceGroup("Fields", offered.filter(\.isField), walk: walk, tick: tick)
             DifferenceGroup("References", offered.filter(\.isReference), walk: walk, tick: tick)
             StopArtwork(walk: walk, model: model, stop: stop, differences: offered, tick: tick)
-            EpisodeFields(walk: walk, model: model, stop: stop)
             if let container = walk.container(stop), let tree = walk.draft(holding: stop) {
                 Text(
                     "Ticked, each child is made with this one when the walk is stored, and unticked it is left out. Each group made here is a new container beneath this one, looked at in the walk once this is confirmed."
