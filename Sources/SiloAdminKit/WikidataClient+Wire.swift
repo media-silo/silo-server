@@ -101,9 +101,10 @@ extension WikidataClient {
         }
     }
 
-    /// An answer of Wikidata's API to an action and its parameters.
+    /// An answer of Wikidata's API to an action and its parameters. The API answers a request it
+    /// refuses with success and an error in place of the answer, thrown as `refused`.
     func ask<Answer: Decodable>(_ parameters: [String: String], _ type: Answer.Type) async throws -> Answer {
-        try await get(api, parameters.merging(["format": "json"]) { $1 }, type)
+        try await get(api, parameters.merging(["format": "json"]) { $1 }, APIJSON<Answer>.self).answer.get()
     }
 
     private func get<Answer: Decodable>(
@@ -138,6 +139,19 @@ extension WikidataClient {
 
     // Wikidata's own spellings, decoded as they come.
     // swiftlint:disable nesting
+    struct APIJSON<Answer: Decodable>: Decodable {
+        struct Refusal: Decodable {
+            var code: String
+            var info: String
+        }
+        enum CodingKeys: CodingKey { case error }
+        var answer: Result<Answer, Wikidata.Unavailable>
+
+        init(from decoder: any Decoder) throws {
+            let refusal = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(Refusal.self, forKey: .error)
+            answer = try refusal.map { .failure(.refused($0.code, $0.info)) } ?? .success(Answer(from: decoder))
+        }
+    }
     struct SearchJSON: Decodable {
         struct Result: Decodable {
             struct Match: Decodable { var text: String }
