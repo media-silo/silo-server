@@ -1121,8 +1121,8 @@ reference the clone holds on a container of the same kind SHALL offer that conta
 smddb, and SHALL NOT draft it. Picking one whose reference a container of the library carries SHALL
 NOT draft it, and the console SHALL say the library holds it. Otherwise the console SHALL read the
 item as containers, as Wikidata's statements say them: a film as a `movie`; a series as a `series`
-with a `season` child for each of Wikidata's seasons of it, or for each of those the operator
-chooses; a season as a `season` holding, in Wikidata's order, each of its episodes as an `episode`
+with a `season` child for each of Wikidata's seasons of it, every one drafted, a season not wanted
+being left out where the series is walked; a season as a `season` holding, in Wikidata's order, each of its episodes as an `episode`
 container beneath it and each of its serials as a `serial` beneath it, holding the serial's parts as
 `episode` containers in Wikidata's order, as a walk drafts each episode; and a collection as a `collection` with each of its films as a child. Each container SHALL
 carry its item's label as its title, its year where its type has one, a `wikidata` reference, and a
@@ -1191,6 +1191,13 @@ children, drafted beneath the series once the series' stop is confirmed.
 #### Scenario: a series smddb holds
 - **WHEN** the operator picks from Wikidata a series whose reference a series in the clone carries
 - **THEN** the console offers that series' import from smddb, and drafts nothing
+
+#### Scenario: a series drafted with every season
+- **WHEN** the operator picks from Wikidata a series neither the clone nor the library holds, and
+  unticks all but one of its seasons at the series' stop
+- **THEN** the series is drafted with every one of its seasons, and once the series and the season
+  left ticked are confirmed and the walk is stored, the library holds the series with that season
+  alone
 
 #### Scenario: a season drafted beneath its series
 - **WHEN** the operator chooses one of Wikidata's seasons of a series the library holds by its
@@ -1271,7 +1278,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraft
 `aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`,
 `aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`,
 `aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`,
-`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`). The search, and the walk's sheet the draft is shaped in,
+`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`, `aRecordTheLibraryLacksIsWalkedFromADraft`). The search, and the walk's sheet the draft is shaped in,
 are pinned by nothing yet, as the rest of the shell is, but for where a child dropped where it is goes: `Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDroppedWhereItIsStays`).
 
 ### Requirement: A series' specials are the episodes Wikidata files beneath it in no season, unassigned until the operator places or declines each

@@ -113,7 +113,6 @@ extension ConsoleModel {
             do {
                 if let said = try await startDraft(
                     of: redraft.item,
-                    shape: redraft.shape,
                     for: redraft.finding,
                     again: true
                 ) {

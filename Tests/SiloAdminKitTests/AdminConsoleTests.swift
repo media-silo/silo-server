@@ -6048,7 +6048,6 @@ extension AdminConsoleTests {
         guard
             case .walk(var walk) = try await console.startWalk(
                 drafting: record,
-                shape: AdminConsole.DraftShape(seasons: ["Q904"]),
                 into: "tv",
                 of: home,
                 from: database,
@@ -6060,6 +6059,16 @@ extension AdminConsoleTests {
             return
         }
         let root = walk.root
+        // Every season is drafted, and those the operator unticks at the root are left out of the walk.
+        let drafted = try #require(walk.container(root)).sequences[0].items
+        #expect(drafted.count > 1)
+        for entry in drafted {
+            guard let child = entry.childContainer, let item = entry.id,
+                walk.container(child.value)?.externalRefs.contains(ExternalRef(provider: .wikidata, value: "Q904"))
+                    == false
+            else { continue }
+            walk.shape(root) { $0.include(item, in: root, false) }
+        }
         #expect(walk.drafting && walk.isNew(root) && walk.series == root && walk.stops[root]?.parent == nil)
         #expect(walk.order == [root] && walk.state(of: root) == .pending)
         #expect(walk.specials.map(\.id) == [special.id], "its specials beside every stop")
