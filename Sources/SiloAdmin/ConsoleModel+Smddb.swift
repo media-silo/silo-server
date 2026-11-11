@@ -102,6 +102,7 @@ extension ConsoleModel {
         case let refused as AdminConsole.SettingsRefused: refused.reason
         case is AdminConsole.NoAccess: Refusal.noAccess.message
         case let error as SiloClientError: error.description
+        case let unavailable as Wikidata.Unavailable: unavailable.reason
         default: error.localizedDescription
         }
     }

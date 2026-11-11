@@ -32,9 +32,7 @@ public struct WikidataClient: WikidataSource {
     }
 
     public func search(_ text: String) async throws -> [Wikidata.SearchResult] {
-        let language = languages[0]
-        let asked = ["action": "wbsearchentities", "search": text, "language": language, "uselang": language]
-        let found = try await ask(asked.merging(["type": "item", "limit": "50"]) { $1 }, SearchJSON.self).search
+        let found = try await searched(text)
         guard !found.isEmpty else { return [] }
         let classified = try await classify(found.map(\.id))
         let results = found.compactMap { result -> Wikidata.SearchResult? in
@@ -54,6 +52,24 @@ public struct WikidataClient: WikidataSource {
             let right = classified[$1.id]?.links ?? 0
             return left != right ? left > right : position[$0.id]! < position[$1.id]!
         }
+    }
+
+    /// What Wikidata's search finds for the text, searched in the first of the languages it takes:
+    /// it refuses a language and region it does not know, such as `en-au`, where reading labels in one
+    /// only warns.
+    private func searched(_ text: String) async throws -> [SearchJSON.Result] {
+        func search(in language: String) async throws -> [SearchJSON.Result] {
+            let asked = ["action": "wbsearchentities", "search": text, "language": language, "uselang": language]
+            return try await ask(asked.merging(["type": "item", "limit": "50"]) { $1 }, SearchJSON.self).search
+        }
+        for language in languages.dropLast() {
+            do {
+                return try await search(in: language)
+            } catch Wikidata.Unavailable.refused(let code, _) where code == "badvalue" {
+                continue
+            }
+        }
+        return try await search(in: languages.last ?? "en")
     }
 
     /// What a search found that is of a kind searched for: its kind, how many Wikipedias link to it,

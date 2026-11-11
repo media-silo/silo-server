@@ -162,6 +162,7 @@ struct WikidataClientTests {
     /// A client whose every request is answered by `answer`.
     private static func client(
         status: Int = 200,
+        language: String = "en-GB",
         _ answer: @escaping @Sendable (URLRequest) -> String
     ) -> WikidataClient {
         Stub.asked.withLock { $0 = [] }
@@ -169,7 +170,7 @@ struct WikidataClientTests {
         Stub.handler.withLock { $0 = { (status, Data(answer($0).utf8)) } }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [Stub.self]
-        return WikidataClient(language: "en-GB", session: URLSession(configuration: configuration))
+        return WikidataClient(language: language, session: URLSession(configuration: configuration))
     }
 
     private static let hasKind = #"{"results":{"bindings":[{"class":{"type":"uri","value":"x"}}]}}"#
@@ -213,6 +214,13 @@ struct WikidataClientTests {
                 ? Self.hasKind : #"{"entities":{"Q9":{"id":"Q9","missing":""}}}"#
         }
         await #expect(throws: Wikidata.Unavailable.notThere("Q9")) { try await missing.film("Q9") }
+        #expect(Wikidata.Unavailable.notA(.film, "Q60462338").reason == "Wikidata's Q60462338 is not a film.")
+        #expect(Wikidata.Unavailable.notThere("Q9").reason == "Wikidata holds no item Q9.")
+        #expect(Wikidata.Unavailable.answered(503).reason == "Wikidata answered 503.")
+        #expect(
+            Wikidata.Unavailable.refused("maxlag", "Waiting for a database server.").reason
+                == "Wikidata refused the request: Waiting for a database server."
+        )
     }
 
     /// A day where Wikidata knows the day and the earliest year where it knows only the year; a
@@ -292,6 +300,37 @@ struct WikidataClientTests {
         )
         #expect(found.contains { $0.id == "Q1990792" && $0.kind == .collection })
         #expect(!found.contains { $0.id == "Q15613717" }, "a video game is none of them")
+    }
+
+    @Test func aSearchInALanguageWikidataRefusesIsAskedInTheNext() async throws {
+        let refused = #"{"error":{"code":"badvalue","info":"Unrecognized value for parameter \"language\": en-au."}}"#
+        let client = Self.client(language: "en-AU") { request in
+            let query = Fixtures.query(of: request)
+            if query["query"] != nil {
+                return #"{"results":{"bindings":[{"item":{"type":"uri","value":"x/Q34316"},"#
+                    + #""class":{"type":"uri","value":"x/\#(Wikidata.Kind.series.itemClass)"},"#
+                    + #""links":{"type":"literal","value":"90"}}]}}"#
+            }
+            return query["language"] == "en-au" ? refused : #"{"search":[{"id":"Q34316","label":"Doctor Who"}]}"#
+        }
+        let found = try await client.search("Doctor Who")
+        #expect(found.map(\.title) == ["Doctor Who"])
+        let searched = Stub.asked.withLock { $0 }.compactMap { Fixtures.query(of: $0)["language"] }
+        #expect(searched == ["en-au", "en"])
+
+        let everywhere = Self.client(language: "en-AU") { _ in refused }
+        await #expect(
+            throws: Wikidata.Unavailable.refused("badvalue", "Unrecognized value for parameter \"language\": en-au.")
+        ) {
+            try await everywhere.search("Doctor Who")
+        }
+        let tried = Stub.asked.withLock { $0 }.compactMap { Fixtures.query(of: $0)["language"] }
+        #expect(tried == ["en-au", "en", "mul"], "refused in every language, the last refusal is thrown")
+
+        let refusing = Self.client { _ in #"{"error":{"code":"maxlag","info":"Waiting for a database server."}}"# }
+        await #expect(throws: Wikidata.Unavailable.refused("maxlag", "Waiting for a database server.")) {
+            try await refusing.search("Doctor Who")
+        }
     }
 
     @Test func aFilmIsReadWithItsCreditsAndItsIDs() async throws {

@@ -239,12 +239,22 @@ public enum Wikidata {
         }
     }
 
-    /// Why Wikidata could not be read: an answer other than success, or an item that is not there or
-    /// is not of the kind asked for.
+    /// Why Wikidata could not be read: an answer other than success, a request its API refuses, with
+    /// the code and the reason it gives, or an item that is not there or is not of the kind asked for.
     public enum Unavailable: Error, Hashable, Sendable {
         case answered(Int)
+        case refused(String, String)
         case notThere(String)
         case notA(Kind, String)
+
+        public var reason: String {
+            switch self {
+            case .answered(let status): "Wikidata answered \(status)."
+            case .refused(_, let info): "Wikidata refused the request: \(info)"
+            case .notThere(let id): "Wikidata holds no item \(id)."
+            case .notA(let kind, let id): "Wikidata's \(id) is not a \(kind.rawValue)."
+            }
+        }
     }
 }
 
