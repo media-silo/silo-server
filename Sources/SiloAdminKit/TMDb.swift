@@ -123,6 +123,12 @@ public enum TMDb {
         }
     }
 
+    /// An image's path as a JPEG or a PNG, as the console shows an image and the silo takes one: a logo
+    /// TMDb holds as an SVG is rendered by TMDb as a PNG at the same path ending `.png`.
+    public static func raster(_ path: String) -> String {
+        path.hasSuffix(".svg") ? path.dropLast(4) + ".png" : path
+    }
+
     /// The images TMDb holds for a record, by their paths there, best first: what the artwork kinds
     /// `poster`, `fanart` and `logo` are offered from.
     public struct Images: Hashable, Sendable, Codable {
@@ -265,7 +271,7 @@ public struct TMDbClient: TMDbSource {
     }
 
     public func image(at path: String) async throws -> Data {
-        let url = URL(string: "https://image.tmdb.org/t/p/original\(path)")!
+        let url = URL(string: "https://image.tmdb.org/t/p/original\(TMDb.raster(path))")!
         let (data, status) = try await answer(to: URLRequest(url: url))
         guard (200..<300).contains(status) else { throw TMDb.Unavailable.answered(status) }
         return data

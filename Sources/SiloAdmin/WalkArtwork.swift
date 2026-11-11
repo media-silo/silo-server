@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 #if canImport(SwiftUI)
+import SiloAdminKit
 import SwiftUI
 
 /// Another of the images TMDb offers for an artwork kind chosen at a stop, given the kind and the image.
@@ -49,19 +50,25 @@ struct ImageStrip: View {
 }
 
 /// An image TMDb holds, by its path there, fitted to a square of the size given, and shown whole in
-/// Quick Look.
+/// Quick Look; one TMDb does not give is said to be missing rather than shown loading.
 struct TMDbImage: View {
     let path: String
     let size: CGFloat
 
     var body: some View {
-        AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(path)")) {
-            $0.resizable().scaledToFit()
-        } placeholder: {
-            ProgressView()
+        AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(TMDb.raster(path))")) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFit()
+            case .failure:
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.secondary)
+                    .help("TMDb did not give this image.")
+            default:
+                ProgressView()
+            }
         }
         .frame(width: size, height: size)
-        .previewable(URL(string: "https://image.tmdb.org/t/p/original\(path)"))
+        .previewable(URL(string: "https://image.tmdb.org/t/p/original\(TMDb.raster(path))"))
     }
 }
 #endif
