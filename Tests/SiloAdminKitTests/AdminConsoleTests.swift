@@ -7700,6 +7700,77 @@ extension AdminConsoleTests {
         return (tree, season.id.value, items)
     }
 
+    /// The storied season drafted as a draft now drafts one, each episode a container of its own beneath
+    /// it, carrying Wikidata's title and id.
+    private static func storiedSeasonOfContainers() -> (DraftTree, season: String, items: [ItemID], episodes: [String])
+    {
+        let (leaves, season, items) = storiedSeason()
+        var held = leaves.containers[0]
+        var episodes: [Container] = []
+        for (index, item) in items.enumerated() {
+            let ref = "Q\(6100 + index)"
+            let id = ContainerID(String(format: "00000000000002%02x", index))!
+            var episode = Container(
+                id: id,
+                type: .episode,
+                title: Title(leaves.episodeTitles[ref]!)!,
+                externalRefs: [ExternalRef(provider: .wikidata, value: ref)]
+            )
+            episode.sequences = [
+                Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])
+            ]
+            episodes.append(episode)
+            held.sequences[0].items[index] = .child(Entry.Child(id: item, container: id))
+        }
+        let tree = DraftTree(
+            library: "tv",
+            item: Wikidata.Item(.series, "Q121"),
+            creating: ContainerDraft.Creating(),
+            containers: [held] + episodes,
+            top: held.id,
+            episodeTitles: leaves.episodeTitles
+        )
+        return (tree, season, items, episodes.map(\.id.value))
+    }
+
+    /// A season's episodes held as containers of their own are its entries and no groups: suggested as
+    /// serials by Wikidata's titles, grouped into one with their containers, titled by their part numbers
+    /// there, and ungrouped back into the season, their titles kept.
+    @Test func aSeasonsEpisodeContainersAreItsEntriesAndNoGroups() throws {
+        var (tree, season, items, episodes) = Self.storiedSeasonOfContainers()
+        #expect(tree.groups(in: season).isEmpty, "an episode is no group")
+        let first = try #require(tree.container(season)?.sequences[0].items.first)
+        #expect(tree.episode(of: first)?.id.value == episodes[0])
+        #expect(
+            tree.suggestedGroups(in: season) == [
+                SuggestedGroup(title: "Terror of the Zygons", items: Array(items[0...2]), parts: [1, 2, 3]),
+                SuggestedGroup(title: "Planet of Evil", items: Array(items[3...4]), parts: [1, 2]),
+            ]
+        )
+
+        let zygons = ContainerID("00000000000001e5")!
+        tree.regroup(
+            Array(items[0...2]),
+            in: season,
+            into: zygons,
+            type: .serial,
+            title: Title("Terror of the Zygons")!
+        )
+        #expect(tree.groups(in: season).map(\.id) == [zygons])
+        #expect(tree.parent(of: episodes[0]) == zygons.value && tree.isMade(episodes[0]))
+        let renaming = try #require(tree.suggestedRenaming(in: zygons.value))
+        #expect(renaming.items == Array(items[0...2]))
+        tree.title(renaming.items, in: zygons.value, as: "Part")
+        #expect(episodes[0...2].map { tree.container($0)?.title.rawValue } == ["Part 1", "Part 2", "Part 3"])
+        #expect(tree.suggestedRenaming(in: zygons.value) == nil, "titled by the operator, Wikidata's no longer stand")
+
+        tree.ungroup(zygons.value)
+        #expect(tree.groups(in: season).isEmpty && tree.container(zygons.value) == nil)
+        #expect(tree.container(season)?.sequences[0].items.compactMap(\.id) == items)
+        #expect(tree.container(episodes[0])?.title.rawValue == "Part 1", "ungrouped, an episode keeps its title")
+        #expect(tree.suggestedGroups(in: season).map(\.title) == ["Planet of Evil"])
+    }
+
     /// Runs of a draft's episodes Wikidata titles as `Story (1)`, `Story (2)` and on are suggested as groups
     /// titled by the story; an episode alone, or a title with no part number, is suggested as none.
     @Test func serialsAreSuggestedFromWikidatasTitlesForTheirParts() {
