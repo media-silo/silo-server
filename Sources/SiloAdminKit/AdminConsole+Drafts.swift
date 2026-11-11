@@ -30,15 +30,6 @@ extension AdminConsole {
         }
     }
 
-    /// How to read a series: which of its seasons, by Wikidata's id for each, all of them when nil.
-    public struct DraftShape: Hashable, Sendable {
-        public var seasons: Set<String>?
-
-        public init(seasons: Set<String>? = nil) {
-            self.seasons = seasons
-        }
-    }
-
     /// What picking an item to walk comes to: smddb's container to import instead, the library's
     /// container that carries the item's reference already, or a walk rooted at a draft of it.
     public enum ReviewWalkStart: Hashable, Sendable {
@@ -54,7 +45,6 @@ extension AdminConsole {
     // swiftlint:disable:next function_parameter_count
     public func startWalk(
         drafting item: Wikidata.Item,
-        shape: DraftShape = DraftShape(),
         into library: String,
         of silo: Silo,
         from database: any ContainerDatabase,
@@ -85,7 +75,7 @@ extension AdminConsole {
         case .collection:
             top = try await reader.collection(try await wikidata.collection(item.id))
         case .series:
-            top = try await reader.series(try await wikidata.series(item.id), shape: shape)
+            top = try await reader.series(try await wikidata.series(item.id))
         case .season, .serial, .episode:
             throw NoReading(reason: "a \(item.kind) is drafted beneath the series that holds it")
         }
@@ -229,14 +219,13 @@ extension AdminConsole {
             return container
         }
 
-        mutating func series(_ series: Wikidata.Series, shape: DraftShape) async throws -> Container {
+        mutating func series(_ series: Wikidata.Series) async throws -> Container {
             if let tmdb {
                 tmdbSeasons = try? await AdminConsole.tmdbSeasons(of: series.work.ref(.tmdb)?.value, from: tmdb)
             }
             var container = try await make(.series, series.work)
             containers.append(container)
-            let wanted = series.seasons.filter { shape.seasons?.contains($0.id) ?? true }
-            let read = try await AdminConsole.concurrently(wanted) { [wikidata] summary in
+            let read = try await AdminConsole.concurrently(series.seasons) { [wikidata] summary in
                 try await wikidata.season(summary.id)
             }
             var items: [Entry] = []

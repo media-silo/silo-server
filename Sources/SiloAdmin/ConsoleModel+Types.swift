@@ -74,7 +74,6 @@ extension ConsoleModel {
         /// What a walk rooted at a draft was drafted from, to draft it again when it is started again.
         struct Redraft {
             var item: Wikidata.Item
-            var shape: AdminConsole.DraftShape
             var finding: FindingInWikidata
         }
 

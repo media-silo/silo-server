@@ -93,12 +93,11 @@ extension ConsoleModel {
     /// the draft holds Wikidata's facts and no content.
     func startDraft(
         of item: Wikidata.Item,
-        shape: AdminConsole.DraftShape,
         for finding: FindingInWikidata,
         again: Bool = false
     ) async throws -> String? {
         guard let database else { return "smddb's clone cannot be read." }
-        let redraft = Walking.Redraft(item: item, shape: shape, finding: finding)
+        let redraft = Walking.Redraft(item: item, finding: finding)
         if !again, let kept = console.reviewWalks.walk(drafting: item, in: finding.library, of: finding.silo.id) {
             findingInWikidata = nil
             walking = Walking(
@@ -112,7 +111,6 @@ extension ConsoleModel {
         }
         switch try await console.startWalk(
             drafting: item,
-            shape: shape,
             into: finding.library,
             of: finding.silo,
             from: database,

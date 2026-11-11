@@ -95,8 +95,9 @@ struct AttributionsLine: View {
 }
 
 /// Finding an item at Wikidata to draft from: a film, a series or a collection for a library, the most
-/// widely known first, told apart by Wikidata's description, read the way the operator chooses and walked
-/// from the draft; or one of a held series' seasons, chosen in the series' walk. An item smddb holds is
+/// widely known first, told apart by Wikidata's description, and walked from a draft of all of it, a
+/// series with every season, where what is not wanted is left out; or one of a held series' seasons,
+/// chosen in the series' walk. An item smddb holds is
 /// not drafted, and the sheet says what holds it; one the library holds is walked as it is held. Its
 /// facts are Wikidata's; its outline and artwork are TMDb's, when this Mac has a token for TMDb.
 struct FindInWikidataSheet: View {
@@ -107,7 +108,6 @@ struct FindInWikidataSheet: View {
     @State private var results: [Wikidata.SearchResult] = []
     @State private var picked: Wikidata.SearchResult?
     @State private var series: Wikidata.Series?
-    @State private var allSeasons = true
     @State private var seasons: Set<String> = []
     @State private var message: String?
     @State private var working = false
@@ -153,7 +153,7 @@ struct FindInWikidataSheet: View {
                 }
             }
             if let series {
-                shapeOptions(series)
+                seasonChoice(series)
             } else if readingSeries {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
@@ -191,47 +191,26 @@ struct FindInWikidataSheet: View {
             readingSeries = true
             defer { readingSeries = false }
             series = try? await model.wikidataSeries(held.wikidata)
-            allSeasons = false
         }
     }
 
-    @ViewBuilder
-    private func shapeOptions(_ series: Wikidata.Series) -> some View {
-        GroupBox(finding.series == nil ? "Read \(series.work.title) as" : "The season to draft") {
-            VStack(alignment: .leading) {
-                if finding.series == nil {
-                    Toggle("Every season", isOn: $allSeasons)
-                }
-                if !allSeasons {
-                    ScrollView {
-                        VStack(alignment: .leading) {
-                            ForEach(series.seasons, id: \.id) { season in
-                                Toggle(
-                                    season.title,
-                                    isOn: Binding(
-                                        get: { seasons.contains(season.id) },
-                                        set: { on in
-                                            if finding.series != nil { seasons = [] }
-                                            if on {
-                                                seasons.insert(season.id)
-                                            } else {
-                                                seasons.remove(season.id)
-                                            }
-                                        }
-                                    )
-                                )
-                            }
-                        }
+    /// The held series' seasons, one of them to be drafted.
+    private func seasonChoice(_ series: Wikidata.Series) -> some View {
+        GroupBox("The season to draft") {
+            ScrollView {
+                VStack(alignment: .leading) {
+                    ForEach(series.seasons, id: \.id) { season in
+                        Toggle(
+                            season.title,
+                            isOn: Binding(
+                                get: { seasons.contains(season.id) },
+                                set: { seasons = $0 ? [season.id] : [] }
+                            )
+                        )
                     }
-                    .frame(maxHeight: 140)
-                }
-                if finding.series == nil, !series.specials.isEmpty {
-                    Text(
-                        "Wikidata files \(series.specials.count) episodes beneath the series and in no season: they are its specials, unassigned until you place them."
-                    )
-                    .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .frame(maxHeight: 140)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -250,20 +229,7 @@ struct FindInWikidataSheet: View {
 
     private func pick(_ id: String?) {
         picked = results.first { $0.id == id }
-        series = nil
         message = nil
-        guard let picked, picked.kind == .series else {
-            readingSeries = false
-            return
-        }
-        readingSeries = true
-        Task {
-            let read = try? await model.wikidataSeries(picked.id)
-            // A series picked since this one was asked for is the one shown.
-            guard self.picked?.id == picked.id else { return }
-            series = read
-            readingSeries = false
-        }
     }
 
     private func draft() async {
@@ -274,12 +240,7 @@ struct FindInWikidataSheet: View {
             {
                 await model.startSeasonDraft(season, for: finding)
             } else if let picked {
-                let shape = AdminConsole.DraftShape(seasons: allSeasons ? nil : seasons)
-                message = try await model.startDraft(
-                    of: Wikidata.Item(picked.kind, picked.id),
-                    shape: shape,
-                    for: finding
-                )
+                message = try await model.startDraft(of: Wikidata.Item(picked.kind, picked.id), for: finding)
             }
         } catch {
             message = model.describe(error)
