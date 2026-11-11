@@ -53,7 +53,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         /// episode's stop beneath it is ticked with as it joins the walk. Absent from a walk kept before
         /// they were asked.
         var episodeFields: [String: Bool]?
-        /// True once Confirm with everything beneath confirmed it without the operator having opened it,
+        /// True once Confirm and everything beneath confirmed it without the operator having opened it,
         /// until they do; false once they have opened it. Absent from a walk kept before it was asked.
         var fromAbove: Bool?
 

@@ -73,7 +73,7 @@ extension ReviewWalk {
         }
     }
 
-    /// Whether Confirm with everything beneath confirmed a stop that the operator has not opened since.
+    /// Whether Confirm and everything beneath confirmed a stop that the operator has not opened since.
     public func confirmedFromAbove(_ id: String) -> Bool { stops[id]?.fromAbove == true }
 
     /// The operator has looked at a stop: it is no longer, and is never, one only confirmed from above.
@@ -99,7 +99,7 @@ extension ReviewWalk {
 }
 
 extension AdminConsole {
-    /// What Confirm with everything beneath did: the walk, and each stop beneath that could not be read,
+    /// What Confirm and everything beneath did: the walk, and each stop beneath that could not be read,
     /// left pending, with why.
     public struct ConfirmedBeneath: Sendable {
         public var walk: ReviewWalk
