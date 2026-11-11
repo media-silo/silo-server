@@ -483,12 +483,7 @@ private struct ArtworkStrip: View {
                                 browsing = nil
                                 Task { await model.putTMDbArtwork(path, as: kind, from: record, of: key) }
                             } label: {
-                                AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w185\(path)")) {
-                                    $0.resizable().scaledToFit()
-                                } placeholder: {
-                                    ProgressView()
-                                }
-                                .frame(width: 110, height: 110)
+                                TMDbImage(path: path, size: 110)
                             }
                             .buttonStyle(.plain)
                         }
@@ -533,6 +528,7 @@ private struct ArtworkWell: View {
                     }
                     .id(generation)
                     .padding(2)
+                    .previewable(url)
                 } else {
                     Text("Drop a JPEG or PNG").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(
                         .center

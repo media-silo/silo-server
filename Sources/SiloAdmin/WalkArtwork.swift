@@ -33,7 +33,11 @@ struct ImageStrip: View {
                             RoundedRectangle(cornerRadius: 3)
                                 .stroke(image == chosen ? Color.accentColor : .clear, lineWidth: 2)
                         )
-                        .help(image == chosen ? "The image storing puts" : "Put this image instead")
+                        .help(
+                            image == chosen
+                                ? "The image storing puts. Double-click, or press Space, to see it whole."
+                                : "Put this image instead. Double-click, or press Space, to see it whole."
+                        )
                     }
                 }
                 .padding(2)
@@ -44,7 +48,8 @@ struct ImageStrip: View {
     }
 }
 
-/// An image TMDb holds, by its path there, fitted to a square of the size given.
+/// An image TMDb holds, by its path there, fitted to a square of the size given, and shown whole in
+/// Quick Look.
 struct TMDbImage: View {
     let path: String
     let size: CGFloat
@@ -56,6 +61,7 @@ struct TMDbImage: View {
             ProgressView()
         }
         .frame(width: size, height: size)
+        .previewable(URL(string: "https://image.tmdb.org/t/p/original\(path)"))
     }
 }
 #endif
