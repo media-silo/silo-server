@@ -166,9 +166,6 @@ struct LibrariesPane: View {
         .sheet(item: $model.findingInWikidata) { finding in
             FindInWikidataSheet(finding: finding, model: model)
         }
-        .sheet(item: $model.walking) { walking in
-            WalkSheet(walking: walking, model: model)
-        }
         .alert(
             "Remove \(removingLibrary ?? "the library")?",
             isPresented: Binding(

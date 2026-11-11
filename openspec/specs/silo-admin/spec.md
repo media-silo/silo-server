@@ -583,7 +583,15 @@ from TMDb find it, SiloAdmin SHALL let the operator browse TMDb's images for the
 for `poster`, its backdrops for `fanart` and its logos for `logo` — and put one, with its
 attribution to `tmdb` and the record's id. A kind whose image is attributed SHALL be shown with its
 attribution, and an image dropped or chosen from this Mac SHALL be put with none, removing any the
-kind had. A refusal SHALL be shown in words.
+kind had. A refusal SHALL be shown in words. Every image of artwork the console shows, a
+container's own and those TMDb offers, in a walk or not, SHALL be shown whole in Quick Look when it
+is double-clicked, or when Space is pressed with the pointer over it and no text being edited, and
+Space SHALL close it again.
+
+#### Scenario: a poster seen whole
+- **WHEN** the operator presses Space with the pointer over one of TMDb's posters offered for a
+  container
+- **THEN** the poster is shown whole in Quick Look, and Space closes it
 
 #### Scenario: a poster dropped
 - **WHEN** the operator drops a JPEG onto a container's poster
@@ -600,7 +608,8 @@ kind had. A refusal SHALL be shown in words.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aLibrarysContainersAreBrowsedAndEditedFromTheConsole`,
-`artworkIsTakenFromTMDbWithItsAttribution`). Dropping and choosing an image are
+`artworkIsTakenFromTMDbWithItsAttribution`), and `Tests/SiloAdminTests/ArtworkPreviewTests.swift`
+(`anImageIsNamedForWhatItsBytesAre`). Dropping and choosing an image, and seeing one whole, are
 pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: The console shows the moves an edit makes, and lays a library out again
@@ -852,12 +861,12 @@ with each new companion series it made as a stop of its own, confirmed.
 - **THEN** the companion series is a confirmed stop of the walk, which storing the walk creates
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aCompanionSeriesIsAStopOfItsOwn`,
-`aWalkKeptBeforeCompanionsWereStopsReadsThemAsStops`). The walk's sheet is pinned by nothing yet, as
+`aWalkKeptBeforeCompanionsWereStopsReadsThemAsStops`). The walk's view is pinned by nothing yet, as
 the rest of the shell is.
 
 ### Requirement: A record the library does not hold is walked from a draft of it
 Picking a Wikidata item that neither smddb's clone nor the library holds SHALL start a walk rooted at
-the draft's top, shown in the same sheet as a walk of a held tree: the walk's tree, the open stop and,
+the draft's top, shown as a walk of a held tree is: the walk's tree, the open stop and,
 for a series, its specials beside every stop. The root SHALL be a new stop with no stop above it in
 the walk, opened, shaped and confirmed as any new stop is, its fields and references chosen to begin
 with; confirming it SHALL add the containers of its draft beneath it as new stops. A drafted series
@@ -908,7 +917,7 @@ offer to resume it or start again, starting again drafting the item afresh.
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aRecordTheLibraryLacksIsWalkedFromADraft`,
 `aWalkFromADraftStartsAndSuggestsAsADraftDoes`, `aDraftTheSiloRefusesIsKeptInItsWalk`,
-`aSeriesSpecialsArePlacedFromThePool`). The walk's sheet, the offer to resume, and starting again are pinned by nothing yet, as the rest of
+`aSeriesSpecialsArePlacedFromThePool`). The walk's view, the offer to resume, and starting again are pinned by nothing yet, as the rest of
 the shell is.
 
 ### Requirement: A walk's store says each step as it goes
@@ -1271,7 +1280,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraft
 `aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`,
 `aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`,
 `aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`,
-`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`). The search, and the walk's sheet the draft is shaped in,
+`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`). The search, and the walk the draft is shaped in,
 are pinned by nothing yet, as the rest of the shell is, but for where a child dropped where it is goes: `Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDroppedWhereItIsStays`).
 
 ### Requirement: A series' specials are the episodes Wikidata files beneath it in no season, unassigned until the operator places or declines each
@@ -1661,7 +1670,8 @@ its draft's order; a stop never read SHALL add them in the order its sequences h
 SHALL be opened in the tree's order, depth first; open on the first of them, the operator SHALL be
 able to confirm it and open the next in one step, and Return SHALL go on to the next stop as that
 step or Next does, but while a text field is being edited. Closing the walk SHALL say that it saves
-the walk on this Mac. The console SHALL show the walk's tree as far as the
+the walk on this Mac. The walk SHALL take the console's window while it lasts, in place of what the
+window shows, and closing it SHALL give the window back as it was. The console SHALL show the walk's tree as far as the
 walk has found it, each stop with its state, which SHALL say what storing the walk would do: pending, not confirmed; or
 confirmed, and then that storing creates its container, creates it only once a stop above it named
 there is confirmed, edits it, or leaves it unchanged, as the store would find it. The operator SHALL
@@ -1778,7 +1788,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 `aStopsPrimarySequenceIsRenamedBeneathItAndGivenToItsGroups`,
 `aRegroupedContainersPrimarySequenceIsItsParentsAndRenamedBeneathIt`,
 `aNewStopShowsTheAlternativesItsPlacedSpecialsMake`,
-`aSpecialDroppedAmongAStopsChildrenIsPlacedBeforeTheChild`). The walk's sheet is pinned by nothing yet, as the rest
+`aSpecialDroppedAmongAStopsChildrenIsPlacedBeforeTheChild`). The walk's view is pinned by nothing yet, as the rest
 of the shell is, but for what its alternatives read from a drop: `Tests/SiloAdminTests/AlternativesEditorTests.swift`
 (`aDragIsReadBackFromItsText`).
 
@@ -1868,7 +1878,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aMissingSeasonCho
 `aNewSeasonsSerialsAreStopsBeneathIt`, `aGroupUngroupedInANewStopLeavesTheWalk`,
 `aGroupLeftOutOfANewStopLeavesTheWalkUntilTickedAgain`,
 `unchoosingAMissingSeasonRemovesItsStops`, `aStopsChildrenAreInTheOrderItsChildrenListThem`,
-`aNewStopsEntryMovedIsStoredWhereItWasMovedWithWhatFollowedIt`). The walk's sheet is pinned by nothing
+`aNewStopsEntryMovedIsStoredWhereItWasMovedWithWhatFollowedIt`). The walk's view is pinned by nothing
 yet, as the rest of the shell is, but for what a moved child reads from a drop:
 `Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDraggedIsReadBackFromItsText`).
 

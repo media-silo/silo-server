@@ -13,11 +13,10 @@ import SwiftUI
 /// stop, to be placed in the one they belong to. What the library holds and Wikidata lacks is shown,
 /// and never offered for removal. Nothing is stored
 /// until the walk is, and the store lists everything it will do first.
-struct WalkSheet: View {
+struct WalkPane: View {
     let walking: ConsoleModel.Walking
     let model: ConsoleModel
-    @Environment(\.dismiss) private var dismiss
-    /// Whether a text field of the sheet is being edited, when Return is the field's and not Next's.
+    /// Whether a text field of the walk is being edited, when Return is the field's and not Next's.
     @State private var editing = false
 
     private var current: ConsoleModel.Walking { model.walking ?? walking }
@@ -113,12 +112,10 @@ struct WalkSheet: View {
             Button("Close and Save") {
                 model.keepWalk()
                 model.walking = nil
-                dismiss()
             }
             .help("Keeps the walk on this Mac as it is, to be resumed; nothing is stored in the silo.")
             Button("Discard the Walk", role: .destructive) {
                 model.discardWalk()
-                dismiss()
             }
             .help("Nothing of the walk has been stored unless the store said so; discarded, this Mac keeps none of it.")
             Spacer()
@@ -127,7 +124,7 @@ struct WalkSheet: View {
                     .disabled(walk.order.allSatisfy { walk.stops[$0]?.taken == nil })
             }
             // On the first stop not yet confirmed, Next confirms it first, in the one click. Either is the
-            // sheet's default, pressed by Return, except while a text field takes Return for itself.
+            // walk's default, pressed by Return, except while a text field takes Return for itself.
             if let next = walk.next, next == current.open {
                 Button("Confirm and Next") { Task { await model.confirmAndNext() } }
                     .buttonStyle(.borderedProminent)
@@ -298,7 +295,7 @@ struct WalkSheet: View {
     }
 }
 
-extension WalkSheet {
+extension WalkPane {
     /// The artwork the open held stop offers.
     fileprivate func artwork(_ comparison: ReviewWalk.Comparison) -> some View {
         StopArtwork(
@@ -721,7 +718,7 @@ private struct WalkSpecials: View {
             }
             // Not a List: its table tracks a mouse-down itself, and a special dragged from one of its rows and
             // let go where nothing takes it leaves the table tracking still, every move of the pointer a
-            // drag that scrolls it and every click swallowed, until the sheet is closed.
+            // drag that scrolls it and every click swallowed, until the walk is closed.
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(ordered) { special in row(special) }
