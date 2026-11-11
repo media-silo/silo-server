@@ -272,9 +272,10 @@ struct ReadingProgress: View {
 }
 
 extension ReviewWalk.Difference {
+    /// A container's own field: its title, year, outline, first date, cast, or directors and writers.
     var isField: Bool {
         switch self {
-        case .title, .year, .outline, .staleOutline: true
+        case .title, .year, .outline, .staleOutline, .premiered, .cast, .crew: true
         default: false
         }
     }
