@@ -407,7 +407,7 @@ extension ConsoleModel {
         }
     }
 
-    /// A step of Confirm with everything beneath, shown at the stop it was asked at.
+    /// A step of Confirm and everything beneath, shown at the stop it was asked at.
     private func confirmingBeneath(
         _ step: AdminConsole.StepProgress,
         at stop: String,

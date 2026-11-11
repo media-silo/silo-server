@@ -2047,7 +2047,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`anEpisodesFieldTi
 The sheet's *Episodes* group is pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A stop is confirmed with everything beneath it in one action
-Every stop of a walk SHALL offer *Confirm with everything beneath* beside *Confirm*. It SHALL confirm the
+Every stop of a walk SHALL offer *Confirm and everything beneath* in the menu of its *Confirm* button, whose
+own action is *Confirm*, or *Unconfirm* once the stop is confirmed. It SHALL confirm the
 stop with its ticks, then read each stop beneath it, with the progress a reading shows, and confirm each
 with the ticks it holds: those the operator set, at the stop or through a group above it, and otherwise
 the defaults, nothing at a held stop and everything at a new one. A missing child SHALL be drafted

@@ -151,21 +151,7 @@ struct WalkPane: View {
                     Text(stop.type).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     StopState(state: walk.state(of: stop.id), walk: walk)
-                    if walk.stops[stop.id]?.taken == nil {
-                        Button("Confirm") { Task { await model.confirmStop() } }
-                            .help("Says this is as it should be, so the walk need not come back to it before storing.")
-                            .disabled(current.resuming || current.confirming || current.progress[stop.id] != nil)
-                    } else {
-                        Button("Unconfirm") { model.unconfirmStop() }
-                            .help("Pending again, with its choices as they are. Changing anything here does the same.")
-                    }
-                    Button("Confirm with Everything Beneath") { Task { await model.confirmWithEverythingBeneath() } }
-                        .help(
-                            "Confirms this stop, then reads and confirms each stop beneath it with what is ticked there: "
-                                + "what you ticked, here or in a group above it, and otherwise nothing at a held container "
-                                + "and everything at a new one."
-                        )
-                        .disabled(current.resuming || current.confirming || current.progress[stop.id] != nil)
+                    confirming(stop.id)
                 }
                 if let progress = current.progress[stop.id] { ReadingProgress(progress: progress) }
                 if let failure = current.failures[stop.id] {
@@ -292,6 +278,37 @@ struct WalkPane: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+extension WalkPane {
+    /// Confirm, or Unconfirm once the stop is confirmed, with Confirm and Everything Beneath beside it in
+    /// the button's menu.
+    fileprivate func confirming(_ stop: String) -> some View {
+        let pending = walk.stops[stop]?.taken == nil
+        let busy = current.resuming || current.confirming || current.progress[stop] != nil
+        return Menu {
+            Button("Confirm and Everything Beneath") { Task { await model.confirmWithEverythingBeneath() } }
+                .disabled(busy)
+        } label: {
+            Text(pending ? "Confirm" : "Unconfirm")
+        } primaryAction: {
+            if pending {
+                Task { await model.confirmStop() }
+            } else {
+                model.unconfirmStop()
+            }
+        }
+        .fixedSize()
+        .disabled(pending && busy)
+        .help(
+            (pending
+                ? "Says this is as it should be, so the walk need not come back to it before storing."
+                : "Pending again, with its choices as they are. Changing anything here does the same.")
+                + " Its menu confirms this stop, then reads and confirms each stop beneath it with what is ticked there: "
+                + "what you ticked, here or in a group above it, and otherwise nothing at a held container "
+                + "and everything at a new one."
+        )
     }
 }
 
