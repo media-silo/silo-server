@@ -16,7 +16,10 @@ struct ConsoleView: View {
 
     var body: some View {
         Group {
-            if model.silos.isEmpty {
+            // A walk takes the window while it lasts, and closing it gives the window back as it was.
+            if let walking = model.walking {
+                WalkPane(walking: walking, model: model)
+            } else if model.silos.isEmpty {
                 // Bonjour is browsing from launch, so an empty list is a search in progress, not
                 // an absence — the address entry stays as a quiet link for when discovery can't
                 // reach a silo. Hand-rolled so the link sizes to fit its text —
@@ -64,6 +67,7 @@ struct ConsoleView: View {
                 }
             }
         }
+        .artworkPreviews()
         // Freshness is the app's job, on all three of its cues: the window appearing, the
         // interval firing, and the app coming back to the fore. The engine's sweep coalescing
         // folds any overlap into one asking of the silos.
