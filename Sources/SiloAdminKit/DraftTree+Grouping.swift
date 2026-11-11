@@ -23,11 +23,33 @@ public struct SuggestedGroup: Hashable, Sendable {
 /// A draft's entries grouped by the operator into containers beneath the one that holds them, and the
 /// groups their titles suggest.
 extension DraftTree {
-    /// The groups made of a container's entries: the containers beneath it the tree holds, in its order.
+    /// The groups made of a container's entries: the containers beneath it the tree holds, in its order,
+    /// but for its episodes, each of which is an entry of the container's run and no group.
     public func groups(in parentID: String) -> [Container] {
         (container(parentID)?.childContainerIDs ?? []).compactMap {
             documents[$0.value] == nil ? nil : container($0.value)
         }
+        .filter { $0.type != .episode }
+    }
+
+    /// The episode container an entry names, when it names one of the tree's: an entry of its container's
+    /// run as an episode held as an entry of its own is, and not a group.
+    public func episode(of entry: Entry) -> Container? {
+        guard let child = entry.childContainer, documents[child.value] != nil,
+            let episode = container(child.value), episode.type == .episode
+        else { return nil }
+        return episode
+    }
+
+    /// The title Wikidata gives an entry's episode, as an entry of its own or as a container of its own,
+    /// unless the operator has titled it otherwise.
+    private func wikidataTitle(of entry: Entry) -> String? {
+        if let episode = episode(of: entry) {
+            let title = episode.externalRefs.first { $0.provider == .wikidata }.flatMap { episodeTitles[$0.value] }
+            return title.flatMap { Title($0) } == episode.title ? title : nil
+        }
+        guard entry.childContainer == nil, entry.title == nil else { return nil }
+        return entry.externalRefs.first { $0.provider == .wikidata }.flatMap { episodeTitles[$0.value] }
     }
 
     /// The container of the tree a container is beneath: the one naming it, or the one whose drafted
@@ -161,17 +183,23 @@ extension DraftTree {
     }
 
     /// Entries titled by the word given and the part number each one's title gives, as `Part 1` and on: the
-    /// operator's own titles, which Wikidata's no longer stand for.
+    /// operator's own titles, which Wikidata's no longer stand for. An episode container is titled itself.
     public mutating func title(_ items: [ItemID], in parentID: String, as word: String) {
         guard var parent = container(parentID) else { return }
         for sequence in parent.sequences.indices {
             for index in parent.sequences[sequence].items.indices {
-                guard case .leaf(var leaf) = parent.sequences[sequence].items[index], items.contains(leaf.id),
-                    let ref = leaf.externalRefs.first(where: { $0.provider == .wikidata }),
-                    let number = episodeTitles[ref.value].flatMap(Self.part(of:))
+                let entry = parent.sequences[sequence].items[index]
+                guard let item = entry.id, items.contains(item),
+                    let number = wikidataTitle(of: entry).flatMap(Self.part(of:)),
+                    let title = Title("\(word) \(number)")
                 else { continue }
-                leaf.title = "\(word) \(number)"
-                parent.sequences[sequence].items[index] = .leaf(leaf)
+                if var episode = episode(of: entry) {
+                    episode.title = title
+                    documents[episode.id.value] = Self.text(episode)
+                } else if case .leaf(var leaf) = entry {
+                    leaf.title = title.rawValue
+                    parent.sequences[sequence].items[index] = .leaf(leaf)
+                }
             }
         }
         documents[parentID] = Self.text(parent)
@@ -190,10 +218,7 @@ extension DraftTree {
         (container(parentID)?.sequences ?? []).flatMap { sequence in
             Self.runs(
                 of: sequence.items.compactMap { entry -> (ItemID, String?)? in
-                    guard let item = entry.id else { return nil }
-                    let ref = entry.externalRefs.first { $0.provider == .wikidata }
-                    guard entry.childContainer == nil, entry.title == nil else { return (item, nil) }
-                    return (item, ref.flatMap { episodeTitles[$0.value] })
+                    entry.id.map { ($0, wikidataTitle(of: entry)) }
                 }
             )
             .map { SuggestedGroup(title: $0.title, items: $0.ids, parts: $0.parts) }

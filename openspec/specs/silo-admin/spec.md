@@ -1152,7 +1152,8 @@ season 0 SHALL NOT be read: a series' specials are those Wikidata files beneath 
 Each container SHALL be a draft of a new container with an id from the clone's `provisionalID()`,
 kept on this Mac with the walk it roots. The top SHALL be filed beneath the container of the
 library that carries the reference of the record above it, when there is one, or at the top of the
-library. The form SHALL show each episode by its container's title. The operator SHALL be able to shape the tree before it is created: re-type a
+library. The form SHALL show each episode by its container's title, as one of its container's entries
+and never as a group, whether it is an entry of its own or a container of its own. The operator SHALL be able to shape the tree before it is created: re-type a
 container, rename its primary sequence with the alternatives and placed specials naming it, and, when the
 operator says, the primary sequence of each container beneath it, group entries into child containers, and drop what they will not hold. Each entry, and each
 group as one, SHALL be ticked to be made, all of them ticked to begin with; one unticked SHALL be left
@@ -1190,8 +1191,9 @@ it has any, and otherwise the operator SHALL choose one before any group is made
 parts of the story the container is titled as, or that is every entry the container holds, as a
 group made of a story's parts holds them, SHALL NOT be suggested as a group: it SHALL be suggested
 instead to be titled by its parts' numbers, as `Episode 1` and on or `Part 1` and on, as the operator
-chooses, the choice worded by the first and last of those numbers, and once titled SHALL be suggested
-as nothing. The
+chooses, the choice worded by the first and last of those numbers, an episode container itself
+retitled, and once titled SHALL be suggested as nothing. An episode container grouped and ungrouped
+SHALL keep its title. The
 draft SHALL be shaped and made as the walk rooted at its top, which is how a record the library does
 not hold is walked from a draft of it. A season chosen from Wikidata's seasons of a series the library
 holds by its reference SHALL NOT be drafted on its own: the series' walk SHALL open with the season chosen among its missing
@@ -1213,6 +1215,14 @@ children, drafted beneath the series once the series' stop is confirmed.
 - **THEN** the series is drafted with every one of its seasons, and once the series and the season
   left ticked are confirmed and the walk is stored, the library holds the series with that season
   alone
+
+#### Scenario: a season's episode containers grouped as a serial
+- **WHEN** a drafted season whose episodes are containers of their own, three of them titled at
+  Wikidata as the parts of one story, is shown, and the three are grouped as a serial titled by the
+  story, titled by their part numbers and ungrouped
+- **THEN** the season shows no group to begin with and suggests the three as one; grouped, each episode
+  is beneath the serial and the serial suggests them titled `Part 1` to `Part 3`; and ungrouped, the
+  episodes are the season's entries again, titled `Part 1` to `Part 3`
 
 #### Scenario: a season drafted beneath its series
 - **WHEN** the operator chooses one of Wikidata's seasons of a series the library holds by its
@@ -1293,7 +1303,8 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aContainerIsDraft
 `aGroupsOwnPartsAreSuggestedToBeTitledByNumberRatherThanGroupedAgain`,
 `aPartTitledOtherwiseButNumberedOnIsOneOfItsStorysParts`,
 `aDraftsEntriesAndGroupsAreMovedWithTheSpecialsAfterThem`,
-`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`, `aRecordTheLibraryLacksIsWalkedFromADraft`). The search, and the walk the draft is shaped in,
+`aContainerAddedToADraftIsAnEmptyGroupMadeWithIt`, `aRecordTheLibraryLacksIsWalkedFromADraft`,
+`aSeasonsEpisodeContainersAreItsEntriesAndNoGroups`). The search, and the walk the draft is shaped in,
 are pinned by nothing yet, as the rest of the shell is, but for where a child dropped where it is goes: `Tests/SiloAdminTests/GroupingSuggestionTests.swift` (`aChildDroppedWhereItIsStays`).
 
 ### Requirement: A series' specials are the episodes Wikidata files beneath it in no season, unassigned until the operator places or declines each

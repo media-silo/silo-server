@@ -709,7 +709,8 @@ struct EntryGrouping: View {
 
     private func row(_ entry: Entry) -> GroupingRow? {
         guard let item = entry.id else { return nil }
-        guard let child = entry.childContainer else {
+        // An episode container is one of the run's entries, as an episode held as an entry is, and no group.
+        guard let child = entry.childContainer, tree.episode(of: entry) == nil else {
             return .member(GroupingMember(id: item.value, title: title(of: entry)))
         }
         guard let group = tree.container(child.value), tree.documents[child.value] != nil else {
