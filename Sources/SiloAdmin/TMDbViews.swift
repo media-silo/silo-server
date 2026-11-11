@@ -111,6 +111,8 @@ struct FindInWikidataSheet: View {
     @State private var seasons: Set<String> = []
     @State private var message: String?
     @State private var working = false
+    @State private var searching = false
+    @State private var readingSeries = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -123,6 +125,7 @@ struct FindInWikidataSheet: View {
                 HStack {
                     TextField("Title", text: $query).onSubmit { Task { await search() } }
                     Button("Search") { Task { await search() } }
+                        .disabled(searching || query.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 List(results, id: \.id, selection: Binding(get: { picked?.id }, set: { pick($0) })) { result in
                     HStack {
@@ -141,9 +144,21 @@ struct FindInWikidataSheet: View {
                     .tag(result.id)
                 }
                 .frame(minHeight: 160)
+                .overlay {
+                    if searching {
+                        ProgressView("Searching Wikidata…")
+                            .padding()
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
             }
             if let series {
                 shapeOptions(series)
+            } else if readingSeries {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Reading the series' seasons from Wikidata…").font(.caption)
+                }
             }
             if let message {
                 Label(message, systemImage: "info.circle").font(.caption).textSelection(.enabled)
@@ -160,6 +175,9 @@ struct FindInWikidataSheet: View {
             }
             HStack {
                 Spacer()
+                if working {
+                    ProgressView().controlSize(.small)
+                }
                 Button("Cancel", role: .cancel) { dismiss() }
                 Button(finding.series == nil ? "Draft" : "Walk the Series") { Task { await draft() } }
                     .buttonStyle(.borderedProminent)
@@ -170,6 +188,8 @@ struct FindInWikidataSheet: View {
         .frame(minWidth: 560, minHeight: 440)
         .task {
             guard let held = finding.series else { return }
+            readingSeries = true
+            defer { readingSeries = false }
             series = try? await model.wikidataSeries(held.wikidata)
             allSeasons = false
         }
@@ -217,8 +237,9 @@ struct FindInWikidataSheet: View {
     }
 
     private func search() async {
-        working = true
-        defer { working = false }
+        guard !searching else { return }
+        searching = true
+        defer { searching = false }
         do {
             results = try await model.searchWikidata(query)
             message = results.isEmpty ? "Wikidata finds no film, series or collection by that title." : nil
@@ -231,8 +252,18 @@ struct FindInWikidataSheet: View {
         picked = results.first { $0.id == id }
         series = nil
         message = nil
-        guard let picked, picked.kind == .series else { return }
-        Task { series = try? await model.wikidataSeries(picked.id) }
+        guard let picked, picked.kind == .series else {
+            readingSeries = false
+            return
+        }
+        readingSeries = true
+        Task {
+            let read = try? await model.wikidataSeries(picked.id)
+            // A series picked since this one was asked for is the one shown.
+            guard self.picked?.id == picked.id else { return }
+            series = read
+            readingSeries = false
+        }
     }
 
     private func draft() async {
