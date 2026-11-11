@@ -73,7 +73,7 @@ extension ReviewWalk {
             top: id
         )
         drafts[id.value] = tree
-        stops[id.value] = Stop(newIn: tree, id.value, parent: stop, offering: offered(id.value, in: tree))
+        stops[id.value] = newStop(in: tree, id.value, parent: stop)
         unconfirm(stop)
         stops[stop]?.chosen.insert(Self.missing(tree))
         stops[stop]?.children.append(id.value)

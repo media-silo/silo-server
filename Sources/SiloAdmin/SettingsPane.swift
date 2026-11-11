@@ -94,7 +94,6 @@ struct LibrariesPane: View {
                             .buttonStyle(.borderless)
                             .padding(.horizontal, 8)
                         SmddbCloneBar(model: model)
-                        TMDbBar(model: model)
                     }
                     .padding(.vertical, 8)
                     .frame(minWidth: 220, idealWidth: 260, maxWidth: 360)

@@ -41,7 +41,8 @@ extension AdminConsole {
     /// Starts a walk of an item the library does not hold, rooted at a draft of it: smddb's container to
     /// import is said first, then the library's container that carries the item's reference, and
     /// otherwise the item is read as containers, the walk's draft. With no TMDb, the draft holds no
-    /// outline and offers no artwork. Nothing is kept: the console keeps the walk as it keeps any walk.
+    /// outline and offers no artwork. A new stop is ticked with everything but the fields given, as this
+    /// Mac's settings leave unticked. Nothing is kept: the console keeps the walk as it keeps any walk.
     // swiftlint:disable:next function_parameter_count
     public func startWalk(
         drafting item: Wikidata.Item,
@@ -49,7 +50,8 @@ extension AdminConsole {
         of silo: Silo,
         from database: any ContainerDatabase,
         wikidata: any WikidataSource,
-        tmdb: (any TMDbSource)?
+        tmdb: (any TMDbSource)?,
+        unticked: Set<String> = []
     ) async throws -> ReviewWalkStart {
         let type = item.kind.containerType
         if let known = try await database.containers().first(where: {
@@ -79,7 +81,8 @@ extension AdminConsole {
         case .season, .serial, .episode:
             throw NoReading(reason: "a \(item.kind) is drafted beneath the series that holds it")
         }
-        return .walk(ReviewWalk(drafting: reader.tree(top: top, item: item, library: library, creating: creating)))
+        let tree = reader.tree(top: top, item: item, library: library, creating: creating)
+        return .walk(ReviewWalk(drafting: tree, unticked: unticked))
     }
 
     /// A draft of a child a walk's stop lacks, a series' season or a season's serial, filed where it is

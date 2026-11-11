@@ -60,6 +60,23 @@ extension ConsoleModel {
         await checkTMDb()
     }
 
+    static let untickedFieldsKey = "untickedFields"
+
+    /// The fields a new container in a walk is not ticked with to begin with, as this Mac's settings say.
+    var untickedFields: Set<String> { tmdbState.unticked }
+
+    /// A field ticked or unticked by default at every new container a walk makes from now on, the open
+    /// walk's included.
+    func tick(_ field: String, byDefault ticked: Bool) {
+        if ticked {
+            tmdbState.unticked.remove(field)
+        } else {
+            tmdbState.unticked.insert(field)
+        }
+        UserDefaults.standard.set(tmdbState.unticked.sorted(), forKey: Self.untickedFieldsKey)
+        if let current = walking { walking = current }
+    }
+
     func setTMDbLanguage(_ language: String) {
         let trimmed = language.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
@@ -115,7 +132,8 @@ extension ConsoleModel {
             of: finding.silo,
             from: database,
             wikidata: wikidata,
-            tmdb: tmdb
+            tmdb: tmdb,
+            unticked: untickedFields
         ) {
         case .importFromSmddb(let container):
             return

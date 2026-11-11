@@ -5985,6 +5985,62 @@ extension AdminConsoleTests {
         #expect(try read.plan().made == [proms.id.value])
     }
 
+    /// A new stop is ticked with everything it is offered but the fields this Mac's settings leave
+    /// unticked: a film's outline and its other providers' ids left unticked keep it its Wikidata id, and a
+    /// season made beneath a drafted series takes the walk's defaults as they are when it is made.
+    @Test func aNewStopIsTickedAsThisMacsDefaultsSay() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let (console, home) = try await Self.smddbConsole(HeldLibrary([]))
+        var (_, _, fakes, _, _) = Self.missingSeason()
+        fakes.wikidata.films["Q103569"] = Self.alienWork
+        fakes.tmdb.movies[348] = Self.alienRecord
+        let walking = Walking(console: console, home: home, database: database, fakes)
+
+        guard
+            case .walk(let film) = try await console.startWalk(
+                drafting: Wikidata.Item(.film, "Q103569"),
+                into: "tv",
+                of: home,
+                from: database,
+                wikidata: fakes.wikidata,
+                tmdb: fakes.tmdb,
+                unticked: ["outline", "references"]
+            )
+        else {
+            Issue.record("the film is walked from a draft")
+            return
+        }
+        let offered = film.offered(film.root).map(\.id)
+        #expect(offered.contains("outline") && offered.contains { $0.hasPrefix("ref::tmdb:") })
+        let chosen = try #require(film.stops[film.root]?.chosen)
+        #expect(!chosen.contains("outline") && !chosen.contains { $0.hasPrefix("ref::tmdb:") })
+        #expect(chosen.contains("ref::wikidata:Q103569"), "the id the library knows it by is never left unticked")
+        #expect(film.unticked == ["outline", "references"])
+
+        guard
+            case .walk(var series) = try await console.startWalk(
+                drafting: Wikidata.Item(.series, "Q121"),
+                into: "tv",
+                of: home,
+                from: database,
+                wikidata: fakes.wikidata,
+                tmdb: fakes.tmdb
+            )
+        else {
+            Issue.record("the series is walked from a draft")
+            return
+        }
+        series.unticked = ["references"]
+        try await walking.confirm(series.root, choosing: series.stops[series.root]?.chosen ?? [], in: &series)
+        let season = try #require(series.stops[series.root]?.children.first)
+        #expect(series.offered(season).map(\.id).contains { $0.hasPrefix("ref::tmdb:") })
+        #expect(
+            series.stops[season]?.chosen.map { $0.hasPrefix("ref::tmdb:") } == [false],
+            "made since the defaults changed, it keeps its Wikidata id alone"
+        )
+    }
+
     /// An item the library does not hold is walked from a draft of it: the draft's top is the root, a
     /// new stop with nothing above it in the walk, and a series' specials sit beside every stop. Storing
     /// makes it once confirmed, at the top of the library with what is beneath it confirmed, declining

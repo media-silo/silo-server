@@ -12,14 +12,17 @@ extension ConsoleModel {
     var walking: Walking? {
         get { tmdbState.walking }
         set {
-            // However the sheet closes, readings nobody is shown stop asking Wikidata, TMDb and the silo.
+            // However the walk closes, readings nobody is shown stop asking Wikidata, TMDb and the silo.
             if newValue?.id != tmdbState.walking?.id {
                 for reading in tmdbState.readings.values { reading.cancel() }
                 tmdbState.readings = [:]
                 tmdbState.pooling?.cancel()
                 tmdbState.pooling = nil
             }
-            tmdbState.walking = newValue
+            // A walk makes its new stops as this Mac's settings say now, whenever it was started.
+            var walking = newValue
+            walking?.walk.unticked = tmdbState.unticked
+            tmdbState.walking = walking
         }
     }
 

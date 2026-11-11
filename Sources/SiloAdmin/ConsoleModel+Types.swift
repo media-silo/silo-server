@@ -59,6 +59,8 @@ extension ConsoleModel {
     /// why TMDb cannot be asked when it cannot, and the sheets open over them.
     struct TMDbState {
         var language = "en-US"
+        /// The fields a new container in a walk is not ticked with to begin with.
+        var unticked: Set<String> = []
         var problem: String?
         var finding: FindingInWikidata?
         var walking: Walking?
