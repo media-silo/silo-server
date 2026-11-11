@@ -754,7 +754,7 @@ Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 as the rest of the shell is.
 
 ### Requirement: The console reads TMDb with a token kept on this Mac, and credits it
-SiloAdmin's settings SHALL take a TMDb read access token, kept in this Mac's keychain and never
+SiloAdmin's Settings window, this Mac's settings for every silo, SHALL take a TMDb read access token, kept in this Mac's keychain and never
 written to a file by the app, and a language for TMDb's answers, the Mac's by default. The console
 SHALL reach TMDb itself. The silo SHALL NOT be given the token, and SHALL NOT be asked to reach TMDb.
 The console SHALL read only content from TMDb, an outline and artwork, and SHALL take
@@ -869,7 +869,7 @@ Picking a Wikidata item that neither smddb's clone nor the library holds SHALL s
 the draft's top, shown as a walk of a held tree is: the walk's tree, the open stop and,
 for a series, its specials beside every stop. The root SHALL be a new stop with no stop above it in
 the walk, opened, shaped and confirmed as any new stop is, its fields and references chosen to begin
-with; confirming it SHALL add the containers of its draft beneath it as new stops. A drafted series
+with but those this Mac's settings leave unticked; confirming it SHALL add the containers of its draft beneath it as new stops. A drafted series
 SHALL be the series whose specials sit beside every stop, each suggested where it goes as a draft's
 specials are, and placed where the draft placed them; a new breakout the draft made for them SHALL be
 a companion series of the walk, and the alternatives drafted for the draft's containers SHALL be the
@@ -976,7 +976,7 @@ The sheet's showing the images is pinned by nothing yet, as the rest of the shel
 A draft from Wikidata SHALL read, with each container whose item Wikidata holds a TMDb id for, a film,
 a series, a collection or a season, the images TMDb holds for that record, a season's through its
 series; a draft SHALL be read without them when there is no TMDb token or TMDb does not answer. A new stop SHALL offer each artwork kind TMDb has
-an image for, ticked to begin with, and its image SHALL be chosen as a held stop's is. Storing the walk
+an image for, ticked to begin with unless this Mac's settings leave the kind unticked, and its image SHALL be chosen as a held stop's is. Storing the walk
 SHALL put a new stop's ticked artwork after the containers are made, credited to the record it was read
 from.
 
@@ -1822,7 +1822,8 @@ stop beneath it: a draft from Wikidata, read as a draft from Wikidata reads it, 
 client, its content read from TMDb through the series above it.
 It SHALL be drafted once, however many times the stop is confirmed, and the console SHALL take no
 second confirm of a stop while one is under way. The walk's tree SHALL show it as new. Its fields and
-references, and any artwork TMDb offers for it, SHALL be chosen to begin with. It SHALL be shaped as a
+references, and any artwork TMDb offers for it, SHALL be chosen to begin with, but those this Mac's
+settings leave unticked. It SHALL be shaped as a
 draft from Wikidata is shaped, its entries moved as a draft's are, each special the walk places among them
 keeping after the entry it followed, and each container the shaping makes beneath it SHALL be a new stop; one
 the shaping ungroups, or unticks, SHALL leave the walk, and the specials placed in it SHALL be
@@ -1984,7 +1985,8 @@ season it is read through, matched by the TMDb episode id Wikidata holds, and at
 with that id and the day it was read; a reading SHALL go on without it when TMDb does not answer, the
 episode has no TMDb id, or TMDb gives it no overview. Each episode SHALL be a stop of the walk, queued
 when its parent is confirmed as every child is. A new episode's stop SHALL offer its outline, first
-date, cast, crew and references, each chosen to begin with, and the episode SHALL be made with its
+date, cast, crew and references, each chosen to begin with unless this Mac's settings leave it
+unticked, and the episode SHALL be made with its
 title whatever is left out. A missing episode chosen at a held stop SHALL be drafted so, its outline
 read with the stop, titled with the operator's own title for it when it has one, and SHALL join the
 walk as a new stop beneath the stop once the stop is confirmed; storing the walk SHALL name it in the
@@ -2047,7 +2049,8 @@ Every stop of a walk SHALL offer *Confirm and everything beneath* in the menu of
 own action is *Confirm*, or *Unconfirm* once the stop is confirmed. It SHALL confirm the
 stop with its ticks, then read each stop beneath it, with the progress a reading shows, and confirm each
 with the ticks it holds: those the operator set at the stop, and otherwise
-the defaults, nothing at a held stop and everything at a new one. A missing child SHALL be drafted
+the defaults, nothing at a held stop and at a new one everything but what this Mac's settings leave
+unticked. A missing child SHALL be drafted
 beneath a stop only when it is ticked, so the stops confirmed are those its ticks reach. It SHALL place
 no special. A stop it confirmed without the operator opening it SHALL be marked *confirmed from above* in
 the sidebar until the operator opens it. A stop beneath that cannot be read SHALL be left pending with
@@ -2098,3 +2101,28 @@ in a sequence of the container's own, whether it was placed at the episode's sto
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift`
 (`aSpecialAmongASeasonsEpisodesIsAnEpisodeContainer`, `aSpecialAsAVersionIsAnAlternativeOfTheEpisode`).
+
+### Requirement: This Mac's settings say what a new container is ticked with to begin with
+SiloAdmin's Settings window SHALL list the fields a new container in a walk may be offered, Wikidata's
+year, first date, cast, directors and writers, and references to providers other than Wikidata, and
+TMDb's outline and each kind of its artwork, each ticked to begin with, and SHALL let the operator
+untick any of them. The settings SHALL be kept on this Mac for every silo. A new stop SHALL be ticked
+with every field it is offered but those the settings leave unticked, whenever it joins a walk, a walk
+kept on this Mac included; a stop made before the settings changed SHALL keep its ticks. A new
+container's Wikidata reference, which the library knows the item by, SHALL be ticked whatever the
+settings say, and a held stop SHALL be ticked with nothing to begin with, as before. A field left
+unticked SHALL still be offered at each stop, to be ticked there.
+
+#### Scenario: a film's outline left unticked
+- **WHEN** the settings leave the outline and other providers' references unticked, and a film whose
+  item holds a TMDb id is drafted
+- **THEN** the film's stop offers its outline and its TMDb reference, neither ticked, and its Wikidata
+  reference ticked
+
+#### Scenario: the settings changed during a walk
+- **WHEN** the settings come to leave references unticked during the walk of a drafted series, and the
+  series' stop is then confirmed
+- **THEN** each season's new stop offers its TMDb reference unticked, and its Wikidata reference ticked
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aNewStopIsTickedAsThisMacsDefaultsSay`).
+The Settings window is pinned by nothing yet, as the rest of the shell is.

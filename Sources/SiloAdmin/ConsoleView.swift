@@ -71,7 +71,10 @@ struct ConsoleView: View {
         // Freshness is the app's job, on all three of its cues: the window appearing, the
         // interval firing, and the app coming back to the fore. The engine's sweep coalescing
         // folds any overlap into one asking of the silos.
-        .task { await model.refresh() }
+        .task {
+            await model.checkTMDb()
+            await model.refresh()
+        }
         .onReceive(refresher) { _ in Task { await model.refresh() } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await model.refresh() }

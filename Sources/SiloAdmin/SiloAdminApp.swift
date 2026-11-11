@@ -49,13 +49,10 @@ struct SiloAdminApp: App {
                     .keyboardShortcut("A", modifiers: [.command, .shift])
             }
         }
+        Settings {
+            SettingsWindow(model: model)
+        }
     }
-}
-
-extension AdminConsole.Silo: Identifiable {}
-
-extension AdminConsole.PreparedSetup: Identifiable {
-    public var id: String { serverID }
 }
 
 /// The engine at the window's cadence: the rendered rows, the address being typed, and the
@@ -150,6 +147,7 @@ final class ConsoleModel {
         self.checkDelay = checkDelay
         smddbFolder = UserDefaults.standard.url(forKey: Self.smddbFolderKey)
         tmdbState.language = UserDefaults.standard.string(forKey: Self.tmdbLanguageKey) ?? Self.macLanguage
+        tmdbState.unticked = Set(UserDefaults.standard.stringArray(forKey: Self.untickedFieldsKey) ?? [])
     }
 
     /// Browses, resolves every added address, and republishes the rows. An added address that

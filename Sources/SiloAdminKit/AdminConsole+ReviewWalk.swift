@@ -35,14 +35,7 @@ extension AdminConsole {
             let beneath = (tree.container(id)?.childContainerIDs ?? []) + tree.alternativeChildren(of: id)
             return beneath.filter { tree.isMade($0.value) }.compactMap { child in
                 walk.stops[child.value]
-                    ?? tree.container(child.value).map { _ in
-                        ReviewWalk.Stop(
-                            newIn: tree,
-                            child.value,
-                            parent: id,
-                            offering: walk.offered(child.value, in: tree)
-                        )
-                    }
+                    ?? tree.container(child.value).map { _ in walk.newStop(in: tree, child.value, parent: id) }
             }
         }
         let sidecar: Data

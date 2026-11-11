@@ -60,8 +60,9 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
             self.parent = parent
         }
 
-        /// A new stop for a container of a draft, everything it is offered with chosen to begin with.
-        init(newIn tree: DraftTree, _ id: String, parent: String?, offering: [Difference]) {
+        /// A new stop for a container of a draft, everything it is offered with chosen to begin with but
+        /// the fields left unticked by default.
+        init(newIn tree: DraftTree, _ id: String, parent: String?, offering: [Difference], unticked: Set<String>) {
             let container = tree.container(id)
             self.init(
                 id: id,
@@ -69,7 +70,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
                 type: container?.type.rawValue ?? "",
                 parent: parent
             )
-            chosen = Set(offering.map(\.id))
+            chosen = Set(offering.map(\.id).filter { !unticked.contains(ReviewWalk.defaultField(of: $0)) })
         }
     }
 
@@ -146,6 +147,10 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         set { entryOrders = newValue.isEmpty ? nil : newValue }
     }
 
+    /// The fields a new stop is not ticked with to begin with, as this Mac's settings say. Absent from a
+    /// walk kept before they could be set.
+    var untickedFields: Set<String>?
+
     /// The companion series the walk makes, each a new stop at the top of the library, in the order they
     /// were added. Absent from a walk kept before companions were stops.
     var companionOrder: [String]?
@@ -163,7 +168,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
     /// the record above it. A series is the one whose specials sit beside every stop, placed where the
     /// draft placed them; each new breakout the draft made for them is a companion series of the walk.
     /// The alternatives drafted for its containers are the walk's.
-    public init(drafting tree: DraftTree) {
+    public init(drafting tree: DraftTree, unticked: Set<String> = []) {
         let top = tree.top
         var draft = tree
         draft.breakouts = [:]
@@ -173,7 +178,8 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
         stops = [:]
         edited = .now
         drafts[top] = draft
-        stops[top] = Stop(newIn: draft, top, parent: tree.creating.parent, offering: offered(top, in: draft))
+        self.unticked = unticked
+        stops[top] = newStop(in: draft, top, parent: tree.creating.parent)
         draftedAlternatives = tree.draftedAlternatives
         if tree.container(top)?.type == .series {
             series = top
@@ -369,7 +375,7 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
                 continue
             }
             drafts[tree.top] = tree
-            stops[tree.top] = Stop(newIn: tree, tree.top, parent: id, offering: offered(tree.top, in: tree))
+            stops[tree.top] = newStop(in: tree, tree.top, parent: id)
         }
         for var child in beneath where stops[child.id] == nil {
             // Found once missing episodes were handed to it, they are ticked to begin with.

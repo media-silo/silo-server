@@ -21,45 +21,6 @@ struct TMDbMark: View {
     }
 }
 
-/// TMDb as this Mac reads it, named in its settings: the token, kept in the keychain, the language it
-/// answers in, why it cannot be read when it cannot, and the notice TMDb's terms ask for. The console
-/// reaches TMDb itself; the silo is never given the token.
-struct TMDbBar: View {
-    let model: ConsoleModel
-    @State private var token = ""
-    @State private var language = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                TMDbMark()
-                Spacer()
-                Button("Check") { Task { await model.checkTMDb() } }.buttonStyle(.borderless).font(.caption)
-            }
-            SecureField(model.tmdbToken == nil ? "Read access token" : "Token kept in the keychain", text: $token)
-                .font(.caption)
-                .onSubmit {
-                    Task {
-                        await model.setTMDbToken(token)
-                        token = ""
-                    }
-                }
-            TextField("Language", text: $language)
-                .font(.caption)
-                .onSubmit { model.setTMDbLanguage(language) }
-            if let problem = model.tmdbProblem {
-                Text(problem).font(.caption2).foregroundStyle(.orange).textSelection(.enabled)
-            }
-            Text(TMDb.notice).font(.caption2).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 8)
-        .task {
-            language = model.tmdbLanguage
-            await model.checkTMDb()
-        }
-    }
-}
-
 /// The attributions of a container's own fields, each with the way to say the text is the operator's
 /// own, which removes the attribution and leaves the text.
 struct AttributionsLine: View {
