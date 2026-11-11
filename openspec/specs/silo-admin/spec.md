@@ -941,7 +941,9 @@ marked. The image put SHALL be the first TMDb offers until the operator chooses 
 another image SHALL tick the kind, SHALL make the stop pending again if it changes the image, and
 SHALL be kept with the walk. Storing the walk SHALL put the image chosen, with its attribution to TMDb.
 A held season's images SHALL be read through the series above it, which TMDb holds them beneath, and
-its artwork SHALL be credited to the season's own TMDb id.
+its artwork SHALL be credited to the season's own TMDb id. An image TMDb holds as an SVG SHALL be
+shown, and put, as the PNG TMDb renders of it, since the silo takes artwork as a JPEG or a PNG; an
+image TMDb does not give SHALL be shown as missing, not as loading.
 
 #### Scenario: a second poster chosen
 - **WHEN** a held film whose folder has no poster is walked, TMDb offering two posters for it, the
@@ -960,6 +962,10 @@ its artwork SHALL be credited to the season's own TMDb id.
 #### Scenario: an image chosen for a kind not ticked
 - **WHEN** an image is chosen for an artwork kind whose difference is not ticked
 - **THEN** the kind is ticked
+
+#### Scenario: a logo TMDb holds as an SVG
+- **WHEN** a logo TMDb holds as an SVG is fetched to be put
+- **THEN** the console fetches the PNG TMDb renders of it, at the same path ending `.png`
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`artworkIsTakenFromTMDbWithItsAttribution`,
 `aHeldSeasonsArtworkIsOfferedFromTMDbsImagesOfTheSeason`); `Tests/SiloAdminKitTests/TMDbClientTests.swift`

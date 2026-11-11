@@ -161,5 +161,10 @@ struct TMDbClientTests {
         #expect(try await client.image(at: "/poster.jpg") == Data("JPEG".utf8))
         #expect(Stub.asked.withLock { $0.last?.url?.host } == "image.tmdb.org")
         await #expect(throws: TMDb.Unavailable.answered(404)) { try await client.image(at: "/gone.jpg") }
+        _ = try? await client.image(at: "/logo.svg")
+        #expect(
+            Stub.asked.withLock { $0.last?.url?.path } == "/t/p/original/logo.png",
+            "a logo TMDb holds as an SVG is fetched as TMDb's PNG of it"
+        )
     }
 }
