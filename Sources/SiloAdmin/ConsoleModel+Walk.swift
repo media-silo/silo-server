@@ -423,14 +423,6 @@ extension ConsoleModel {
         )
     }
 
-    /// A field ticked or unticked in the open stop's Episodes group, at each episode beneath it.
-    func chooseEpisodes(_ field: String, _ chosen: Bool) {
-        guard let open = walking?.open else { return }
-        walking?.walk.choose(episodes: field, chosen, at: open)
-        walking?.plan = nil
-        keepWalk()
-    }
-
     /// The open stop pending again, its choices kept, as though nothing were confirmed there.
     func unconfirmStop() {
         guard let open = walking?.open else { return }

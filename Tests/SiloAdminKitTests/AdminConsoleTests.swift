@@ -3587,41 +3587,6 @@ extension AdminConsoleTests {
         return (series, season, episodes)
     }
 
-    /// A field ticked in a held season's Episodes group is ticked at each of its episodes' stops as they
-    /// join the walk, and at each already there; unticked at one episode's own stop, the others keep it.
-    @Test func anEpisodesFieldTickedAcrossItsSeason() async throws {
-        let (database, folder) = Self.clone()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let (wikidata, tmdb, read) = Self.seriesOne()
-        let (series, season, episodes) = Self.heldSeriesOne(read)
-        let (console, home) = try await Self.smddbConsole(HeldLibrary([series, season] + episodes))
-        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
-        let (rose, unquiet) = (episodes[0].id.value, episodes[1].id.value)
-
-        var walk = try await console.startWalk(at: season.id.value, in: "tv", of: home)
-        try await walking.read(season.id.value, in: &walk)
-        #expect(walk.episodes(beneath: season.id.value) == [rose, unquiet])
-        let unread = walk.episodeFields(at: season.id.value)
-        #expect(unread.unread == 2 && unread.fields.map(\.id) == ReviewWalk.episodeFields)
-        #expect(unread.fields.allSatisfy { $0.episodes == 0 && $0.ticked == false }, "nothing known of them yet")
-
-        walk.choose(episodes: "premiered", true, at: season.id.value)
-        #expect(walk.stops[season.id.value]?.taken == nil && walk.stops[rose] == nil, "nothing confirmed")
-        try await walking.confirm(season.id.value, choosing: [], in: &walk)
-        #expect(walk.stops[rose]?.chosen == ["premiered"] && walk.stops[unquiet]?.chosen == ["premiered"])
-
-        try await walking.read(rose, in: &walk)
-        #expect(walk.differences(of: rose).contains(.premiered(read[0].premiered!)))
-        walk.choose("premiered", false, at: rose)
-        #expect(walk.stops[unquiet]?.chosen == ["premiered"], "the others keep it")
-        let mixed = try #require(walk.episodeFields(at: season.id.value).fields.first { $0.id == "premiered" })
-        #expect(mixed.episodes == 1 && mixed.ticked == nil, "one read, and ticked at some")
-
-        walk.choose(episodes: "title", true, at: season.id.value)
-        #expect(walk.stops[rose]?.chosen == [], "its title is Wikidata's, so nothing ticked there")
-        #expect(walk.stops[unquiet]?.chosen == ["premiered", "title"], "not read, so ticked")
-    }
-
     /// A missing season chosen at a held series, and its new stop confirmed with everything beneath:
     /// each of its episodes is confirmed and marked confirmed from above, and storing the walk makes the
     /// season, then each episode with its title, first date, cast and crew, and its outline TMDb's.
@@ -3700,10 +3665,9 @@ extension AdminConsoleTests {
         #expect(held.container(episodes[0].id) == episodes[0])
     }
 
-    /// A season's first date ticked in its Episodes group and unticked at one episode's own stop, then the
-    /// season confirmed with everything beneath: storing sets every other episode's first date, and leaves
-    /// that episode's as the library held it.
-    @Test func anEpisodesOwnTicksStandThroughTheFastPath() async throws {
+    /// One episode's first date ticked at its own stop, then its held season confirmed with everything
+    /// beneath: storing sets that episode's first date, and leaves the other's as the library held it.
+    @Test func anEpisodesOwnTicksStandBeneathItsSeason() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
         let (wikidata, tmdb, read) = Self.seriesOne()
@@ -3714,16 +3678,16 @@ extension AdminConsoleTests {
         let (rose, unquiet) = (episodes[0].id, episodes[1].id)
 
         var walk = try await walking.walk(season.id.value)
-        walk.choose(episodes: "premiered", true, at: season.id.value)
+        try await walking.confirm(season.id.value, choosing: [], in: &walk)
         try await walking.read(rose.value, in: &walk)
         walk.opened(rose.value)
-        walk.choose("premiered", false, at: rose.value)
+        walk.choose("premiered", true, at: rose.value)
         #expect(try await walking.confirmBeneath(season.id.value, in: &walk).isEmpty)
         #expect(walk.next == nil)
         #expect(!walk.confirmedFromAbove(rose.value) && walk.confirmedFromAbove(unquiet.value), "opened, so not")
         #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
-        #expect(held.container(unquiet)?.premiered == read[2].premiered)
-        #expect(held.container(rose)?.premiered == nil, "as the library held it")
+        #expect(held.container(rose)?.premiered == read[0].premiered)
+        #expect(held.container(unquiet)?.premiered == nil, "nothing ticked there, as the library held it")
     }
 
     /// A special placed as a version of an episode, at the episode's stop or at its season's, is an
