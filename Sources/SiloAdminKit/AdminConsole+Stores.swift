@@ -7,10 +7,6 @@ import SiloClient
 import SmdKit
 import SmdSidecar
 
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-
 extension ReviewWalk {
     /// A store of the walk as it is handed to the silo: the library it is made in, the key it is kept
     /// under with the walk before it is sent, its steps in the silo's terms, and, for each of them, the

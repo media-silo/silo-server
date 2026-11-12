@@ -3,10 +3,6 @@
 
 import Foundation
 
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-
 extension SiloClient {
     /// A store's creation, as the create route takes it.
     public struct StoreCreate: Hashable, Sendable, Codable {

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
+import Foundation
 import Logging
 import SiloLibrary
 import SiloStore
 import SmdKit
+import SmdSidecar
 import Wire
 
 /// A key the library has a store for, sent with other steps.
