@@ -104,14 +104,14 @@ extension AdminConsole {
     }
 
     /// The overviews TMDb gives the episodes of the season a container is, or is beneath, by TMDb's id for
-    /// each episode: read through the TMDb ids the season and the series above it carry. Nil when either
-    /// carries none, or TMDb does not list the season.
-    func tmdbOutlines(
+    /// each episode, and where it holds their stills: read through the TMDb ids the season and the series
+    /// above it carry. Nil when either carries none, or TMDb does not list the season.
+    func tmdbEpisodes(
         of opened: OpenedContainer,
         _ container: Container,
         from tmdb: any TMDbSource,
         of silo: Silo
-    ) async throws -> [String: String]? {
+    ) async throws -> TMDbEpisodes? {
         let season =
             container.type == .season ? container : try await above(opened, ofType: .season, of: silo)?.container
         guard let id = (season?.externalRefs.first { $0.provider == .tmdb }).flatMap({ Int($0.value) }),
@@ -119,8 +119,30 @@ extension AdminConsole {
             let seasons = try await Self.tmdbSeasons(of: series, from: tmdb),
             let number = seasons.numbers[id]
         else { return nil }
-        let episodes = try await tmdb.season(number, of: seasons.series).episodes
-        return Dictionary(uniqueKeysWithValues: episodes.map { (String($0.key), $0.value) })
+        let read = try await tmdb.season(number, of: seasons.series)
+        return TMDbEpisodes(
+            outlines: Dictionary(uniqueKeysWithValues: read.episodes.map { (String($0.key), $0.value) }),
+            stills: Dictionary(uniqueKeysWithValues: read.stills.map { (String($0.key), $0.value) })
+        )
+    }
+
+    /// The overviews TMDb gives a season's episodes, and where it holds their stills, by TMDb's id for
+    /// each.
+    struct TMDbEpisodes {
+        var outlines: [String: String]
+        var stills: [String: TMDb.EpisodeStills]
+
+        /// An episode's content, by TMDb's id for it: its overview, and its stills, offered for its `thumb`.
+        func content(of record: Int, from tmdb: any TMDbSource) async -> Content {
+            let id = String(record)
+            let stills =
+                if let place = stills[id] { await AdminConsole.stills(of: place, from: tmdb) } else { [String]() }
+            return Content(
+                record: TMDb.Record(.episode, record),
+                overview: outlines[id],
+                images: TMDb.Images(stills: stills)
+            )
+        }
     }
 
     /// A draft of each missing episode chosen at a stop that the walk has not drafted yet, as a container
@@ -140,6 +162,7 @@ extension AdminConsole {
         var trees: [DraftTree] = []
         var reader = Reader(wikidata: wikidata, tmdb: tmdb, database: database)
         reader.episodeOutlines = stop.comparison?.episodeOutlines ?? [:]
+        reader.episodeStills = stop.comparison?.episodeStills ?? [:]
         let missing = walk.missingEpisodes(at: id)
         for episode in missing
         where stop.chosen.contains("episode:\(episode.id)") && !drafted.contains("episode:\(episode.id)") {

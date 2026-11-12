@@ -12,23 +12,26 @@ import SmdSidecar
 extension AdminConsole {
     /// The content TMDb holds for a container: the record it is read from, which what is taken from it
     /// is credited to, its overview, its images, best first, and, for a season, its episodes' overviews
-    /// by TMDb's id for each episode.
+    /// and where TMDb holds their stills, by TMDb's id for each episode.
     public struct Content: Hashable, Sendable {
         public var record: TMDb.Record
         public var overview: String?
         public var images: TMDb.Images
         public var episodes: [String: String]
+        public var stills: [String: TMDb.EpisodeStills]
 
         public init(
             record: TMDb.Record,
             overview: String? = nil,
             images: TMDb.Images = TMDb.Images(),
-            episodes: [String: String] = [:]
+            episodes: [String: String] = [:],
+            stills: [String: TMDb.EpisodeStills] = [:]
         ) {
             self.record = record
             self.overview = overview
             self.images = images
             self.episodes = episodes
+            self.stills = stills
         }
     }
 
@@ -53,9 +56,9 @@ extension AdminConsole {
 
     /// The content of the TMDb record a container of a type is read from, by the TMDb id of its item: a
     /// film's, a collection's or a series' own, and a season's through its series, with its episodes'
-    /// overviews. Nil for a type TMDb gives no record of its own here, as a serial or an episode, whose
-    /// outline is its season's to give, or for an id it does not list. The images are offered, not
-    /// needed: they are none when TMDb will not say.
+    /// overviews and where their stills are. Nil for a type TMDb gives no record of its own here, as a serial or an
+    /// episode, whose outline and still are its season's to give, or for an id it does not list. The
+    /// images are offered, not needed: they are none when TMDb will not say.
     nonisolated static func content(
         of type: ContainerType,
         tmdb id: String?,
@@ -92,11 +95,21 @@ extension AdminConsole {
                 record: TMDb.Record(.season, id),
                 overview: season.overview,
                 images: await images ?? .init(),
-                episodes: Dictionary(uniqueKeysWithValues: season.episodes.map { (String($0.key), $0.value) })
+                episodes: Dictionary(uniqueKeysWithValues: season.episodes.map { (String($0.key), $0.value) }),
+                stills: Dictionary(uniqueKeysWithValues: season.stills.map { (String($0.key), $0.value) })
             )
         default:
             return nil
         }
+    }
+
+    /// An episode's stills, best first: the one its season gives it, then the others TMDb holds for it.
+    /// None when TMDb will not say.
+    nonisolated static func stills(of episode: TMDb.EpisodeStills, from tmdb: any TMDbSource) async -> [String] {
+        let held =
+            (try? await tmdb.images(ofEpisode: episode.episode, inSeason: episode.season, of: episode.series))?
+            .stills ?? []
+        return (episode.still.map { [$0] } ?? []) + held.filter { $0 != episode.still }
     }
 
     /// Whether an attribution has been kept longer than its provider's terms let its content be kept.
@@ -126,7 +139,7 @@ extension AdminConsole {
         } else if let overview, overview != container.outline {
             differences.append(.outline(overview, record: record))
         }
-        for kind in ["poster", "fanart", "logo"] {
+        for kind in TMDb.Images.kinds {
             let offered = content.images.offered(for: kind)
             if held.contains(kind) {
                 guard

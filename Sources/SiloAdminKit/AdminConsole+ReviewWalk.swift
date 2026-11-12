@@ -86,7 +86,8 @@ extension AdminConsole {
                     wikidata: wikidata,
                     tmdb: tmdb,
                     tmdbSeries: tmdbSeries,
-                    outlines: stop.comparison?.episodeOutlines ?? [:]
+                    outlines: stop.comparison?.episodeOutlines ?? [:],
+                    stills: stop.comparison?.episodeStills ?? [:]
                 )
             )
         }
