@@ -331,14 +331,19 @@ package final class Libraries: Sendable {
     ) async throws -> T {
         try await lane(of: library.id).exclusively { [self] in
             let result = try body()
-            if moved(result) {
-                do {
-                    _ = try walkNow(library, logging: false)
-                } catch {
-                    logger.error("the walk of \(library.id) after its folders moved stopped: \(error)")
-                }
-            }
+            if moved(result) { walkInTurn(library) }
             return result
+        }
+    }
+
+    /// Walks the library within a turn of it its caller already holds, after the caller moved folders,
+    /// so that what moved is read back at its new path before anything else is let in. A walk that
+    /// fails is logged, and the next tick's walk reads what moved.
+    package func walkInTurn(_ library: LibraryConfig) {
+        do {
+            _ = try walkNow(library, logging: false)
+        } catch {
+            logger.error("the walk of \(library.id) after its folders moved stopped: \(error)")
         }
     }
 

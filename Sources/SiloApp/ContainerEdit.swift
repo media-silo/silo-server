@@ -62,73 +62,106 @@ enum ContainerEditor {
             library,
             walkingAfter: { $0.applied && !$0.moves.isEmpty },
             doing: {
-                guard let row = try index.container(id, in: library.id) else { throw NoSuchContainer() }
-                let path = "\(row.folder)/\(SidecarFile.fileName)"
-                let url = library.root.appendingPathComponent(path)
-                let held: Data
-                do {
-                    held = try Data(contentsOf: url)
-                } catch {
-                    throw NoSuchContainer()
-                }
-                let digest = IndexedContainer.digest(of: held)
-                // An edit the sidecar already holds was made, whatever it was based on: an edit sent
-                // again, its first answer lost, is answered as the first was, writing and moving nothing.
-                if holds(held, container, attributions: attributions, declined: declined) {
-                    return ContainerEditOutcome(applied: !dryRun, sidecar: held, digest: digest, findings: [])
-                }
-                guard basedOn == digest else {
-                    throw try conflict(row, held: held, basedOn: basedOn, in: library, index: index)
-                }
-
-                let written: Data
-                let sidecar: Sidecar
-                do {
-                    written = try setting(container, attributions: attributions, declined: declined, in: held)
-                    sidecar = try SidecarFile.sidecar(from: written)
-                } catch {
-                    throw BadEdit(reason: "the edit cannot be written: \(error.localizedDescription)")
-                }
-                let findings = try findings(of: sidecar, editing: held, to: container, in: library, index: index)
-                let (node, parent) = try layout(of: row, as: sidecar, held: held, in: library, index: index)
-                let planned = Relayout.layOut(node, under: parent, in: library.root, dryRun: true)
-                let final = try recording(planned, in: sidecar, written: written)
-                var outcome = ContainerEditOutcome(
-                    applied: false,
-                    sidecar: final,
-                    digest: IndexedContainer.digest(of: final),
-                    findings: findings.map { located($0, at: path) },
-                    moves: planned.moves
+                try edit(
+                    Request(
+                        id: id,
+                        container: container,
+                        basedOn: basedOn,
+                        attributions: attributions,
+                        declined: declined
+                    ),
+                    in: library,
+                    dryRun: dryRun,
+                    index: index
                 )
-                guard outcome.errors.isEmpty else { throw EditRefused(outcome: outcome) }
-                guard !dryRun else { return outcome }
-
-                try written.write(to: url, options: .atomic)
-                let moved = Relayout.layOut(node, under: parent, in: library.root, dryRun: false)
-                outcome.moves = moved.moves
-                outcome.findings += moved.findings
-                if moved.moves.isEmpty {
-                    _ = try Indexer.refresh(
-                        folder: row.folder,
-                        parent: row.parent.flatMap(ContainerID.init),
-                        in: library,
-                        index: index
-                    )
-                } else if moved.paths.count != planned.paths.count {
-                    // A rename failed: the sidecar is what the moves that were made left.
-                    let now = try recording(moved, in: sidecar, written: written)
-                    outcome.sidecar = now
-                    outcome.digest = IndexedContainer.digest(of: now)
-                }
-                outcome.applied = true
-                return outcome
             }
         )
     }
 
+    /// An edit of a container's own fields, its document read, onto the sidecar it was based on.
+    struct Request {
+        var id: ContainerID
+        var container: Container
+        var basedOn: String
+        var attributions: [Attribution]?
+        var declined: [ExternalRef]?
+    }
+
+    /// Edits the container within a turn of the library the caller holds, which walks the library
+    /// after an edit applied with moves.
+    static func edit(
+        _ request: Request,
+        in library: LibraryConfig,
+        dryRun: Bool,
+        index: Index
+    ) throws -> ContainerEditOutcome {
+        let (id, container, basedOn) = (request.id, request.container, request.basedOn)
+        let (attributions, declined) = (request.attributions, request.declined)
+        guard let row = try index.container(id, in: library.id) else { throw NoSuchContainer() }
+        let path = "\(row.folder)/\(SidecarFile.fileName)"
+        let url = library.root.appendingPathComponent(path)
+        let held: Data
+        do {
+            held = try Data(contentsOf: url)
+        } catch {
+            throw NoSuchContainer()
+        }
+        let digest = IndexedContainer.digest(of: held)
+        // An edit the sidecar already holds was made, whatever it was based on: an edit sent
+        // again, its first answer lost, is answered as the first was, writing and moving nothing.
+        if holds(held, container, attributions: attributions, declined: declined) {
+            return ContainerEditOutcome(applied: !dryRun, sidecar: held, digest: digest, findings: [])
+        }
+        guard basedOn == digest else {
+            throw try conflict(row, held: held, basedOn: basedOn, in: library, index: index)
+        }
+
+        let written: Data
+        let sidecar: Sidecar
+        do {
+            written = try setting(container, attributions: attributions, declined: declined, in: held)
+            sidecar = try SidecarFile.sidecar(from: written)
+        } catch {
+            throw BadEdit(reason: "the edit cannot be written: \(error.localizedDescription)")
+        }
+        let findings = try findings(of: sidecar, editing: held, to: container, in: library, index: index)
+        let (node, parent) = try layout(of: row, as: sidecar, held: held, in: library, index: index)
+        let planned = Relayout.layOut(node, under: parent, in: library.root, dryRun: true)
+        let final = try recording(planned, in: sidecar, written: written)
+        var outcome = ContainerEditOutcome(
+            applied: false,
+            sidecar: final,
+            digest: IndexedContainer.digest(of: final),
+            findings: findings.map { located($0, at: path) },
+            moves: planned.moves
+        )
+        guard outcome.errors.isEmpty else { throw EditRefused(outcome: outcome) }
+        guard !dryRun else { return outcome }
+
+        try written.write(to: url, options: .atomic)
+        let moved = Relayout.layOut(node, under: parent, in: library.root, dryRun: false)
+        outcome.moves = moved.moves
+        outcome.findings += moved.findings
+        if moved.moves.isEmpty {
+            _ = try Indexer.refresh(
+                folder: row.folder,
+                parent: row.parent.flatMap(ContainerID.init),
+                in: library,
+                index: index
+            )
+        } else if moved.paths.count != planned.paths.count {
+            // A rename failed: the sidecar is what the moves that were made left.
+            let now = try recording(moved, in: sidecar, written: written)
+            outcome.sidecar = now
+            outcome.digest = IndexedContainer.digest(of: now)
+        }
+        outcome.applied = true
+        return outcome
+    }
+
     /// The edit's document as a container, refused when it cannot be read, names another container
     /// than the route's, or comes with an artwork kind's attribution, which is the artwork route's.
-    private static func reading(
+    static func reading(
         _ document: String,
         as id: ContainerID,
         attributions: [Attribution]?
@@ -149,7 +182,7 @@ enum ContainerEditor {
     /// The sidecar with the container's own fields set, and, when the edit carries them, the
     /// attributions of those fields and the references it declines. The artwork's attributions stay as
     /// the artwork route left them.
-    private static func setting(
+    static func setting(
         _ container: Container,
         attributions: [Attribution]?,
         declined: [ExternalRef]?,
@@ -188,7 +221,7 @@ enum ContainerEditor {
 
     /// Whether the sidecar already holds the container's own fields, and the attributions and declined
     /// references an edit carries.
-    private static func holds(
+    static func holds(
         _ held: Data,
         _ container: Container,
         attributions: [Attribution]?,

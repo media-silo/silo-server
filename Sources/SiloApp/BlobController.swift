@@ -18,10 +18,12 @@ import WireMVC
 @Controller("/v1")
 package struct BlobController {
     private let blobs: BlobStore
+    private let stores: StoreRecords
 
     @Inject
-    package init(blobs: BlobStore) {
+    package init(blobs: BlobStore, stores: StoreRecords) {
         self.blobs = blobs
+        self.stores = stores
     }
 
     /// Whether the silo holds the blob: its digest and size, or 404.
@@ -32,7 +34,7 @@ package struct BlobController {
         pathParameters: [String: Substring],
         responseSender: consuming sending Sender
     ) async throws where Sender.Writer: ~Copyable {
-        blobs.sweep()
+        blobs.sweep(keeping: stores.imagesUnderWay())
         guard let digest = pathParameters["digest"].map(String.init), let data = blobs.data(of: digest) else {
             try await responseSender.sendAndFinish(HTTPResponse(status: .notFound))
             return
@@ -90,7 +92,7 @@ package struct BlobController {
             return
         }
         _ = try blobs.put(image)
-        blobs.sweep()
+        blobs.sweep(keeping: stores.imagesUnderWay())
         try await responseSender.sendAndFinish(HTTPResponse(status: .noContent))
     }
 }

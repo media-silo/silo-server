@@ -1027,6 +1027,90 @@ struct ServerTests {
         }
     }
 
+    @Test func aStoreIsTakenAtOnceAndSaidAtARouteOfItsOwn() async throws {
+        struct Record: Decodable {
+            var key: String
+            var state: String
+            var made: Int
+            var steps: Int
+            var step: Int?
+            var reason: String?
+        }
+        let operatorHeaders = ["Authorization": "Bearer secret"]
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0x66, count: 64))
+        let digest = BlobStore.digest(of: jpeg)
+        let container = Fixture.notorious.id.value
+        func body(key: String, kinds: [String]) throws -> Data {
+            let steps = kinds.map { kind in
+                ["putArtwork": ["container": container, "kind": kind, "image": digest]]
+            }
+            return try JSONSerialization.data(withJSONObject: ["key": key, "steps": steps])
+        }
+        func post(
+            _ client: TestClient,
+            _ path: String,
+            _ body: Data,
+            _ headers: [String: String] = [:]
+        ) async throws -> TestResponse {
+            try await client.send(
+                "POST",
+                path,
+                body: body,
+                headers: headers.merging(["Content-Type": "application/json"]) { $1 }
+            )
+        }
+        let route = "/v1/libraries/main/stores"
+        try await withClient { client in
+            #expect(
+                try await client.send("PUT", "/v1/blobs/\(digest)", body: jpeg, headers: operatorHeaders).status == 204
+            )
+            let store = try body(key: "walk-1", kinds: ["poster", "fanart"])
+            #expect(try await post(client, route, store, [:]).status == 401)
+            let away = try await post(client, "/v1/libraries/nowhere/stores", store, Self.operatorHeaders)
+            #expect(away.status == 404, "\(away.status) \(away.bodyText)")
+            #expect(
+                try await post(client, route, try body(key: "a key", kinds: ["poster"]), Self.operatorHeaders)
+                    .status == 400
+            )
+
+            let taken = try await post(client, route, store, Self.operatorHeaders)
+            #expect(taken.status == 202)
+            #expect(try taken.json(Record.self).steps == 2)
+            var record = try taken.json(Record.self)
+            for _ in 0..<200 where record.state == "underWay" {
+                try await Task.sleep(for: .milliseconds(10))
+                record = try await client.send("GET", "\(route)/walk-1", headers: operatorHeaders).json(Record.self)
+            }
+            #expect(record.state == "made")
+            #expect(record.made == 2 && record.step == nil)
+            let read = try await client.get("/v1/libraries/main/containers/\(container)")
+            #expect(read.bodyText.contains("poster") && read.bodyText.contains("fanart"))
+
+            let again = try await post(client, route, store, Self.operatorHeaders)
+            #expect(again.status == 200, "the same key and steps answer the store")
+            #expect(try again.json(Record.self).state == "made")
+            let other = try await post(
+                client,
+                route,
+                try body(key: "walk-1", kinds: ["poster"]),
+                Self.operatorHeaders
+            )
+            #expect(other.status == 409)
+            #expect(try await client.send("GET", "\(route)/never", headers: operatorHeaders).status == 404)
+            #expect(try await client.send("GET", "\(route)/walk-1").status == 401)
+
+            for kind in ["poster", "fanart"] {
+                #expect(
+                    try await client.send(
+                        "DELETE",
+                        "/v1/libraries/main/containers/\(container)/artwork/\(kind)",
+                        headers: operatorHeaders
+                    ).status == 204
+                )
+            }
+        }
+    }
+
     @Test func mediaIsServedWholeAndByRange() async throws {
         try await withClient { client in
             let serial = try await client.get("/v1/containers/0000000000000003")
