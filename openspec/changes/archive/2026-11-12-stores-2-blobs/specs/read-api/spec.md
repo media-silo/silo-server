@@ -9,9 +9,11 @@ hexadecimal, SHALL take the image's bytes and SHALL accept a JPEG or a PNG, told
 signature, as the artwork route does: anything else SHALL be 415, and an image over 25 MB SHALL be
 413. Bytes whose SHA-256 is not the digest named SHALL be 400, and nothing SHALL be held. Otherwise the
 silo SHALL hold the bytes under `blobs/` in its state directory, by writing beside them and renaming,
-and SHALL answer 204, as it SHALL when it already holds them, writing nothing. `HEAD` on the same path
-SHALL answer 200 when the silo holds the blob and 404 when it does not. A blob that no store under way
-names SHALL be removed once a day has passed since it was put. Both routes SHALL require the
+and SHALL answer 204, as it SHALL when it already holds them, writing nothing. `GET` on the same path
+SHALL answer 200 with the blob's `digest` and `size` in bytes when the silo holds it, and 404 when it
+does not. A put of a blob the silo holds
+SHALL begin its day again. A blob that no store under way names SHALL be removed once a day has passed
+since it was last put. Both routes SHALL require the
 operator's bearer; a missing or wrong bearer SHALL be 401.
 
 #### Scenario: an image held by its digest
@@ -30,4 +32,5 @@ operator's bearer; a missing or wrong bearer SHALL be 401.
 - **WHEN** a blob was put more than a day ago, and no store under way names it
 - **THEN** the silo no longer holds it, and asking after its digest answers 404
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`anImageIsHeldByItsDigestForAStoreToPut`),
+`Tests/SiloStoreTests/BlobStoreTests.swift` (`aBlobIsKeptADayUnlessAStoreNamesIt`).

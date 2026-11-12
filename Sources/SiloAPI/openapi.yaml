@@ -22,7 +22,12 @@ info:
     all or none (400 for some alone or for a read that is not a date), it records the kind's
     attribution in the sidecar, and without them removes any; DELETE answers 204, removing the
     kind's attribution with its file, and 204 too for a kind the folder does not hold, so that a
-    removal sent again is answered as the first was. PUT and DELETE are the operator's.
+    removal sent again is answered as the first was. PUT and DELETE are the operator's. An image a
+    store puts is held first at /v1/blobs/{digest}, named by the SHA-256 of its bytes in lowercase
+    hexadecimal: PUT takes a JPEG or a PNG of up to 25 MB, as artwork, answers 204, and 204 again
+    when the silo holds it already, 400 for bytes that are not the digest named, 415 and 413 as
+    artwork's; GET answers {"digest", "size"} while the silo holds it, or 404. A blob is kept a day
+    from when it was last put, unless a store under way names it. Both are the operator's.
 
 servers:
   - url: /v1
