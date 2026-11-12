@@ -8,7 +8,7 @@ import Foundation
 /// `<state>/blobs`, named by the SHA-256 of its bytes. A blob is put once however often it is sent,
 /// and kept a day from when it was last put, unless a store under way names it. `Stores.md`, *Images
 /// sent before the store*.
-public final class BlobStore: Sendable {
+public struct BlobStore: Sendable {
     public let folder: URL
     /// How long a blob nothing names is kept after it was last put.
     public static let lifetime: TimeInterval = 24 * 60 * 60
