@@ -156,19 +156,12 @@ private struct WalkDefaults: View {
         )
     }
 
-    static func name(_ field: String) -> String {
-        switch field {
-        case "year": "Year"
-        case "premiered": "First date"
-        case "cast": "Cast"
-        case "crew": "Directors and writers"
-        case "references": "References to other providers"
-        case "outline": "Outline"
-        case "artwork:poster": "Poster"
-        case "artwork:fanart": "Fanart"
-        case "artwork:logo": "Logo"
-        default: field
-        }
-    }
+    static func name(_ field: String) -> String { names[field] ?? field }
+
+    private static let names = [
+        "year": "Year", "premiered": "First date", "cast": "Cast", "crew": "Directors and writers",
+        "references": "References to other providers", "outline": "Outline", "artwork:poster": "Poster",
+        "artwork:fanart": "Fanart", "artwork:logo": "Logo", "artwork:thumb": "Episode still",
+    ]
 }
 #endif

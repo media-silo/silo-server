@@ -107,6 +107,9 @@ extension ReviewWalk {
         /// TMDb's overviews of the episodes of its season, by TMDb's id for each: a missing episode's
         /// outline, when it is drafted.
         public var episodeOutlines: [String: String]?
+        /// Where TMDb holds the stills of the episodes of its season, by TMDb's id for each: a missing
+        /// episode's `thumb`, when it is drafted.
+        public var episodeStills: [String: TMDb.EpisodeStills]?
 
         init(library: String, container: String, title: String, opened: AdminConsole.OpenedContainer) {
             self.library = library
@@ -281,7 +284,7 @@ extension AdminConsole {
         held: [String],
         images: TMDb.Images
     ) -> [ReviewWalk.Difference] {
-        ["poster", "fanart", "logo"].compactMap { kind in
+        TMDb.Images.kinds.compactMap { kind in
             let offered = images.offered(for: kind)
             guard !held.contains(kind), let path = offered.first else { return nil }
             return .artwork(kind: kind, path: path, record: record, offered: offered)
@@ -317,6 +320,7 @@ extension AdminConsole {
                 today: sources.today
             )
             if !content.episodes.isEmpty { comparison.episodeOutlines = content.episodes }
+            if !content.stills.isEmpty { comparison.episodeStills = content.stills }
         } catch let unavailable as TMDb.Unavailable {
             comparison.noContent = unavailable.reason
         } catch {
@@ -563,15 +567,17 @@ extension AdminConsole {
         comparison.reading = "Wikidata's item \(item)"
         comparison.differences += Self.facts(of: container, from: serial.work)
         if let tmdb = sources.tmdb {
-            comparison.episodeOutlines = try? await tmdbOutlines(of: opened, container, from: tmdb, of: sources.silo)
+            let episodes = try? await tmdbEpisodes(of: opened, container, from: tmdb, of: sources.silo)
+            comparison.episodeOutlines = episodes?.outlines
+            comparison.episodeStills = episodes?.stills
         }
         try await compareEpisodes(serial.parts, in: container, missing: true, into: &comparison, sources, progress)
     }
 
     /// An episode's container read against Wikidata's item for the episode: its title, its references,
-    /// its first date, cast and crew, and its outline against TMDb's, read through its season. One
-    /// carrying no Wikidata id is read as the episode of what it is beneath that carries one of the other
-    /// ids it carries, and offered Wikidata's id.
+    /// its first date, cast and crew, and its outline and `thumb` against TMDb's, read through its
+    /// season. One carrying no Wikidata id is read as the episode of what it is beneath that carries one
+    /// of the other ids it carries, and offered Wikidata's id.
     private func compareEpisode(
         _ opened: OpenedContainer,
         identified: [String: String],
@@ -609,16 +615,16 @@ extension AdminConsole {
         }
         comparison.differences += Self.facts(of: carrying, from: work) + Self.credits(of: container, from: work)
         guard let tmdb = sources.tmdb, let id = work.ref(.tmdb)?.value, let record = Int(id) else { return }
-        await progress(StepProgress("Reading TMDb's outline"), comparison)
+        await progress(StepProgress("Reading TMDb's outline and still"), comparison)
         do {
-            guard let outlines = try await tmdbOutlines(of: opened, container, from: tmdb, of: sources.silo) else {
+            guard let episodes = try await tmdbEpisodes(of: opened, container, from: tmdb, of: sources.silo) else {
                 return
             }
             comparison.differences += Self.differences(
                 of: container,
                 attributions: sidecar.attributions,
-                artwork: [],
-                from: Content(record: TMDb.Record(.episode, record), overview: outlines[id]),
+                artwork: opened.container.artwork,
+                from: await episodes.content(of: record, from: tmdb),
                 today: sources.today
             )
         } catch let unavailable as TMDb.Unavailable {

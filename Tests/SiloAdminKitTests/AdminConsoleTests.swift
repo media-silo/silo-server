@@ -2537,6 +2537,8 @@ extension AdminConsoleTests {
         /// Fails as no answer of TMDb's says, as a dropped connection does.
         var unreachable = false
         var images: [TMDb.Record: TMDb.Images] = [:]
+        /// An episode's, by `series/season/episode`, each by its number.
+        var episodeImages: [String: TMDb.Images] = [:]
 
         struct Missing: Error {}
 
@@ -2546,6 +2548,9 @@ extension AdminConsoleTests {
         /// A season's, as `images` holds them under the season's own id.
         func images(ofSeason number: Int, of series: Int) async throws -> TMDb.Images {
             seasons["\(series)/\(number)"].flatMap { images[TMDb.Record(.season, $0.id)] } ?? .init()
+        }
+        func images(ofEpisode number: Int, inSeason season: Int, of series: Int) async throws -> TMDb.Images {
+            episodeImages["\(series)/\(season)/\(number)"] ?? .init()
         }
         func image(at path: String) async throws -> Data { Self.jpeg }
 
@@ -2569,12 +2574,13 @@ extension AdminConsoleTests {
         }
 
         /// A season's outline, beneath its series, by TMDb's id for it and its number there, and its
-        /// episodes' overviews, by TMDb's id for each.
+        /// episodes' overviews and where their stills are, by TMDb's id for each.
         mutating func add(
             season id: Int,
             number: Int,
             overview: String? = nil,
             episodes: [Int: String] = [:],
+            stills: [Int: TMDb.EpisodeStills] = [:],
             of series: Int
         ) {
             seasons["\(series)/\(number)"] = TMDb.Season(
@@ -2582,7 +2588,8 @@ extension AdminConsoleTests {
                 number: number,
                 name: "Season \(number)",
                 overview: overview,
-                episodes: episodes
+                episodes: episodes,
+                stills: stills
             )
             self.series[series, default: TMDb.Series(id: series, name: "")].seasons.append(
                 TMDb.SeasonSummary(id: id, number: number, name: "Season \(number)")
@@ -3409,6 +3416,109 @@ extension AdminConsoleTests {
         #expect(madeRose.container.crew == rose.crew, "what was kept")
         let madeWorld = try #require(held.container(episodes[1].id))
         #expect(madeWorld.premiered == read[1].premiered && madeWorld.externalRefs == episodes[1].externalRefs)
+    }
+
+    /// An episode's `thumb` is offered from TMDb's stills of it, the one its season gives it first, and
+    /// credited to TMDb's episode: at a drafted episode's new stop, put once it is made, and at a held
+    /// episode's stop when its folder has no thumb. An episode TMDb holds no still of is offered none.
+    @Test func anEpisodesStillsAreOfferedAsItsThumb() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (wikidata, tmdb, _) = Self.seriesOne()
+        tmdb.add(
+            season: 9061,
+            number: 1,
+            episodes: [61001: "Rose meets the Doctor."],
+            stills: [
+                61001: TMDb.EpisodeStills(series: 906, season: 1, episode: 1, still: "/rose.jpg"),
+                61002: TMDb.EpisodeStills(series: 906, season: 1, episode: 2),
+            ],
+            of: 906
+        )
+        tmdb.episodeImages["906/1/1"] = TMDb.Images(stills: ["/tardis.jpg", "/rose.jpg"])
+        let thumb = ReviewWalk.Difference.artwork(
+            kind: "thumb",
+            path: "/rose.jpg",
+            record: TMDb.Record(.episode, 61001),
+            offered: ["/rose.jpg", "/tardis.jpg"]
+        )
+
+        let drafting = HeldLibrary()
+        let (console, home) = try await Self.smddbConsole(drafting)
+        let tree = try #require(
+            Self.drafted(
+                try await console.startWalk(
+                    drafting: Wikidata.Item(.series, "Q906"),
+                    into: "tv",
+                    of: home,
+                    from: database,
+                    wikidata: wikidata,
+                    tmdb: tmdb
+                )
+            )
+        )
+        let season = try #require(tree.containers.first { $0.type == .season })
+        let episodes = season.childContainerIDs.map(\.value)
+        var walk = ReviewWalk(drafting: tree)
+        #expect(walk.offered(episodes[0]).filter { $0.id.hasPrefix("artwork:") } == [thumb])
+        #expect(ReviewWalk.tmdbDefaultFields.contains("artwork:thumb"), "which this Mac's settings may leave unticked")
+        #expect(walk.offered(episodes[1]).filter { $0.id.hasPrefix("artwork:") }.isEmpty, "TMDb holds no still of it")
+        let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
+        while let next = walk.next {
+            let chosen = walk.stops[next]?.chosen ?? []
+            if next == episodes[0] { #expect(chosen.contains("artwork:thumb"), "ticked to begin with") }
+            try await walking.confirm(next, choosing: chosen, in: &walk)
+        }
+        #expect(try await console.store(walk, of: home, tmdb: tmdb).refusal == nil)
+        #expect(
+            drafting.sidecar(try #require(ContainerID(episodes[0])))?.attributions.contains(
+                Attribution(subject: .artwork("thumb"), provider: .tmdb, value: "61001", read: .today)
+            ) == true
+        )
+
+        var rose = Container(
+            id: ContainerID("00000000000006e1")!,
+            type: .episode,
+            title: Title("Rose")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q6101")]
+        )
+        rose.sequences = [Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])]
+        var heldSeason = Container(
+            id: ContainerID("00000000000006c1")!,
+            type: .season,
+            title: Title("Series 1")!,
+            externalRefs: [
+                ExternalRef(provider: .wikidata, value: "Q6100"), ExternalRef(provider: .tmdb, value: "9061"),
+            ]
+        )
+        heldSeason.sequences = [
+            Sequence(id: "episodes", items: [.child(Entry.Child(id: ItemID("rose")!, container: rose.id))])
+        ]
+        var series = Container(
+            id: ContainerID("00000000000006a1")!,
+            type: .series,
+            title: Title("Doctor Who")!,
+            externalRefs: [ExternalRef(provider: .wikidata, value: "Q906"), ExternalRef(provider: .tmdb, value: "906")]
+        )
+        series.sequences = [
+            Sequence(id: "seasons", items: [.child(Entry.Child(id: ItemID("s1")!, container: heldSeason.id))])
+        ]
+        let held = HeldLibrary([series, heldSeason, rose])
+        let (heldConsole, heldHome) = try await Self.smddbConsole(held)
+        func artwork() async throws -> [ReviewWalk.Difference] {
+            try await heldConsole.compare(
+                rose.id.value,
+                in: "tv",
+                of: heldHome,
+                from: database,
+                wikidata: wikidata,
+                tmdb: tmdb
+            )
+            .differences.filter { $0.id.hasPrefix("artwork:") }
+        }
+        #expect(try await artwork() == [thumb], "a held episode's folder with no thumb")
+        held.artwork.withLock { $0[rose.id.value] = ["thumb"] }
+        #expect(try await artwork().isEmpty, "its folder holds one")
     }
 
     /// A held episode is read against Wikidata's item for it and its outline against TMDb's overview of

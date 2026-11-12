@@ -87,13 +87,24 @@ public enum TMDb {
         /// Its episodes' overviews, by TMDb's id for each episode: an episode's content, which TMDb
         /// gives no route of its own by that id.
         public var episodes: [Int: String]
+        /// Where TMDb holds each of its episodes' stills, by TMDb's id for the episode: what an episode's
+        /// `thumb` is offered from.
+        public var stills: [Int: EpisodeStills]
 
-        public init(id: Int, number: Int, name: String, overview: String? = nil, episodes: [Int: String] = [:]) {
+        public init(
+            id: Int,
+            number: Int,
+            name: String,
+            overview: String? = nil,
+            episodes: [Int: String] = [:],
+            stills: [Int: EpisodeStills] = [:]
+        ) {
             self.id = id
             self.number = number
             self.name = name
             self.overview = overview
             self.episodes = episodes
+            self.stills = stills
         }
     }
 
@@ -120,36 +131,6 @@ public enum TMDb {
             self.id = id
             self.name = name
             self.overview = overview
-        }
-    }
-
-    /// An image's path as a JPEG or a PNG, as the console shows an image and the silo takes one: a logo
-    /// TMDb holds as an SVG is rendered by TMDb as a PNG at the same path ending `.png`.
-    public static func raster(_ path: String) -> String {
-        path.hasSuffix(".svg") ? path.dropLast(4) + ".png" : path
-    }
-
-    /// The images TMDb holds for a record, by their paths there, best first: what the artwork kinds
-    /// `poster`, `fanart` and `logo` are offered from.
-    public struct Images: Hashable, Sendable, Codable {
-        public var posters: [String]
-        public var backdrops: [String]
-        public var logos: [String]
-
-        public init(posters: [String] = [], backdrops: [String] = [], logos: [String] = []) {
-            self.posters = posters
-            self.backdrops = backdrops
-            self.logos = logos
-        }
-
-        /// The images offered for an artwork kind.
-        public func offered(for kind: String) -> [String] {
-            switch kind {
-            case "poster": posters
-            case "fanart": backdrops
-            case "logo": logos
-            default: []
-            }
         }
     }
 
@@ -182,6 +163,9 @@ public protocol TMDbSource: Sendable {
     func images(of record: TMDb.Record) async throws -> TMDb.Images
     /// The images TMDb holds for a season of a series, by its number there: posters, and nothing else.
     func images(ofSeason number: Int, of series: Int) async throws -> TMDb.Images
+    /// The images TMDb holds for an episode, by its number in its season and its season's in its series:
+    /// stills, and nothing else.
+    func images(ofEpisode number: Int, inSeason season: Int, of series: Int) async throws -> TMDb.Images
     /// An image's bytes, by its path at TMDb.
     func image(at path: String) async throws -> Data
 }
@@ -230,6 +214,22 @@ public struct TMDbClient: TMDbSource {
                     episode.overview.flatMap(Self.nonEmpty).map { (episode.id, $0) }
                 },
                 uniquingKeysWith: { first, _ in first }
+            ),
+            stills: Dictionary(
+                (season.episodes ?? []).compactMap { episode in
+                    episode.episode_number.map { number in
+                        (
+                            episode.id,
+                            TMDb.EpisodeStills(
+                                series: series,
+                                season: season.season_number,
+                                episode: number,
+                                still: episode.still_path.flatMap(Self.nonEmpty)
+                            )
+                        )
+                    }
+                },
+                uniquingKeysWith: { first, _ in first }
             )
         )
     }
@@ -250,7 +250,7 @@ public struct TMDbClient: TMDbSource {
             case .series: "tv"
             case .collection: "collection"
             // TMDb serves a season's images only beneath its series, by its number there, and an
-            // episode's still is not asked for.
+            // episode's beneath its season, by its number there.
             case .season, .episode: throw TMDb.Unavailable.answered(404)
             }
         return try await images(at: "\(kind)/\(record.id)/images")
@@ -260,13 +260,18 @@ public struct TMDbClient: TMDbSource {
         try await images(at: "tv/\(series)/season/\(number)/images")
     }
 
+    public func images(ofEpisode number: Int, inSeason season: Int, of series: Int) async throws -> TMDb.Images {
+        try await images(at: "tv/\(series)/season/\(season)/episode/\(number)/images")
+    }
+
     private func images(at path: String) async throws -> TMDb.Images {
         // Images in any language, and those with none, which is what a backdrop usually is.
         let images = try await get(path, ["include_image_language": "\(language.prefix(2)),null"], as: ImagesJSON.self)
         return TMDb.Images(
-            posters: images.posters.map(\.file_path),
+            posters: (images.posters ?? []).map(\.file_path),
             backdrops: (images.backdrops ?? []).map(\.file_path),
-            logos: (images.logos ?? []).map(\.file_path)
+            logos: (images.logos ?? []).map(\.file_path),
+            stills: (images.stills ?? []).map(\.file_path)
         )
     }
 
@@ -343,6 +348,8 @@ public struct TMDbClient: TMDbSource {
         struct Episode: Decodable {
             var id: Int
             var overview: String?
+            var episode_number: Int?
+            var still_path: String?
         }
         var id: Int
         var season_number: Int
@@ -357,10 +364,12 @@ public struct TMDbClient: TMDbSource {
     }
     private struct ImagesJSON: Decodable {
         struct Image: Decodable { var file_path: String }
-        var posters: [Image]
+        /// Absent for an episode, which has stills alone.
+        var posters: [Image]?
         /// Absent for a season, which has posters alone.
         var backdrops: [Image]?
         var logos: [Image]?
+        var stills: [Image]?
     }
     // swiftlint:enable identifier_name nesting
 }

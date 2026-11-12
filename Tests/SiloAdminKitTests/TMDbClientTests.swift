@@ -113,14 +113,34 @@ struct TMDbClientTests {
             "tv/121":
                 #"{"id":121,"name":"Doctor Who","overview":"A time traveller.","seasons":[{"id":50,"season_number":0,"name":"Specials"},{"id":51,"season_number":1,"name":"Season 1"}]}"#,
             "tv/121/season/1":
-                #"{"id":51,"season_number":1,"name":"Season 1","overview":"The first.","episodes":[{"id":5101,"overview":"Rose."},{"id":5102,"overview":" "},{"id":5103}]}"#,
+                #"{"id":51,"season_number":1,"name":"Season 1","overview":"The first.","episodes":[{"id":5101,"episode_number":1,"overview":"Rose.","still_path":"/rose.jpg"},{"id":5102,"episode_number":2,"overview":" ","still_path":null},{"id":5103}]}"#,
         ])
         let series = try await client.series(121)
         #expect(series.name == "Doctor Who" && series.overview == "A time traveller.")
         #expect(series.seasons.map(\.id) == [50, 51] && series.seasons.map(\.number) == [0, 1])
         #expect(
             try await client.season(1, of: 121)
-                == TMDb.Season(id: 51, number: 1, name: "Season 1", overview: "The first.", episodes: [5101: "Rose."])
+                == TMDb.Season(
+                    id: 51,
+                    number: 1,
+                    name: "Season 1",
+                    overview: "The first.",
+                    episodes: [5101: "Rose."],
+                    stills: [
+                        5101: TMDb.EpisodeStills(series: 121, season: 1, episode: 1, still: "/rose.jpg"),
+                        5102: TMDb.EpisodeStills(series: 121, season: 1, episode: 2),
+                    ]
+                )
+        )
+    }
+
+    @Test func imagesAWalkKeptBeforeStillsAreReadWithNone() throws {
+        let kept = Data(#"{"posters":["/p.jpg"],"backdrops":[],"logos":[]}"#.utf8)
+        let images = try JSONDecoder().decode(TMDb.Images.self, from: kept)
+        #expect(images == TMDb.Images(posters: ["/p.jpg"]))
+        #expect(
+            try JSONDecoder().decode(TMDb.Images.self, from: JSONEncoder().encode(TMDb.Images(stills: ["/s.jpg"])))
+                .stills == ["/s.jpg"]
         )
     }
 
@@ -139,6 +159,7 @@ struct TMDbClientTests {
             "tv/121/images": #"{"posters":[],"backdrops":[],"logos":[{"file_path":"/logo.png"}]}"#,
             "collection/8091/images": images,
             "tv/121/season/1/images": #"{"posters":[{"file_path":"/season.jpg"}]}"#,
+            "tv/121/season/1/episode/2/images": #"{"stills":[{"file_path":"/still.jpg"}]}"#,
             "/t/p/original/poster.jpg": "JPEG",
         ])
         #expect(
@@ -153,6 +174,10 @@ struct TMDbClientTests {
         #expect(
             try await client.images(ofSeason: 1, of: 121) == TMDb.Images(posters: ["/season.jpg"]),
             "a season's, beneath its series, are posters alone"
+        )
+        #expect(
+            try await client.images(ofEpisode: 2, inSeason: 1, of: 121).offered(for: "thumb") == ["/still.jpg"],
+            "an episode's, beneath its season, are stills alone"
         )
         await #expect(throws: TMDb.Unavailable.answered(404), "a season is asked for through its series") {
             try await client.images(of: TMDb.Record(.season, 901))

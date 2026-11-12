@@ -97,10 +97,12 @@ extension AdminConsole {
         wikidata: any WikidataSource,
         tmdb: (any TMDbSource)?,
         tmdbSeries: String? = nil,
-        outlines: [String: String] = [:]
+        outlines: [String: String] = [:],
+        stills: [String: TMDb.EpisodeStills] = [:]
     ) async throws -> DraftTree {
         var reader = Reader(wikidata: wikidata, tmdb: tmdb, database: database)
         reader.episodeOutlines = outlines
+        reader.episodeStills = stills
         let top: Container
         switch child.kind {
         case .season:
@@ -142,6 +144,9 @@ extension AdminConsole {
         /// TMDb's overviews of the episodes of the seasons read, by TMDb's id for each: each episode's
         /// outline.
         var episodeOutlines: [String: String] = [:]
+        /// Where TMDb holds the stills of the episodes of the seasons read, by TMDb's id for each: each
+        /// episode's `thumb`.
+        var episodeStills: [String: TMDb.EpisodeStills] = [:]
 
         init(wikidata: any WikidataSource, tmdb: (any TMDbSource)?, database: any ContainerDatabase) {
             self.wikidata = wikidata
@@ -190,6 +195,7 @@ extension AdminConsole {
             container.sequences = []
             if let content {
                 episodeOutlines.merge(content.episodes) { first, _ in first }
+                episodeStills.merge(content.stills) { first, _ in first }
                 if overview != nil {
                     attributions[container.id] = [
                         Attribution(subject: .outline, provider: .tmdb, value: String(content.record.id), read: .today)
@@ -278,8 +284,9 @@ extension AdminConsole {
             return container
         }
 
-        /// An episode as a container of its own, its facts Wikidata's, and its outline TMDb's overview of
-        /// it in its season, read through the TMDb id Wikidata holds for it and attributed to that id.
+        /// An episode as a container of its own, its facts Wikidata's, its outline TMDb's overview of it in
+        /// its season, attributed to the TMDb id Wikidata holds for it, and its `thumb` offered from TMDb's
+        /// stills of it.
         mutating func episode(_ episode: Wikidata.Work, titled title: String? = nil) async throws -> Container {
             note(episode)
             let tmdbID = episode.ref(.tmdb)?.value
@@ -294,6 +301,15 @@ extension AdminConsole {
                 attributions[container.id] = [
                     Attribution(subject: .outline, provider: .tmdb, value: tmdbID, read: .today)
                 ]
+            }
+            if let tmdb, let tmdbID, let record = Int(tmdbID), let place = episodeStills[tmdbID] {
+                let stills = await AdminConsole.stills(of: place, from: tmdb)
+                if !stills.isEmpty {
+                    images[container.id] = DraftTree.RecordImages(
+                        TMDb.Record(.episode, record),
+                        TMDb.Images(stills: stills)
+                    )
+                }
             }
             containers.append(container)
             return container

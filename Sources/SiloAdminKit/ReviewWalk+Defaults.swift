@@ -20,7 +20,7 @@ extension ReviewWalk {
     public static let wikidataDefaultFields = ["year", "premiered", "cast", "crew", "references"]
     /// The fields of TMDb's a new container may be left unticked with by default: its outline, and its
     /// artwork by kind.
-    public static let tmdbDefaultFields = ["outline", "artwork:poster", "artwork:fanart", "artwork:logo"]
+    public static let tmdbDefaultFields = ["outline"] + TMDb.Images.kinds.map { "artwork:\($0)" }
 
     /// The default field a difference falls under: a reference to a provider other than Wikidata under
     /// `references`, and anything else under its own id. Its Wikidata reference, which the library knows
