@@ -19,8 +19,8 @@ struct WalkPane: View {
     /// Whether a text field of the walk is being edited, when Return is the field's and not Next's.
     @State private var editing = false
 
-    private var current: ConsoleModel.Walking { model.walking ?? walking }
-    private var walk: ReviewWalk { current.walk }
+    fileprivate var current: ConsoleModel.Walking { model.walking ?? walking }
+    fileprivate var walk: ReviewWalk { current.walk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -237,25 +237,26 @@ struct WalkPane: View {
             }
         )
     }
+}
 
-    // MARK: The store
+// MARK: The store
 
+extension WalkPane {
     @ViewBuilder
-    private func storeList(_ plan: ReviewWalk.Plan) -> some View {
+    fileprivate func storeList(_ plan: ReviewWalk.Plan) -> some View {
         GroupBox("Storing the walk will") {
             VStack(alignment: .leading, spacing: 4) {
-                if let stored = current.stored {
-                    ForEach(stored.stored) { step in
-                        Label(step.described, systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(
-                            .caption
-                        )
-                    }
-                    if let refusal = stored.refusal {
-                        Label("Refused: \(refusal)", systemImage: "exclamationmark.octagon").foregroundStyle(.red)
-                            .font(.caption).textSelection(.enabled)
-                    }
+                // A walk of a whole series lists hundreds of steps; past a few lines they scroll, so a
+                // refusal, the pending count, the progress and Store stay in the sheet beneath them.
+                ViewThatFits(in: .vertical) {
+                    storeSteps(plan)
+                    ScrollView { storeSteps(plan) }
                 }
-                ForEach(plan.steps) { step in Text("• \(step.described)").font(.caption) }
+                .frame(maxHeight: 180)
+                if let refusal = current.stored?.refusal {
+                    Label("Refused: \(refusal)", systemImage: "exclamationmark.octagon").foregroundStyle(.red)
+                        .font(.caption).textSelection(.enabled)
+                }
                 let pending = walk.order.filter { walk.stops[$0]?.taken == nil }.count
                 if pending > 0 {
                     Text(
@@ -278,6 +279,20 @@ struct WalkPane: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    fileprivate func storeSteps(_ plan: ReviewWalk.Plan) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let stored = current.stored {
+                ForEach(stored.stored) { step in
+                    Label(step.described, systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(
+                        .caption
+                    )
+                }
+            }
+            ForEach(plan.steps) { step in Text("• \(step.described)").font(.caption) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -426,7 +441,7 @@ private struct NewStop: View {
     let stop: String
     let tick: (String) -> Binding<Bool>
 
-    private var walk: ReviewWalk { current.walk }
+    fileprivate var walk: ReviewWalk { current.walk }
 
     var body: some View {
         // Lazy, to pin the children's heading and actions while their list scrolls beneath them.
@@ -656,7 +671,7 @@ private struct WalkSpecials: View {
     /// What is being made for a special, asked as it is placed.
     @State private var naming: SpecialNaming?
 
-    private var walk: ReviewWalk { current.walk }
+    fileprivate var walk: ReviewWalk { current.walk }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
