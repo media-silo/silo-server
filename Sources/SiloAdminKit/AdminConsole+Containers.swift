@@ -172,7 +172,7 @@ extension AdminConsole {
         do {
             try await withOperator(silo) { try await $0.removeArtwork(kind, of: container, in: library) }
         } catch SiloClientError.status(404, _) {
-            throw SettingsRefused(reason: "the container has no \(kind)")
+            throw SettingsRefused(reason: "the library no longer holds the container")
         }
     }
 }

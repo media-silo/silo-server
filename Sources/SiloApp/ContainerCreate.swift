@@ -76,6 +76,11 @@ enum ContainerMaker {
         }
 
         return try await libraries.exclusively(library) {
+            // Containers made already, as the request makes them, were made: a create sent again, its
+            // first answer lost, is answered as the first was, writing nothing.
+            if try made(containers, beneath: parentID, attributions: attributedByID, in: library, index: index) {
+                return ContainerCreateOutcome(applied: !dryRun, writes: [], findings: [])
+            }
             var holder: MakingRequest.Holder?
             if let parentID {
                 guard let row = try index.container(parentID, in: library.id) else { throw NoSuchContainer() }
@@ -125,5 +130,30 @@ enum ContainerMaker {
             outcome.applied = true
             return outcome
         }
+    }
+
+    /// Whether the library holds every container of the request, each filed beneath the container the
+    /// request files it beneath, its sidecar holding the document's own fields and the request's
+    /// attributions of them.
+    private static func made(
+        _ containers: [Container],
+        beneath parent: ContainerID?,
+        attributions: [ContainerID: [Attribution]],
+        in library: LibraryConfig,
+        index: Index
+    ) throws -> Bool {
+        for container in containers {
+            guard let row = try index.container(container.id, in: library.id) else { return false }
+            let holder = containers.first { $0.childContainerIDs.contains(container.id) }?.id ?? parent
+            guard row.parent == holder?.description else { return false }
+            let url = library.root.appendingPathComponent("\(row.folder)/\(SidecarFile.fileName)")
+            guard let held = try? Data(contentsOf: url),
+                let set = try? SidecarFile.data(settingContainer: container, in: held), set == held,
+                let sidecar = try? SidecarFile.sidecar(from: held)
+            else { return false }
+            let own = sidecar.attributions.filter { $0.subject.artworkKind == nil }
+            guard Set(own) == Set(attributions[container.id] ?? []) else { return false }
+        }
+        return true
     }
 }
