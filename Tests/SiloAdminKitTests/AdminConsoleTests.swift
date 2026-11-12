@@ -1486,7 +1486,7 @@ struct AdminConsoleTests {
             #expect(refused.reason == "the silo takes artwork as a JPEG or a PNG, and this is neither")
         }
         try await console.removeArtwork("poster", of: alien.id.value, in: "films", on: home)
-        await #expect(throws: AdminConsole.SettingsRefused(reason: "the container has no logo")) {
+        await #expect(throws: AdminConsole.SettingsRefused(reason: "the library no longer holds the container")) {
             try await console.removeArtwork("logo", of: alien.id.value, in: "films", on: home)
         }
         #expect(

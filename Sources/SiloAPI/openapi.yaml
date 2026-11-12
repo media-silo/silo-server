@@ -21,8 +21,8 @@ info:
     parameters provider, value and read, the yyyy-mm-dd date the image was read from the provider,
     all or none (400 for some alone or for a read that is not a date), it records the kind's
     attribution in the sidecar, and without them removes any; DELETE answers 204, removing the
-    kind's attribution with its file, or 404 for a kind the folder does not hold. PUT and DELETE
-    are the operator's.
+    kind's attribution with its file, and 204 too for a kind the folder does not hold, so that a
+    removal sent again is answered as the first was. PUT and DELETE are the operator's.
 
 servers:
   - url: /v1
@@ -470,8 +470,10 @@ paths:
         them. The parent's sidecar gains the top's path and changes in nothing else. Refused with
         its findings, and nothing written, when the library already holds a container in the tree,
         the parent does not name the top, or a folder the tree would use holds another container.
-        A dry run answers what would be written and writes nothing. Otherwise the new sidecars are
-        written from the top down, then the parent's, and each is read into the index before the
+        Containers the library already holds, every one filed where the request files it with the
+        document's own fields and the request's attributions of them, are applied with no writes, so
+        that a create sent again is answered as the first was. A dry run answers what would be
+        written and writes nothing. Otherwise the new sidecars are written from the top down, then the parent's, and each is read into the index before the
         answer; the library is not walked. Operator only.
       tags: [Containers]
       security:
@@ -575,7 +577,9 @@ paths:
         the order of its children, the folders are renamed and their new paths recorded; a
         presentation keeps its id. A rename that fails is a warning, and the rest stands. Made only onto the sidecar the
         editor read, named by basedOn, the digest the library's container route answers; decided
-        under the lock the write is made under. Refused with its findings, and nothing written,
+        under the lock the write is made under. An edit whose own fields, attributions and declined
+        refs the sidecar already holds is applied whatever its basedOn, writing and moving nothing,
+        so that an edit sent again is answered as the first was. Refused with its findings, and nothing written,
         when the result has an error — among them an item the document no longer declares that
         the library holds presentations of, or a sidecar for. A dry run answers what would be
         written, and the moves it would make, and writes nothing. Otherwise the sidecar is written,

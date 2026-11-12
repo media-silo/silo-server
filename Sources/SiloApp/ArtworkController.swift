@@ -172,7 +172,8 @@ package struct ArtworkController {
         let removed = try await libraries.exclusively(target.library) { () throws -> Bool in
             guard let row = try index.container(target.id, in: target.library.id) else { return false }
             let folder = target.library.root.appendingPathComponent(row.folder, isDirectory: true)
-            guard Artwork.file(of: target.kind, in: folder) != nil else { return false }
+            // A kind already gone was removed: a removal sent again is answered as the first was.
+            guard Artwork.file(of: target.kind, in: folder) != nil else { return true }
             for format in Artwork.Format.allCases {
                 try? FileManager.default.removeItem(
                     at: folder.appendingPathComponent("\(target.kind).\(format.rawValue)")

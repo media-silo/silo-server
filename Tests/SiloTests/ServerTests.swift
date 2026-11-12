@@ -413,6 +413,21 @@ struct ServerTests {
             #expect(FileManager.default.fileExists(atPath: moved.path), "in the folder the layout gives it")
             #expect(!FileManager.default.fileExists(atPath: folder.path))
 
+            // Sent again, its first answer lost, the edit is answered as made, and writes and moves nothing.
+            let written = try Data(contentsOf: moved)
+            let again = try await client.send(
+                "PUT",
+                path,
+                body: try JSONEncoder().encode(Edit(document: corrected, basedOn: before.digest)),
+                headers: operatorHeaders
+            )
+            #expect(again.status == 200)
+            let repeated = try again.json(Result.self)
+            #expect(repeated.applied)
+            #expect(repeated.moves.isEmpty)
+            #expect(repeated.digest == result.digest)
+            #expect(try Data(contentsOf: moved) == written)
+
             let stale = try await client.send(
                 "PUT",
                 path,
@@ -486,6 +501,25 @@ struct ServerTests {
                     headers: operatorHeaders
                 ).status == 404
             )
+
+            // A sidecar changed behind the index's back is read when an edit on it is refused, so the
+            // next read names the digest the refusal did; put back as it was, it is read again.
+            func refusedBehind(_ bytes: Data) async throws {
+                try bytes.write(to: moved)
+                let unseen = try await client.send(
+                    "PUT",
+                    path,
+                    body: try JSONEncoder().encode(Edit(document: document { $0.year = 1981 }, basedOn: "elsewhere")),
+                    headers: operatorHeaders
+                )
+                #expect(unseen.status == 409)
+                let now = IndexedContainer.digest(of: bytes)
+                #expect(try unseen.json(Problem.self).detail.contains(now), "naming the digest on disk")
+                #expect(try await client.get(path).json(Read.self).digest == now, "which the next read names")
+            }
+            let kept = try Data(contentsOf: moved)
+            try await refusedBehind(kept + Data("\n".utf8))
+            try await refusedBehind(kept)
 
             // A container with children keeps their paths through an edit of its own fields.
             let seriesPath = "/v1/libraries/main/containers/\(Fixture.series.id)"
@@ -790,12 +824,21 @@ struct ServerTests {
             #expect(seasonRead.container.children.map(\.id) == [serial.id.value], "read without a walk")
         }
 
-        // Made again, the library holds every one of them.
+        // Sent again, its first answer lost, the tree is answered as made, and nothing is written.
+        let topBefore = try Data(contentsOf: folder.appendingPathComponent("Doctor Who/container.smd"))
         let again = try await create(tree)
-        #expect(again.status == 422)
+        #expect(again.status == 200)
+        let repeated = try again.json(Result.self)
+        #expect(repeated.applied)
+        #expect(repeated.writes.isEmpty)
+        #expect(try Data(contentsOf: folder.appendingPathComponent("Doctor Who/container.smd")) == topBefore)
+
+        // A container the library holds, filed anywhere but where it is, is refused.
+        let elsewhere = try await create(Create(documents: [xml(serial)]))
+        #expect(elsewhere.status == 422)
         #expect(
-            try again.json(Result.self).findings.map(\.text).contains(
-                "container \(series.id) is already at \"Doctor Who\""
+            try elsewhere.json(Result.self).findings.map(\.text).contains(
+                "container \(serial.id) is already at \"Doctor Who/01 - Season 12/01 - The Ark in Space\""
             )
         )
 
@@ -912,7 +955,11 @@ struct ServerTests {
             #expect(try await client.send("DELETE", poster, headers: operatorHeaders).status == 204)
             #expect(try held().isEmpty)
             #expect(try await client.get(poster).status == 404)
-            #expect(try await client.send("DELETE", poster, headers: operatorHeaders).status == 404)
+            #expect(
+                try await client.send("DELETE", poster, headers: operatorHeaders).status == 204,
+                "a removal sent again is answered as the first was"
+            )
+            #expect(try held().isEmpty)
         }
     }
 

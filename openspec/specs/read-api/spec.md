@@ -559,7 +559,11 @@ folder's path relative to the library `from` and `to`, made or as they would be 
 
 - A document that cannot be read, or that names another container, SHALL be 400, and a library
   the silo does not serve or a container it does not hold SHALL be 404.
-- A `basedOn` that is not the digest of the sidecar the library holds SHALL be 409, decided
+- An edit whose document's own fields, attributions and declined refs are those the sidecar already
+  holds SHALL be answered 200 with `applied` true, the sidecar as it stands and no `moves`, whatever
+  its `basedOn`, and SHALL write and move nothing, so that an edit sent again is answered as the first
+  was.
+- Otherwise, a `basedOn` that is not the digest of the sidecar the library holds SHALL be 409, decided
   under the lock the write is made under, with a `Problem` naming the digest it holds; nothing
   SHALL be written.
 - An edit whose resulting sidecar has an error-severity finding SHALL be 422, carrying the
@@ -595,6 +599,12 @@ wrong bearer SHALL be 401.
 #### Scenario: an edit made from a sidecar that has changed
 - **WHEN** an edit is based on a digest, and the sidecar has since been changed by another edit
 - **THEN** the answer is 409 naming the digest the library holds, and the sidecar is unchanged
+
+#### Scenario: an edit sent again
+- **WHEN** an edit changing a container's year is put and applied, and then put again with the same
+  document and the same `basedOn`
+- **THEN** the second answer is 200 with `applied` true and no `moves`, and the sidecar is as the
+  first edit wrote it
 
 #### Scenario: an alternative a presentation names
 - **WHEN** an edit removes the `theatrical` alternative, and the library holds two presentations
@@ -671,7 +681,8 @@ the image, and when it removes one, the image before the sidecar, so that an int
 credits the provider for too much rather than leaving its image uncredited. A sidecar a put or a
 delete writes SHALL be re-read into the index, and its digest changes as after an edit. `DELETE`
 on the same path SHALL remove the kind's file, and the kind's attribution if it has one, and
-answer 204, or 404 when there is none. A kind that is not one of
+answer 204, as it SHALL when the folder holds none, so that a removal sent again is answered as the
+first was. A kind that is not one of
 the artwork kinds, a library the silo does not serve, and a container it does not hold SHALL be
 404. `PUT` and `DELETE` SHALL require the operator's bearer; a missing or wrong bearer SHALL be
 401.
@@ -693,6 +704,10 @@ the artwork kinds, a library the silo does not serve, and a container it does no
 #### Scenario: a poster removed
 - **WHEN** the operator deletes a container's `poster`
 - **THEN** the answer is 204, the folder holds no poster, and getting the poster is 404
+
+#### Scenario: a poster removed twice
+- **WHEN** the operator deletes a container's `poster`, and then deletes it again
+- **THEN** both answers are 204, and the folder holds no poster
 
 #### Scenario: a poster put with its attribution
 - **WHEN** the operator puts a JPEG as a container's `poster` with `provider` `tmdb`, `value` `348`
@@ -735,7 +750,11 @@ the `findings`.
   container the request does not carry or an artwork kind, or whose `read` is not a calendar date,
   SHALL be 400, and a
   library the silo does not serve or a `parent` it does not hold SHALL be 404.
-- A request with an error-severity finding SHALL be 422, carrying the result with its findings, and
+- A request every one of whose containers the library already holds, filed where the request files
+  it, with the document's own fields and the request's attributions of them, SHALL be answered 200
+  with `applied` true and no writes, and SHALL write nothing, so that containers made again are
+  answered as they were the first time.
+- Otherwise, a request with an error-severity finding SHALL be 422, carrying the result with its findings, and
   nothing SHALL be written. Besides the validator's checks on each sidecar, it SHALL be an error
   when the library already holds a container in the request
   (`container <id> is already at "<path>"`), when the parent's own fields do not name the top as a
@@ -765,6 +784,12 @@ bearer SHALL be 401.
 - **WHEN** a request carries a serial the library already holds, beneath a season it does not
 - **THEN** the answer is 422 with the finding that the serial is already at its folder, and nothing
   is written
+
+#### Scenario: containers made again
+- **WHEN** the operator creates a season and one serial beneath a series the library holds, and then
+  sends the same request again
+- **THEN** the second answer is 200 with `applied` true and no writes, and the library holds the season
+  and the serial once
 
 #### Scenario: a parent that does not name the top
 - **WHEN** a season is created beneath a series the library holds, and the series' sidecar does not

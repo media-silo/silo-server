@@ -123,7 +123,7 @@ wrong bearer SHALL be 401.
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersOwnFieldsAreEditedOntoTheSidecarRead`,
 `anEditMovesTheFoldersItRenames`, `anEditCarriesTheAttributionsOfItsFields`,
-`anEditCarriesTheRefsItDeclines`). The edit sent again is pinned by nothing yet.
+`anEditCarriesTheRefsItDeclines`).
 
 ### Requirement: A container's artwork is read, put and removed by kind
 The `LibraryContainer` a library's container route answers SHALL carry `artwork`, the kinds the
@@ -192,7 +192,7 @@ the artwork kinds, a library the silo does not serve, and a container it does no
 - **THEN** the answer is 400, and the sidecar is unchanged
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aContainersArtworkIsPutServedAndRemoved`,
-`aContainersArtworkIsPutWithItsAttribution`). The poster removed twice is pinned by nothing yet.
+`aContainersArtworkIsPutWithItsAttribution`).
 
 ### Requirement: Containers are made in a library without a file
 `POST /v1/libraries/{library}/containers` with a JSON `ContainerCreate` — `documents`, one or more
@@ -285,4 +285,4 @@ bearer SHALL be 401.
 - **THEN** the answer is 400, and nothing is made
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`containersAreMadeInALibraryWithoutAFile`,
-`aCreateCarriesItsAttributions`). Containers made again are pinned by nothing yet.
+`aCreateCarriesItsAttributions`).

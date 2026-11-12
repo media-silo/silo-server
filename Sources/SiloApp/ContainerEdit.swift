@@ -72,18 +72,13 @@ enum ContainerEditor {
                     throw NoSuchContainer()
                 }
                 let digest = IndexedContainer.digest(of: held)
+                // An edit the sidecar already holds was made, whatever it was based on: an edit sent
+                // again, its first answer lost, is answered as the first was, writing and moving nothing.
+                if holds(held, container, attributions: attributions, declined: declined) {
+                    return ContainerEditOutcome(applied: !dryRun, sidecar: held, digest: digest, findings: [])
+                }
                 guard basedOn == digest else {
-                    // A sidecar changed behind the index's back is read now, so the editor's next read
-                    // finds the digest this answer names.
-                    if held != row.document {
-                        _ = try Indexer.refresh(
-                            folder: row.folder,
-                            parent: row.parent.flatMap(ContainerID.init),
-                            in: library,
-                            index: index
-                        )
-                    }
-                    throw EditConflict(reason: "the sidecar is now \(digest), not \(basedOn)")
+                    throw try conflict(row, held: held, basedOn: basedOn, in: library, index: index)
                 }
 
                 let written: Data
@@ -169,6 +164,37 @@ enum ContainerEditor {
             setting = try SidecarFile.data(settingDeclined: declined, in: setting)
         }
         return setting
+    }
+
+    /// The conflict of an edit based on another sidecar than the one held. A sidecar changed behind the
+    /// index's back is read now, so the editor's next read finds the digest the conflict names.
+    private static func conflict(
+        _ row: IndexedContainer,
+        held: Data,
+        basedOn: String,
+        in library: LibraryConfig,
+        index: Index
+    ) throws -> EditConflict {
+        if held != row.document {
+            _ = try Indexer.refresh(
+                folder: row.folder,
+                parent: row.parent.flatMap(ContainerID.init),
+                in: library,
+                index: index
+            )
+        }
+        return EditConflict(reason: "the sidecar is now \(IndexedContainer.digest(of: held)), not \(basedOn)")
+    }
+
+    /// Whether the sidecar already holds the container's own fields, and the attributions and declined
+    /// references an edit carries.
+    private static func holds(
+        _ held: Data,
+        _ container: Container,
+        attributions: [Attribution]?,
+        declined: [ExternalRef]?
+    ) -> Bool {
+        (try? setting(container, attributions: attributions, declined: declined, in: held)) == held
     }
 
     private static func located(_ finding: Finding, at path: String) -> Finding {
