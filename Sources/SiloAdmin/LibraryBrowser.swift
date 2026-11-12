@@ -122,7 +122,7 @@ private struct LibraryNode: View {
                 .disabled(model.database == nil)
                 .help(
                     model.database == nil
-                        ? "Choose a clone of smddb's data repository below to add containers to \(library)"
+                        ? "Choose a clone of smddb's data repository in Settings to add containers to \(library)"
                         : "Add containers to \(library)"
                 )
             }

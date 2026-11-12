@@ -7,39 +7,6 @@ import SiloClient
 import SmdKit
 import SwiftUI
 
-/// The clone of smddb's data repository this Mac reads, named in its settings: where it is, why it
-/// cannot be read when it cannot, and the way to choose it or read it again. The console never clones,
-/// pulls, commits or pushes; that is the operator's, in the clone.
-struct SmddbCloneBar: View {
-    let model: ConsoleModel
-    @State private var choosing = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Label("smddb", systemImage: "books.vertical").font(.caption.bold())
-                Spacer()
-                Button("Choose…") { choosing = true }.buttonStyle(.borderless).font(.caption)
-                if model.smddbFolder != nil {
-                    Button("Read Again") { Task { await model.readClone() } }.buttonStyle(.borderless).font(.caption)
-                }
-            }
-            if let problem = model.smddbProblem {
-                Text(problem).font(.caption2).foregroundStyle(.orange).textSelection(.enabled)
-            } else if let folder = model.smddbFolder {
-                Text(folder.path).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
-                    .help(folder.path)
-            }
-        }
-        .padding(.horizontal, 8)
-        .task { await model.readClone() }
-        .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
-            guard case .success(let folder) = result else { return }
-            Task { await model.chooseClone(folder) }
-        }
-    }
-}
-
 /// How a library's container stands against smddb's record of it.
 struct StandingLabel: View {
     let standing: AdminConsole.Standing?

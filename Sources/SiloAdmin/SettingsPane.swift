@@ -93,7 +93,6 @@ struct LibrariesPane: View {
                         Button("Add Library…", systemImage: "plus") { addingLibrary = true }
                             .buttonStyle(.borderless)
                             .padding(.horizontal, 8)
-                        SmddbCloneBar(model: model)
                     }
                     .padding(.vertical, 8)
                     .frame(minWidth: 220, idealWidth: 260, maxWidth: 360)

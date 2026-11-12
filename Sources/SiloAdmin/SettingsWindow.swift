@@ -11,16 +11,65 @@ extension AdminConsole.PreparedSetup: Identifiable {
     public var id: String { serverID }
 }
 
-/// This Mac's settings, kept on it for every silo: TMDb, and what a walk ticks to begin with.
+/// This Mac's settings, kept on it for every silo: smddb's clone, TMDb, and what a walk ticks to begin
+/// with.
 struct SettingsWindow: View {
     let model: ConsoleModel
 
     var body: some View {
         TabView {
+            Tab("smddb", systemImage: "books.vertical") { SmddbSettings(model: model) }
             Tab("TMDb", systemImage: "film") { TMDbSettings(model: model) }
             Tab("Walks", systemImage: "checklist") { WalkDefaults(model: model) }
         }
         .frame(width: 480)
+    }
+}
+
+/// The clone of smddb's data repository this Mac reads: where it is, why it cannot be read when it
+/// cannot, and the way to choose it or read it again. The console never clones, pulls, commits or
+/// pushes; that is the operator's, in the clone.
+private struct SmddbSettings: View {
+    let model: ConsoleModel
+    @State private var choosing = false
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Clone") {
+                    if let folder = model.smddbFolder {
+                        Text(folder.path).lineLimit(1).truncationMode(.head).help(folder.path)
+                            .textSelection(.enabled)
+                    } else {
+                        Text("None chosen").foregroundStyle(.secondary)
+                    }
+                }
+                HStack {
+                    if let problem = model.smddbProblem {
+                        Text(problem).foregroundStyle(.orange).textSelection(.enabled)
+                    } else if model.smddbFolder != nil {
+                        Text("The clone can be read.").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if model.smddbFolder != nil {
+                        Button("Read Again") { Task { await model.readClone() } }
+                    }
+                    Button("Choose…") { choosing = true }
+                }
+                .font(.callout)
+            } footer: {
+                Text(
+                    "A clone of smddb's data repository, which the console reads and never clones, pulls, "
+                        + "commits or pushes: that is done in the clone."
+                )
+                .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
+            guard case .success(let folder) = result else { return }
+            Task { await model.chooseClone(folder) }
+        }
     }
 }
 

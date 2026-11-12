@@ -73,6 +73,7 @@ struct ConsoleView: View {
         // folds any overlap into one asking of the silos.
         .task {
             await model.checkTMDb()
+            await model.readClone()
             await model.refresh()
         }
         .onReceive(refresher) { _ in Task { await model.refresh() } }
