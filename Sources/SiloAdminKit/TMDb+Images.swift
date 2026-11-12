@@ -21,21 +21,31 @@ extension TMDb {
         public var logos: [String]
         /// An episode's stills, which no other record has.
         public var stills: [String]
+        /// Each image's size as TMDb holds it, the one put, by its path; one TMDb does not say has none.
+        public var sizes: [String: Size]
 
-        public init(posters: [String] = [], backdrops: [String] = [], logos: [String] = [], stills: [String] = []) {
+        public init(
+            posters: [String] = [],
+            backdrops: [String] = [],
+            logos: [String] = [],
+            stills: [String] = [],
+            sizes: [String: Size] = [:]
+        ) {
             self.posters = posters
             self.backdrops = backdrops
             self.logos = logos
             self.stills = stills
+            self.sizes = sizes
         }
 
-        /// Reads images a walk kept before stills were offered as having none.
+        /// Reads images a walk kept before stills or sizes were read as having none.
         public init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             posters = try container.decode([String].self, forKey: .posters)
             backdrops = try container.decode([String].self, forKey: .backdrops)
             logos = try container.decode([String].self, forKey: .logos)
             stills = try container.decodeIfPresent([String].self, forKey: .stills) ?? []
+            sizes = try container.decodeIfPresent([String: Size].self, forKey: .sizes) ?? [:]
         }
 
         /// The images offered for an artwork kind.
@@ -47,6 +57,17 @@ extension TMDb {
             case "thumb": stills
             default: []
             }
+        }
+    }
+
+    /// An image's width and height, in pixels.
+    public struct Size: Hashable, Sendable, Codable {
+        public var width: Int
+        public var height: Int
+
+        public init(width: Int, height: Int) {
+            self.width = width
+            self.height = height
         }
     }
 

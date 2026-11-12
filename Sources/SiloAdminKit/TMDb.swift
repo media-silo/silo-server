@@ -271,8 +271,19 @@ public struct TMDbClient: TMDbSource {
             posters: (images.posters ?? []).map(\.file_path),
             backdrops: (images.backdrops ?? []).map(\.file_path),
             logos: (images.logos ?? []).map(\.file_path),
-            stills: (images.stills ?? []).map(\.file_path)
+            stills: (images.stills ?? []).map(\.file_path),
+            sizes: Dictionary(
+                [images.posters, images.backdrops, images.logos, images.stills].flatMap { $0 ?? [] }
+                    .compactMap(Self.sized),
+                uniquingKeysWith: { first, _ in first }
+            )
         )
+    }
+
+    /// An image's path and its size, when TMDb says its size.
+    private static func sized(_ image: ImagesJSON.Image) -> (String, TMDb.Size)? {
+        guard let width = image.width, let height = image.height else { return nil }
+        return (image.file_path, TMDb.Size(width: width, height: height))
     }
 
     public func image(at path: String) async throws -> Data {
@@ -363,7 +374,11 @@ public struct TMDbClient: TMDbSource {
         var overview: String?
     }
     private struct ImagesJSON: Decodable {
-        struct Image: Decodable { var file_path: String }
+        struct Image: Decodable {
+            var file_path: String
+            var width: Int?
+            var height: Int?
+        }
         /// Absent for an episode, which has stills alone.
         var posters: [Image]?
         /// Absent for a season, which has posters alone.

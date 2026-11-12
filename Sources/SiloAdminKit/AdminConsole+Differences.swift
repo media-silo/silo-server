@@ -110,6 +110,8 @@ extension ReviewWalk {
         /// Where TMDb holds the stills of the episodes of its season, by TMDb's id for each: a missing
         /// episode's `thumb`, when it is drafted.
         public var episodeStills: [String: TMDb.EpisodeStills]?
+        /// The sizes TMDb says of the images its artwork is offered from, by path.
+        public var imageSizes: [String: TMDb.Size]?
 
         init(library: String, container: String, title: String, opened: AdminConsole.OpenedContainer) {
             self.library = library
@@ -319,6 +321,7 @@ extension AdminConsole {
                 from: content,
                 today: sources.today
             )
+            if !content.images.sizes.isEmpty { comparison.imageSizes = content.images.sizes }
             if !content.episodes.isEmpty { comparison.episodeOutlines = content.episodes }
             if !content.stills.isEmpty { comparison.episodeStills = content.stills }
         } catch let unavailable as TMDb.Unavailable {
@@ -620,13 +623,15 @@ extension AdminConsole {
             guard let episodes = try await tmdbEpisodes(of: opened, container, from: tmdb, of: sources.silo) else {
                 return
             }
+            let content = await episodes.content(of: record, from: tmdb)
             comparison.differences += Self.differences(
                 of: container,
                 attributions: sidecar.attributions,
                 artwork: opened.container.artwork,
-                from: await episodes.content(of: record, from: tmdb),
+                from: content,
                 today: sources.today
             )
+            if !content.images.sizes.isEmpty { comparison.imageSizes = content.images.sizes }
         } catch let unavailable as TMDb.Unavailable {
             comparison.noContent = unavailable.reason
         } catch {

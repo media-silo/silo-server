@@ -76,7 +76,7 @@ extension AdminConsole {
         container.cast = cast(of: work)
         container.crew = crew(of: work)
         container.sequences = [
-            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])
+            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("episode")!, type: .episode))])
         ]
         return container
     }
@@ -135,13 +135,9 @@ extension AdminConsole {
         /// An episode's content, by TMDb's id for it: its overview, and its stills, offered for its `thumb`.
         func content(of record: Int, from tmdb: any TMDbSource) async -> Content {
             let id = String(record)
-            let stills =
-                if let place = stills[id] { await AdminConsole.stills(of: place, from: tmdb) } else { [String]() }
-            return Content(
-                record: TMDb.Record(.episode, record),
-                overview: outlines[id],
-                images: TMDb.Images(stills: stills)
-            )
+            let images =
+                if let place = stills[id] { await AdminConsole.stills(of: place, from: tmdb) } else { TMDb.Images() }
+            return Content(record: TMDb.Record(.episode, record), overview: outlines[id], images: images)
         }
     }
 

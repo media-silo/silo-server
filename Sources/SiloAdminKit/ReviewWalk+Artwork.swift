@@ -8,6 +8,12 @@ extension ReviewWalk {
         stops[stop]?.images?[kind] ?? offeredFirst(kind, at: stop)
     }
 
+    /// An image's size as TMDb says it, of those a stop's artwork is offered from: a held stop's as its
+    /// reading read them, a new one's as its draft did. Nil when TMDb did not say.
+    public func size(of path: String, at stop: String) -> TMDb.Size? {
+        stops[stop]?.comparison?.imageSizes?[path] ?? draft(holding: stop)?.images?[stop]?.images.sizes[path]
+    }
+
     /// Another of the images TMDb offers for an artwork kind chosen at a stop, its artwork ticked with it,
     /// and the stop pending again if that changes anything.
     public mutating func choose(image path: String, for kind: String, at stop: String) {

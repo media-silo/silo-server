@@ -304,11 +304,8 @@ extension AdminConsole {
             }
             if let tmdb, let tmdbID, let record = Int(tmdbID), let place = episodeStills[tmdbID] {
                 let stills = await AdminConsole.stills(of: place, from: tmdb)
-                if !stills.isEmpty {
-                    images[container.id] = DraftTree.RecordImages(
-                        TMDb.Record(.episode, record),
-                        TMDb.Images(stills: stills)
-                    )
+                if !stills.stills.isEmpty {
+                    images[container.id] = DraftTree.RecordImages(TMDb.Record(.episode, record), stills)
                 }
             }
             containers.append(container)

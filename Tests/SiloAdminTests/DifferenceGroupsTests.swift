@@ -20,5 +20,19 @@ struct DifferenceGroupsTests {
         let reference = ReviewWalk.Difference.reference(item: nil, try ExternalRef(provider: .tmdb, value: "1001"))
         #expect(!reference.isField)
     }
+
+    /// The crew is said each with their job in brackets, and the cast each as the character they play.
+    @Test func creditsAreSaidWithEachRole() {
+        let crew = [
+            ReviewWalk.Person(name: "Keith Boak", role: "Director"),
+            ReviewWalk.Person(name: "Russell T Davies", role: "Writer"),
+            ReviewWalk.Person(name: "Phil Collinson"),
+        ]
+        #expect(DifferenceLabel.crew(crew) == "Keith Boak [Director], Russell T Davies [Writer], Phil Collinson")
+        let cast = [
+            ReviewWalk.Person(name: "Billie Piper", role: "Rose Tyler"), ReviewWalk.Person(name: "Noel Clarke"),
+        ]
+        #expect(DifferenceLabel.cast(cast) == "Billie Piper as Rose Tyler; Noel Clarke")
+    }
 }
 #endif

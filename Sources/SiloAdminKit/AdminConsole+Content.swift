@@ -103,13 +103,16 @@ extension AdminConsole {
         }
     }
 
-    /// An episode's stills, best first: the one its season gives it, then the others TMDb holds for it.
-    /// None when TMDb will not say.
-    nonisolated static func stills(of episode: TMDb.EpisodeStills, from tmdb: any TMDbSource) async -> [String] {
+    /// An episode's stills, best first: the one its season gives it, then the others TMDb holds for it,
+    /// with the sizes TMDb says. None when TMDb will not say.
+    nonisolated static func stills(of episode: TMDb.EpisodeStills, from tmdb: any TMDbSource) async -> TMDb.Images {
         let held =
-            (try? await tmdb.images(ofEpisode: episode.episode, inSeason: episode.season, of: episode.series))?
-            .stills ?? []
-        return (episode.still.map { [$0] } ?? []) + held.filter { $0 != episode.still }
+            (try? await tmdb.images(ofEpisode: episode.episode, inSeason: episode.season, of: episode.series))
+            ?? TMDb.Images()
+        return TMDb.Images(
+            stills: (episode.still.map { [$0] } ?? []) + held.stills.filter { $0 != episode.still },
+            sizes: held.sizes
+        )
     }
 
     /// Whether an attribution has been kept longer than its provider's terms let its content be kept.
