@@ -157,19 +157,20 @@ series' stop is read again, and the list made again when they confirm it.
 
 ## What this asks of an implementation
 
-Four steps, each a pull request carrying its spec change.
+Four steps, each a pull request carrying its spec change, in `openspec/changes/`: `stores-1-repeats`,
+`stores-2-blobs`, `stores-3-stores` and `stores-4-console`.
 
 ### 1. A repeated write is made
 
 An edit whose document, attributions and declined refs are what the sidecar holds is answered as
 applied, with nothing written and no walk, whatever its base. A create whose every container is held
 where the request files it is answered as applied, with no write. A removal of a kind the folder does
-not hold is answered 200.
+not hold is answered 204.
 
 Tests: an edit sent twice is applied twice, the second writing nothing; an edit of a sidecar changed
 since its base, to a document other than what it holds, is still 409; containers made twice are
 applied twice, the second writing nothing; a create of a container held elsewhere in the library is
-still 422; a kind removed twice answers 200 both times.
+still 422; a kind removed twice answers 204 both times.
 
 ### 2. Blobs
 
