@@ -102,3 +102,8 @@ deltas in `openspec/changes/`, as that README describes.
   go to smddb; TMDb is read only for outlines and artwork, attributed with the date they were read and
   read again within the six months TMDb's terms allow; an attributed field goes to smddb only when its
   provider is CC0, and artwork never does.
+- [Stores](Stores.md) — a walk is stored by handing the silo its whole store in one request under a
+  key the console chose, which the silo answers at once, makes in the background with the library to
+  itself, records step by step and resumes if it stops; the console asks after the key rather than
+  sending again, the images are sent first by their digest, and every write the silo takes can be sent
+  twice and is answered as made.
