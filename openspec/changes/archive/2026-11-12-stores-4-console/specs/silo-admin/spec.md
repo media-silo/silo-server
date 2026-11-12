@@ -12,7 +12,9 @@ a drafted record's naming in the collection holding it SHALL be read when the li
 edit the walk makes of one container SHALL be one step. A walk with a key SHALL ask after its store,
 and SHALL NOT send it again, until the silo says the store is made or refused: a store made SHALL mark
 every step of the walk stored, and a store refused SHALL mark the steps before the one refused stored,
-keep the rest, and free the key, so that the walk's next store is sent under a new one.
+keep the rest, and free the key, so that the walk's next store is sent under a new one. An edit of a
+container an earlier step of the store makes SHALL be sent with an empty base, to be made on what that
+step made.
 
 #### Scenario: a store whose answer never arrived
 - **WHEN** a walk's store is sent and its answer is lost, and the operator stores the walk again
@@ -28,7 +30,13 @@ keep the rest, and free the key, so that the walk's next store is sent under a n
   again once the refusal is answered
 - **THEN** the second store is sent under a new key with the second and third steps alone
 
-Pinned by: nothing yet.
+#### Scenario: specials declined in a series the walk makes
+- **WHEN** a walk makes a series and declines one of its specials, and the walk is stored
+- **THEN** the store makes the series, and then edits it with an empty base to decline the special
+
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aStoreWhoseAnswerNeverArrivedIsAskedAfter`,
+`aSpecialIsPlacedInACompanionSeriesTheLibraryHolds`, `aWalksStoreStopsAtTheFirstRefusal`,
+`aRecordTheLibraryLacksIsWalkedFromADraft`).
 
 ## MODIFIED Requirements
 
@@ -55,8 +63,7 @@ SHALL be read again and be pending, its choices kept, until the operator confirm
   read again
 
 Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aWalkIsKeptOnThisMacAndResumed`,
-`aDiscardedWalkIsGone`, `aStopWhoseSidecarChangedIsReadAgain`), which the console's store as one
-request changes; until it lands, the refusal at the stop's own step is what it pins. The offer to resume is pinned by
+`aDiscardedWalkIsGone`, `aStopWhoseSidecarChangedIsReadAgain`). The offer to resume is pinned by
 nothing yet, as the rest of the shell is.
 
 ### Requirement: A walk's store says each step as it goes
@@ -75,6 +82,6 @@ store nor the operator putting the store off.
 - **WHEN** the console quits while a walk's store is under way at the silo, and the walk is opened again
 - **THEN** the store's step is said as the silo's record says it, and the store is not sent again
 
-Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aWalksStoreStopsAtTheFirstRefusal`).
-The walk opened while its store is under way is pinned by nothing yet.
-The sheet's showing it is pinned by nothing yet, as the rest of the shell is.
+Pinned by: `Tests/SiloAdminKitTests/AdminConsoleTests.swift` (`aWalksStoreStopsAtTheFirstRefusal`,
+`aWalkKeptWhileItsStoreIsUnderWayAsksAfterIt`). The sheet's showing it is pinned by nothing yet, as the
+rest of the shell is.

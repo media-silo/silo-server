@@ -99,7 +99,8 @@ package final class StoreService: Sendable {
                 guard let record = records.record(key, in: library.id), record.state == .underWay else { return }
                 for position in record.made..<record.steps.count {
                     try records.update(key, in: library.id) { $0.step = position }
-                    if let refusal = try make(record.steps[position], in: library) {
+                    let made = Set(record.steps[..<position].flatMap(Self.makes))
+                    if let refusal = try make(record.steps[position], in: library, after: made) {
                         try records.update(key, in: library.id) {
                             $0.state = .refused
                             $0.reason = refusal.reason
@@ -130,13 +131,20 @@ package final class StoreService: Sendable {
         var findings: [StoreRecord.Finding]?
     }
 
-    /// Makes one step within the turn the store holds; nil when it is made, or why it is refused.
-    private func make(_ step: StoreStep, in library: LibraryConfig) throws -> Refusal? {
+    /// The containers a step makes: a creation's, or none.
+    static func makes(_ step: StoreStep) -> [ContainerID] {
+        guard let create = step.create else { return [] }
+        return (try? ContainerMaker.reading(create.documents, attributions: []).containers.map(\.id)) ?? []
+    }
+
+    /// Makes one step within the turn the store holds, after the steps that made `made`; nil when it is
+    /// made, or why it is refused.
+    private func make(_ step: StoreStep, in library: LibraryConfig, after made: Set<ContainerID>) throws -> Refusal? {
         do {
             if let create = step.create {
                 try make(create, in: library)
             } else if let edit = step.edit {
-                try make(edit, in: library)
+                try make(edit, in: library, after: made)
             } else if let artwork = step.putArtwork {
                 return try put(artwork, in: library)
             } else if let artwork = step.removeArtwork {
@@ -168,14 +176,18 @@ package final class StoreService: Sendable {
         )
     }
 
-    private func make(_ edit: StoreStep.Edit, in library: LibraryConfig) throws {
+    /// An edit of a container an earlier step made, with no base, is based on the sidecar that step
+    /// left, which its sender could not have read.
+    private func make(_ edit: StoreStep.Edit, in library: LibraryConfig, after made: Set<ContainerID>) throws {
         guard let id = ContainerID(edit.container) else { throw NoSuchContainer() }
         let attributions = try Self.ownAttributions(edit.attributions)
+        var basedOn = edit.basedOn
+        if basedOn.isEmpty, made.contains(id), let digest = try digest(of: id, in: library) { basedOn = digest }
         let outcome = try ContainerEditor.edit(
             ContainerEditor.Request(
                 id: id,
                 container: try ContainerEditor.reading(edit.document, as: id, attributions: attributions),
-                basedOn: edit.basedOn,
+                basedOn: basedOn,
                 attributions: attributions,
                 declined: Self.refs(edit.declined)
             ),
@@ -184,6 +196,13 @@ package final class StoreService: Sendable {
             index: index
         )
         if outcome.applied, !outcome.moves.isEmpty { libraries.walkInTurn(library) }
+    }
+
+    /// The digest of the sidecar the library holds for a container, read now; nil when it holds none.
+    private func digest(of id: ContainerID, in library: LibraryConfig) throws -> String? {
+        guard let row = try index.container(id, in: library.id) else { return nil }
+        let url = library.root.appendingPathComponent("\(row.folder)/\(SidecarFile.fileName)")
+        return (try? Data(contentsOf: url)).map(IndexedContainer.digest)
     }
 
     private func put(_ artwork: StoreStep.Artwork, in library: LibraryConfig) throws -> Refusal? {

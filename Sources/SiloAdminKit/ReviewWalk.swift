@@ -92,6 +92,9 @@ public struct ReviewWalk: Hashable, Sendable, Identifiable, Codable, Alternative
     private var companions: [String: String]?
     /// The steps a store made, by id, so a store after a refusal makes only the rest.
     public var stored: Set<String> = []
+    /// The stores of the walk sent to the silo and not yet said made or refused, under their keys, kept
+    /// before they are sent: what a store of the walk asks after rather than sending again.
+    public var sending: [SentStore]?
     /// The containers the walk makes, a missing child chosen at a stop and what is beneath it, each as a
     /// draft by the id of its top: every container of a draft is a new stop.
     public var drafts: [String: DraftTree] = [:]

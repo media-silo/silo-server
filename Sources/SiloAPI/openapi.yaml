@@ -523,7 +523,8 @@ paths:
         Takes a store's steps, each a creation, an edit, a put of artwork from a blob or a removal
         of artwork, in the terms of the route that makes it alone, and checks them before making
         any: each document reads and names its container, each edit's basedOn is the sidecar the
-        library holds unless its document is what that sidecar holds already, each image is a blob
+        library holds unless its document is what that sidecar holds already or an earlier step makes
+        its container, each image is a blob
         the silo holds, and each container a step names is held or made by an earlier step. The
         store is recorded, refused at the first step the check refuses or under way, and answered
         202 at once; the silo then makes its steps in order in one turn of the library, walking the
@@ -3272,7 +3273,9 @@ components:
           description: The container as its repository XML.
         basedOn:
           type: string
-          description: The digest of the sidecar the edit was made from.
+          description: >
+            The digest of the sidecar the edit was made from; empty for a container an earlier step
+            of the store makes, whose edit is made on the sidecar that step left.
         attributions:
           type: array
           items:

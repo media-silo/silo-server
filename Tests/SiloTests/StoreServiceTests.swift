@@ -205,6 +205,34 @@ struct StoreServiceTests {
         #expect(try !bench.held(last.id), "and the one after it is not made")
     }
 
+    /// An edit of a container an earlier step makes, with no base, is made on the sidecar that step left,
+    /// which its sender could not have read; with no base, an edit of one the library held is refused.
+    @Test func anEditOfAContainerTheStoreMadeIsOnWhatItMade() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let special = StoreStep.Ref(provider: "wikidata", value: "Q3731")
+        let decline = StoreStep(
+            edit: StoreStep.Edit(
+                container: Self.series.id.value,
+                document: Self.xml(Self.series),
+                basedOn: "",
+                declined: [special]
+            )
+        )
+        let made = try await bench.store([Self.create(Self.series), decline], key: "made")
+        #expect(made.state == .made)
+        #expect(
+            try SidecarFile.sidecar(from: bench.sidecar("Andor")).declined == [
+                ExternalRef(provider: .wikidata, value: "Q3731")
+            ]
+        )
+
+        var another = decline
+        another.edit?.declined = [special, StoreStep.Ref(provider: "wikidata", value: "Q3741")]
+        let unbased = try await bench.store([another], key: "unbased")
+        #expect(unbased.state == .refused && unbased.step == 0, "held, not made by the store")
+    }
+
     @Test func aStoreUnderWayWhenTheSiloStoppedIsResumed() async throws {
         let bench = try Bench()
         defer { bench.remove() }
