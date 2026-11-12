@@ -936,8 +936,8 @@ The sheet's showing it is pinned by nothing yet, as the rest of the shell is.
 
 ### Requirement: A stop's artwork is chosen from the images TMDb offers for the kind
 For each artwork kind a stop of a walk offers, the console SHALL show the image storing the walk would
-put, and, when TMDb offers more than one image for the kind, each of them, best first, with that image
-marked. The image put SHALL be the first TMDb offers until the operator chooses another. Choosing
+put, with its size in pixels when TMDb says it, and, when TMDb offers more than one image for the kind,
+each of them, best first, with that image marked. The image put SHALL be the first TMDb offers until the operator chooses another. Choosing
 another image SHALL tick the kind, SHALL make the stop pending again if it changes the image, and
 SHALL be kept with the walk. Storing the walk SHALL put the image chosen, with its attribution to TMDb.
 A held season's images SHALL be read through the series above it, which TMDb holds them beneath, and
@@ -966,6 +966,11 @@ image TMDb does not give SHALL be shown as missing, not as loading.
 #### Scenario: a held episode with a thumb
 - **WHEN** a held episode whose folder has a thumb is walked
 - **THEN** the episode's stop offers no thumb
+
+#### Scenario: an image's size
+- **WHEN** a held season is walked, TMDb offering a poster it says is 1000 by 1500 pixels and another
+  whose size it does not say
+- **THEN** the stop has the first poster's size as 1000 by 1500 pixels, and the other's as unknown
 
 #### Scenario: an image chosen at a confirmed stop
 - **WHEN** another poster is chosen at a confirmed stop

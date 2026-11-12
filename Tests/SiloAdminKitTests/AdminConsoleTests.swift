@@ -3435,7 +3435,10 @@ extension AdminConsoleTests {
             ],
             of: 906
         )
-        tmdb.episodeImages["906/1/1"] = TMDb.Images(stills: ["/tardis.jpg", "/rose.jpg"])
+        tmdb.episodeImages["906/1/1"] = TMDb.Images(
+            stills: ["/tardis.jpg", "/rose.jpg"],
+            sizes: ["/tardis.jpg": TMDb.Size(width: 1920, height: 1080)]
+        )
         let thumb = ReviewWalk.Difference.artwork(
             kind: "thumb",
             path: "/rose.jpg",
@@ -3461,6 +3464,7 @@ extension AdminConsoleTests {
         let episodes = season.childContainerIDs.map(\.value)
         var walk = ReviewWalk(drafting: tree)
         #expect(walk.offered(episodes[0]).filter { $0.id.hasPrefix("artwork:") } == [thumb])
+        #expect(walk.size(of: "/tardis.jpg", at: episodes[0]) == TMDb.Size(width: 1920, height: 1080))
         #expect(ReviewWalk.tmdbDefaultFields.contains("artwork:thumb"), "which this Mac's settings may leave unticked")
         #expect(walk.offered(episodes[1]).filter { $0.id.hasPrefix("artwork:") }.isEmpty, "TMDb holds no still of it")
         let walking = Walking(console: console, home: home, database: database, wikidata: wikidata, tmdb: tmdb)
@@ -3517,6 +3521,15 @@ extension AdminConsoleTests {
             .differences.filter { $0.id.hasPrefix("artwork:") }
         }
         #expect(try await artwork() == [thumb], "a held episode's folder with no thumb")
+        let read = try await heldConsole.compare(
+            rose.id.value,
+            in: "tv",
+            of: heldHome,
+            from: database,
+            wikidata: wikidata,
+            tmdb: tmdb
+        )
+        #expect(read.imageSizes == ["/tardis.jpg": TMDb.Size(width: 1920, height: 1080)])
         held.artwork.withLock { $0[rose.id.value] = ["thumb"] }
         #expect(try await artwork().isEmpty, "its folder holds one")
     }
@@ -4785,7 +4798,10 @@ extension AdminConsoleTests {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
         var (series, seasons, serials, fakes) = Self.walkedSeries()
-        fakes.tmdb.images[TMDb.Record(.season, 901)] = TMDb.Images(posters: ["/one.jpg", "/two.jpg"])
+        fakes.tmdb.images[TMDb.Record(.season, 901)] = TMDb.Images(
+            posters: ["/one.jpg", "/two.jpg"],
+            sizes: ["/two.jpg": TMDb.Size(width: 1000, height: 1500)]
+        )
         let held = HeldLibrary([series] + seasons + serials)
         let (console, home) = try await Self.smddbConsole(held)
         let walking = Walking(console: console, home: home, database: database, fakes)
@@ -4805,6 +4821,8 @@ extension AdminConsoleTests {
             ],
             "posters alone, which is all TMDb holds for a season"
         )
+        #expect(walk.size(of: "/two.jpg", at: one) == TMDb.Size(width: 1000, height: 1500), "as TMDb says it")
+        #expect(walk.size(of: "/one.jpg", at: one) == nil, "TMDb did not say")
         walk.choose(image: "/two.jpg", for: "poster", at: one)
         try await walking.confirm(one, choosing: walk.stops[one]?.chosen ?? [], in: &walk)
         #expect(
@@ -6365,7 +6383,10 @@ extension AdminConsoleTests {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
         var (series, contents, fakes, _, _) = Self.missingSeason()
-        fakes.tmdb.images[TMDb.Record(.season, 904)] = TMDb.Images(posters: ["/one.jpg", "/two.jpg"])
+        fakes.tmdb.images[TMDb.Record(.season, 904)] = TMDb.Images(
+            posters: ["/one.jpg", "/two.jpg"],
+            sizes: ["/two.jpg": TMDb.Size(width: 1000, height: 1500)]
+        )
         let held = HeldLibrary([series] + contents)
         let (console, home) = try await Self.smddbConsole(held)
         let walking = Walking(console: console, home: home, database: database, fakes)
@@ -6383,6 +6404,7 @@ extension AdminConsoleTests {
         #expect(walk.image(for: "poster", at: new) == "/one.jpg")
         walk.choose(image: "/two.jpg", for: "poster", at: new)
         #expect(walk.image(for: "poster", at: new) == "/two.jpg")
+        #expect(walk.size(of: "/two.jpg", at: new) == TMDb.Size(width: 1000, height: 1500), "as its draft read it")
 
         try await walking.confirm(new, choosing: walk.stops[new]?.chosen ?? [], in: &walk)
         let kinds = try walk.plan().steps.map(\.kind)

@@ -153,7 +153,8 @@ struct TMDbClientTests {
     }
 
     @Test func aRecordsImagesAreListedInTheLanguageOrNoneAndFetchedWhole() async throws {
-        let images = #"{"posters":[{"file_path":"/poster.jpg"}],"backdrops":[{"file_path":"/backdrop.jpg"}]}"#
+        let images =
+            #"{"posters":[{"file_path":"/poster.jpg","width":2000,"height":3000}],"backdrops":[{"file_path":"/backdrop.jpg"}]}"#
         let client = Self.client([
             "movie/348/images": images,
             "tv/121/images": #"{"posters":[],"backdrops":[],"logos":[{"file_path":"/logo.png"}]}"#,
@@ -164,8 +165,12 @@ struct TMDbClientTests {
         ])
         #expect(
             try await client.images(of: TMDb.Record(.movie, 348))
-                == TMDb.Images(posters: ["/poster.jpg"], backdrops: ["/backdrop.jpg"]),
-            "a record with no logos has none"
+                == TMDb.Images(
+                    posters: ["/poster.jpg"],
+                    backdrops: ["/backdrop.jpg"],
+                    sizes: ["/poster.jpg": TMDb.Size(width: 2000, height: 3000)]
+                ),
+            "a record with no logos has none, and an image whose size TMDb does not say no size"
         )
         #expect(Self.query(of: Stub.asked.withLock { $0[0] })["include_image_language"] == "en,null")
         #expect(try await client.images(of: TMDb.Record(.series, 121)).offered(for: "logo") == ["/logo.png"])

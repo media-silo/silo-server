@@ -63,23 +63,27 @@ struct DifferenceLabel: View {
         case .order(let sequence, let items):
             Text("\(sequence ?? "The sequence") in Wikidata's order: \(items.joined(separator: ", "))")
         case .artwork(let kind, let path, let record, _):
+            let shown = images.flatMap { walk.image(for: kind, at: $0.stop) } ?? path
             VStack(alignment: .leading) {
-                TMDbArtwork(path: images.flatMap { walk.image(for: kind, at: $0.stop) } ?? path)
+                TMDbArtwork(path: shown)
                 HStack(spacing: 4) {
                     Text("\(kind),")
                     TMDbMark()
-                    Text("taken with its attribution to TMDb \(record.id)")
+                    Text("taken with its attribution to TMDb \(record.id)\(size(of: shown))")
                 }
                 .font(.caption).foregroundStyle(.secondary)
             }
         case .staleArtwork(let kind, let path, _, _, let read):
             if let path {
                 VStack(alignment: .leading) {
-                    TMDbArtwork(path: images.flatMap { walk.image(for: kind, at: $0.stop) } ?? path)
+                    let shown = images.flatMap { walk.image(for: kind, at: $0.stop) } ?? path
+                    TMDbArtwork(path: shown)
                     HStack(spacing: 4) {
                         Text("\(kind),")
                         TMDbMark()
-                        Text("read from TMDb \(read), longer ago than TMDb's terms let it be kept: read again")
+                        Text(
+                            "read from TMDb \(read), longer ago than TMDb's terms let it be kept: read again\(size(of: shown))"
+                        )
                     }
                     .font(.caption).foregroundStyle(.secondary)
                 }
@@ -90,6 +94,12 @@ struct DifferenceLabel: View {
             }
         case .special(let special): Text(special.episode.title)
         }
+    }
+
+    /// An image's size as TMDb says it, after a space, as ` [1600x1200px]`; nothing when TMDb did not say.
+    private func size(of path: String) -> String {
+        guard let stop = images?.stop, let size = walk.size(of: path, at: stop) else { return "" }
+        return " [\(size.width)x\(size.height)px]"
     }
 
     /// The cast, each with the character they play: `Billie Piper as Rose Tyler; …`.
