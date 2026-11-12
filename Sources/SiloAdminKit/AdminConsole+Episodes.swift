@@ -76,7 +76,7 @@ extension AdminConsole {
         container.cast = cast(of: work)
         container.crew = crew(of: work)
         container.sequences = [
-            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("feature")!, type: .episode))])
+            Sequence(id: "main", items: [.leaf(Entry.Leaf(id: ItemID("episode")!, type: .episode))])
         ]
         return container
     }

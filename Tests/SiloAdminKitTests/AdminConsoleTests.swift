@@ -3368,8 +3368,8 @@ extension AdminConsoleTests {
         #expect(episodes.map(\.premiered) == read.map(\.premiered))
         #expect(episodes.map(\.externalRefs) == read.map { Special(episode: $0).refs })
         #expect(
-            episodes.allSatisfy { $0.year == nil && $0.sequences.flatMap(\.items).map(\.id?.value) == ["feature"] },
-            "each holding its feature"
+            episodes.allSatisfy { $0.year == nil && $0.sequences.flatMap(\.items).map(\.id?.value) == ["episode"] },
+            "each holding its episode"
         )
         let rose = episodes[0]
         let wikidataID = { (id: String) in ExternalRef(provider: .wikidata, value: id) }
@@ -3864,7 +3864,7 @@ extension AdminConsoleTests {
         #expect(made.type == .episode && made.title.rawValue == "Children in Need")
         #expect(made.premiered == special.premiered && made.cast == AdminConsole.cast(of: special))
         #expect(made.externalRefs == Special(episode: special).refs)
-        #expect(made.sequences.flatMap(\.items).map(\.id?.value) == ["feature"], "holding its feature")
+        #expect(made.sequences.flatMap(\.items).map(\.id?.value) == ["episode"], "holding its episode")
     }
 
     /// A held serial carrying a Wikidata id is read against Wikidata's item for it: its episode containers

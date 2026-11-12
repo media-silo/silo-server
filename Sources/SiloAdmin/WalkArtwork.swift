@@ -49,6 +49,29 @@ struct ImageStrip: View {
     }
 }
 
+/// An image TMDb holds, by its path there, as wide as the stop's column and no taller than a cap, shown
+/// whole in Quick Look; one TMDb does not give is said to be missing rather than shown loading.
+struct TMDbArtwork: View {
+    let path: String
+    static let height: CGFloat = 240
+
+    var body: some View {
+        AsyncImage(url: URL(string: "https://image.tmdb.org/t/p/w780\(TMDb.raster(path))")) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFit()
+            case .failure:
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.secondary)
+                    .help("TMDb did not give this image.")
+            default:
+                ProgressView().frame(height: Self.height)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: Self.height, alignment: .leading)
+        .previewable(URL(string: "https://image.tmdb.org/t/p/original\(TMDb.raster(path))"))
+    }
+}
+
 /// An image TMDb holds, by its path there, fitted to a square of the size given, and shown whole in
 /// Quick Look; one TMDb does not give is said to be missing rather than shown loading.
 struct TMDbImage: View {

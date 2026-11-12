@@ -1997,7 +1997,7 @@ nothing yet, as the rest of the shell is.
 
 ### Requirement: A walk drafts each episode as a container, a stop of its own
 Wikidata's reading of a season or a serial SHALL draft each episode it holds as a container of type
-`episode` beneath it, in Wikidata's order, holding one sequence `main` of one leaf `feature` of type
+`episode` beneath it, in Wikidata's order, holding one sequence `main` of one leaf `episode` of type
 `episode`. The episode's container SHALL carry its label as its title, its publication date as its
 `premiered`, its cast members as its cast, each with the character they play, its directors and then
 its screenwriters as its crew, with the roles `Director` and `Writer`, a `wikidata` reference and
@@ -2030,7 +2030,7 @@ as it is.
 - **WHEN** a season Wikidata holds with three episodes is drafted, TMDb's season giving an overview of
   the first alone
 - **THEN** the draft holds the season with three episode containers beneath it in Wikidata's order,
-  each holding its feature and carrying its title, first date and references, and only the first an
+  each holding its episode and carrying its title, first date and references, and only the first an
   outline, TMDb's, attributed to the episode's TMDb id
 
 #### Scenario: an episode's crew
@@ -2104,7 +2104,7 @@ The sidebar's *confirmed from above* is pinned by nothing yet, as the rest of th
 
 ### Requirement: A special placed among a season's episodes is an episode container
 A special placed in the run of a season or serial whose episodes are containers SHALL be an episode
-container of its own where it was placed, holding its one feature, with its title, first date, cast,
+container of its own where it was placed, holding its one episode, with its title, first date, cast,
 crew and references Wikidata's, made after the edit of the container it was placed in. A season or
 serial holding an episode as an entry of its own SHALL take a special placed in it as an entry of its
 own. A special placed as a version of an episode SHALL be an alternative of that episode's container,
@@ -2114,7 +2114,7 @@ in a sequence of the container's own, whether it was placed at the episode's sto
 - **WHEN** a special is placed between a held season's first and second episode containers, and the
   season's stop confirmed
 - **THEN** storing the walk names a new episode container there in the season's edit, and makes it,
-  with the special's title, first date, cast and references, holding its feature
+  with the special's title, first date, cast and references, holding its episode
 
 #### Scenario: a special as a version of one episode
 - **WHEN** a special is placed at an episode's stop as a version of the episode, and the stop confirmed
