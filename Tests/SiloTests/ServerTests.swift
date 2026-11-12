@@ -502,6 +502,25 @@ struct ServerTests {
                 ).status == 404
             )
 
+            // A sidecar changed behind the index's back is read when an edit on it is refused, so the
+            // next read names the digest the refusal did; put back as it was, it is read again.
+            func refusedBehind(_ bytes: Data) async throws {
+                try bytes.write(to: moved)
+                let unseen = try await client.send(
+                    "PUT",
+                    path,
+                    body: try JSONEncoder().encode(Edit(document: document { $0.year = 1981 }, basedOn: "elsewhere")),
+                    headers: operatorHeaders
+                )
+                #expect(unseen.status == 409)
+                let now = IndexedContainer.digest(of: bytes)
+                #expect(try unseen.json(Problem.self).detail.contains(now), "naming the digest on disk")
+                #expect(try await client.get(path).json(Read.self).digest == now, "which the next read names")
+            }
+            let kept = try Data(contentsOf: moved)
+            try await refusedBehind(kept + Data("\n".utf8))
+            try await refusedBehind(kept)
+
             // A container with children keeps their paths through an edit of its own fields.
             let seriesPath = "/v1/libraries/main/containers/\(Fixture.series.id)"
             let series = try await client.get(seriesPath).json(Read.self)
