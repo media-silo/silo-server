@@ -460,6 +460,47 @@ struct WorkerTests {
         #expect(probedInPlace.streams.map(\.codec) == ["h264", "flac", "aac"])
     }
 
+    /// Stopping the worker mid-encode terminates ffmpeg rather than waiting for it, as stopping the
+    /// silo stops its embedded node. The ffmpeg here answers for its encoders as the real one does,
+    /// then marks that it has started and sleeps for ten minutes.
+    @Test(.timeLimit(.minutes(1))) func cancellingTheWorkerCancelsItsEncode() async throws {
+        let bench = try JobServiceTests.Bench()
+        defer { bench.remove() }
+        let real = try FFmpeg()
+        let ffprobe = try FFprobe()
+        let sample = bench.root.appendingPathComponent("sample.mkv")
+        try await Self.sample(sample, with: real)
+        let resolved = try bench.resolved(
+            input: InputSpec(probe: try await ffprobe.probe(sample)),
+            copy: FileRef(holder: "embedded", url: sample, path: sample.path, secret: ""),
+            profile: "mobile"
+        )
+        let job = try bench.service.make(from: resolved.id)
+
+        let started = bench.root.appendingPathComponent("encoding")
+        let slow = bench.root.appendingPathComponent("ffmpeg")
+        try """
+        #!/bin/sh
+        case " $* " in *" -encoders "*) exec '\(real.executable.path)' "$@" ;; esac
+        touch '\(started.path)'
+        exec sleep 600
+        """.write(to: slow, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: slow.path)
+
+        let worker = Self.worker(bench, ffmpeg: try FFmpeg(executable: slow), ffprobe: ffprobe)
+        let running = Task { try await worker.runOnce() }
+        while !FileManager.default.fileExists(atPath: started.path) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let cancelled = ContinuousClock.now
+        running.cancel()
+        #expect(try await running.value == true, "the pass held a job")
+        #expect(ContinuousClock.now - cancelled < .seconds(10), "the encode was terminated, not waited for")
+        let failed = try bench.service.job(job.id)
+        #expect(failed.state == .failed)
+        #expect(failed.failure == "cancelled", "a stop is a cancel, not ffmpeg's exit status")
+    }
+
     @Test func aSpanOfOneHeldSourceAndAWholeFetchedOneAreEncodedAsOneInput() async throws {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
