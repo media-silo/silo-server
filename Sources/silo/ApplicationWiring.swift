@@ -66,6 +66,11 @@ package enum ApplicationWiring {
     }
 
     @Provides
+    package static func blobs(config: SiloConfig) throws -> BlobStore {
+        try BlobStore(folder: config.stateDirectory.appendingPathComponent("blobs", isDirectory: true))
+    }
+
+    @Provides
     package static func nodes(config: SiloConfig) throws -> NodeStore {
         try NodeStore(folder: config.stateDirectory.appendingPathComponent("nodes", isDirectory: true))
     }

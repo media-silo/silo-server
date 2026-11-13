@@ -963,6 +963,70 @@ struct ServerTests {
         }
     }
 
+    @Test func anImageIsHeldByItsDigestForAStoreToPut() async throws {
+        struct Held: Decodable {
+            var digest: String
+            var size: Int
+        }
+        let operatorHeaders = ["Authorization": "Bearer secret"]
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0x33, count: 64))
+        let png = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] + Array(repeating: 0x44, count: 64))
+        let digest = BlobStore.digest(of: jpeg)
+        let route = "/v1/blobs/\(digest)"
+        let blobs = Fixture.root.appendingPathComponent("State/blobs")
+        try await withClient { client in
+            #expect(try await client.send("PUT", route, body: jpeg).status == 401)
+            #expect(try await client.send("GET", route).status == 401)
+            #expect(try await client.send("GET", route, headers: operatorHeaders).status == 404)
+
+            let wrong = "/v1/blobs/\(BlobStore.digest(of: png))"
+            #expect(try await client.send("PUT", wrong, body: jpeg, headers: operatorHeaders).status == 400)
+            #expect(try await client.send("GET", wrong, headers: operatorHeaders).status == 404)
+            #expect(try await client.send("GET", route, headers: operatorHeaders).status == 404)
+
+            #expect(try await client.send("PUT", route, body: jpeg, headers: operatorHeaders).status == 204)
+            let held = try await client.send("GET", route, headers: operatorHeaders)
+            #expect(held.status == 200)
+            #expect(try held.json(Held.self).size == jpeg.count)
+
+            #expect(
+                try await client.send("PUT", route, body: jpeg, headers: operatorHeaders).status == 204,
+                "an image put again is answered as put"
+            )
+            #expect(try FileManager.default.contentsOfDirectory(atPath: blobs.path) == [digest], "and held once")
+
+            #expect(try await client.send("PUT", "/v1/blobs/nope", body: jpeg, headers: operatorHeaders).status == 400)
+            let text = Data("not an image".utf8)
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/blobs/\(BlobStore.digest(of: text))",
+                    body: text,
+                    headers: operatorHeaders
+                )
+                .status == 415
+            )
+            let huge = Data([0xFF, 0xD8, 0xFF] + Array(repeating: 0, count: Artwork.maximumSize))
+            #expect(
+                try await client.send(
+                    "PUT",
+                    "/v1/blobs/\(BlobStore.digest(of: huge))",
+                    body: huge,
+                    headers: operatorHeaders
+                )
+                .status == 413
+            )
+
+            // Put more than a day ago, and named by no store, a blob is no longer held.
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date().addingTimeInterval(-2 * BlobStore.lifetime)],
+                ofItemAtPath: blobs.appendingPathComponent(digest).path
+            )
+            #expect(try await client.send("GET", route, headers: operatorHeaders).status == 404)
+            #expect(try FileManager.default.contentsOfDirectory(atPath: blobs.path).isEmpty)
+        }
+    }
+
     @Test func mediaIsServedWholeAndByRange() async throws {
         try await withClient { client in
             let serial = try await client.get("/v1/containers/0000000000000003")
