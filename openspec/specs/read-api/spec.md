@@ -919,7 +919,9 @@ store before making any of it, SHALL record it, and SHALL answer at once with it
 - The check SHALL refuse the store when a document cannot be read or names another container, when
   an edit's `basedOn` is not the digest of the sidecar the library holds and its document is not what
   the sidecar already holds, when an `image` names a blob the silo does not hold, or when a step names a
-  container the library does not hold and no earlier step makes. A store the check refuses SHALL be
+  container the library does not hold and no earlier step makes. An edit of a container an earlier
+  step makes SHALL NOT be checked against a base; with an empty `basedOn` it SHALL be made on the
+  sidecar the earlier steps left, which its sender could not have read. A store the check refuses SHALL be
   recorded as `refused` with none of its steps made, naming the first step refused and the reason, and
   SHALL be answered 202 as a store taken is.
 - A store the check passes SHALL be answered 202 and SHALL be made in the background, its steps in
@@ -958,6 +960,11 @@ The route SHALL require the operator's bearer; a missing or wrong bearer SHALL b
 - **WHEN** a store's step puts artwork from a digest the silo holds no blob for
 - **THEN** the store is recorded as refused at that step, and none of its steps is made
 
+#### Scenario: an edit of a container the store makes
+- **WHEN** a store's first step makes a series, and its second edits the series with an empty base,
+  declining a special
+- **THEN** the store is made, and the series' sidecar declines the special
+
 #### Scenario: a step the silo refuses as it is made
 - **WHEN** a store's second step creates a container the library already holds, beneath a container
   its first step made
@@ -970,7 +977,7 @@ The route SHALL require the operator's bearer; a missing or wrong bearer SHALL b
 
 Pinned by: `Tests/SiloTests/StoreServiceTests.swift` (`aStoreIsMadeInOrderAndSentTwiceIsMadeOnce`,
 `aStoreTheCheckRefusesMakesNothing`, `aStepTheSiloRefusesEndsTheStoreThere`,
-`aStepIsOneKindInItsJSON`),
+`anEditOfAContainerTheStoreMadeIsOnWhatItMade`, `aStepIsOneKindInItsJSON`),
 `Tests/SiloTests/ServerTests.swift` (`aStoreIsTakenAtOnceAndSaidAtARouteOfItsOwn`).
 
 ### Requirement: A store is said at a route of its own, and resumed when the silo starts

@@ -619,41 +619,6 @@ extension AdminConsole {
 
     // MARK: What a walk's store makes outside its stops
 
-    /// Adds references to what a library's container declines, its own fields as they stand.
-    func decline(_ refs: [ExternalRef], in container: String, of library: String, on silo: Silo) async throws {
-        let opened = try await open(container: container, in: library, of: silo)
-        let sidecar = try SidecarFile.sidecar(from: opened.sidecar)
-        var declined = sidecar.declined
-        for ref in refs where !declined.contains(ref) { declined.append(ref) }
-        let document = try ContainerDraft.document(of: opened.sidecar)
-        let refs = declined.map { SiloClient.Container.ExternalRef(provider: $0.provider.rawValue, value: $0.value) }
-        _ = try await withOperator(silo) {
-            try await $0.edit(
-                container: container,
-                in: library,
-                document: document,
-                basedOn: opened.container.digest,
-                declined: refs
-            )
-        }
-    }
-
-    /// One edit of a container a library holds that a placement makes, onto its sidecar as it is now.
-    func apply(_ edit: DraftTree.Making.HeldEdit, on silo: Silo) async throws {
-        let opened = try await open(container: edit.container, in: edit.library, of: silo)
-        var draft = try ContainerDraft.change(opened.container, sidecar: opened.sidecar)
-        guard var container = draft.value else { return }
-        Self.applying(edit, to: &container)
-        draft.set(container)
-        switch try await store(draft, of: silo) {
-        case .stored: break
-        case .refused(let result):
-            throw StoreRefused(reason: result.findings.map(\.text).joined(separator: "; "))
-        case .landedFirst:
-            throw StoreRefused(reason: "\(edit.container) changed in \(edit.library) as it was edited; try again")
-        }
-    }
-
     /// What an edit a placement makes does to the container it is of.
     nonisolated static func applying(_ edit: DraftTree.Making.HeldEdit, to container: inout Container) {
         if let item = edit.item, let ref = edit.ref {

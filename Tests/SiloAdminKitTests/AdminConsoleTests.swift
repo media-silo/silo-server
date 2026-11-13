@@ -1840,6 +1840,28 @@ extension AdminConsoleTests {
         let libraries: Mutex<[String: String]>
         /// The artwork kinds each container's folder holds.
         let artwork: Mutex<[String: Set<String>]> = Mutex([:])
+        /// The records of the stores sent, by library and key, and the images held for them.
+        let stores: Mutex<[String: Data]> = Mutex([:])
+        let blobs: Mutex<Set<String>> = Mutex([])
+        /// The key and steps of each store sent, in the order they were sent, a store sent again included.
+        let sent: Mutex<[(key: String, steps: [SiloClient.StoreStep])]> = Mutex([])
+        /// Whether a store is made a step each time it is asked after, rather than whole when it is sent.
+        let stepwise = Mutex(false)
+        /// How many of the stores' answers to lose, each as a dropped connection: a store sent is taken
+        /// first, and a store asked after is not.
+        let losing = Mutex(0)
+        /// The steps of each store under way stepwise, by library and key.
+        let underWay: Mutex<[String: [SiloClient.StoreStep]]> = Mutex([:])
+
+        /// The answer, or, while answers are being lost, a dropped connection in its place.
+        func answering(_ answer: (Int, Data)) throws -> (Int, Data) {
+            let lost = losing.withLock { losing in
+                defer { losing = max(0, losing - 1) }
+                return losing > 0
+            }
+            if lost { throw URLError(.networkConnectionLost) }
+            return answer
+        }
         init(_ containers: [Container] = []) {
             sidecars = Mutex(
                 Dictionary(
@@ -1966,6 +1988,25 @@ extension AdminConsoleTests {
                     held.file(Sidecar(container: container, attributions: attributions), in: library)
                 }
                 return (200, result(true))
+            case ("POST", "/v1/libraries/\(library)/stores"):
+                return try held.answering(try Self.store(body, in: library, of: held))
+            case ("GET", let path) where path.hasPrefix("/v1/libraries/\(library)/stores/"):
+                let key = String(path.dropFirst("/v1/libraries/\(library)/stores/".count))
+                // An answer lost to a dropped connection on the way there makes nothing.
+                _ = try held.answering((0, Data()))
+                if let steps = held.underWay.withLock({ $0["\(library)/\(key)"] }) {
+                    return try held.answering(try Self.advance(key, steps, in: library, of: held))
+                }
+                return try held.answering(
+                    held.stores.withLock { $0["\(library)/\(key)"] }.map { (200, $0) } ?? (404, Data())
+                )
+            case ("GET", let path) where path.hasPrefix("/v1/blobs/"):
+                let digest = String(path.dropFirst("/v1/blobs/".count))
+                guard held.blobs.withLock({ $0.contains(digest) }) else { return (404, Data()) }
+                return (200, Data(#"{"digest":"\#(digest)","size":5}"#.utf8))
+            case ("PUT", let path) where path.hasPrefix("/v1/blobs/"):
+                _ = held.blobs.withLock { $0.insert(String(path.dropFirst("/v1/blobs/".count))) }
+                return (204, Data())
             case (let method, let path) where path.hasPrefix(prefix + "/"):
                 let rest = path.dropFirst(prefix.count + 1).split(separator: "/").map(String.init)
                 guard let bytes = held.sidecars.withLock({ $0[rest[0]] }), held.library(of: rest[0]) == library,
@@ -2081,6 +2122,141 @@ extension AdminConsoleTests {
             default: return (404, Data())
             }
         }
+    }
+
+    private struct StoreRecord: Codable {
+        var key: String
+        var state: String
+        var made: Int
+        var steps: Int
+        var step: Int?
+        var reason: String?
+    }
+
+    /// A store as the fake silo takes it: its edits' bases checked before any step, and then each step
+    /// made through the library's own routes, in order, ending at the first refused; made whole at once,
+    /// or, stepwise, a step each time it is asked after. A key sent again is answered its record.
+    private static func store(_ body: Data, in library: String, of held: HeldLibrary) throws -> (Int, Data) {
+        struct Request: Decodable {
+            var key: String
+            var steps: [SiloClient.StoreStep]
+        }
+        let request = try JSONDecoder().decode(Request.self, from: body)
+        held.sent.withLock { $0.append((request.key, request.steps)) }
+        if let record = held.stores.withLock({ $0["\(library)/\(request.key)"] }) { return (200, record) }
+        var made: Set<String> = []
+        for (position, step) in request.steps.enumerated() {
+            made.formUnion(makes(step))
+            guard case .edit(let edit) = step, !made.contains(edit.container) else { continue }
+            let digest = held.sidecars.withLock { $0[edit.container] }.map(Self.digest) ?? ""
+            if digest != edit.basedOn {
+                let record = StoreRecord(
+                    key: request.key,
+                    state: "refused",
+                    made: 0,
+                    steps: request.steps.count,
+                    step: position,
+                    reason: "the sidecar is now \(digest), not \(edit.basedOn)"
+                )
+                return (202, try kept(record, in: library, of: held))
+            }
+        }
+        let record = StoreRecord(key: request.key, state: "underWay", made: 0, steps: request.steps.count, step: 0)
+        _ = try kept(record, in: library, of: held)
+        guard !held.stepwise.withLock({ $0 }) else {
+            held.underWay.withLock { $0["\(library)/\(request.key)"] = request.steps }
+            return (202, try kept(record, in: library, of: held))
+        }
+        var answer = (0, Data())
+        for _ in request.steps { answer = try advance(request.key, request.steps, in: library, of: held) }
+        return (202, answer.1)
+    }
+
+    private static func kept(_ record: StoreRecord, in library: String, of held: HeldLibrary) throws -> Data {
+        let data = try JSONEncoder().encode(record)
+        held.stores.withLock { $0["\(library)/\(record.key)"] = data }
+        if record.state != "underWay" { held.underWay.withLock { $0["\(library)/\(record.key)"] = nil } }
+        return data
+    }
+
+    /// The edit a step sent is, or nil for a step of another kind.
+    static func editing(_ step: SiloClient.StoreStep?) -> SiloClient.StoreEdit? {
+        guard case .edit(let edit) = step else { return nil }
+        return edit
+    }
+
+    private static func makes(_ step: SiloClient.StoreStep) -> [String] {
+        guard case .create(let create) = step else { return [] }
+        return create.documents.compactMap { try? ContainerFile.container(from: Data($0.utf8)).id.value }
+    }
+
+    /// Makes the store's next step through the library's routes, and answers its record.
+    private static func advance(
+        _ key: String,
+        _ steps: [SiloClient.StoreStep],
+        in library: String,
+        of held: HeldLibrary
+    ) throws -> (Int, Data) {
+        let data = try #require(held.stores.withLock { $0["\(library)/\(key)"] })
+        var record = try JSONDecoder().decode(StoreRecord.self, from: data)
+        guard record.state == "underWay" else { return (200, data) }
+        let position = record.made
+        let made = Set(steps[..<position].flatMap(makes))
+        let answer = try make(steps[position], after: made, in: library, of: held)
+        if let reason = answer {
+            record.state = "refused"
+            record.reason = reason
+        } else {
+            record.made += 1
+            record.step = record.made < steps.count ? record.made : nil
+            if record.made == steps.count { record.state = "made" }
+        }
+        return (200, try kept(record, in: library, of: held))
+    }
+
+    /// Makes one step through the library's own routes; nil when it is made, or why it is refused.
+    private static func make(
+        _ step: SiloClient.StoreStep,
+        after made: Set<String>,
+        in library: String,
+        of held: HeldLibrary
+    ) throws -> String? {
+        let silo = smddbSilo(held)
+        let prefix = "/v1/libraries/\(library)/containers"
+        func route(_ method: String, _ path: String, _ body: Data?) throws -> (Int, Data) {
+            var routed = URLRequest(url: URL(string: "http://home.local:8742\(path)")!)
+            routed.httpMethod = method
+            routed.httpBody = body
+            return try silo(routed) ?? (404, Data())
+        }
+        var answer: (Int, Data)
+        switch step {
+        case .create(let create):
+            answer = try route("POST", prefix, try JSONEncoder().encode(create))
+        case .edit(var edit):
+            if edit.basedOn.isEmpty, made.contains(edit.container) {
+                edit.basedOn = held.sidecars.withLock { $0[edit.container] }.map(Self.digest) ?? ""
+            }
+            answer = try route("PUT", "\(prefix)/\(edit.container)", try JSONEncoder().encode(edit))
+        case .putArtwork(let artwork):
+            guard held.blobs.withLock({ $0.contains(artwork.image ?? "") }) else {
+                return "the silo holds no image \(artwork.image ?? "")"
+            }
+            var query = ""
+            if let provider = artwork.provider, let value = artwork.value, let read = artwork.read {
+                query = "?provider=\(provider)&value=\(value)&read=\(read)"
+            }
+            answer = try route("PUT", "\(prefix)/\(artwork.container)/artwork/\(artwork.kind)\(query)", FakeTMDb.jpeg)
+        case .removeArtwork(let artwork):
+            answer = try route("DELETE", "\(prefix)/\(artwork.container)/artwork/\(artwork.kind)", nil)
+            // A kind already gone is answered as removed.
+            if answer.0 == 404, held.sidecars.withLock({ $0[artwork.container] }) != nil { answer = (204, Data()) }
+        }
+        guard !(200..<300).contains(answer.0) else { return nil }
+        let findings =
+            (try? JSONSerialization.jsonObject(with: answer.1) as? [String: Any])?["findings"] as? [[String: Any]]
+        return findings?.compactMap { $0["text"] as? String }.joined(separator: "; ")
+            ?? "the library does not hold the container"
     }
 
     fileprivate static func wire(_ attribution: Attribution) -> SiloClient.Container.Attribution {
@@ -5645,7 +5821,8 @@ extension AdminConsoleTests {
     }
 
     /// The store lists every edit before it makes any, and the silo refusing the second of three stops it
-    /// there: the first is stored, and the walk keeps the second and third to be stored again.
+    /// there: the first is stored, each step is said as the store's record says it, and the walk keeps the
+    /// second and third, stored again as a store of their own under a new key.
     @Test func aWalksStoreStopsAtTheFirstRefusal() async throws {
         let (database, folder) = Self.clone()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -5670,8 +5847,9 @@ extension AdminConsoleTests {
         )
 
         let told = Mutex<[AdminConsole.StepProgress]>([])
-        let stored = try await console.store(walk, of: home, tmdb: fakes.tmdb) { step in
-            told.withLock { $0.append(step) }
+        held.stepwise.withLock { $0 = true }
+        let stored = try await console.store(walk, of: home, tmdb: fakes.tmdb, pollingEvery: .milliseconds(1)) {
+            step in told.withLock { $0.append(step) }
         }
         #expect(stored.stored.map(\.id) == ["edit:\(series.id)"])
         #expect(stored.refusal == "the validator refuses it")
@@ -5684,8 +5862,74 @@ extension AdminConsoleTests {
         )
         #expect(stored.rest.map(\.id) == ["edit:\(one)", "edit:\(two)"])
         #expect(try stored.walk.plan().steps.map(\.id) == ["edit:\(one)", "edit:\(two)"], "kept, to be stored again")
+        #expect(stored.walk.sending == nil, "and its key freed")
         #expect(held.container(series.id)?.outline == "A time traveller.")
         #expect(held.container(seasons[1].id)?.outline == nil)
+
+        _ = try await console.store(stored.walk, of: home, tmdb: fakes.tmdb, pollingEvery: .milliseconds(1))
+        let sent = held.sent.withLock { $0 }
+        #expect(sent.count == 2 && sent[1].key != sent[0].key, "stored again under a new key")
+        #expect(
+            sent[1].steps.compactMap { Self.editing($0)?.container } == [one, two],
+            "with the second and third steps alone"
+        )
+    }
+
+    /// A store whose answer never arrived is asked after under its key, not sent again: each step is
+    /// made once.
+    @Test func aStoreWhoseAnswerNeverArrivedIsAskedAfter() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, fakes) = Self.walkedSeries()
+        fakes.tmdb.series[121]?.overview = "A time traveller."
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, fakes)
+        let walk = try await walking.walk(series.id.value, choosing: ["outline"])
+
+        held.losing.withLock { $0 = 1 }
+        let stored = try await console.store(walk, of: home, tmdb: fakes.tmdb, pollingEvery: .milliseconds(1))
+        #expect(stored.refusal == nil && stored.stored.map(\.id) == ["edit:\(series.id)"])
+        #expect(held.sent.withLock { $0 }.count == 1, "sent once, and asked after when its answer was lost")
+        #expect(held.container(series.id)?.outline == "A time traveller.")
+    }
+
+    /// A walk kept while its store is under way, opened again, asks after the store under the key kept
+    /// with it, says its step as the silo's record does, and does not send it again.
+    @Test func aWalkKeptWhileItsStoreIsUnderWayAsksAfterIt() async throws {
+        let (database, folder) = Self.clone()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var (series, seasons, serials, fakes) = Self.walkedSeries()
+        fakes.tmdb.series[121]?.overview = "A time traveller."
+        fakes.tmdb.seasons["121/1"]?.overview = "The first."
+        let held = HeldLibrary([series] + seasons + serials)
+        let (console, home) = try await Self.smddbConsole(held)
+        let walking = Walking(console: console, home: home, database: database, fakes)
+        let one = seasons[0].id.value
+        var walk = try await walking.walk(series.id.value, choosing: ["outline"])
+        try await walking.confirm(one, choosing: ["outline"], in: &walk)
+
+        // The silo takes the store, and then no answer of its arrives until the console gives up.
+        held.stepwise.withLock { $0 = true }
+        held.losing.withLock { $0 = 6 }
+        await #expect(throws: URLError.self) {
+            try await console.store(walk, of: home, tmdb: fakes.tmdb, pollingEvery: .milliseconds(1))
+        }
+        let kept = try #require(console.reviewWalks.walk(rootedAt: series.id.value, in: "tv", of: home.id))
+        let key = try #require(kept.sending?.first?.key)
+        #expect(held.sent.withLock { $0 }.map(\.key) == [key], "kept under the key it was sent with")
+
+        let told = Mutex<[AdminConsole.StepProgress]>([])
+        let stored = try await console.store(kept, of: home, tmdb: fakes.tmdb, pollingEvery: .milliseconds(1)) {
+            step in told.withLock { $0.append(step) }
+        }
+        #expect(stored.refusal == nil && stored.walk.sending == nil)
+        #expect(held.sent.withLock { $0 }.map(\.key) == [key], "and not sent again")
+        #expect(
+            told.withLock { $0 } == [AdminConsole.StepProgress("edit Season 1: its outline", done: 1, of: 2)],
+            "said as the record says it"
+        )
+        #expect(held.container(seasons[0].id)?.outline == "The first.")
     }
 
     /// A special placed as the duplicate of an item a confirmed stop holds is made in that stop's own
@@ -5970,7 +6214,10 @@ extension AdminConsoleTests {
             plan.steps.map(\.id).first?.hasPrefix("held:tv/\(proms.id)") == true,
             "before the edit that refers to it"
         )
+        let read = held.sidecars.withLock { $0[proms.id.value] }.map(Self.digest)
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
+        let edit = try #require(Self.editing(held.sent.withLock { $0 }.first?.steps.first))
+        #expect(edit.container == proms.id.value && edit.basedOn == read, "an edit on the base the list read")
 
         let filed = try #require(held.container(proms.id))
         #expect(filed.listed && filed.sequences[0].items.map(\.externalRefs) == [[concert.item]])
@@ -6240,6 +6487,8 @@ extension AdminConsoleTests {
         let series = try #require(ContainerID(root))
         #expect(held.container(series)?.childContainerIDs == [ContainerID(season)!])
         #expect(held.sidecar(series)?.declined == [special.item])
+        let decline = try #require(Self.editing(held.sent.withLock { $0 }.last?.steps.last))
+        #expect(decline.container == root && decline.basedOn.isEmpty, "on what the store made of it")
 
         guard
             case .walk(var film) = try await console.startWalk(
@@ -8304,13 +8553,19 @@ extension AdminConsoleTests {
         held.sidecars.withLock { $0[one] = try! SidecarFile.data(for: Sidecar(container: behind)) }
 
         let stored = try await console.store(walk, of: home, tmdb: fakes.tmdb)
-        #expect(stored.stored.map(\.id) == ["edit:\(series.id)"])
+        #expect(stored.stored.isEmpty, "refused before any of it is made")
+        #expect(held.container(series.id)?.outline == nil)
         #expect(stored.refusal == "Season 1 changed in the library after the walk read it, so it is read again")
-        #expect(stored.stale == one && stored.rest.map(\.id) == ["edit:\(one)", "edit:\(two)"])
+        #expect(
+            stored.stale == one && stored.rest.map(\.id) == ["edit:\(series.id)", "edit:\(one)", "edit:\(two)"]
+        )
         walk = stored.walk
         #expect(walk.stops[one]?.comparison == nil && walk.state(of: one) == .pending)
         #expect(walk.stops[one]?.chosen == ["outline"], "its ticks kept for when it is confirmed again")
-        #expect(try walk.plan().steps.map(\.id) == ["edit:\(two)"], "nothing of it stored until then")
+        #expect(
+            try walk.plan().steps.map(\.id) == ["edit:\(series.id)", "edit:\(two)"],
+            "nothing of it stored until then"
+        )
 
         try await walking.confirm(one, choosing: ["outline"], in: &walk)
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)

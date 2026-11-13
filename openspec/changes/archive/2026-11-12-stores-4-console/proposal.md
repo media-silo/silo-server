@@ -17,7 +17,10 @@ Proposal: [0021-stores](../../../Proposals/Stores.md).
 - The store's progress is read from its record at the silo, every second, and again when a walk with a
   key is opened; the store is never sent again under the same key.
 - A sidecar changed since the list read it refuses the store before any of it is made.
+- An edit of a container an earlier step of a store makes is sent with an empty base, and the silo
+  makes it on what that step made: a walk that makes a series declines its specials in the same store.
 
 ## Impact
 - Added: a walk's store handed to the silo whole.
-- Modified: a walk kept until it is stored; a walk's store saying each step.
+- Modified: a walk kept until it is stored; a walk's store saying each step; a library's store, taken
+  at once.

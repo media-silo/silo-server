@@ -183,6 +183,7 @@ let package = Package(
             name: "SiloAdminKit",
             dependencies: [
                 "SiloClient", "SiloKit", "SiloDiscovery",
+                .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "SmdKit", package: "SmdKit"),
                 .product(name: "SmdSidecar", package: "SmdKit"),
             ]

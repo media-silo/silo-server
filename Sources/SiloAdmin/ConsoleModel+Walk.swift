@@ -94,7 +94,7 @@ extension ConsoleModel {
         keepWalk()
     }
 
-    /// Goes on with the walk this Mac kept, as it was left.
+    /// Goes on with the walk this Mac kept, as it was left: a walk whose store was sent asks after it.
     func resumeWalk() async {
         guard let current = walking, current.resuming else { return }
         walking?.resuming = false
@@ -105,6 +105,7 @@ extension ConsoleModel {
         await readCompanions(for: current.id)
         await openStop(current.open)
         choosePending()
+        if walk.sending != nil { await storeWalk() }
     }
 
     /// Discards the walk this Mac kept for the container, or for the item it drafted, and starts a new
@@ -538,7 +539,8 @@ extension ConsoleModel {
     }
 
     /// Stores the walk as its list says, stopping at the first refusal; what was not stored stays in the
-    /// walk, to be stored again. The root is read again in the browser.
+    /// walk, to be stored again. A store the silo could not be asked after stays kept with the walk under
+    /// its key, to be asked after again. The root is read again in the browser.
     func storeWalk() async {
         guard let current = walking else { return }
         walking?.storing = AdminConsole.StepProgress("Storing the walk")
@@ -569,6 +571,8 @@ extension ConsoleModel {
             }
             await open(ContainerKey(silo: current.silo.id, library: current.walk.library, container: root))
         } catch {
+            let kept = console.reviewWalks.walks(of: current.silo.id).first { $0.id == current.walk.id }
+            if walking?.id == current.id, let sending = kept?.sending { walking?.walk.sending = sending }
             walking?.failure = describe(error)
         }
     }
