@@ -51,7 +51,8 @@ public enum ToolError: Error, CustomStringConvertible {
 }
 
 /// Runs a tool, streaming its standard output a line at a time and keeping the tail of its
-/// standard error for the failure message. Cancelling the task terminates the process.
+/// standard error for the failure message. Cancelling the task terminates the process; a task
+/// cancelled before the process starts throws `CancellationError` without starting it.
 package enum ProcessRunner {
     package struct Outcome: Sendable {
         package var status: Int32
@@ -81,12 +82,12 @@ package enum ProcessRunner {
         }
         let exited: @Sendable () -> Bool = { state.withLock { $0.status != nil } }
 
-        let box = ProcessBox(process)
+        let launch = Launch(process)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Outcome, any Error>) in
                 state.withLock { $0.continuation = continuation }
                 do {
-                    try process.run()
+                    try launch.start()
                     // Read only once it runs: `run()` closes this process's copies of the write ends.
                     PipeReader.start(stdout.fileHandleForReading, exited: exited) { data in
                         for line in lines.append(data) { onLine(line) }
@@ -110,7 +111,7 @@ package enum ProcessRunner {
                 }
             }
         } onCancel: {
-            box.terminate()
+            launch.cancel()
         }
     }
 
@@ -148,11 +149,39 @@ package enum ProcessRunner {
         }
     }
 
-    /// `Process` is not Sendable; the cancellation handler only ever asks it to terminate.
-    private struct ProcessBox: @unchecked Sendable {
-        let process: Process
+    /// Starts the process and stops it when the task is cancelled, whichever comes first. The
+    /// cancellation handler runs once: at the cancel, or on entry when the task is already
+    /// cancelled, which can be before the process starts or in the moment it is starting. So each
+    /// side records itself under one lock, and whichever comes second does the terminating.
+    ///
+    /// `Process` is not Sendable; past `start()`, the handler only ever asks it to terminate.
+    private final class Launch: @unchecked Sendable {
+        private let process: Process
+        private let state = Mutex((cancelled: false, started: false))
+
         init(_ process: Process) { self.process = process }
-        func terminate() {
+
+        /// Starts the process unless the task is already cancelled, which throws `CancellationError`
+        /// without starting it.
+        func start() throws {
+            if state.withLock({ $0.cancelled }) { throw CancellationError() }
+            try process.run()
+            let cancelled = state.withLock { state -> Bool in
+                state.started = true
+                return state.cancelled
+            }
+            if cancelled { terminate() }
+        }
+
+        func cancel() {
+            let started = state.withLock { state -> Bool in
+                state.cancelled = true
+                return state.started
+            }
+            if started { terminate() }
+        }
+
+        private func terminate() {
             if process.isRunning { process.terminate() }
         }
     }
