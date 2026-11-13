@@ -2147,7 +2147,7 @@ extension AdminConsoleTests {
         var made: Set<String> = []
         for (position, step) in request.steps.enumerated() {
             made.formUnion(makes(step))
-            guard let edit = step.edit, !made.contains(edit.container) else { continue }
+            guard case .edit(let edit) = step, !made.contains(edit.container) else { continue }
             let digest = held.sidecars.withLock { $0[edit.container] }.map(Self.digest) ?? ""
             if digest != edit.basedOn {
                 let record = StoreRecord(
@@ -2179,8 +2179,15 @@ extension AdminConsoleTests {
         return data
     }
 
+    /// The edit a step sent is, or nil for a step of another kind.
+    static func editing(_ step: SiloClient.StoreStep?) -> SiloClient.StoreEdit? {
+        guard case .edit(let edit) = step else { return nil }
+        return edit
+    }
+
     private static func makes(_ step: SiloClient.StoreStep) -> [String] {
-        (step.create?.documents ?? []).compactMap { try? ContainerFile.container(from: Data($0.utf8)).id.value }
+        guard case .create(let create) = step else { return [] }
+        return create.documents.compactMap { try? ContainerFile.container(from: Data($0.utf8)).id.value }
     }
 
     /// Makes the store's next step through the library's routes, and answers its record.
@@ -2222,15 +2229,16 @@ extension AdminConsoleTests {
             routed.httpBody = body
             return try silo(routed) ?? (404, Data())
         }
-        var answer: (Int, Data) = (404, Data())
-        if let create = step.create {
+        var answer: (Int, Data)
+        switch step {
+        case .create(let create):
             answer = try route("POST", prefix, try JSONEncoder().encode(create))
-        } else if var edit = step.edit {
+        case .edit(var edit):
             if edit.basedOn.isEmpty, made.contains(edit.container) {
                 edit.basedOn = held.sidecars.withLock { $0[edit.container] }.map(Self.digest) ?? ""
             }
             answer = try route("PUT", "\(prefix)/\(edit.container)", try JSONEncoder().encode(edit))
-        } else if let artwork = step.putArtwork {
+        case .putArtwork(let artwork):
             guard held.blobs.withLock({ $0.contains(artwork.image ?? "") }) else {
                 return "the silo holds no image \(artwork.image ?? "")"
             }
@@ -2239,7 +2247,7 @@ extension AdminConsoleTests {
                 query = "?provider=\(provider)&value=\(value)&read=\(read)"
             }
             answer = try route("PUT", "\(prefix)/\(artwork.container)/artwork/\(artwork.kind)\(query)", FakeTMDb.jpeg)
-        } else if let artwork = step.removeArtwork {
+        case .removeArtwork(let artwork):
             answer = try route("DELETE", "\(prefix)/\(artwork.container)/artwork/\(artwork.kind)", nil)
             // A kind already gone is answered as removed.
             if answer.0 == 404, held.sidecars.withLock({ $0[artwork.container] }) != nil { answer = (204, Data()) }
@@ -5861,7 +5869,10 @@ extension AdminConsoleTests {
         _ = try await console.store(stored.walk, of: home, tmdb: fakes.tmdb, pollingEvery: .milliseconds(1))
         let sent = held.sent.withLock { $0 }
         #expect(sent.count == 2 && sent[1].key != sent[0].key, "stored again under a new key")
-        #expect(sent[1].steps.compactMap(\.edit?.container) == [one, two], "with the second and third steps alone")
+        #expect(
+            sent[1].steps.compactMap { Self.editing($0)?.container } == [one, two],
+            "with the second and third steps alone"
+        )
     }
 
     /// A store whose answer never arrived is asked after under its key, not sent again: each step is
@@ -6205,7 +6216,7 @@ extension AdminConsoleTests {
         )
         let read = held.sidecars.withLock { $0[proms.id.value] }.map(Self.digest)
         #expect(try await console.store(walk, of: home, tmdb: fakes.tmdb).refusal == nil)
-        let edit = try #require(held.sent.withLock { $0 }.first?.steps.first?.edit)
+        let edit = try #require(Self.editing(held.sent.withLock { $0 }.first?.steps.first))
         #expect(edit.container == proms.id.value && edit.basedOn == read, "an edit on the base the list read")
 
         let filed = try #require(held.container(proms.id))
@@ -6476,7 +6487,7 @@ extension AdminConsoleTests {
         let series = try #require(ContainerID(root))
         #expect(held.container(series)?.childContainerIDs == [ContainerID(season)!])
         #expect(held.sidecar(series)?.declined == [special.item])
-        let decline = try #require(held.sent.withLock { $0 }.last?.steps.last?.edit)
+        let decline = try #require(Self.editing(held.sent.withLock { $0 }.last?.steps.last))
         #expect(decline.container == root && decline.basedOn.isEmpty, "on what the store made of it")
 
         guard

@@ -61,18 +61,14 @@ extension SiloClient {
         }
     }
 
-    /// One step of a store: exactly one of a creation, an edit, a put of artwork from a blob, or a
-    /// removal of artwork, each in the terms of the route that makes it alone.
-    public struct StoreStep: Hashable, Sendable, Codable {
-        public var create: StoreCreate?
-        public var edit: StoreEdit?
-        public var putArtwork: StoreArtwork?
-        public var removeArtwork: StoreArtwork?
-
-        public static func create(_ create: StoreCreate) -> StoreStep { StoreStep(create: create) }
-        public static func edit(_ edit: StoreEdit) -> StoreStep { StoreStep(edit: edit) }
-        public static func putArtwork(_ artwork: StoreArtwork) -> StoreStep { StoreStep(putArtwork: artwork) }
-        public static func removeArtwork(_ artwork: StoreArtwork) -> StoreStep { StoreStep(removeArtwork: artwork) }
+    /// One step of a store: a creation, an edit, a put of artwork from a blob, or a removal of artwork,
+    /// each in the terms of the route that makes it alone. Its JSON is an object of one key, the kind,
+    /// holding the step, as the silo takes it.
+    public enum StoreStep: Hashable, Sendable {
+        case create(StoreCreate)
+        case edit(StoreEdit)
+        case putArtwork(StoreArtwork)
+        case removeArtwork(StoreArtwork)
     }
 
     public enum StoreState: String, Hashable, Sendable, Codable {
@@ -133,6 +129,40 @@ extension SiloClient {
         )
         guard (200..<300).contains(status) else {
             throw SiloClientError.status(status, String(bytes: data, encoding: .utf8) ?? "")
+        }
+    }
+}
+
+extension SiloClient.StoreStep: Codable {
+    private enum Kind: String, CodingKey {
+        case create, edit, putArtwork, removeArtwork
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: Kind.self)
+        guard container.allKeys.count == 1, let kind = container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a step is exactly one of a create, an edit, a put of artwork or a removal of it"
+                )
+            )
+        }
+        switch kind {
+        case .create: self = .create(try container.decode(SiloClient.StoreCreate.self, forKey: kind))
+        case .edit: self = .edit(try container.decode(SiloClient.StoreEdit.self, forKey: kind))
+        case .putArtwork: self = .putArtwork(try container.decode(SiloClient.StoreArtwork.self, forKey: kind))
+        case .removeArtwork: self = .removeArtwork(try container.decode(SiloClient.StoreArtwork.self, forKey: kind))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: Kind.self)
+        switch self {
+        case .create(let create): try container.encode(create, forKey: .create)
+        case .edit(let edit): try container.encode(edit, forKey: .edit)
+        case .putArtwork(let artwork): try container.encode(artwork, forKey: .putArtwork)
+        case .removeArtwork(let artwork): try container.encode(artwork, forKey: .removeArtwork)
         }
     }
 }
