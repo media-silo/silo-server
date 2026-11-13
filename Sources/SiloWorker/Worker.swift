@@ -124,44 +124,12 @@ public actor Worker {
         let output = configuration.workFolder.appendingPathComponent("\(job.id).\(recipe.output.fileExtension)")
         try? FileManager.default.removeItem(at: output)
 
-        // Progress doubles as heartbeat, and the state that comes back is how a cancel arrives.
-        let duration = facts.duration
-        let api = self.api
-        let interval = configuration.progressInterval
-        let latest = ProgressBox()
-        let reporter = Task {
-            while !Task.isCancelled {
-                try await Task.sleep(for: interval)
-                let state = try await api.report(job.id, progress: latest.take())
-                if state == .cancelling || state == .cancelled {
-                    throw Cancelled(reason: "the silo asked")
-                }
-            }
-        }
-        defer { reporter.cancel() }
-
-        let encode = Task { [ffmpeg] in
-            try await ffmpeg.run(recipe.ffmpegArguments(input: input, output: output)) { progress in
-                latest.update(
-                    JobProgress(
-                        fraction: duration.flatMap { total in progress.seconds.map { min(1, $0 / total) } },
-                        seconds: progress.seconds,
-                        fps: progress.fps,
-                        speed: progress.speed
-                    )
-                )
-            }
-        }
-        // Whichever finishes first: the encode, or the reporter learning of a cancel.
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { try await encode.value }
-            group.addTask { try await reporter.value }
-            defer {
-                encode.cancel()
-                reporter.cancel()
-            }
-            try await group.next()
-            group.cancelAll()
+        do {
+            try await encode(job.id, recipe.ffmpegArguments(input: input, output: output), duration: facts.duration)
+        } catch  where Task.isCancelled {
+            // A stop from outside terminates ffmpeg, which then exits failing. That is a cancel, not
+            // a failure, whichever of the encode and the reporter saw it first.
+            throw CancellationError()
         }
 
         let probed = try await ffprobe.probe(output)
@@ -180,6 +148,43 @@ public actor Worker {
         let published = try await configuration.publish(job.id, output)
         _ = try await api.complete(job.id, output: published, result: result)
         logger.info("encoded \(job.id) to \(output.lastPathComponent)")
+    }
+
+    /// ffmpeg run beside the progress reports, until the first of them ends: the encode finishing,
+    /// or the reporter learning of a cancel. Progress doubles as heartbeat, and the state that comes
+    /// back is how a cancel arrives. Both are the group's own children, so cancelling the task that
+    /// runs this cancels the encode too, which terminates ffmpeg.
+    private func encode(_ job: String, _ arguments: [String], duration: Double?) async throws {
+        let api = self.api
+        let ffmpeg = self.ffmpeg
+        let interval = configuration.progressInterval
+        let latest = ProgressBox()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await ffmpeg.run(arguments) { progress in
+                    latest.update(
+                        JobProgress(
+                            fraction: duration.flatMap { total in progress.seconds.map { min(1, $0 / total) } },
+                            seconds: progress.seconds,
+                            fps: progress.fps,
+                            speed: progress.speed
+                        )
+                    )
+                }
+            }
+            group.addTask {
+                // Never ends of itself: once the group is cancelled, the sleep throws.
+                while true {
+                    try await Task.sleep(for: interval)
+                    let state = try await api.report(job, progress: latest.take())
+                    if state == .cancelling || state == .cancelled {
+                        throw Cancelled(reason: "the silo asked")
+                    }
+                }
+            }
+            try await group.next()
+            group.cancelAll()
+        }
     }
 
     /// Each segment's source, reached once however many segments it has: opened where it is when

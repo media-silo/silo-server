@@ -142,15 +142,22 @@ seconds by default — each report renewing the job's lease on the silo. The sta
 SHALL steer the loop: an answer of `cancelling` or `cancelled` stops the encode and ends the
 attempt with a `fail` of `cancelled`. Whichever of the encode and the reporter finishes first
 SHALL end the other: a finished encode silences the reporter, a cancellation abandons the
-encode.
+encode. Cancelling the task that runs the worker SHALL cancel the encode under way too,
+terminating ffmpeg rather than waiting for it, and SHALL end the attempt with a `fail` of
+`cancelled` rather than ffmpeg's exit status.
 
 #### Scenario: the operator cancels mid-encode
 - **WHEN** the silo marks the encoding job `cancelling`
 - **THEN** the node's next report is answered `cancelling`, the encode is abandoned, and the job
   is failed with `cancelled`
 
-Pinned by: nothing yet (the silo's half of the exchange is pinned by `Tests/SiloTests/JobTests.swift`,
-`aJobGoesFromRegisteredToPlaced`).
+#### Scenario: the node is stopped mid-encode
+- **WHEN** the task running the worker is cancelled while ffmpeg is encoding
+- **THEN** ffmpeg is terminated, the pass returns at once, and the job is failed with `cancelled`
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`cancellingTheWorkerCancelsItsEncode`, for a stop from
+outside). The operator's cancel is pinned by nothing yet (the silo's half of the exchange is pinned
+by `Tests/SiloTests/JobTests.swift`, `aJobGoesFromRegisteredToPlaced`).
 
 ### Requirement: The output is probed and its layout checked against the recipe
 When the encode returns, the worker SHALL probe the output with ffprobe and check the layout the
