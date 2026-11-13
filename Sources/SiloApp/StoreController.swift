@@ -40,6 +40,8 @@ package struct StoreController {
             return .conflict(.init(body: .json(Components.Schemas.Problem(detail: taken.reason))))
         } catch let bad as BadStoreKey {
             return .badRequest(.init(body: .json(Components.Schemas.Problem(detail: bad.reason))))
+        } catch DecodingError.dataCorrupted(let context) {
+            return .badRequest(.init(body: .json(Components.Schemas.Problem(detail: context.debugDescription))))
         }
     }
 

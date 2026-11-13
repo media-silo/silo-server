@@ -181,13 +181,14 @@ package final class StoreService: Sendable {
     /// Makes one step within the turn the store holds; nil when it is made, or why it is refused.
     private func make(_ step: StoreStep, in library: LibraryConfig) throws -> Refusal? {
         do {
-            if let create = step.create {
+            switch step {
+            case .create(let create):
                 try make(create, in: library)
-            } else if let edit = step.edit {
+            case .edit(let edit):
                 try make(edit, in: library)
-            } else if let artwork = step.putArtwork {
+            case .putArtwork(let artwork):
                 return try put(artwork, in: library)
-            } else if let artwork = step.removeArtwork {
+            case .removeArtwork(let artwork):
                 guard let id = ContainerID(artwork.container),
                     try ArtworkController.remove(artwork.kind, of: id, in: library, index: index)
                 else { throw NoSuchContainer() }

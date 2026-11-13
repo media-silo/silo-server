@@ -5,9 +5,10 @@ import Crypto
 import Foundation
 import Synchronization
 
-/// One step of a store, as its request carries it: exactly one of a creation, an edit, a put of
-/// artwork or a removal of it, each in the terms of the route that makes it alone.
-public struct StoreStep: Codable, Hashable, Sendable {
+/// One step of a store, as its request carries it: a creation, an edit, a put of artwork or a removal
+/// of it, each in the terms of the route that makes it alone. Its JSON is an object of one key, the
+/// kind, holding the step; an object of no kind or of several is not a step.
+public enum StoreStep: Hashable, Sendable {
     public struct Attribution: Codable, Hashable, Sendable {
         /// The container in a creation the attribution belongs to; absent in an edit's.
         public var container: String?
@@ -95,21 +96,44 @@ public struct StoreStep: Codable, Hashable, Sendable {
         }
     }
 
-    public var create: Create?
-    public var edit: Edit?
-    public var putArtwork: Artwork?
-    public var removeArtwork: Artwork?
+    case create(Create)
+    case edit(Edit)
+    case putArtwork(Artwork)
+    case removeArtwork(Artwork)
 
-    public init(
-        create: Create? = nil,
-        edit: Edit? = nil,
-        putArtwork: Artwork? = nil,
-        removeArtwork: Artwork? = nil
-    ) {
-        self.create = create
-        self.edit = edit
-        self.putArtwork = putArtwork
-        self.removeArtwork = removeArtwork
+}
+
+extension StoreStep: Codable {
+    private enum Kind: String, CodingKey {
+        case create, edit, putArtwork, removeArtwork
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: Kind.self)
+        guard container.allKeys.count == 1, let kind = container.allKeys.first else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "a step is exactly one of a create, an edit, a put of artwork or a removal of it"
+                )
+            )
+        }
+        switch kind {
+        case .create: self = .create(try container.decode(Create.self, forKey: kind))
+        case .edit: self = .edit(try container.decode(Edit.self, forKey: kind))
+        case .putArtwork: self = .putArtwork(try container.decode(Artwork.self, forKey: kind))
+        case .removeArtwork: self = .removeArtwork(try container.decode(Artwork.self, forKey: kind))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: Kind.self)
+        switch self {
+        case .create(let create): try container.encode(create, forKey: .create)
+        case .edit(let edit): try container.encode(edit, forKey: .edit)
+        case .putArtwork(let artwork): try container.encode(artwork, forKey: .putArtwork)
+        case .removeArtwork(let artwork): try container.encode(artwork, forKey: .removeArtwork)
+        }
     }
 }
 
@@ -228,7 +252,13 @@ public final class StoreRecords: Sendable {
 
     /// The images the stores under way put, which no sweep of the blobs may remove.
     public func imagesUnderWay() -> Set<String> {
-        Set(underWay().flatMap { $0.steps.compactMap(\.putArtwork?.image) })
+        Set(
+            underWay().flatMap { record in
+                record.steps.compactMap { step in
+                    if case .putArtwork(let artwork) = step { artwork.image } else { nil }
+                }
+            }
+        )
     }
 
     /// Removes every record that is not under way and was last written longer than a lifetime before

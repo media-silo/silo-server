@@ -3250,7 +3250,7 @@ components:
 
     StoreStep:
       type: object
-      description: Exactly one of the four.
+      description: Exactly one of the four; a step of none or of several is answered 400.
       properties:
         create:
           $ref: "#/components/schemas/ContainerCreate"

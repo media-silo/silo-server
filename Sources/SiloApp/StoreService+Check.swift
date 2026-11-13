@@ -41,11 +41,8 @@ extension StoreService {
         let held = { (id: ContainerID) in
             earlier.contains(id) || ((try? self.index.container(id, in: library.id)) ?? nil) != nil
         }
-        let kinds = [step.create != nil, step.edit != nil, step.putArtwork != nil, step.removeArtwork != nil]
-        guard kinds.filter({ $0 }).count == 1 else {
-            return "a step is exactly one of a create, an edit, a put of artwork or a removal of it"
-        }
-        if let create = step.create {
+        switch step {
+        case .create(let create):
             let (containers, _) = try ContainerMaker.reading(
                 create.documents,
                 attributions: try Self.attributions(create.attributions)
@@ -55,10 +52,13 @@ extension StoreService {
             }
             made.formUnion(containers.map(\.id))
             return nil
+        case .edit(let edit):
+            return try checking(edit, in: library, made: made, held: held)
+        case .putArtwork(let artwork):
+            return try checking(artwork, putting: true, held: held)
+        case .removeArtwork(let artwork):
+            return try checking(artwork, putting: false, held: held)
         }
-        if let edit = step.edit { return try checking(edit, in: library, made: made, held: held) }
-        if let artwork = step.putArtwork { return try checking(artwork, putting: true, held: held) }
-        return try step.removeArtwork.flatMap { try checking($0, putting: false, held: held) }
     }
 
     private func checking(
