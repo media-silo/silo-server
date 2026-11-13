@@ -4,6 +4,7 @@
 import Encoder
 import Foundation
 import Logging
+import ServiceLifecycle
 import SiloKit
 import Synchronization
 
@@ -14,7 +15,7 @@ import FoundationNetworking
 /// The node's loop: claim a job, reach its segments, encode them as the recipe says, probe the result,
 /// check the layout, tell the silo where the output is. The same loop whether the node is a
 /// process on another machine or the one the silo runs inside itself; only `JobsAPI` differs.
-public actor Worker {
+public actor Worker: Service {
     public struct Configuration: Sendable {
         public var nodeID: String
         public var workFolder: URL
@@ -70,8 +71,15 @@ public actor Worker {
         return found
     }
 
-    /// Runs until cancelled.
+    /// Runs until cancelled, or until its service group shuts down gracefully. A stop cancels the
+    /// job in flight, as it does the silo's embedded node.
     public func run() async {
+        await cancelWhenGracefulShutdown { [self] in
+            await loop()
+        }
+    }
+
+    private func loop() async {
         while !Task.isCancelled {
             do {
                 if try await runOnce() { continue }

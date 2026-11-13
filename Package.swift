@@ -152,6 +152,8 @@ let package = Package(
                 "Encoder",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                .product(name: "UnixSignals", package: "swift-service-lifecycle"),
             ],
             swiftSettings: proposalSettings
         ),
@@ -165,6 +167,7 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "BasicContainers", package: "swift-collections"),
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
             swiftSettings: proposalSettings
         ),
@@ -202,6 +205,7 @@ let package = Package(
                 "SiloKit",
                 "Encoder",
                 .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ]
         ),
         // The document and its generated types. Depends on the Wire product without importing it:
@@ -327,6 +331,8 @@ let package = Package(
                 .product(name: "WireMVCTesting", package: "wire-mvc"),
                 .product(name: "WireOpenAPI", package: "wire-open-api"),
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
             ],
             swiftSettings: proposalSettings,
             plugins: wirePlugins
