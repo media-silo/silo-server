@@ -2,11 +2,12 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Logging
+import ServiceLifecycle
 import SiloLibrary
 import SiloStore
 import SmdKit
-import Synchronization
 import Wire
+import WireMVC
 
 /// A key the library has a store for, sent with other steps.
 package struct StoreKeyTaken: Error {
@@ -27,16 +28,16 @@ package struct NoSuchStore: Error {}
 /// under way when the silo stops is made from the step it was making when it starts again, which
 /// each step's route answers as made when it was. `Stores.md`.
 @Singleton
-package final class StoreService: Sendable {
+@BackgroundService
+package struct StoreService: Service {
     let libraries: Libraries
     let index: Index
     let records: StoreRecords
     let blobs: BlobStore
     private let logger = Logger(label: "silo.stores")
-    /// The stores taken and not yet begun, in the order they were taken, and the signal that one was.
-    private let queued = Mutex<[Queued]>([])
-    private let taken: AsyncStream<Void>
-    private let signal: AsyncStream<Void>.Continuation
+    /// The stores taken and not yet begun, in the order they were taken, which `run` makes.
+    private let queued: AsyncStream<Queued>
+    private let queue: AsyncStream<Queued>.Continuation
 
     @Inject
     package init(libraries: Libraries, index: Index, records: StoreRecords, blobs: BlobStore) {
@@ -44,7 +45,7 @@ package final class StoreService: Sendable {
         self.index = index
         self.records = records
         self.blobs = blobs
-        (taken, signal) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        (queued, queue) = AsyncStream.makeStream(of: Queued.self)
     }
 
     /// A store taken: its record, and whether the key was new.
@@ -53,7 +54,7 @@ package final class StoreService: Sendable {
         package var added: Bool
     }
 
-    private struct Queued {
+    private struct Queued: Sendable {
         var library: String
         var key: String
     }
@@ -72,10 +73,7 @@ package final class StoreService: Sendable {
         var record = StoreRecord(library: library.id, key: key, steps: steps)
         if let refusal = check(steps, in: library) { record.state = .refused(refusal) }
         let (taken, added) = try records.adding(record)
-        if added, taken.state == .underWay {
-            queued.withLock { $0.append(Queued(library: library.id, key: key)) }
-            signal.yield()
-        }
+        if added, taken.state == .underWay { queue.yield(Queued(library: library.id, key: key)) }
         return Taken(record: taken, added: added)
     }
 
@@ -84,38 +82,32 @@ package final class StoreService: Sendable {
         return record
     }
 
-    /// Makes the stores while the silo runs: first every store under way when it stopped, then each as
-    /// it is taken. Cancelled, it ends once the step each store is making is made, leaving the store
-    /// under way for the next start to make.
+    /// Makes the stores while the silo runs: every store under way when it stopped, and then each as it
+    /// is taken. Each library has a lane of its own, its stores made one at a time in the order they
+    /// were queued, beside the other libraries'. Stopping the silo, or cancelling the run, ends each
+    /// store once the step it is making is made, and leaves it under way for the next start to make.
+    /// The silo runs it once, among its background services.
     package func run() async {
-        resume()
-        await withDiscardingTaskGroup { group in
-            group.addTask { await self.makeQueued() }
-            for await _ in taken {
-                group.addTask { await self.makeQueued() }
-            }
-        }
+        await cancelWhenGracefulShutdown { await making() }
     }
 
-    /// Queues every store under way, ahead of any taken since: what the silo does when it starts.
-    func resume() {
-        let underWay = records.underWay().map { Queued(library: $0.library, key: $0.key) }
-        queued.withLock { $0.insert(contentsOf: underWay, at: 0) }
-    }
-
-    /// Makes every store queued, those of different libraries side by side and those of one library in
-    /// the order they were queued.
-    func makeQueued() async {
-        let stores = queued.withLock { queued in
-            defer { queued.removeAll() }
-            return queued
-        }
+    private func making() async {
+        for record in records.underWay() { queue.yield(Queued(library: record.library, key: record.key)) }
         await withDiscardingTaskGroup { group in
-            for (library, stores) in Dictionary(grouping: stores, by: \.library) {
+            var lanes: [String: AsyncStream<String>.Continuation] = [:]
+            for await store in queued {
+                if let lane = lanes[store.library] {
+                    lane.yield(store.key)
+                    continue
+                }
+                let (keys, lane) = AsyncStream.makeStream(of: String.self)
+                lanes[store.library] = lane
+                lane.yield(store.key)
                 group.addTask {
-                    for store in stores { await self.make(store.key, of: library) }
+                    for await key in keys { await make(key, of: store.library) }
                 }
             }
+            for lane in lanes.values { lane.finish() }
         }
     }
 
@@ -137,7 +129,7 @@ package final class StoreService: Sendable {
     /// it is made and ending at the first its route refuses, or, cancelled, before the next step.
     private func make(_ key: String, in library: LibraryConfig) async {
         do {
-            try await libraries.exclusively(library) { [self] in
+            try await libraries.exclusively(library) {
                 guard let record = records.record(key, in: library.id), record.state == .underWay else { return }
                 for position in record.made..<record.steps.count {
                     guard !Task.isCancelled else { return }
