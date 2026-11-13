@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (c) 2026 the media-silo project authors -->
+
 # Guidance for agents working in silo-server
 
 These are the shapes this codebase settles on for concurrency and types. Each rule says why, so
