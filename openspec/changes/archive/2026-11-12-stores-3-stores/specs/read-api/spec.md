@@ -27,8 +27,8 @@ store before making any of it, SHALL record it, and SHALL answer at once with it
   `refused` at that step with the route's words and findings; the steps before it stand.
 - A request naming a key the library has a store for SHALL be answered that store's record with 200
   when its steps are the store's, and 409 when they are not; nothing SHALL be made again.
-- A library the silo does not serve SHALL be 404, and a key that cannot be one 400. A step that is
-  not exactly one of the four SHALL refuse the store at the check.
+- A library the silo does not serve SHALL be 404. A key that cannot be one, and a step that is not
+  exactly one of the four, SHALL be 400, and no store SHALL be recorded.
 
 The route SHALL require the operator's bearer; a missing or wrong bearer SHALL be 401.
 
@@ -61,8 +61,13 @@ The route SHALL require the operator's bearer; a missing or wrong bearer SHALL b
 - **THEN** the store is recorded as refused at its second step with the route's finding, its first
   step is made, and its third is not
 
+#### Scenario: a step of two kinds
+- **WHEN** the operator sends a store one of whose steps both puts a poster and removes it
+- **THEN** the answer is 400, and no store is recorded under its key
+
 Pinned by: `Tests/SiloTests/StoreServiceTests.swift` (`aStoreIsMadeInOrderAndSentTwiceIsMadeOnce`,
-`aStoreTheCheckRefusesMakesNothing`, `aStepTheSiloRefusesEndsTheStoreThere`),
+`aStoreTheCheckRefusesMakesNothing`, `aStepTheSiloRefusesEndsTheStoreThere`,
+`aStepIsOneKindInItsJSON`),
 `Tests/SiloTests/ServerTests.swift` (`aStoreIsTakenAtOnceAndSaidAtARouteOfItsOwn`).
 
 ### Requirement: A store is said at a route of its own, and resumed when the silo starts

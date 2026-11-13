@@ -92,17 +92,17 @@ struct StoreServiceTests {
     }
 
     static func create(_ container: Container, beneath parent: Container? = nil) -> StoreStep {
-        StoreStep(create: StoreStep.Create(documents: [xml(container)], parent: parent?.id.value))
+        StoreStep.create(StoreStep.Create(documents: [xml(container)], parent: parent?.id.value))
     }
 
     /// The series made alone at the top of the library, and the three steps that name a season in it,
     /// make the season and put its poster.
     static func steps(basedOn digest: String, image: String) -> [StoreStep] {
         [
-            StoreStep(edit: StoreStep.Edit(container: series.id.value, document: xml(naming), basedOn: digest)),
+            StoreStep.edit(StoreStep.Edit(container: series.id.value, document: xml(naming), basedOn: digest)),
             create(season, beneath: series),
-            StoreStep(
-                putArtwork: StoreStep.Artwork(
+            StoreStep.putArtwork(
+                StoreStep.Artwork(
                     container: season.id.value,
                     kind: "poster",
                     image: image,
@@ -182,16 +182,30 @@ struct StoreServiceTests {
         #expect(unheld.reason == "the silo holds no image \(missing)")
         #expect(try !bench.held(Self.season.id))
 
-        // A container neither held nor made before, a step that is two, and a kind that is not one.
+        // A container neither held nor made before, and a kind that is not one.
         let orphan = try await bench.store([Self.create(Self.season, beneath: Self.season)], key: "orphan")
         #expect(orphan.state == .refused && orphan.step == 0)
-        let both = StoreStep(
-            create: StoreStep.Create(documents: [Self.xml(Self.season)]),
-            removeArtwork: StoreStep.Artwork(container: Self.series.id.value, kind: "poster")
-        )
-        #expect(try await bench.store([both], key: "both").state == .refused)
-        let wallpaper = StoreStep(removeArtwork: StoreStep.Artwork(container: Self.series.id.value, kind: "wallpaper"))
+        let wallpaper = StoreStep.removeArtwork(StoreStep.Artwork(container: Self.series.id.value, kind: "wallpaper"))
         #expect(try await bench.store([wallpaper], key: "wallpaper").reason == "wallpaper is not an artwork kind")
+    }
+
+    @Test func aStepIsOneKindInItsJSON() throws {
+        let step = StoreStep.removeArtwork(StoreStep.Artwork(container: Self.series.id.value, kind: "poster"))
+        let json = try JSONEncoder().encode(step)
+        #expect(
+            try JSONSerialization.jsonObject(with: json) as? [String: [String: String]] == [
+                "removeArtwork": ["container": Self.series.id.value, "kind": "poster"]
+            ],
+            "an object of one key, the kind, holding the step"
+        )
+        #expect(try JSONDecoder().decode(StoreStep.self, from: json) == step)
+        for notOne in [
+            #"{}"#, #"{"edit": {"container": "a", "document": "", "basedOn": ""}, "create": {"documents": []}}"#,
+        ] {
+            #expect(throws: DecodingError.self, "\(notOne) is no step") {
+                try JSONDecoder().decode(StoreStep.self, from: Data(notOne.utf8))
+            }
+        }
     }
 
     @Test func aStepTheSiloRefusesEndsTheStoreThere() async throws {
@@ -219,15 +233,13 @@ struct StoreServiceTests {
         let bench = try Bench()
         defer { bench.remove() }
         let special = StoreStep.Ref(provider: "wikidata", value: "Q3731")
-        let decline = StoreStep(
-            edit: StoreStep.Edit(
-                container: Self.series.id.value,
-                document: Self.xml(Self.series),
-                basedOn: "",
-                declined: [special]
-            )
+        var edit = StoreStep.Edit(
+            container: Self.series.id.value,
+            document: Self.xml(Self.series),
+            basedOn: "",
+            declined: [special]
         )
-        let made = try await bench.store([Self.create(Self.series), decline], key: "made")
+        let made = try await bench.store([Self.create(Self.series), .edit(edit)], key: "made")
         #expect(made.state == .made)
         #expect(
             try SidecarFile.sidecar(from: bench.sidecar("Andor")).declined == [
@@ -235,9 +247,8 @@ struct StoreServiceTests {
             ]
         )
 
-        var another = decline
-        another.edit?.declined = [special, StoreStep.Ref(provider: "wikidata", value: "Q3741")]
-        let unbased = try await bench.store([another], key: "unbased")
+        edit.declined = [special, StoreStep.Ref(provider: "wikidata", value: "Q3741")]
+        let unbased = try await bench.store([.edit(edit)], key: "unbased")
         #expect(unbased.state == .refused && unbased.step == 0, "held, not made by the store")
     }
 
@@ -313,17 +324,17 @@ struct StoreServiceTests {
         let poster = StoreStep.Artwork(container: Self.series.id.value, kind: "poster", image: image)
         let made = try await bench.store(
             [
-                StoreStep(create: StoreStep.Create(documents: [Self.xml(film)], attributions: [outline])),
-                StoreStep(
-                    edit: StoreStep.Edit(
+                StoreStep.create(StoreStep.Create(documents: [Self.xml(film)], attributions: [outline])),
+                StoreStep.edit(
+                    StoreStep.Edit(
                         container: Self.series.id.value,
                         document: Self.xml(Self.series),
                         basedOn: try bench.digest("Andor"),
                         declined: [declined]
                     )
                 ),
-                StoreStep(putArtwork: poster),
-                StoreStep(removeArtwork: StoreStep.Artwork(container: Self.series.id.value, kind: "poster")),
+                StoreStep.putArtwork(poster),
+                StoreStep.removeArtwork(StoreStep.Artwork(container: Self.series.id.value, kind: "poster")),
             ],
             key: "carried"
         )
@@ -348,12 +359,12 @@ struct StoreServiceTests {
         )
         let refusals: [(StoreStep, String)] = [
             (
-                StoreStep(create: StoreStep.Create(documents: [Self.xml(film)], attributions: [noDay])),
+                StoreStep.create(StoreStep.Create(documents: [Self.xml(film)], attributions: [noDay])),
                 "2026-02-30 is not a yyyy-mm-dd date to have read outline on"
             ),
             (
-                StoreStep(
-                    putArtwork: StoreStep.Artwork(
+                StoreStep.putArtwork(
+                    StoreStep.Artwork(
                         container: Self.series.id.value,
                         kind: "poster",
                         image: image,
@@ -362,8 +373,8 @@ struct StoreServiceTests {
                 ), "a put of poster names a provider, a value and a read day, or none of them"
             ),
             (
-                StoreStep(
-                    putArtwork: StoreStep.Artwork(
+                StoreStep.putArtwork(
+                    StoreStep.Artwork(
                         container: Self.series.id.value,
                         kind: "poster",
                         image: image,
@@ -374,16 +385,16 @@ struct StoreServiceTests {
                 ), "never is not a yyyy-mm-dd date to have read poster on"
             ),
             (
-                StoreStep(
-                    edit: StoreStep.Edit(container: "00000000000000ff", document: Self.xml(Self.series), basedOn: "")
+                StoreStep.edit(
+                    StoreStep.Edit(container: "00000000000000ff", document: Self.xml(Self.series), basedOn: "")
                 ), "the library does not hold 00000000000000ff, nor does the store make it before"
             ),
             (
-                StoreStep(putArtwork: StoreStep.Artwork(container: "00000000000000ff", kind: "poster", image: image)),
+                StoreStep.putArtwork(StoreStep.Artwork(container: "00000000000000ff", kind: "poster", image: image)),
                 "the library does not hold 00000000000000ff, nor does the store make it before"
             ),
             (
-                StoreStep(edit: StoreStep.Edit(container: Self.series.id.value, document: Self.xml(film), basedOn: "")),
+                StoreStep.edit(StoreStep.Edit(container: Self.series.id.value, document: Self.xml(film), basedOn: "")),
                 "the document describes \(film.id), not \(Self.series.id)"
             ),
         ]
@@ -401,7 +412,7 @@ struct StoreServiceTests {
         let conflict = try await bench.store(
             [
                 Self.create(other),
-                StoreStep(edit: StoreStep.Edit(container: other.id.value, document: Self.xml(retitled), basedOn: "x")),
+                StoreStep.edit(StoreStep.Edit(container: other.id.value, document: Self.xml(retitled), basedOn: "x")),
             ],
             key: "conflict"
         )

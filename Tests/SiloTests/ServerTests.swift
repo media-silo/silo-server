@@ -1072,6 +1072,14 @@ struct ServerTests {
                 try await post(client, route, try body(key: "a key", kinds: ["poster"]), Self.operatorHeaders)
                     .status == 400
             )
+            // A step of two kinds, or of none, is no step, and nothing is taken.
+            let artwork = ["container": container, "kind": "poster", "image": digest]
+            for step in [["putArtwork": artwork, "removeArtwork": artwork], [:]] {
+                let notOne = try JSONSerialization.data(withJSONObject: ["key": "not-one", "steps": [step]])
+                let refused = try await post(client, route, notOne, Self.operatorHeaders)
+                #expect(refused.status == 400, "\(refused.status) \(refused.bodyText)")
+            }
+            #expect(try await client.send("GET", "\(route)/not-one", headers: operatorHeaders).status == 404)
 
             let taken = try await post(client, route, store, Self.operatorHeaders)
             #expect(taken.status == 202)

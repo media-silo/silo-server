@@ -183,7 +183,7 @@ package final class StoreService: Sendable {
 
     /// The containers a step makes: a creation's, or none.
     static func makes(_ step: StoreStep) -> [ContainerID] {
-        guard let create = step.create else { return [] }
+        guard case .create(let create) = step else { return [] }
         return (try? ContainerMaker.reading(create.documents, attributions: []).containers.map(\.id)) ?? []
     }
 
@@ -191,13 +191,14 @@ package final class StoreService: Sendable {
     /// made, or why it is refused.
     private func make(_ step: StoreStep, in library: LibraryConfig, after made: Set<ContainerID>) throws -> Refusal? {
         do {
-            if let create = step.create {
+            switch step {
+            case .create(let create):
                 try make(create, in: library)
-            } else if let edit = step.edit {
+            case .edit(let edit):
                 try make(edit, in: library, after: made)
-            } else if let artwork = step.putArtwork {
+            case .putArtwork(let artwork):
                 return try put(artwork, in: library)
-            } else if let artwork = step.removeArtwork {
+            case .removeArtwork(let artwork):
                 guard let id = ContainerID(artwork.container),
                     try ArtworkController.remove(artwork.kind, of: id, in: library, index: index)
                 else { throw NoSuchContainer() }
