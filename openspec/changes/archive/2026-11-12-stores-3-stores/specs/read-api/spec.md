@@ -5,13 +5,13 @@
 
 ### Requirement: A library's store is taken at once, under the key it names, and made in the background
 `POST /v1/libraries/{library}/stores` with a JSON `StoreRequest` — `key`, a name chosen by whoever
-sends it; and `steps`, in the order they are to be made, each one of `create`, carrying `documents`,
+sends it, of letters, digits, `-`, `_` and `.`, up to 128 of them; and `steps`, each exactly one of the
+four, in the order they are to be made, `create`, carrying `documents`,
 `parent` and `attributions` as a `ContainerCreate` does; `edit`, carrying `container`, `document`,
 `basedOn`, `attributions` and `declined` as a `ContainerEdit` does; `putArtwork`, carrying
 `container`, `kind`, `image`, the digest of a blob, and `provider`, `value` and `read`, all or none, as
 the artwork route takes them; and `removeArtwork`, carrying `container` and `kind` — SHALL check the
-store before making any of it, SHALL record it, and SHALL answer at once with its `StoreRecord` and,
-in `Location`, the route that says it.
+store before making any of it, SHALL record it, and SHALL answer at once with its `StoreRecord`.
 
 - The check SHALL refuse the store when a document cannot be read or names another container, when
   an edit's `basedOn` is not the digest of the sidecar the library holds and its document is not what
@@ -27,7 +27,8 @@ in `Location`, the route that says it.
   `refused` at that step with the route's words and findings; the steps before it stand.
 - A request naming a key the library has a store for SHALL be answered that store's record with 200
   when its steps are the store's, and 409 when they are not; nothing SHALL be made again.
-- A library the silo does not serve SHALL be 404, and a request that is not a `StoreRequest` 400.
+- A library the silo does not serve SHALL be 404. A key that cannot be one, and a step that is not
+  exactly one of the four, SHALL be 400, and no store SHALL be recorded.
 
 The route SHALL require the operator's bearer; a missing or wrong bearer SHALL be 401.
 
@@ -55,17 +56,26 @@ The route SHALL require the operator's bearer; a missing or wrong bearer SHALL b
 - **THEN** the store is recorded as refused at that step, and none of its steps is made
 
 #### Scenario: a step the silo refuses as it is made
-- **WHEN** a store's second step creates a container whose sidecar the validator refuses with an error
-- **THEN** the store is recorded as refused at its second step with the validator's finding, its first
+- **WHEN** a store's second step creates a container the library already holds, beneath a container
+  its first step made
+- **THEN** the store is recorded as refused at its second step with the route's finding, its first
   step is made, and its third is not
 
-Pinned by: nothing yet.
+#### Scenario: a step of two kinds
+- **WHEN** the operator sends a store one of whose steps both puts a poster and removes it
+- **THEN** the answer is 400, and no store is recorded under its key
+
+Pinned by: `Tests/SiloTests/StoreServiceTests.swift` (`aStoreIsMadeInOrderAndSentTwiceIsMadeOnce`,
+`aStoreTheCheckRefusesMakesNothing`, `aStepTheSiloRefusesEndsTheStoreThere`,
+`aStepIsOneKindInItsJSON`),
+`Tests/SiloTests/ServerTests.swift` (`aStoreIsTakenAtOnceAndSaidAtARouteOfItsOwn`).
 
 ### Requirement: A store is said at a route of its own, and resumed when the silo starts
 `GET /v1/libraries/{library}/stores/{key}` SHALL answer the store's `StoreRecord`: its `key`; its
 `state`, `underWay`, `made` or `refused`; `made`, how many of its steps are made; `step`, the index of
-the step under way or refused, while there is one; and, when it is refused, the `reason` in the
-route's words and the `findings` when the route gave them. A step SHALL be said by its index in the
+the step under way or refused, while there is one, and none for a store refused before any step was
+tried; and, when it is refused, the `reason` in the route's words and the `findings` when the route
+gave them. A step SHALL be said by its index in the
 request, and the record SHALL carry nothing of the request's prose. A key the library has no store for
 SHALL be 404. The route SHALL require the operator's bearer.
 
@@ -85,8 +95,14 @@ silo stopped is made once.
 - **THEN** the store is made from its first step, each of its steps is made once, and its record says
   it is made with three steps made
 
+#### Scenario: a store whose library the silo no longer serves
+- **WHEN** a store is under way when the silo stops, and the silo starts again without its library
+- **THEN** the store is recorded as refused at no step, with a reason naming the library
+
 #### Scenario: a key the library has no store for
 - **WHEN** the operator asks after a key no store in the library was sent with
 - **THEN** the answer is 404
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aStoreIsTakenAtOnceAndSaidAtARouteOfItsOwn`),
+`Tests/SiloTests/StoreServiceTests.swift` (`aStoreUnderWayWhenTheSiloStoppedIsResumed`,
+`aStoreOfALibraryNoLongerServedIsRefusedWhenResumed`, `aRecordIsKeptThirtyDays`).

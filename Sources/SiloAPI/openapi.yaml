@@ -515,6 +515,89 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContainerCreateResult"
 
+  /libraries/{library}/stores:
+    post:
+      operationId: createStore
+      summary: Hand the silo a store of steps to make in this library, under a key
+      description: >
+        Takes a store's steps, each a creation, an edit, a put of artwork from a blob or a removal
+        of artwork, in the terms of the route that makes it alone, and checks them before making
+        any: each document reads and names its container, each edit's basedOn is the sidecar the
+        library holds unless its document is what that sidecar holds already, each image is a blob
+        the silo holds, and each container a step names is held or made by an earlier step. The
+        store is recorded, refused at the first step the check refuses or under way, and answered
+        202 at once; the silo then makes its steps in order in one turn of the library, walking the
+        library after a step that moves folders, and ends the store at the first step its route
+        refuses. A key the library has a store for answers that store with 200 when the steps are
+        the same, and 409 when they are not. A store is said at its own route. Operator only.
+      tags: [Containers]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreRequest"
+      responses:
+        "202":
+          description: The store, taken.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreRecord"
+        "200":
+          description: The store the key already names, sent again with the same steps.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreRecord"
+        "400":
+          description: A key that cannot be one, or a step that is not one of the four.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library.
+        "409":
+          description: The key names a store of other steps.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /libraries/{library}/stores/{key}:
+    get:
+      operationId: getStore
+      summary: A store, as far as it has got
+      description: >
+        The store's state, under way, made or refused; how many of its steps are made; the step
+        under way or refused, by its index in the request; and for a refusal, the reason in the
+        words of the step's route and its findings. Kept thirty days after it was last written.
+        Operator only.
+      tags: [Containers]
+      security:
+        - operator: []
+      parameters:
+        - $ref: "#/components/parameters/Library"
+        - $ref: "#/components/parameters/StoreKey"
+      responses:
+        "200":
+          description: The store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreRecord"
+        "401":
+          $ref: "#/components/responses/Unauthorised"
+        "404":
+          description: No such library, or no store under that key.
+
   /libraries/{library}/layout:
     post:
       operationId: layOutLibrary
@@ -1859,6 +1942,13 @@ components:
       description: The staged setup's passkey, spent by its confirm — never the credential itself.
 
   parameters:
+    StoreKey:
+      name: key
+      in: path
+      required: true
+      description: The key a store was sent under, of letters, digits, "-", "_" and ".", up to 128.
+      schema:
+        type: string
     BindingID:
       name: id
       in: path
@@ -3142,6 +3232,98 @@ components:
         findings:
           type: array
           description: A rename that failed, as a warning; the folder is where it was.
+          items:
+            $ref: "#/components/schemas/Finding"
+
+    StoreRequest:
+      type: object
+      required: [key, steps]
+      properties:
+        key:
+          type: string
+          description: The name the store is asked after by, chosen by its sender, of letters, digits, "-", "_" and ".", up to 128.
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/StoreStep"
+
+    StoreStep:
+      type: object
+      description: Exactly one of the four; a step of none or of several is answered 400.
+      properties:
+        create:
+          $ref: "#/components/schemas/ContainerCreate"
+        edit:
+          $ref: "#/components/schemas/StoreEdit"
+        putArtwork:
+          $ref: "#/components/schemas/StoreArtwork"
+        removeArtwork:
+          $ref: "#/components/schemas/StoreArtwork"
+
+    StoreEdit:
+      type: object
+      required: [container, document, basedOn]
+      properties:
+        container:
+          type: string
+        document:
+          type: string
+          description: The container as its repository XML.
+        basedOn:
+          type: string
+          description: The digest of the sidecar the edit was made from.
+        attributions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attribution"
+        declined:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalRef"
+
+    StoreArtwork:
+      type: object
+      required: [container, kind]
+      properties:
+        container:
+          type: string
+        kind:
+          type: string
+        image:
+          type: string
+          description: The digest of the blob to put; absent in a removal.
+        provider:
+          type: string
+        value:
+          type: string
+        read:
+          type: string
+          description: The day, yyyy-mm-dd, the image was read from the provider.
+
+    StoreRecord:
+      type: object
+      required: [key, state, made, steps]
+      properties:
+        key:
+          type: string
+        state:
+          type: string
+          enum: [underWay, made, refused]
+        made:
+          type: integer
+          description: How many of the store's steps are made.
+        steps:
+          type: integer
+          description: How many steps the store has.
+        step:
+          type: integer
+          description: The index of the step under way, or of the one refused; absent for a store made, or refused before any step was tried.
+        reason:
+          type: string
+          description: Why the step was refused, in its route's words.
+        findings:
+          type: array
           items:
             $ref: "#/components/schemas/Finding"
 

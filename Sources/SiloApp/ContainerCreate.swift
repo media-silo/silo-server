@@ -58,13 +58,7 @@ enum ContainerMaker {
         libraries: Libraries,
         index: Index
     ) async throws -> ContainerCreateOutcome {
-        let containers: [Container]
-        do {
-            containers = try documents.map { try ContainerFile.container(from: Data($0.utf8)) }
-        } catch {
-            throw BadCreate(reason: "a container document cannot be read: \(error.localizedDescription)")
-        }
-        let attributedByID = try attributedFields(attributions, of: containers)
+        let (containers, attributedByID) = try reading(documents, attributions: attributions)
         let parentID: ContainerID?
         if let parent {
             guard let id = ContainerID(parent), try index.container(id, in: library.id) != nil else {
@@ -76,60 +70,99 @@ enum ContainerMaker {
         }
 
         return try await libraries.exclusively(library) {
-            // Containers made already, as the request makes them, were made: a create sent again, its
-            // first answer lost, is answered as the first was, writing nothing.
-            if try made(containers, beneath: parentID, attributions: attributedByID, in: library, index: index) {
-                return ContainerCreateOutcome(applied: !dryRun, writes: [], findings: [])
-            }
-            var holder: MakingRequest.Holder?
-            if let parentID {
-                guard let row = try index.container(parentID, in: library.id) else { throw NoSuchContainer() }
-                holder = MakingRequest.Holder(
-                    folder: library.root.appendingPathComponent(row.folder, isDirectory: true),
-                    parent: row.parent.flatMap(ContainerID.init)
-                )
-            }
-            let making: Making
-            do {
-                making = try Maker.compute(
-                    MakingRequest(
-                        library: library.root,
-                        holder: holder,
-                        containers: containers,
-                        attributions: attributedByID
-                    )
-                )
-            } catch let error as MakingError {
-                throw BadCreate(reason: error.localizedDescription)
-            }
-
-            // A container the library holds anywhere, in the walk's words for one held twice; the
-            // computation has already said so of one whose folder it would use.
-            var findings: [Finding] = []
-            for container in containers {
-                guard let row = try index.container(container.id, in: library.id) else { continue }
-                let finding = Finding(.error, "container \(container.id) is already at \"\(row.folder)\"")
-                if !making.findings.contains(where: { $0.text == finding.text }) { findings.append(finding) }
-            }
-            var outcome = ContainerCreateOutcome(
-                applied: false,
-                writes: making.sidecars,
-                findings: findings + making.findings
+            try make(
+                Request(containers: containers, parent: parentID, attributions: attributedByID),
+                in: library,
+                dryRun: dryRun,
+                index: index
             )
-            guard outcome.errors.isEmpty else { throw CreateRefused(outcome: outcome) }
-            guard !dryRun else { return outcome }
-
-            try Maker.apply(making)
-            // What was written, the holder first and then the tree from the top down, each under the
-            // parent it is filed beneath; nothing else is walked.
-            let written = making.sidecars.filter { !$0.creates } + making.sidecars.filter(\.creates)
-            for write in written {
-                let folder = LibraryWalker.relativePath(of: write.url.deletingLastPathComponent(), in: library.root)
-                _ = try Indexer.refresh(folder: folder, parent: write.parent, in: library, index: index)
-            }
-            outcome.applied = true
-            return outcome
         }
+    }
+
+    /// Reads a create's documents and attributions, refused as `BadCreate` when a document cannot be
+    /// read or an attribution names a container the request does not carry.
+    static func reading(
+        _ documents: [String],
+        attributions: [(container: String, attribution: Attribution)]
+    ) throws -> (containers: [Container], attributions: [ContainerID: [Attribution]]) {
+        let containers: [Container]
+        do {
+            containers = try documents.map { try ContainerFile.container(from: Data($0.utf8)) }
+        } catch {
+            throw BadCreate(reason: "a container document cannot be read: \(error.localizedDescription)")
+        }
+        return (containers, try attributedFields(attributions, of: containers))
+    }
+
+    /// Containers to make, read, beneath a parent the library holds or at its top.
+    struct Request {
+        var containers: [Container]
+        var parent: ContainerID?
+        var attributions: [ContainerID: [Attribution]]
+    }
+
+    /// Makes the containers within a turn of the library the caller holds, beneath the parent or at
+    /// the top of the library.
+    static func make(
+        _ request: Request,
+        in library: LibraryConfig,
+        dryRun: Bool,
+        index: Index
+    ) throws -> ContainerCreateOutcome {
+        let (containers, parentID, attributedByID) = (request.containers, request.parent, request.attributions)
+        // Containers made already, as the request makes them, were made: a create sent again, its
+        // first answer lost, is answered as the first was, writing nothing.
+        if try made(containers, beneath: parentID, attributions: attributedByID, in: library, index: index) {
+            return ContainerCreateOutcome(applied: !dryRun, writes: [], findings: [])
+        }
+        var holder: MakingRequest.Holder?
+        if let parentID {
+            guard let row = try index.container(parentID, in: library.id) else { throw NoSuchContainer() }
+            holder = MakingRequest.Holder(
+                folder: library.root.appendingPathComponent(row.folder, isDirectory: true),
+                parent: row.parent.flatMap(ContainerID.init)
+            )
+        }
+        let making: Making
+        do {
+            making = try Maker.compute(
+                MakingRequest(
+                    library: library.root,
+                    holder: holder,
+                    containers: containers,
+                    attributions: attributedByID
+                )
+            )
+        } catch let error as MakingError {
+            throw BadCreate(reason: error.localizedDescription)
+        }
+
+        // A container the library holds anywhere, in the walk's words for one held twice; the
+        // computation has already said so of one whose folder it would use.
+        var findings: [Finding] = []
+        for container in containers {
+            guard let row = try index.container(container.id, in: library.id) else { continue }
+            let finding = Finding(.error, "container \(container.id) is already at \"\(row.folder)\"")
+            if !making.findings.contains(where: { $0.text == finding.text }) { findings.append(finding) }
+        }
+        var outcome = ContainerCreateOutcome(
+            applied: false,
+            writes: making.sidecars,
+            findings: findings + making.findings
+        )
+        guard outcome.errors.isEmpty else { throw CreateRefused(outcome: outcome) }
+        guard !dryRun else { return outcome }
+
+        try Maker.apply(making)
+        // What was written, the holder first and then the tree from the top down, each under the
+        // parent it is filed beneath; nothing else is walked.
+        let written = making.sidecars.filter { !$0.creates } + making.sidecars.filter(\.creates)
+        for write in written {
+            let folder = LibraryWalker.relativePath(of: write.url.deletingLastPathComponent(), in: library.root)
+            _ = try Indexer.refresh(folder: folder, parent: write.parent, in: library, index: index)
+        }
+        outcome.applied = true
+        return outcome
     }
 
     /// Whether the library holds every container of the request, each filed beneath the container the

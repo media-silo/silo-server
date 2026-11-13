@@ -126,35 +126,55 @@ package struct ArtworkController {
         attributedTo attribution: Attribution?,
         at target: Target
     ) async throws -> Bool {
-        let kind = target.kind
         let index = index
-        return try await libraries.exclusively(target.library) { () throws -> Bool in
-            guard let row = try index.container(target.id, in: target.library.id) else { return false }
-            let folder = target.library.root.appendingPathComponent(row.folder, isDirectory: true)
-            if attribution != nil {
-                try Self.attribute(kind, to: attribution, of: row, in: target.library, index: index)
-            }
-            let destination = folder.appendingPathComponent("\(kind).\(format.rawValue)")
-            let beside = folder.appendingPathComponent(".\(kind).\(UUID().uuidString).\(format.rawValue)")
-            try image.write(to: beside)
-            do {
-                if FileManager.default.fileExists(atPath: destination.path) {
-                    _ = try FileManager.default.replaceItemAt(destination, withItemAt: beside)
-                } else {
-                    try FileManager.default.moveItem(at: beside, to: destination)
-                }
-            } catch {
-                try? FileManager.default.removeItem(at: beside)
-                throw error
-            }
-            for other in Artwork.Format.allCases where other != format {
-                try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(kind).\(other.rawValue)"))
-            }
-            if attribution == nil {
-                try Self.attribute(kind, to: nil, of: row, in: target.library, index: index)
-            }
-            return true
+        return try await libraries.exclusively(target.library) {
+            try Self.put(
+                Put(image: image, format: format, kind: target.kind, attribution: attribution),
+                of: target.id,
+                in: target.library,
+                index: index
+            )
         }
+    }
+
+    /// An image to put as an artwork kind, and whose it is: nil for the operator's own.
+    struct Put {
+        var image: Data
+        var format: Artwork.Format
+        var kind: String
+        var attribution: Attribution?
+    }
+
+    /// Writes the image as the kind's file and records or removes its attribution, within a turn of the
+    /// library the caller holds: the sidecar first when it gains one, last when it loses one. False when
+    /// the library does not hold the container.
+    static func put(_ put: Put, of id: ContainerID, in library: LibraryConfig, index: Index) throws -> Bool {
+        let (image, format, kind, attribution) = (put.image, put.format, put.kind, put.attribution)
+        guard let row = try index.container(id, in: library.id) else { return false }
+        let folder = library.root.appendingPathComponent(row.folder, isDirectory: true)
+        if attribution != nil {
+            try Self.attribute(kind, to: attribution, of: row, in: library, index: index)
+        }
+        let destination = folder.appendingPathComponent("\(kind).\(format.rawValue)")
+        let beside = folder.appendingPathComponent(".\(kind).\(UUID().uuidString).\(format.rawValue)")
+        try image.write(to: beside)
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: beside)
+            } else {
+                try FileManager.default.moveItem(at: beside, to: destination)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: beside)
+            throw error
+        }
+        for other in Artwork.Format.allCases where other != format {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(kind).\(other.rawValue)"))
+        }
+        if attribution == nil {
+            try Self.attribute(kind, to: nil, of: row, in: library, index: index)
+        }
+        return true
     }
 
     @Delete("/libraries/{library}/containers/{id}/artwork/{kind}")
@@ -169,20 +189,26 @@ package struct ArtworkController {
             return
         }
         let index = index
-        let removed = try await libraries.exclusively(target.library) { () throws -> Bool in
-            guard let row = try index.container(target.id, in: target.library.id) else { return false }
-            let folder = target.library.root.appendingPathComponent(row.folder, isDirectory: true)
-            // A kind already gone was removed: a removal sent again is answered as the first was.
-            guard Artwork.file(of: target.kind, in: folder) != nil else { return true }
-            for format in Artwork.Format.allCases {
-                try? FileManager.default.removeItem(
-                    at: folder.appendingPathComponent("\(target.kind).\(format.rawValue)")
-                )
-            }
-            try Self.attribute(target.kind, to: nil, of: row, in: target.library, index: index)
-            return true
+        let removed = try await libraries.exclusively(target.library) {
+            try Self.remove(target.kind, of: target.id, in: target.library, index: index)
         }
         try await responseSender.sendAndFinish(HTTPResponse(status: removed ? .noContent : .notFound))
+    }
+
+    /// Removes the kind's file and its attribution within a turn of the library the caller holds. True
+    /// when the folder holds none already; false when the library does not hold the container.
+    static func remove(_ kind: String, of id: ContainerID, in library: LibraryConfig, index: Index) throws -> Bool {
+        guard let row = try index.container(id, in: library.id) else { return false }
+        let folder = library.root.appendingPathComponent(row.folder, isDirectory: true)
+        // A kind already gone was removed: a removal sent again is answered as the first was.
+        guard Artwork.file(of: kind, in: folder) != nil else { return true }
+        for format in Artwork.Format.allCases {
+            try? FileManager.default.removeItem(
+                at: folder.appendingPathComponent("\(kind).\(format.rawValue)")
+            )
+        }
+        try Self.attribute(kind, to: nil, of: row, in: library, index: index)
+        return true
     }
 
     /// A put's query is malformed: some of a provider, a value and a read date without the others, or a
