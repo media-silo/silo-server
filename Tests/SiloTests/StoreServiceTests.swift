@@ -45,13 +45,20 @@ struct StoreServiceTests {
             StoreService(libraries: libraries, index: index, records: records, blobs: blobs)
         }
 
-        /// Takes a store and waits for it to be made or refused.
+        /// Takes a store and makes it, as the silo's making of stores would: made or refused.
         @discardableResult
         func store(_ steps: [StoreStep], key: String, with service: StoreService? = nil) async throws -> StoreRecord {
             let service = service ?? self.service()
-            let taken = try service.take(steps, key: key, in: library)
-            await taken.making?.value
+            _ = try service.take(steps, key: key, in: library)
+            await service.makeQueued()
             return try service.record(key, in: library)
+        }
+
+        /// A service as the silo makes one when it starts, having made the stores under way.
+        func resumed() async {
+            let service = service()
+            service.resume()
+            await service.makeQueued()
         }
 
         func sidecar(_ folder: String) throws -> Data {
@@ -135,7 +142,8 @@ struct StoreServiceTests {
         // Sent again with the same steps, the one store is answered, and nothing is made again.
         let written = try bench.sidecar("Andor")
         let again = try service.take(steps, key: "walk-1", in: bench.library)
-        #expect(!again.added && again.making == nil)
+        #expect(!again.added)
+        await service.makeQueued()
         #expect(again.record == made)
         #expect(try bench.sidecar("Andor") == written)
 
@@ -215,13 +223,44 @@ struct StoreServiceTests {
         // Its first step made before the silo stopped, and the record not yet saying so.
         _ = try bench.records.adding(StoreRecord(library: bench.library.id, key: "resumed", steps: steps))
         #expect(bench.records.imagesUnderWay() == [image], "its image is kept while it is under way")
-        await bench.service().resume()
+        await bench.resumed()
 
         let resumed = try #require(bench.records.record("resumed", in: bench.library.id))
         #expect(resumed.state == .made)
         #expect(resumed.made == 4)
         #expect(try bench.held(Self.season.id))
         #expect(bench.records.imagesUnderWay().isEmpty)
+    }
+
+    @Test func storesAreMadeAsTheyAreTakenWhileTheServiceRuns() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let before = StoreRecord(library: bench.library.id, key: "before", steps: [Self.create(Self.series)])
+        _ = try bench.records.adding(before)
+        let service = bench.service()
+        let running = Task { await service.run() }
+        func settled(_ key: String) async throws -> StoreRecord {
+            var record = try service.record(key, in: bench.library)
+            for _ in 0..<500 where record.state == .underWay {
+                try await Task.sleep(for: .milliseconds(10))
+                record = try service.record(key, in: bench.library)
+            }
+            return record
+        }
+        #expect(try await settled("before").state == .made, "the store under way when it started")
+        let after = Array(Self.steps(basedOn: try bench.digest("Andor"), image: "").prefix(2))
+        _ = try service.take(after, key: "after", in: bench.library)
+        #expect(try await settled("after").state == .made, "and one taken while it runs")
+        #expect(try bench.held(Self.season.id))
+
+        // Cancelled, it ends; a store taken after is left under way for the next start.
+        running.cancel()
+        await running.value
+        let other = Container(id: ContainerID("00000000000000b1")!, type: .series, title: Title("Ahsoka")!)
+        _ = try service.take([Self.create(other)], key: "stopped", in: bench.library)
+        #expect(try service.record("stopped", in: bench.library).state == .underWay)
+        await bench.resumed()
+        #expect(try service.record("stopped", in: bench.library).state == .made)
     }
 
     @Test func aStoresStepsCarryWhatTheirRoutesTake() async throws {
@@ -350,7 +389,7 @@ struct StoreServiceTests {
             try StoreRecords(folder: bench.records.folder).record("orphaned", in: "gone") != nil,
             "a record is read back"
         )
-        await bench.service().resume()
+        await bench.resumed()
         let record = try #require(bench.records.record("orphaned", in: "gone"))
         #expect(record.state == .refused)
         #expect(record.reason == "the silo no longer serves gone")

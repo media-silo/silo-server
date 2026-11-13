@@ -5,6 +5,7 @@ import Logging
 import SiloLibrary
 import SiloStore
 import SmdKit
+import Synchronization
 import Wire
 
 /// A key the library has a store for, sent with other steps.
@@ -32,6 +33,10 @@ package final class StoreService: Sendable {
     let records: StoreRecords
     let blobs: BlobStore
     private let logger = Logger(label: "silo.stores")
+    /// The stores taken and not yet begun, in the order they were taken, and the signal that one was.
+    private let queued = Mutex<[Queued]>([])
+    private let taken: AsyncStream<Void>
+    private let signal: AsyncStream<Void>.Continuation
 
     @Inject
     package init(libraries: Libraries, index: Index, records: StoreRecords, blobs: BlobStore) {
@@ -39,18 +44,22 @@ package final class StoreService: Sendable {
         self.index = index
         self.records = records
         self.blobs = blobs
+        (taken, signal) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
     }
 
-    /// A store taken: its record, whether the key was new, and, for a store begun, its making, for
-    /// whoever waits on it.
+    /// A store taken: its record, and whether the key was new.
     package struct Taken {
         package var record: StoreRecord
         package var added: Bool
-        package var making: Task<Void, Never>?
+    }
+
+    private struct Queued {
+        var library: String
+        var key: String
     }
 
     /// Takes a store under its key: the store the key already names when its steps are the same, or a
-    /// new one, checked and recorded, and begun when the check passes.
+    /// new one, checked and recorded, and queued for making when the check passes.
     package func take(_ steps: [StoreStep], key: String, in library: LibraryConfig) throws -> Taken {
         try Self.checkKey(key)
         records.sweep()
@@ -67,8 +76,11 @@ package final class StoreService: Sendable {
             record.reason = refusal.reason
         }
         let (taken, added) = try records.adding(record)
-        guard added, taken.state == .underWay else { return Taken(record: taken, added: added) }
-        return Taken(record: taken, added: true, making: Task.detached { [self] in await make(key, in: library) })
+        if added, taken.state == .underWay {
+            queued.withLock { $0.append(Queued(library: library.id, key: key)) }
+            signal.yield()
+        }
+        return Taken(record: taken, added: added)
     }
 
     package func record(_ key: String, in library: LibraryConfig) throws -> StoreRecord {
@@ -76,28 +88,64 @@ package final class StoreService: Sendable {
         return record
     }
 
-    /// Makes every store under way, from the step each was making: what the silo does when it starts.
-    package func resume() async {
-        for record in records.underWay() {
-            guard let library = libraries.library(record.library) else {
-                _ = try? records.update(record.key, in: record.library) {
-                    $0.state = .refused
-                    $0.reason = "the silo no longer serves \(record.library)"
-                }
-                continue
+    /// Makes the stores while the silo runs: first every store under way when it stopped, then each as
+    /// it is taken. Cancelled, it ends once the step each store is making is made, leaving the store
+    /// under way for the next start to make.
+    package func run() async {
+        resume()
+        await withDiscardingTaskGroup { group in
+            group.addTask { await self.makeQueued() }
+            for await _ in taken {
+                group.addTask { await self.makeQueued() }
             }
-            logger.info("resuming the store \(record.key) of \(record.library) at step \(record.made)")
-            await make(record.key, in: library)
         }
     }
 
+    /// Queues every store under way, ahead of any taken since: what the silo does when it starts.
+    func resume() {
+        let underWay = records.underWay().map { Queued(library: $0.library, key: $0.key) }
+        queued.withLock { $0.insert(contentsOf: underWay, at: 0) }
+    }
+
+    /// Makes every store queued, those of different libraries side by side and those of one library in
+    /// the order they were queued.
+    func makeQueued() async {
+        let stores = queued.withLock { queued in
+            defer { queued.removeAll() }
+            return queued
+        }
+        await withDiscardingTaskGroup { group in
+            for (library, stores) in Dictionary(grouping: stores, by: \.library) {
+                group.addTask {
+                    for store in stores { await self.make(store.key, of: library) }
+                }
+            }
+        }
+    }
+
+    /// Makes a queued store, refused when the silo no longer serves its library.
+    private func make(_ key: String, of library: String) async {
+        guard let config = libraries.library(library) else {
+            _ = try? records.update(key, in: library) {
+                $0.state = .refused
+                $0.reason = "the silo no longer serves \(library)"
+            }
+            return
+        }
+        if let record = records.record(key, in: library), record.made > 0 {
+            logger.info("resuming the store \(key) of \(library) at step \(record.made)")
+        }
+        await make(key, in: config)
+    }
+
     /// Makes the store's steps from the first not made, in one turn of the library, recording each as
-    /// it is made and ending at the first its route refuses.
+    /// it is made and ending at the first its route refuses, or, cancelled, before the next step.
     private func make(_ key: String, in library: LibraryConfig) async {
         do {
             try await libraries.exclusively(library) { [self] in
                 guard let record = records.record(key, in: library.id), record.state == .underWay else { return }
                 for position in record.made..<record.steps.count {
+                    guard !Task.isCancelled else { return }
                     try records.update(key, in: library.id) { $0.step = position }
                     if let refusal = try make(record.steps[position], in: library) {
                         try records.update(key, in: library.id) {
