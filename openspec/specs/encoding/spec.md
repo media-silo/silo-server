@@ -87,13 +87,25 @@ Pinned by: `Tests/EncoderTests/ArgumentsTests.swift` (`progressBlocksBecomeRepor
 A tool exiting with a non-zero status SHALL throw `ToolError.failed` carrying the tool's name,
 its exit status and the tail of what it wrote to standard error — the last 8 KB, kept so a long
 run's failure message is its relevant end. Cancelling the awaiting task SHALL terminate the
-child process, so a cancelled encode does not run on.
+child process, so a cancelled encode does not run on. A task already cancelled when the tool would
+start SHALL throw `CancellationError` without starting it, and a cancel that lands while the
+process is being started SHALL terminate it once it has started.
 
 #### Scenario: ffmpeg fails on a missing input
 - **WHEN** ffmpeg is run against `/nonexistent/file.mkv`
 - **THEN** it throws a `ToolError.failed` naming ffmpeg and its exit status, with ffmpeg's own error in the message
 
-Pinned by: `Tests/EncoderTests/IntegrationTests.swift` (`aFailureCarriesWhatFFmpegSaid`). Task-cancellation termination is pinned by nothing yet.
+#### Scenario: a tool cancelled before it starts is never started
+- **WHEN** a tool that would sleep for thirty seconds is run from a task that is already cancelled
+- **THEN** the run throws `CancellationError` at once and the tool never runs
+
+#### Scenario: cancelling a running tool terminates it
+- **WHEN** the task awaiting a tool that sleeps for thirty seconds is cancelled while the tool runs
+- **THEN** the tool is terminated and the run returns at once with a non-zero status
+
+Pinned by: `Tests/EncoderTests/IntegrationTests.swift` (`aFailureCarriesWhatFFmpegSaid`),
+`Tests/EncoderTests/ProcessRunnerTests.swift` (`aRunFromACancelledTaskStartsNothing`,
+`cancellingARunTerminatesTheTool`).
 
 ### Requirement: ffprobe's JSON is reduced to a probed source
 
