@@ -167,9 +167,9 @@ struct StoreServiceTests {
             [Self.create(before)] + Self.steps(basedOn: String(repeating: "0", count: 64), image: image),
             key: "stale"
         )
-        #expect(stale.state == .refused)
+        #expect(stale.refusal != nil)
         #expect(stale.step == 1 && stale.made == 0)
-        #expect(stale.reason?.hasPrefix("the sidecar is now ") == true)
+        #expect(stale.refusal?.reason.hasPrefix("the sidecar is now ") == true)
         #expect(try !bench.held(before.id) && !bench.held(Self.season.id), "none of its steps is made")
 
         // An image the silo does not hold.
@@ -178,15 +178,17 @@ struct StoreServiceTests {
             Self.steps(basedOn: try bench.digest("Andor"), image: missing),
             key: "unheld"
         )
-        #expect(unheld.state == .refused && unheld.step == 2)
-        #expect(unheld.reason == "the silo holds no image \(missing)")
+        #expect(unheld.refusal != nil && unheld.step == 2)
+        #expect(unheld.refusal?.reason == "the silo holds no image \(missing)")
         #expect(try !bench.held(Self.season.id))
 
         // A container neither held nor made before, and a kind that is not one.
         let orphan = try await bench.store([Self.create(Self.season, beneath: Self.season)], key: "orphan")
-        #expect(orphan.state == .refused && orphan.step == 0)
+        #expect(orphan.refusal != nil && orphan.step == 0)
         let wallpaper = StoreStep.removeArtwork(StoreStep.Artwork(container: Self.series.id.value, kind: "wallpaper"))
-        #expect(try await bench.store([wallpaper], key: "wallpaper").reason == "wallpaper is not an artwork kind")
+        #expect(
+            try await bench.store([wallpaper], key: "wallpaper").refusal?.reason == "wallpaper is not an artwork kind"
+        )
     }
 
     @Test func aStepIsOneKindInItsJSON() throws {
@@ -220,9 +222,9 @@ struct StoreServiceTests {
             [Self.create(other), Self.create(Self.series, beneath: other), Self.create(last)],
             key: "refused"
         )
-        #expect(refused.state == .refused)
+        #expect(refused.refusal != nil)
         #expect(refused.step == 1 && refused.made == 1)
-        #expect(refused.findings?.contains { $0.severity == "error" } == true)
+        #expect(refused.refusal?.findings?.contains { $0.severity == "error" } == true)
         #expect(try bench.held(other.id), "the step before it stands")
         #expect(try !bench.held(last.id), "and the one after it is not made")
     }
@@ -313,7 +315,7 @@ struct StoreServiceTests {
             ],
             key: "carried"
         )
-        #expect(made.state == .made, "\(made.reason ?? "")")
+        #expect(made.state == .made, "\(made.refusal?.reason ?? "")")
         let series = try SidecarFile.sidecar(from: bench.sidecar("Andor"))
         #expect(series.declined == [ExternalRef(provider: .tmdb, value: "tv/2")])
         #expect(
@@ -375,8 +377,8 @@ struct StoreServiceTests {
         ]
         for (position, (step, reason)) in refusals.enumerated() {
             let refused = try await bench.store([step], key: "refused-\(position)")
-            #expect(refused.state == .refused && refused.step == 0)
-            #expect(refused.reason == reason)
+            #expect(refused.refusal != nil && refused.step == 0)
+            #expect(refused.refusal?.reason == reason)
         }
 
         // An edit of a container an earlier step makes has no base the check can know, and its route
@@ -391,8 +393,8 @@ struct StoreServiceTests {
             ],
             key: "conflict"
         )
-        #expect(conflict.state == .refused && conflict.step == 1 && conflict.made == 1)
-        #expect(conflict.reason?.hasPrefix("the sidecar is now ") == true)
+        #expect(conflict.refusal != nil && conflict.step == 1 && conflict.made == 1)
+        #expect(conflict.refusal?.reason.hasPrefix("the sidecar is now ") == true)
     }
 
     @Test func aStoreOfALibraryNoLongerServedIsRefusedWhenResumed() async throws {
@@ -405,8 +407,12 @@ struct StoreServiceTests {
         )
         await bench.resumed()
         let record = try #require(bench.records.record("orphaned", in: "gone"))
-        #expect(record.state == .refused)
-        #expect(record.reason == "the silo no longer serves gone")
+        #expect(record.refusal == StoreRecord.Refusal(reason: "the silo no longer serves gone"), "at no step")
+        #expect(record.step == nil)
+        #expect(
+            try StoreRecords(folder: bench.records.folder).record("orphaned", in: "gone")?.state == record.state,
+            "read back refused as it was"
+        )
     }
 
     @Test func aRecordIsKeptThirtyDays() throws {

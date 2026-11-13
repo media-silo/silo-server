@@ -139,12 +139,27 @@ extension StoreStep: Codable {
 
 /// A store as the silo keeps it: the steps it was sent under its key, how many are made, and, once it
 /// is refused, which step and why. The record carries nothing of the sender's prose; a step is said
-/// by its index.
-public struct StoreRecord: Codable, Hashable, Sendable {
-    public enum State: String, Codable, Hashable, Sendable {
+/// by its index. Its JSON is flat, its state a name beside `step`, `reason` and `findings`.
+public struct StoreRecord: Hashable, Sendable {
+    public enum State: Hashable, Sendable {
+        /// Making the step after those made.
         case underWay
         case made
-        case refused
+        case refused(Refusal)
+    }
+
+    /// Why a store was refused: at which step, or at none when it was refused before any was tried,
+    /// in the words of the check or of the step's route, with the route's findings when it gave them.
+    public struct Refusal: Hashable, Sendable {
+        public var step: Int?
+        public var reason: String
+        public var findings: [Finding]?
+
+        public init(step: Int? = nil, reason: String, findings: [Finding]? = nil) {
+            self.step = step
+            self.reason = reason
+            self.findings = findings
+        }
     }
 
     public struct Finding: Codable, Hashable, Sendable {
@@ -165,10 +180,6 @@ public struct StoreRecord: Codable, Hashable, Sendable {
     public var state: State
     /// How many of the steps are made.
     public var made: Int
-    /// The step under way, or the one refused.
-    public var step: Int?
-    public var reason: String?
-    public var findings: [Finding]?
     public var updatedAt: Date
 
     public init(library: String, key: String, steps: [StoreStep], state: State = .underWay, made: Int = 0) {
@@ -177,8 +188,72 @@ public struct StoreRecord: Codable, Hashable, Sendable {
         self.steps = steps
         self.state = state
         self.made = made
-        self.step = state == .underWay && !steps.isEmpty ? 0 : nil
         self.updatedAt = Date()
+    }
+
+    /// The step under way, the first not made, or the one refused; nil for a store made, or refused
+    /// before any step was tried.
+    public var step: Int? {
+        switch state {
+        case .underWay: made < steps.count ? made : nil
+        case .made: nil
+        case .refused(let refusal): refusal.step
+        }
+    }
+
+    public var refusal: Refusal? {
+        if case .refused(let refusal) = state { refusal } else { nil }
+    }
+}
+
+extension StoreRecord: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case library, key, steps, state, made, step, reason, findings, updatedAt
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        library = try container.decode(String.self, forKey: .library)
+        key = try container.decode(String.self, forKey: .key)
+        steps = try container.decode([StoreStep].self, forKey: .steps)
+        made = try container.decode(Int.self, forKey: .made)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        switch try container.decode(String.self, forKey: .state) {
+        case "underWay": state = .underWay
+        case "made": state = .made
+        case "refused":
+            state = .refused(
+                Refusal(
+                    step: try container.decodeIfPresent(Int.self, forKey: .step),
+                    reason: try container.decode(String.self, forKey: .reason),
+                    findings: try container.decodeIfPresent([Finding].self, forKey: .findings)
+                )
+            )
+        case let other:
+            throw DecodingError.dataCorruptedError(
+                forKey: .state,
+                in: container,
+                debugDescription: "\(other) is not a store's state"
+            )
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(library, forKey: .library)
+        try container.encode(key, forKey: .key)
+        try container.encode(steps, forKey: .steps)
+        try container.encode(made, forKey: .made)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(step, forKey: .step)
+        switch state {
+        case .underWay: try container.encode("underWay", forKey: .state)
+        case .made: try container.encode("made", forKey: .state)
+        case .refused(let refusal):
+            try container.encode("refused", forKey: .state)
+            try container.encode(refusal.reason, forKey: .reason)
+            try container.encodeIfPresent(refusal.findings, forKey: .findings)
+        }
     }
 }
 

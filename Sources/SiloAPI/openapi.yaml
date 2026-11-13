@@ -3318,7 +3318,7 @@ components:
           description: How many steps the store has.
         step:
           type: integer
-          description: The index of the step under way, or of the one refused.
+          description: The index of the step under way, or of the one refused; absent for a store made, or refused before any step was tried.
         reason:
           type: string
           description: Why the step was refused, in its route's words.
