@@ -130,9 +130,13 @@ struct LibrariesTests {
         let order = Mutex<[String]>([])
         let (turns, turn) = AsyncStream.makeStream(of: Void.self)
         var taken = turns.makeAsyncIterator()
+        // The first walk holds the library until the second is running, so that the second need only
+        // reach the lane, not be scheduled at all, while the first walks.
+        let joining = DispatchSemaphore(value: 0)
         let walk: @Sendable () throws -> LastWalk = {
             let count = walks.add(1, ordering: .relaxed).newValue
             turn.yield()
+            if count == 1 { _ = joining.wait(timeout: .now() + 10) }
             Thread.sleep(forTimeInterval: 0.2)
             order.withLock { $0.append("walk \(count)") }
             var report = ScanReport()
@@ -141,7 +145,10 @@ struct LibrariesTests {
         }
         async let first = lane.walk(walk)
         await taken.next()
-        async let second = lane.walk(walk)
+        async let second = { () async throws -> LastWalk in
+            joining.signal()
+            return try await lane.walk(walk)
+        }()
         async let reread: Void = lane.exclusively { order.withLock { $0.append("re-read") } }
         let (one, two, _) = try await (first, second, reread)
         #expect(walks.load(ordering: .relaxed) == 1, "the second joined the first")
