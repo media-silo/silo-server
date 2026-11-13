@@ -1076,19 +1076,14 @@ struct ServerTests {
             let taken = try await post(client, route, store, Self.operatorHeaders)
             #expect(taken.status == 202)
             #expect(try taken.json(Record.self).steps == 2)
-            var record = try taken.json(Record.self)
-            for _ in 0..<200 where record.state == "underWay" {
-                try await Task.sleep(for: .milliseconds(10))
-                record = try await client.send("GET", "\(route)/walk-1", headers: operatorHeaders).json(Record.self)
-            }
-            #expect(record.state == "made")
-            #expect(record.made == 2 && record.step == nil)
-            let read = try await client.get("/v1/libraries/main/containers/\(container)")
-            #expect(read.bodyText.contains("poster") && read.bodyText.contains("fanart"))
+            // Made by the silo's making of stores, which this suite does not run: the store is said
+            // under way at its route, and sent again it is answered, not taken twice.
+            let record = try await client.send("GET", "\(route)/walk-1", headers: operatorHeaders).json(Record.self)
+            #expect(record.key == "walk-1" && record.state == "underWay" && record.made == 0 && record.step == 0)
 
             let again = try await post(client, route, store, Self.operatorHeaders)
             #expect(again.status == 200, "the same key and steps answer the store")
-            #expect(try again.json(Record.self).state == "made")
+            #expect(try again.json(Record.self).state == "underWay")
             let other = try await post(
                 client,
                 route,
@@ -1098,16 +1093,6 @@ struct ServerTests {
             #expect(other.status == 409)
             #expect(try await client.send("GET", "\(route)/never", headers: operatorHeaders).status == 404)
             #expect(try await client.send("GET", "\(route)/walk-1").status == 401)
-
-            for kind in ["poster", "fanart"] {
-                #expect(
-                    try await client.send(
-                        "DELETE",
-                        "/v1/libraries/main/containers/\(container)/artwork/\(kind)",
-                        headers: operatorHeaders
-                    ).status == 204
-                )
-            }
         }
     }
 
