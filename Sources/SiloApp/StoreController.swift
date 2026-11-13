@@ -54,14 +54,20 @@ package struct StoreController {
     }
 
     static func record(_ record: StoreRecord) throws -> Components.Schemas.StoreRecord {
-        Components.Schemas.StoreRecord(
+        let state: Components.Schemas.StoreRecord.statePayload =
+            switch record.state {
+            case .underWay: .underWay
+            case .made: .made
+            case .refused: .refused
+            }
+        return Components.Schemas.StoreRecord(
             key: record.key,
-            state: try Mapping.transcode(record.state),
+            state: state,
             made: record.made,
             steps: record.steps.count,
             step: record.step,
-            reason: record.reason,
-            findings: try record.findings.map { try Mapping.transcode($0) }
+            reason: record.refusal?.reason,
+            findings: try record.refusal?.findings.map { try Mapping.transcode($0) }
         )
     }
 }

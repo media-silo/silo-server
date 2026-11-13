@@ -72,11 +72,7 @@ package final class StoreService: Sendable {
             return Taken(record: held, added: false)
         }
         var record = StoreRecord(library: library.id, key: key, steps: steps)
-        if let refusal = check(steps, in: library) {
-            record.state = .refused
-            record.step = refusal.step
-            record.reason = refusal.reason
-        }
+        if let refusal = check(steps, in: library) { record.state = .refused(refusal) }
         let (taken, added) = try records.adding(record)
         if added, taken.state == .underWay {
             queued.withLock { $0.append(Queued(library: library.id, key: key)) }
@@ -129,8 +125,7 @@ package final class StoreService: Sendable {
     private func make(_ key: String, of library: String) async {
         guard let config = libraries.library(library) else {
             _ = try? records.update(key, in: library) {
-                $0.state = .refused
-                $0.reason = "the silo no longer serves \(library)"
+                $0.state = .refused(Refusal(reason: "the silo no longer serves \(library)"))
             }
             return
         }
@@ -148,38 +143,26 @@ package final class StoreService: Sendable {
                 guard let record = records.record(key, in: library.id), record.state == .underWay else { return }
                 for position in record.made..<record.steps.count {
                     guard !Task.isCancelled else { return }
-                    try records.update(key, in: library.id) { $0.step = position }
                     let made = Set(record.steps[..<position].flatMap(Self.makes))
-                    if let refusal = try make(record.steps[position], in: library, after: made) {
-                        try records.update(key, in: library.id) {
-                            $0.state = .refused
-                            $0.reason = refusal.reason
-                            $0.findings = refusal.findings
-                        }
+                    if var refusal = try make(record.steps[position], in: library, after: made) {
+                        refusal.step = position
+                        try records.update(key, in: library.id) { $0.state = .refused(refusal) }
                         return
                     }
                     try records.update(key, in: library.id) { $0.made = position + 1 }
                 }
-                try records.update(key, in: library.id) {
-                    $0.state = .made
-                    $0.step = nil
-                }
+                try records.update(key, in: library.id) { $0.state = .made }
             }
         } catch {
             logger.error("the store \(key) of \(library.id) stopped: \(error)")
             _ = try? records.update(key, in: library.id) {
-                $0.state = .refused
-                $0.reason = "the store stopped: \(error)"
+                $0.state = .refused(Refusal(step: $0.step, reason: "the store stopped: \(error)"))
             }
         }
     }
 
-    /// Why a step was refused, in its route's words, with its findings when it gave them.
-    struct Refusal {
-        var step = 0
-        var reason: String
-        var findings: [StoreRecord.Finding]?
-    }
+    /// Why a store was refused, at the step the check or the step's route refused it.
+    typealias Refusal = StoreRecord.Refusal
 
     /// The containers a step makes: a creation's, or none.
     static func makes(_ step: StoreStep) -> [ContainerID] {

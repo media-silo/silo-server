@@ -983,8 +983,9 @@ Pinned by: `Tests/SiloTests/StoreServiceTests.swift` (`aStoreIsMadeInOrderAndSen
 ### Requirement: A store is said at a route of its own, and resumed when the silo starts
 `GET /v1/libraries/{library}/stores/{key}` SHALL answer the store's `StoreRecord`: its `key`; its
 `state`, `underWay`, `made` or `refused`; `made`, how many of its steps are made; `step`, the index of
-the step under way or refused, while there is one; and, when it is refused, the `reason` in the
-route's words and the `findings` when the route gave them. A step SHALL be said by its index in the
+the step under way or refused, while there is one, and none for a store refused before any step was
+tried; and, when it is refused, the `reason` in the route's words and the `findings` when the route
+gave them. A step SHALL be said by its index in the
 request, and the record SHALL carry nothing of the request's prose. A key the library has no store for
 SHALL be 404. The route SHALL require the operator's bearer.
 
@@ -1004,10 +1005,14 @@ silo stopped is made once.
 - **THEN** the store is made from its first step, each of its steps is made once, and its record says
   it is made with three steps made
 
+#### Scenario: a store whose library the silo no longer serves
+- **WHEN** a store is under way when the silo stops, and the silo starts again without its library
+- **THEN** the store is recorded as refused at no step, with a reason naming the library
+
 #### Scenario: a key the library has no store for
 - **WHEN** the operator asks after a key no store in the library was sent with
 - **THEN** the answer is 404
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aStoreIsTakenAtOnceAndSaidAtARouteOfItsOwn`),
 `Tests/SiloTests/StoreServiceTests.swift` (`aStoreUnderWayWhenTheSiloStoppedIsResumed`,
-`aRecordIsKeptThirtyDays`).
+`aStoreOfALibraryNoLongerServedIsRefusedWhenResumed`, `aRecordIsKeptThirtyDays`).
