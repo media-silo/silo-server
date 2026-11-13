@@ -333,6 +333,10 @@ let package = Package(
                 .product(name: "HTTPTypes", package: "swift-http-types"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
+                // A holder that answers slowly, for a fetch to be cancelled partway.
+                .product(name: "NIOHTTPServer", package: "swift-http-server"),
+                .product(name: "HTTPAPIs", package: "swift-http-api-proposal"),
+                .product(name: "BasicContainers", package: "swift-collections"),
             ],
             swiftSettings: proposalSettings,
             plugins: wirePlugins

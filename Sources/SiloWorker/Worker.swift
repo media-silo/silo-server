@@ -284,9 +284,17 @@ public enum RangeDownloader {
         let delegate = Receiver(handle: handle, received: existing, progress: progress)
         let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            delegate.finish = { continuation.resume(with: $0) }
-            session.dataTask(with: request).resume()
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                    delegate.start(session.dataTask(with: request), finish: continuation)
+                }
+            } onCancel: {
+                delegate.cancel()
+            }
+        } catch let error as URLError where error.code == .cancelled && Task.isCancelled {
+            // What has arrived stays on disk, for the next attempt to resume from.
+            throw CancellationError()
         }
         if let size = file.sizeBytes {
             let final =
@@ -296,18 +304,55 @@ public enum RangeDownloader {
         }
     }
 
-    private final class Receiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-        let handle: FileHandle
+    /// What a `Receiver` has seen of its transfer, and how to end it.
+    private struct ReceiverState {
         var received: Int64
         var total: Int64?
-        let progress: @Sendable (Int64, Int64?) -> Void
-        var finish: ((Result<Void, any Error>) -> Void)?
         var status = 0
+        var task: URLSessionDataTask?
+        var finish: CheckedContinuation<Void, any Error>?
+        /// Set by the cancellation handler, which may run before the task is started.
+        var cancelled = false
+    }
+
+    /// The data task's delegate, which writes what arrives to the file and resumes the waiting
+    /// task with how the transfer ended. Its state is behind one lock: the session's delegate
+    /// queue writes it, and the cancellation handler reaches the data task through it.
+    private final class Receiver: NSObject, URLSessionDataDelegate, Sendable {
+        private let handle: FileHandle
+        private let progress: @Sendable (Int64, Int64?) -> Void
+        private let state: Mutex<ReceiverState>
 
         init(handle: FileHandle, received: Int64, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
             self.handle = handle
-            self.received = received
             self.progress = progress
+            state = Mutex(ReceiverState(received: received))
+        }
+
+        /// Starts the task unless the waiting task was cancelled first, which throws
+        /// `CancellationError` without starting it.
+        func start(_ task: URLSessionDataTask, finish: CheckedContinuation<Void, any Error>) {
+            let cancelled = state.withLock { state -> Bool in
+                guard !state.cancelled else { return true }
+                state.task = task
+                state.finish = finish
+                return false
+            }
+            if cancelled {
+                finish.resume(throwing: CancellationError())
+            } else {
+                task.resume()
+            }
+        }
+
+        /// Cancels the task, which then ends with `URLError.cancelled`; before it starts, keeps it
+        /// from starting.
+        func cancel() {
+            let task = state.withLock { state -> URLSessionDataTask? in
+                state.cancelled = true
+                return state.task
+            }
+            task?.cancel()
         }
 
         func urlSession(
@@ -316,37 +361,45 @@ public enum RangeDownloader {
             didReceive response: URLResponse,
             completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
         ) {
-            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard status == 200 || status == 206 else {
+                state.withLock { $0.status = status }
                 completionHandler(.cancel)
                 return
             }
-            if status == 200, received > 0 {
+            let restart = state.withLock { state -> Bool in
+                state.status = status
                 // The holder ignored the range: start over rather than append.
-                try? handle.truncate(atOffset: 0)
-                received = 0
+                let restart = status == 200 && state.received > 0
+                if restart { state.received = 0 }
+                state.total = state.received + response.expectedContentLength
+                return restart
             }
-            total = received + response.expectedContentLength
+            if restart { try? handle.truncate(atOffset: 0) }
             completionHandler(.allow)
         }
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
             try? handle.write(contentsOf: data)
-            received += Int64(data.count)
+            let (received, total) = state.withLock { state in
+                state.received += Int64(data.count)
+                return (state.received, state.total)
+            }
             progress(received, total)
         }
 
         func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
-            let outcome: Result<Void, any Error>
-            if let error {
-                outcome = .failure(error)
-            } else if status != 200 && status != 206 {
-                outcome = .failure(WorkerError.download("the holder answered \(status)"))
-            } else {
-                outcome = .success(())
+            let (status, finish) = state.withLock { state in
+                defer { state.finish = nil }
+                return (state.status, state.finish)
             }
-            finish?(outcome)
-            finish = nil
+            if let error {
+                finish?.resume(throwing: error)
+            } else if status != 200 && status != 206 {
+                finish?.resume(throwing: WorkerError.download("the holder answered \(status)"))
+            } else {
+                finish?.resume()
+            }
         }
     }
 }
