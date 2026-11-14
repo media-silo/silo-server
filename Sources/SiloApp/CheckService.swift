@@ -2,18 +2,25 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Logging
+import ServiceLifecycle
 import SiloKit
 import SiloStore
 import Wire
+import WireMVC
 
 /// Whether the rules in force would make each placed presentation differently. A presentation is
 /// checked by resolving its committed recipe's facts again through the stack that applies to its
 /// binding now, and the outcome recorded; the work left is every placed presentation whose latest
 /// check was against another stack, so a pass stopped half way resumes with what is left, and a
 /// change of rules reaches exactly the presentations it changes the stack of.
+///
+/// It runs while the silo runs: a pass at start, and another whenever a change of rules asks for
+/// one through the `CheckSignal`. A pass records each check as it finishes, so stopping the silo
+/// part way loses only the one in flight, and the next pass picks up what is left.
 /// `LayeredRulesets.md`, *The background check*.
 @Singleton
-package struct CheckService: Sendable {
+@BackgroundService
+package struct CheckService: Service, Sendable {
     private let jobs: JobStore
     private let recipes: RecipeStore
     private let bindings: BindingStore
@@ -23,6 +30,7 @@ package struct CheckService: Sendable {
     private let checks: CheckStore
     private let index: Index
     private let libraries: Libraries
+    private let signal: CheckSignal
     private let logger = Logger(label: "silo.checks")
 
     @Inject
@@ -35,7 +43,8 @@ package struct CheckService: Sendable {
         stack: RulesStack,
         checks: CheckStore,
         index: Index,
-        libraries: Libraries
+        libraries: Libraries,
+        signal: CheckSignal
     ) {
         self.jobs = jobs
         self.recipes = recipes
@@ -46,6 +55,25 @@ package struct CheckService: Sendable {
         self.checks = checks
         self.index = index
         self.libraries = libraries
+        self.signal = signal
+    }
+
+    // MARK: - Running
+
+    /// A pass at start, then one for each request the signal coalesces, until cancelled or the silo
+    /// shuts down. A pass that fails is logged, and the next request tries again.
+    package func run() async {
+        await cancelWhenGracefulShutdown {
+            signal.request()
+            for await _ in signal.requests {
+                if Task.isCancelled { return }
+                do {
+                    try pass()
+                } catch {
+                    logger.error("the check stopped: \(error)")
+                }
+            }
+        }
     }
 
     // MARK: - Checking

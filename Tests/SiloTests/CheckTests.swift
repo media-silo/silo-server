@@ -67,6 +67,30 @@ struct CheckTests {
         return try await bench.service.place(job.id)
     }
 
+    /// The check run as the silo runs it: a pass at start, and another when the signal asks for one,
+    /// as placing a presentation does.
+    @Test func theRunningCheckPassesAtStartAndWhenAsked() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let before = try await Self.placed(bench)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { await bench.checkService.run() }
+            defer { group.cancelAll() }
+            #expect(await Self.checked(before.id, in: bench), "the pass at start")
+            let after = try await Self.placed(bench, item: "part2")
+            #expect(await Self.checked(after.id, in: bench), "the pass its placing asked for")
+        }
+    }
+
+    /// Whether a presentation's job gets a check record within five seconds.
+    private static func checked(_ job: String, in bench: Bench) async -> Bool {
+        for _ in 0..<500 {
+            if bench.checks.check(of: job) != nil { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
     @Test func aPromotionThatChangesADecisionLeavesThePresentationOutOfDate() async throws {
         let bench = try Bench()
         defer { bench.remove() }

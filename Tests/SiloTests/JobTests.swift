@@ -65,7 +65,8 @@ struct JobServiceTests {
                 stack: stack,
                 checks: checks,
                 index: index,
-                libraries: libraries
+                libraries: libraries,
+                signal: signal
             )
             bindingService = BindingService(
                 settings: settings,

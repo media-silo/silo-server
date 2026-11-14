@@ -344,7 +344,7 @@ recorded facts through rules the silo and the library already hold.
 - **WHEN** a check of forty presentations is stopped after twenty, and the silo starts again
 - **THEN** the twenty left are checked, and the twenty done are not checked again
 
-Pinned by: `Tests/SiloTests/CheckTests.swift` (`aContainersRulesReachThePresentationsBelowItAndNoOthers`, `aCheckStoppedHalfWayResumesWithWhatIsLeft`, `aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`).
+Pinned by: `Tests/SiloTests/CheckTests.swift` (`aContainersRulesReachThePresentationsBelowItAndNoOthers`, `aCheckStoppedHalfWayResumesWithWhatIsLeft`, `aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `theRunningCheckPassesAtStartAndWhenAsked`).
 
 ### Requirement: An out-of-date presentation is reported with its binding's sources and their copies
 Each out-of-date presentation SHALL be reported with the sources of its recipe's binding, in segment
