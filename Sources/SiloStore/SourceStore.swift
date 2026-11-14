@@ -60,15 +60,15 @@ public final class SourceStore: Sendable {
                 }
                 if let copy {
                     existing.hold(copy)
-                    sources[existing.id] = existing
                     try write(existing)
+                    sources[existing.id] = existing
                 }
                 return (existing, false)
             }
             var source = Source(input: input, key: key)
             if let copy { source.hold(copy) }
-            sources[source.id] = source
             try write(source)
+            sources[source.id] = source
             return (source, true)
         }
     }
@@ -79,8 +79,8 @@ public final class SourceStore: Sendable {
         try sources.withLock { sources -> Source? in
             guard var source = sources[id] else { return nil }
             change(&source)
-            sources[id] = source
             try write(source)
+            sources[id] = source
             return source
         }
     }

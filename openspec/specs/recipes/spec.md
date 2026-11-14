@@ -401,8 +401,8 @@ and the library already hold.
 - **THEN** the twenty left are checked, and the twenty done are not checked again
 
 #### Scenario: a pass fails
-- **WHEN** a pass cannot record what it found, and a presentation is placed afterwards
-- **THEN** the failure is logged, and the presentation placed afterwards is checked
+- **WHEN** a pass cannot record what it found for a presentation, and another is placed afterwards
+- **THEN** the failure is logged, and the pass the placing asks for checks both
 
 #### Scenario: an edit of a container asks for a check
 - **WHEN** the check is running and a container holding a placed presentation's item is edited
