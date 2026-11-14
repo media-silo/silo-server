@@ -50,7 +50,14 @@ public enum Discovery {
 
     // MARK: - Advertising
 
-    /// Keeps the advertisement up until stopped or dropped.
+    /// Keeps the advertisement up until stopped or dropped. A class for its `deinit`, which stops the
+    /// advertisement when the last holder lets go.
+    ///
+    /// `@unchecked Sendable` because `Process` is not `Sendable`, and this is kept as a narrow
+    /// wrapper of it rather than a lock: it holds only a `let` of a process that is already running,
+    /// nothing configures the process after `run()`, and its one operation is `stop()`. The silo's
+    /// `Advertiser` holds its advertisement in a local of its loop, so `stop()` and the `deinit` run
+    /// on one task at a time. A holder that shares one across tasks should keep to that.
     public final class Advertisement: @unchecked Sendable {
         private let process: Process
 
