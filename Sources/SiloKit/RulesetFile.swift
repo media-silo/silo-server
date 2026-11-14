@@ -174,6 +174,9 @@ public enum RulesetFile {
         }
         try root.knows("format", "name", "version")
         let format = try root.integer("format")
+        guard format >= 1 else {
+            throw RulesetFileError.invalidValue(element: "ruleset", attribute: "format", value: String(format))
+        }
         guard format <= Self.format else { throw RulesetFileError.unsupportedFormat(format) }
 
         let name = try root.required("name")
@@ -181,11 +184,7 @@ public enum RulesetFile {
 
         var outputs: [OutputPolicy] = []
         for element in root.elements(forName: "output") {
-            try element.knows("profile", "container")
-            let output = OutputPolicy(
-                profile: element.attribute("profile"),
-                container: element.attribute("container") ?? "mkv"
-            )
+            let output = try output(from: element)
             guard !outputs.contains(where: { $0.profile == output.profile }) else {
                 throw RulesetFileError.outputMadeTwice(profile: output.profile)
             }
@@ -330,33 +329,49 @@ public enum RulesetFile {
             settings.channels = try element.optionalInteger("channels")
             settings.pixelFormat = element.attribute("pixelFormat")
             for case let child as XMLElement in element.children ?? [] {
-                switch child.name {
-                case "deinterlace":
-                    try child.knows("mode")
-                    let mode = child.attribute("mode") ?? "auto"
-                    guard let parsed = Filter.DeinterlaceMode(rawValue: mode) else {
-                        throw RulesetFileError.invalidValue(element: "deinterlace", attribute: "mode", value: mode)
-                    }
-                    settings.filters.append(.deinterlace(parsed))
-                case "scale":
-                    try child.knows("width", "height")
-                    settings.filters.append(
-                        .scale(width: try child.optionalInteger("width"), height: try child.optionalInteger("height"))
-                    )
-                case "filter":
-                    try child.knows()
-                    settings.filters.append(
-                        .custom(child.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
-                    )
-                case "option":
+                if child.name == "option" {
                     try child.knows("name", "value")
                     settings.options[try child.required("name")] = try child.required("value")
-                default:
-                    throw RulesetFileError.unknownElement(child.name ?? "?")
+                } else {
+                    settings.filters.append(try filter(from: child))
                 }
             }
             return .encode(settings)
         }
+    }
+
+    private static func filter(from element: XMLElement) throws -> Filter {
+        switch element.name {
+        case "deinterlace":
+            try element.knows("mode")
+            let mode = element.attribute("mode") ?? "auto"
+            guard let parsed = Filter.DeinterlaceMode(rawValue: mode) else {
+                throw RulesetFileError.invalidValue(element: "deinterlace", attribute: "mode", value: mode)
+            }
+            return .deinterlace(parsed)
+        case "scale":
+            try element.knows("width", "height")
+            let width = try element.optionalInteger("width")
+            let height = try element.optionalInteger("height")
+            guard width != nil || height != nil else { throw RulesetFileError.scaleWithoutSize }
+            return .scale(width: width, height: height)
+        case "filter":
+            try element.knows()
+            let filter = element.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !filter.isEmpty else { throw RulesetFileError.emptyFilter }
+            return .custom(filter)
+        default:
+            throw RulesetFileError.unknownElement(element.name ?? "?")
+        }
+    }
+
+    private static func output(from element: XMLElement) throws -> OutputPolicy {
+        try element.knows("profile", "container")
+        let container = element.attribute("container") ?? "mkv"
+        guard OutputPolicy.containers.contains(container) else {
+            throw RulesetFileError.invalidValue(element: "output", attribute: "container", value: container)
+        }
+        return OutputPolicy(profile: element.attribute("profile"), container: container)
     }
 }
 
@@ -380,6 +395,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
     case positionalRuleID(String)
     case unknownAttribute(element: String, attribute: String)
     case notAValueOf(fact: String, value: String)
+    case scaleWithoutSize
+    case emptyFilter
 
     public var description: String {
         switch self {
@@ -407,6 +424,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
         case .unknownAttribute(let element, let attribute): "\(attribute) is not an attribute of <\(element)>"
         case .notAValueOf(let fact, let value):
             "\"\(value)\" is not a value \"\(fact)\" takes: \(FactKey(rawValue: fact)?.values?.joined(separator: ", ") ?? "")"
+        case .scaleWithoutSize: "<scale> needs a width, a height or both"
+        case .emptyFilter: "<filter> has no filter in it"
         }
     }
 }

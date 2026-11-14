@@ -4007,6 +4007,7 @@ components:
           description: The output's profile, such as mobile; absent for the unqualified output.
         container:
           type: string
+          description: mkv or matroska, both Matroska; a ruleset naming any other container is refused.
 
     OutputLayout:
       type: object

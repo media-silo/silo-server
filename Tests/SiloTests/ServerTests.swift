@@ -2419,7 +2419,7 @@ extension ServerTests {
             <audio id="lossless-main"><when fact="audio.lossless" is="true"/><encode codec="flac"/></audio>
             <audio><copy/></audio>
             <output container="mkv"/>
-            <output profile="mobile" container="mp4"/>
+            <output profile="mobile" container="matroska"/>
         </ruleset>
         """
 
@@ -2499,7 +2499,7 @@ extension ServerTests {
             #expect(resolved.map(\.state) == ["resolved", "resolved"])
             #expect(
                 resolved.map(\.recipe.output) == [
-                    OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4"),
+                    OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "matroska"),
                 ]
             )
             #expect(

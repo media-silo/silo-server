@@ -188,6 +188,42 @@ struct RulesetFileTests {
         )
     }
 
+    @Test(arguments: [
+        (
+            #"<ruleset format="0" name="t"/>"#,
+            RulesetFileError.invalidValue(element: "ruleset", attribute: "format", value: "0")
+        ),
+        (
+            #"<ruleset format="-1" name="t"/>"#,
+            RulesetFileError.invalidValue(element: "ruleset", attribute: "format", value: "-1")
+        ),
+        (
+            #"<ruleset format="1" name="t"><output container="mp4"/></ruleset>"#,
+            RulesetFileError.invalidValue(element: "output", attribute: "container", value: "mp4")
+        ),
+        (
+            #"<ruleset format="1" name="t"><video><encode codec="libx265"><scale/></encode></video></ruleset>"#,
+            RulesetFileError.scaleWithoutSize
+        ),
+        (
+            #"<ruleset format="1" name="t"><video><encode codec="libx265"><filter> </filter></encode></video></ruleset>"#,
+            RulesetFileError.emptyFilter
+        ),
+    ])
+    func aValueFfmpegWouldFailOnIsRefusedWhenRead(xml: String, expected: RulesetFileError) {
+        #expect(throws: expected) { try RulesetFile.ruleset(from: Data(xml.utf8)) }
+    }
+
+    @Test func theContainersAreMatroska() throws {
+        let xml =
+            #"<ruleset format="1" name="t"><output container="mkv"/><output profile="m" container="matroska"/></ruleset>"#
+        let outputs = try RulesetFile.ruleset(from: Data(xml.utf8)).outputs
+        #expect(outputs.map(\.ffmpegFormat) == ["matroska", "matroska"])
+        #expect(outputs.map(\.fileExtension) == ["mkv", "mkv"])
+        #expect(RulesetFileError.scaleWithoutSize.description == "<scale> needs a width, a height or both")
+        #expect(RulesetFileError.emptyFilter.description == "<filter> has no filter in it")
+    }
+
     @Test func anEmptyRulesetHasTheToolsDefaults() throws {
         let ruleset = try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"/>".utf8))
         #expect(ruleset.outputs == [OutputPolicy()], "one unqualified mkv")
@@ -200,12 +236,14 @@ struct RulesetFileTests {
             <ruleset format="1" name="t">
                 <output container="mkv"/>
                 <video><copy/></video>
-                <output profile="mobile" container="mp4"/>
+                <output profile="mobile" container="matroska"/>
             </ruleset>
             """
         let ruleset = try RulesetFile.ruleset(from: Data(xml.utf8))
         #expect(
-            ruleset.outputs == [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")],
+            ruleset.outputs == [
+                OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "matroska"),
+            ],
             "in the document's order"
         )
         #expect(
@@ -218,14 +256,14 @@ struct RulesetFileTests {
         #expect(throws: RulesetFileError.outputMadeTwice(profile: "mobile")) {
             try RulesetFile.ruleset(
                 from: Data(
-                    #"<ruleset format="1" name="t"><output profile="mobile"/><output profile="mobile" container="mp4"/></ruleset>"#
+                    #"<ruleset format="1" name="t"><output profile="mobile"/><output profile="mobile" container="matroska"/></ruleset>"#
                         .utf8
                 )
             )
         }
         #expect(throws: RulesetFileError.outputMadeTwice(profile: nil)) {
             try RulesetFile.ruleset(
-                from: Data(#"<ruleset format="1" name="t"><output/><output container="mp4"/></ruleset>"#.utf8)
+                from: Data(#"<ruleset format="1" name="t"><output/><output container="matroska"/></ruleset>"#.utf8)
             )
         }
         #expect(RulesetFileError.outputMadeTwice(profile: "mobile").description == "the profile mobile is made twice")
