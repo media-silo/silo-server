@@ -621,28 +621,22 @@ extension AdminConsole {
 
     /// What an edit a placement makes does to the container it is of.
     nonisolated static func applying(_ edit: DraftTree.Making.HeldEdit, to container: inout Container) {
-        if let item = edit.item, let ref = edit.ref {
+        switch edit.change {
+        case .addRef(let item, let ref):
             container.sequences = container.sequences.map { sequence in
                 var sequence = sequence
                 sequence.items = sequence.items.map { Self.adding(ref, to: $0, if: item) }
                 return sequence
             }
             container.extras = container.extras.map { Self.adding(ref, to: $0, if: item) }
+        case .addEntry(let special, let id):
+            DraftTree.insert(
+                .leaf(Entry.Leaf(id: id, type: .episode, externalRefs: special.refs)),
+                into: &container,
+                sequence: nil,
+                at: nil
+            )
         }
-        if let special = edit.entry, let entryID = edit.entryID.flatMap(ItemID.init) {
-            // An extra's type named makes it one of the container's extras; otherwise it is an episode.
-            if let type = edit.entryType {
-                container.extras.append(.leaf(Entry.Leaf(id: entryID, type: type, externalRefs: special.refs)))
-            } else {
-                DraftTree.insert(
-                    .leaf(Entry.Leaf(id: entryID, type: .episode, externalRefs: special.refs)),
-                    into: &container,
-                    sequence: nil,
-                    at: nil
-                )
-            }
-        }
-        if let refer = edit.refer { DraftTree.refer(to: refer, from: &container, asExtra: edit.asExtra) }
     }
 
     private nonisolated static func adding(_ ref: ExternalRef, to entry: Entry, if item: String) -> Entry {
