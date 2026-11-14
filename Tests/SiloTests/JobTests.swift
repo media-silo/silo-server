@@ -196,6 +196,51 @@ struct JobServiceTests {
         #expect(try await service.claim(node: "box", capabilities: []) == nil, "reported on: a claim is for more")
     }
 
+    /// Two requests that change one job's state, sent at once as a client retrying a request
+    /// whose first copy still runs sends them: exactly one passes, because each checks the state
+    /// it changes under the store's lock, and the other is refused as the wrong state.
+    @Test func twoChangesOfOneJobSentAtOnceAreNeverBothMade() async throws {
+        let bench = try JobServiceTests.Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        let output = FileRef(holder: "box", url: URL(fileURLWithPath: "/nowhere.mkv"), secret: "")
+        let result = EncodeResult(sizeBytes: 1, streams: [], layoutMatched: true)
+        var both: [String] = []
+        for round in 0..<300 {
+            let id = "race-\(round)"
+            try bench.store.insert(Job(id: id, state: .claimed, recipe: "r"))
+            // Released together, so neither has finished its check when the other begins.
+            let passed = try await withThrowingTaskGroup(of: Bool.self) { group in
+                group.addTask { (try? await service.complete(id, output: output, result: result)) != nil }
+                group.addTask { (try? await service.fail(id, reason: "gone wrong")) != nil }
+                return try await group.reduce(0) { $0 + ($1 ? 1 : 0) }
+            }
+            if passed != 1 { both.append(id) }
+        }
+        #expect(both.isEmpty, "a job completed and failed at once: \(both.count) of 300")
+        #expect(throws: NoSuchJob.self, "a job that was never made") { try service.cancel("never") }
+    }
+
+    /// A progress report that arrives as the operator cancels never writes over the cancel: the
+    /// job ends `cancelling`, for the node's next report to learn of.
+    @Test func aReportSentAsAJobIsCancelledNeverUndoesTheCancel() async throws {
+        let bench = try JobServiceTests.Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        var undone: [String] = []
+        for round in 0..<300 {
+            let id = "race-\(round)"
+            try bench.store.insert(Job(id: id, state: .claimed, recipe: "r"))
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { _ = try service.cancel(id) }
+                group.addTask { _ = try await service.report(id, progress: JobProgress(fraction: 0.5)) }
+                try await group.waitForAll()
+            }
+            if try service.job(id).state != .cancelling { undone.append(id) }
+        }
+        #expect(undone.isEmpty, "a cancel written over by a report: \(undone.count) of 300")
+    }
+
     @Test func aJobGoesFromResolvedToPlaced() async throws {
         let bench = try Bench()
         defer { bench.remove() }
