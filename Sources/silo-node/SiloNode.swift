@@ -6,13 +6,16 @@ import Encoder
 import FileServing
 import Foundation
 import Logging
+import ServiceLifecycle
 import SiloClient
 import SiloDiscovery
 import SiloKit
 import SiloWorker
+import UnixSignals
 
 /// A node on another machine. Finds the silo, registers, waits to be approved, then runs the
-/// worker's loop and serves what it makes for the silo to fetch at placement.
+/// worker's loop and serves what it makes for the silo to fetch at placement. The two run as one
+/// service group: either ending, or failing, ends the other, and SIGTERM or SIGINT stops both.
 @main
 struct SiloNode: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -101,8 +104,6 @@ struct SiloNode: AsyncParsableCommand {
 
         // Serving what it makes.
         let server = try FileServer(port: servePort, advertisedHost: advertisedHost ?? hostName)
-        let serving = Task { try await server.run() }
-        defer { serving.cancel() }
         let holder = identity.id
 
         let client = SiloClient(baseURL: baseURL, token: identity.token)
@@ -122,7 +123,12 @@ struct SiloNode: AsyncParsableCommand {
             logger: logger
         )
         logger.info("ready: \(capabilities.count) encoders, serving outputs on port \(servePort)")
-        await worker.run()
+        // The worker last, so a graceful shutdown stops it first and the server after it.
+        try await ServiceGroup(
+            services: [server, worker],
+            gracefulShutdownSignals: [.sigterm, .sigint],
+            logger: logger
+        ).run()
     }
 
     /// The silo: given, from the environment, or found.

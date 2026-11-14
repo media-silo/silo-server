@@ -252,10 +252,23 @@ five seconds and log once `waiting for approval: on the silo, run  silo-ctl node
 Once it holds its token it SHALL serve what it makes on the serve port under the advertised
 host — each output published at `<job>/output` with itself as holder for the silo to fetch at
 placement — and SHALL run the worker's loop with the token, the same loop the embedded node
-runs, so there is one code path to test.
+runs, so there is one code path to test. The file server and the worker SHALL run as one service
+group: a server that fails while serving SHALL end the worker too and the node with the server's
+error, and SIGTERM or SIGINT SHALL shut both down gracefully, the worker first, its job in flight
+cancelled as the embedded node's is.
 
 #### Scenario: approval arrives
 - **WHEN** `silo-node` runs unapproved and a person approves its id on the silo
 - **THEN** within five seconds a poll takes and saves the token, and the run continues with `ready: <n> encoders, serving outputs on port 18600`
 
-Pinned by: nothing yet.
+#### Scenario: the server cannot serve
+- **WHEN** the node's file server fails while the worker is running, as it does when its port is taken
+- **THEN** the worker is stopped too and the group ends with the server's error
+
+#### Scenario: the node is told to stop
+- **WHEN** the node's service group is shut down gracefully, as SIGTERM or SIGINT does
+- **THEN** the worker and then the file server stop, and the group ends without an error
+
+Pinned by: `Tests/SiloTests/NodeServicesTests.swift` (`aServerThatFailsEndsTheWorkerToo`,
+`aGracefulShutdownStopsTheWorkerAndTheServer`), for the two services in one group as `silo-node` runs
+them. The rest, and the signals reaching the group, are pinned by nothing yet.

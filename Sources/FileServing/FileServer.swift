@@ -6,6 +6,7 @@ import HTTPAPIs
 import HTTPTypes
 import Logging
 import NIOHTTPServer
+import ServiceLifecycle
 import SiloKit
 import Synchronization
 
@@ -15,7 +16,7 @@ import Synchronization
 /// A file is published under a path of the node's choosing with a secret the silo hands only to
 /// the node that claimed the job; a request without it is 404, not 401, so that the set of
 /// paths is not enumerable. Serving is `NIOHTTPServer` with one handler, no framework.
-public final class FileServer: Sendable {
+public final class FileServer: Service, Sendable {
     public struct Published: Hashable, Sendable {
         public var url: URL
         public var secret: String
@@ -71,9 +72,17 @@ public final class FileServer: Sendable {
         files.withLock { Array($0.keys) }.sorted()
     }
 
-    /// Serves until cancelled.
+    /// Serves until cancelled, or until its service group shuts down gracefully, and then returns:
+    /// being stopped is not a failure. A server that fails while serving throws, so that a group it
+    /// runs in sees it stop.
     public func run() async throws {
-        try await server.serve(handler: Handler(files: self))
+        do {
+            try await cancelWhenGracefulShutdown { [self] in
+                try await server.serve(handler: Handler(files: self))
+            }
+        } catch is CancellationError where Task.isCancelled || Task.isShuttingDownGracefully {
+            return
+        }
     }
 
     func lookup(_ path: String) -> Published? {
