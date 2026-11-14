@@ -12,12 +12,12 @@ import WireMVC
 /// tune is a cadence the design has not chosen. `Libraries.md`, *What starts a walk*.
 @Singleton
 @BackgroundService
-package final class LibraryTick: Service, Sendable {
+package struct LibraryTick: Service, Sendable {
     private let libraries: Libraries
     private let interval: Duration
 
     @Inject
-    package convenience init(libraries: Libraries) {
+    package init(libraries: Libraries) {
         self.init(libraries: libraries, interval: .seconds(300))
     }
 
