@@ -283,8 +283,12 @@ public enum Filter: Hashable, Sendable, Codable {
 public struct OutputPolicy: Hashable, Sendable, Codable {
     /// `mobile`, say; nil for the unqualified presentation.
     public var profile: String?
-    /// The container format, as `ffmpeg -f` names it. Only `matroska` is exercised.
+    /// The container format: `mkv` or `matroska`, both `ffmpeg`'s `matroska`. The reader refuses any
+    /// other, since only Matroska is known to hold the layouts a recipe makes.
     public var container: String
+
+    /// The containers a ruleset may name.
+    public static let containers: Set<String> = ["mkv", "matroska"]
 
     public init(profile: String? = nil, container: String = "mkv") {
         self.profile = profile

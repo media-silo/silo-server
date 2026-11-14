@@ -71,7 +71,7 @@ A complete ruleset reads:
   <subtitle><copy/></subtitle>
 
   <output container="mkv"/>
-  <output profile="mobile" container="mp4"/>
+  <output profile="mobile" container="mkv"/>
 </ruleset>
 ```
 
@@ -90,7 +90,7 @@ Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToo
 ### Requirement: The root names the format and the ruleset
 The `<ruleset>` element SHALL carry `format`, an integer, and `name`, both required, and MAY
 carry `version`, an integer. `format` is the version of this document's shape; this reader reads
-format `1`, and a document of a higher format SHALL be refused. `name` and `version` are what the
+format `1`, and a document of a higher format SHALL be refused, as SHALL a format below `1`. `name` and `version` are what the
 person who wrote the document calls it: a silo SHALL know a stored ruleset by the name and version
 it was stored under, whatever the document's own attributes say, and SHALL NOT rewrite them.
 
@@ -98,14 +98,18 @@ it was stored under, whatever the document's own attributes say, and SHALL NOT r
 - **WHEN** the document is `<ruleset format="2" name="t"/>`
 - **THEN** it is refused because format 2 is newer than this reader
 
+#### Scenario: a format below 1 is refused
+- **WHEN** the document is `<ruleset format="0" name="t"/>`
+- **THEN** it is refused with `<ruleset format="0"> is not a value this reader accepts`
+
 #### Scenario: the store's name wins
 - **WHEN** a document whose root says `name="draft" version="9"` is stored as `household` and
   becomes its version 1
 - **THEN** reading `household` at version 1 gives a ruleset named `household` at version 1, and
   the stored document still says `name="draft" version="9"`
 
-Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`);
-the store's name winning is pinned by nothing yet.
+Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`,
+`aValueFfmpegWouldFailOnIsRefusedWhenRead`); the store's name winning is pinned by nothing yet.
 
 ### Requirement: The outputs name what is made of every entry
 Each `<output>` element SHALL name one presentation the ruleset makes of every entry it is applied
@@ -115,29 +119,36 @@ it once for each output the application makes, with the `profile` fact set to th
 as [recipes](../recipes/spec.md) describes. A ruleset with no `<output>`
 SHALL make one unqualified `mkv` output. Two outputs with the same profile, or two without one,
 SHALL be refused. `mkv` and `matroska` SHALL both mean `ffmpeg`'s `matroska` format with the
-extension `.mkv`; any other value SHALL be handed to `ffmpeg` as the format name and used as the
-extension as given. The container is not checked when the ruleset is read.
+extension `.mkv`, and they are the only containers: any other SHALL be refused when the ruleset is
+read, since Matroska is the only container known to hold every layout a recipe makes.
 
 #### Scenario: the default container
 - **WHEN** a ruleset has no `<output>` element
 - **THEN** it makes one unqualified output, written as `matroska`, with the extension `.mkv`
 
 #### Scenario: a full and a mobile presentation
-- **WHEN** a ruleset holds `<output container="mkv"/>` then `<output profile="mobile" container="mp4"/>`
-- **THEN** it makes two outputs, the unqualified `mkv` first and the `mobile` `mp4` second
+- **WHEN** a ruleset holds `<output container="mkv"/>` then `<output profile="mobile" container="matroska"/>`
+- **THEN** it makes two outputs, the unqualified one first and the `mobile` one second, both
+  written as `matroska` with the extension `.mkv`
+
+#### Scenario: a container other than Matroska
+- **WHEN** a ruleset holds `<output container="mp4"/>`
+- **THEN** it is refused with `<output container="mp4"> is not a value this reader accepts`, rather
+  than failing when a node runs `ffmpeg`
 
 #### Scenario: one profile twice
 - **WHEN** a ruleset holds two `<output profile="mobile"/>` elements
 - **THEN** it is refused, saying the profile `mobile` is made twice
 
 #### Scenario: each output is resolved with its profile
-- **WHEN** a ruleset whose outputs are an unqualified `mkv` and a `mobile` `mp4` is applied to a
+- **WHEN** a ruleset whose outputs are an unqualified one and a `mobile` one is applied to a
   binding
-- **THEN** the binding is resolved twice: once with no `profile`, to a recipe whose output is the `mkv`, and once
-  with `profile` `mobile`, to a recipe whose output is the `mp4`
+- **THEN** the binding is resolved twice: once with no `profile`, to a recipe whose output is the
+  unqualified one, and once with `profile` `mobile`, to a recipe whose output is the `mobile` one
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`anEmptyRulesetHasTheToolsDefaults`,
-`aRulesetMakesEachOutputItDeclares`, `anOutputMadeTwiceIsRefused`),
+`aRulesetMakesEachOutputItDeclares`, `anOutputMadeTwiceIsRefused`, `theContainersAreMatroska`,
+`aValueFfmpegWouldFailOnIsRefusedWhenRead`),
 `Tests/SiloKitTests/ResolverTests.swift` (`aResolutionMakesTheOutputItsProfileNames`),
 `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`).
 
@@ -342,14 +353,14 @@ and these optional children, applied in document order as one filter chain:
 |---|---|
 | `<deinterlace mode="auto"/>` | deinterlace the frames the stream marks interlaced; `mode` defaults to `auto` |
 | `<deinterlace mode="always"/>` | deinterlace every frame |
-| `<scale width="…" height="…"/>` | resize; a dimension left out follows the other, keeping the aspect ratio |
-| `<filter>text</filter>` | an `ffmpeg` filter written out, for one no element names |
+| `<scale width="…" height="…"/>` | resize; a dimension left out follows the other, keeping the aspect ratio, and at least one is given |
+| `<filter>text</filter>` | an `ffmpeg` filter written out, for one no element names; never empty |
 
 plus any number of `<option name="…" value="…"/>` children, each handed to `ffmpeg` as
 `-<name> <value>` for the stream — the way to reach an encoder setting that has no attribute, such
 as FLAC's `compression_level`. Two options of one name SHALL keep the last. An integer attribute
-whose value is not an integer, and a deinterlace mode other than `auto` or `always`, SHALL be
-refused. Text values are not checked when the ruleset is read; `ffmpeg` judges them when it runs.
+whose value is not an integer, a deinterlace mode other than `auto` or `always`, a `<scale/>` with
+neither `width` nor `height`, and a `<filter>` with nothing in it SHALL be refused. Text values are not checked when the ruleset is read; `ffmpeg` judges them when it runs.
 How the settings become one `ffmpeg` invocation is [encoding](../encoding/spec.md)'s.
 
 #### Scenario: an extra made small
@@ -368,9 +379,18 @@ How the settings become one `ffmpeg` invocation is [encoding](../encoding/spec.m
 - **WHEN** an encode carries `<deinterlace mode="sometimes"/>`
 - **THEN** the ruleset is refused, naming the `mode` attribute and the value `sometimes`
 
+#### Scenario: a scale with no size
+- **WHEN** an encode carries `<scale/>`
+- **THEN** the ruleset is refused with `<scale> needs a width, a height or both`
+
+#### Scenario: an empty filter
+- **WHEN** an encode carries `<filter></filter>`
+- **THEN** the ruleset is refused with `<filter> has no filter in it`
+
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRulesetSurvivesTheFile`),
 `Tests/EncoderTests/ArgumentsTests.swift` (`theRecipeIsTheArgumentList`,
-`aReencodedVideoCarriesItsFilters`); the deinterlace refusal is pinned by nothing yet.
+`aReencodedVideoCarriesItsFilters`); the refusals by `Tests/SiloKitTests/RulesetFileTests.swift`
+(`aRuleThatCannotBeReadIsRefused`, `aValueFfmpegWouldFailOnIsRefusedWhenRead`).
 
 ### Requirement: For each stream, the first matching rule of its scope decides
 A ruleset SHALL decide a file's streams one at a time: the video stream, then each audio stream,
@@ -428,7 +448,7 @@ refused document is used. It SHALL be refused, in these words, when:
 | its root element is not `<ruleset>` | `the document is not rooted at <ruleset>` |
 | its `format` is newer than the reader's | `ruleset format <n> is newer than this reader (1)` |
 | a required attribute is missing | `<<element>> is missing its <attribute> attribute` |
-| an integer, boolean or deinterlace mode is not one | `<<element> <attribute>="<value>"> is not a value this reader accepts` |
+| an integer, boolean, deinterlace mode or container is not one, or a format is below 1 | `<<element> <attribute>="<value>"> is not a value this reader accepts` |
 | an element appears where the document has no such element | `<<name>> is not an element of a ruleset` |
 | a fact is not in the vocabulary | `"<fact>" is not a fact a rule can test` |
 | a stream fact is tested in another scope's rule | `"<fact>" cannot be tested in a <<scope>> rule` |
@@ -437,6 +457,8 @@ refused document is used. It SHALL be refused, in these words, when:
 | a condition names a value its fact never takes | `"<value>" is not a value "<fact>" takes: <values>` |
 | a rule has no action | `rule <rule> has no <copy/>, <drop/> or <encode>` |
 | a rule has more than one action | `rule <rule> has more than one action` |
+| a `<scale/>` has neither width nor height | `<scale> needs a width, a height or both` |
+| a `<filter>` is empty | `<filter> has no filter in it` |
 | two outputs have the same profile, or neither has one | `the profile <profile> is made twice`, or `the unqualified output is made twice` |
 | two rules have the same `id` | `two rules are called <id>` |
 | an `id` is `#` followed by digits | `<id> is how an unnamed rule is named by its position, and cannot be an id` |

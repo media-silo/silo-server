@@ -42,12 +42,12 @@ struct ResolverTests {
 
     @Test func aResolutionMakesTheOutputItsProfileNames() throws {
         var ruleset = Ruleset.household
-        ruleset.outputs = [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "mp4")]
+        ruleset.outputs = [OutputPolicy(container: "mkv"), OutputPolicy(profile: "mobile", container: "matroska")]
         var mobile = SourceFacts.featurette
         mobile.profile = "mobile"
         #expect(
             try RecipeResolver.resolve(mobile, with: ruleset).output
-                == OutputPolicy(profile: "mobile", container: "mp4")
+                == OutputPolicy(profile: "mobile", container: "matroska")
         )
         #expect(
             try RecipeResolver.resolve(.featurette, with: ruleset).output == OutputPolicy(container: "mkv"),

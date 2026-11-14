@@ -115,13 +115,15 @@ struct RulesetTextTests {
             "one line added"
         )
         #expect(try RulesetText(added).rules(of: .subtitle).count == 2)
-        let output = try RulesetText(Self.household).addingOutput(OutputPolicy(profile: "mobile", container: "mp4"))
+        let output = try RulesetText(Self.household).addingOutput(
+            OutputPolicy(profile: "mobile", container: "matroska")
+        )
         #expect(
             lines(output, without: Set(Self.household.components(separatedBy: "\n"))) == [
-                #"  <output profile="mobile" container="mp4"/>"#
+                #"  <output profile="mobile" container="matroska"/>"#
             ]
         )
-        #expect(try RulesetText(output).outputs.last?.output == OutputPolicy(profile: "mobile", container: "mp4"))
+        #expect(try RulesetText(output).outputs.last?.output == OutputPolicy(profile: "mobile", container: "matroska"))
     }
 
     @Test func aDeletionTakesItsCommentsWithIt() throws {

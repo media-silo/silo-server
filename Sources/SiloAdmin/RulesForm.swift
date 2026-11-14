@@ -58,7 +58,7 @@ struct RulesForm: View {
             }
             Section {
                 Heading(title: "Outputs", add: "Add Output") {
-                    editingOutput = OutputEdit(position: nil, output: OutputPolicy(profile: "mobile", container: "mp4"))
+                    editingOutput = OutputEdit(position: nil, output: OutputPolicy(profile: "mobile", container: "mkv"))
                 }
                 ForEach(Array(text.outputs.enumerated()), id: \.element.element) { position, entry in
                     let edit = { editingOutput = OutputEdit(position: position, output: entry.output) }
