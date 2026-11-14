@@ -86,6 +86,15 @@ public struct Condition: Hashable, Sendable, Codable {
             case .less, .lessOrEqual, .greater, .greaterOrEqual: true
             }
         }
+
+        /// The values the test compares a fact's text with; none for an ordering test.
+        public var values: [String] {
+            switch self {
+            case .equal(let value), .notEqual(let value): [value]
+            case .oneOf(let values): values
+            case .less, .lessOrEqual, .greater, .greaterOrEqual: []
+            }
+        }
     }
 
     public func holds(_ value: FactValue) -> Bool {

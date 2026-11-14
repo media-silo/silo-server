@@ -300,6 +300,9 @@ public enum RulesetFile {
         if test.isNumeric && !fact.isNumeric {
             throw RulesetFileError.notNumeric(fact: key, operator: operatorName)
         }
+        if let values = fact.values, let value = test.values.first(where: { !values.contains($0) }) {
+            throw RulesetFileError.notAValueOf(fact: key, value: value)
+        }
         return Condition(fact, test)
     }
 
@@ -376,6 +379,7 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
     case sharedRuleID(String)
     case positionalRuleID(String)
     case unknownAttribute(element: String, attribute: String)
+    case notAValueOf(fact: String, value: String)
 
     public var description: String {
         switch self {
@@ -401,6 +405,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
         case .sharedRuleID(let id): "two rules are called \(id)"
         case .positionalRuleID(let id): "\(id) is how an unnamed rule is named by its position, and cannot be an id"
         case .unknownAttribute(let element, let attribute): "\(attribute) is not an attribute of <\(element)>"
+        case .notAValueOf(let fact, let value):
+            "\"\(value)\" is not a value \"\(fact)\" takes: \(FactKey(rawValue: fact)?.values?.joined(separator: ", ") ?? "")"
         }
     }
 }

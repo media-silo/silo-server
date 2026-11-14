@@ -264,8 +264,11 @@ A `<when>` SHALL carry exactly one operator attribute besides `fact`:
 Equality SHALL follow the fact's shape: text compares as text, exactly and case-sensitively; a
 number compares as a number when the value is one, so `video.width is="1920"` holds for a width
 of 1920 and `video.frameRate is="25"` for a rate of 25.0; a flag equals `true` or `false`. An
-absent fact SHALL hold for `ne` and for no other operator. A value is not checked against the
-values its fact can take: a condition naming a value its fact never has is read, and never holds.
+absent fact SHALL hold for `ne` and for no other operator. When a fact's values are a closed set
+(`format`, `video.hdr`, `audio.role`, and the flags, which are `true` or `false`), a value `is`,
+`ne` or `in` names SHALL be one of them, and a condition naming a value its fact never takes SHALL
+be refused, since it would be read and never hold. A fact whose values are open, such as
+`audio.codec`, takes any value.
 
 A `<when>` with no operator or with more than one, an ordering operator on a fact that is not a
 number, and an ordering operator whose value is not a number SHALL each be refused.
@@ -285,12 +288,18 @@ number, and an ordering operator whose value is not a number SHALL each be refus
 - **THEN** the ruleset is refused, saying rule `r`'s condition on `audio.codec` needs exactly one
   operator
 
+#### Scenario: a value its fact never takes
+- **WHEN** a rule carries `<when fact="video.hdr" is="hdr"/>`
+- **THEN** the ruleset is refused, saying `hdr` is not a value `video.hdr` takes, and naming
+  `hdr10` and `hlg`
+
 #### Scenario: an ordering operator on text
 - **WHEN** a rule carries `<when fact="audio.codec" lt="1"/>`
 - **THEN** the ruleset is refused, saying `audio.codec` is not a number and cannot be compared
   with `lt`
 
-Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`),
+Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`,
+`aValueItsFactNeverTakesIsRefused`, `aValueItsFactCanTakeIsRead`),
 `Tests/SiloKitTests/FactsTests.swift` (`anAbsentFactMatchesNothingExceptNotEqual`).
 
 ### Requirement: An action copies, drops or re-encodes the stream
@@ -425,6 +434,7 @@ refused document is used. It SHALL be refused, in these words, when:
 | a stream fact is tested in another scope's rule | `"<fact>" cannot be tested in a <<scope>> rule` |
 | a condition has no operator, or more than one | `rule <rule>: <when fact="<fact>"> needs exactly one of is, ne, in, lt, le, gt, ge` |
 | an ordering operator is applied to a fact that is not a number | `"<fact>" is not a number and cannot be compared with <operator>` |
+| a condition names a value its fact never takes | `"<value>" is not a value "<fact>" takes: <values>` |
 | a rule has no action | `rule <rule> has no <copy/>, <drop/> or <encode>` |
 | a rule has more than one action | `rule <rule> has more than one action` |
 | two outputs have the same profile, or neither has one | `the profile <profile> is made twice`, or `the unqualified output is made twice` |
