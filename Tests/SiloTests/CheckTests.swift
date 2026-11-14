@@ -38,6 +38,7 @@ struct CheckTests {
         item: String = "part3",
         containers: [String] = Bench.containers,
         application: Application = Application(ruleset: "household"),
+        profile: String? = nil,
         name: String = UUID().uuidString
     ) async throws -> Job {
         let source = try bench.sources.register(Bench.input, key: nil, copy: try bench.copy("\(name).mkv")).source
@@ -53,7 +54,7 @@ struct CheckTests {
             )
         )
         var unqualified = application
-        unqualified.outputs = [Application.OutputChoice()]
+        unqualified.outputs = [Application.OutputChoice(profile: profile)]
         let resolved = try #require(try bench.bindingService.apply(unqualified, to: binding.id).first)
         let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
@@ -219,6 +220,98 @@ struct CheckTests {
         #expect(check.outcome == .unresolvable)
         #expect(check.reason == "Pyramids of Mars has no item part3")
         #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// The item's container taken out of the library, and the library walked: there is no longer an
+    /// item to read the facts of.
+    @Test func anItemsContainerGoneFromTheLibraryLeavesItsPresentationUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+        let library = try #require(bench.libraries.library("main"))
+        let row = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        try FileManager.default.removeItem(at: library.root.appendingPathComponent(row.folder))
+        try await bench.libraries.walk(library)
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "Pyramids of Mars is no longer in the library")
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// The item's container moved to the library's root, and the container it was below deleted: the
+    /// binding still names that container, which no longer decides any of the item's facts, so the
+    /// check reads it as the binding recorded it, and nothing moves.
+    @Test func aContainerAboveTheItemGoneFromTheLibraryChangesNothing() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+        let library = try #require(bench.libraries.library("main"))
+        let series = try #require(try bench.index.container(Fixture.series.id, in: "main"))
+        let serial = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        let moved = library.root.appendingPathComponent(serial.folder)
+        try FileManager.default.moveItem(
+            at: moved,
+            to: library.root.appendingPathComponent(moved.lastPathComponent)
+        )
+        try FileManager.default.removeItem(at: library.root.appendingPathComponent(series.folder))
+        try await bench.libraries.walk(library)
+        #expect(try bench.index.sidecar(Fixture.series.id, in: "main") == nil)
+        #expect(try bench.index.sidecar(Fixture.serial.id, in: "main") != nil)
+        #expect(try bench.checkService.pass() == 0)
+        #expect(bench.checks.check(of: job.id)?.outcome == .current)
+    }
+
+    /// A version of the rules in force that leaves a stream undecided: the check records the
+    /// resolver's reason, with the item it read, so the next pass does not check it again.
+    @Test func aStreamTheRulesNoLongerDecideLeavesThePresentationUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+        let undecided = Bench.household.replacingOccurrences(of: "<video><copy/></video>", with: "")
+        #expect(undecided != Bench.household)
+        _ = try bench.rulesets.store(Data(undecided.utf8), as: "household")
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "no rule decides video 1 (h264 320x240)")
+        #expect(check.item != nil)
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// A version of the rules in force that no longer makes the presentation's output profile.
+    @Test func anOutputTheRulesNoLongerMakeLeavesThePresentationUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench, profile: "mobile")
+        _ = try bench.checkService.pass()
+        #expect(bench.checks.check(of: job.id)?.outcome == .current)
+        _ = try bench.rulesets.store(Data(Fixture.household.utf8), as: "household")
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "the rules make no mobile output")
+        #expect(check.item != nil)
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// Each fact from the lineage that moved, a line each, with `none` for one the item did not have.
+    @Test func whatMovedInAnItemIsSaidALineEach() {
+        let was = CheckedItem(kind: .featurette, extra: false, roles: [.main, .commentary])
+        #expect(was.moves(to: was).isEmpty)
+        #expect(
+            was.moves(to: CheckedItem(kind: .trailer, extra: true, roles: [.main, .isolatedMusic])) == [
+                "kind: featurette → trailer", "extra: false → true", "audio 2 role: commentary → isolatedMusic",
+            ]
+        )
+        #expect(
+            was.moves(to: CheckedItem(kind: nil, extra: nil, roles: [.main, .commentary])) == [
+                "kind: featurette → none", "extra: false → none",
+            ]
+        )
     }
 
     @Test func aPromotionThatChangesADecisionLeavesThePresentationOutOfDate() async throws {

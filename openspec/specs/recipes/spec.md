@@ -305,7 +305,11 @@ the recipe recorded them, since a source does not change once registered; the fa
 the lineage — the item's `kind`, whether it is an `extra`, and the role each mapped audio stream
 takes from its feature — SHALL be read from the item's container as the library holds it now, so an
 edit of the container reaches the presentations of its items. An item its container no longer
-holds gives no recipe. Which layer or rule decided a stream SHALL NOT be compared. When a
+holds, or whose container the library no longer holds, gives no recipe; a container above the
+item's own that the library no longer holds, as when the item's container is moved out from under
+it, decides none of those facts, and SHALL be read as the binding recorded it. A presentation found
+to have no recipe SHALL record the facts it read from the lineage where it read them, and SHALL NOT
+be checked again until its stack or those facts change. Which layer or rule decided a stream SHALL NOT be compared. When a
 presentation is out of date and a fact from the lineage moved, the check's reason SHALL name each
 that moved, as `kind: featurette → trailer`, `extra: false → true` or
 `audio 2 role: commentary → isolatedMusic`. A presentation placed without a job SHALL never be
@@ -342,8 +346,33 @@ checked.
   library is walked
 - **THEN** the presentation is unresolvable, because the container has no such item
 
+#### Scenario: an item's container gone from the library
+- **WHEN** the folder of a presentation's item's container is deleted, and the library is walked
+- **THEN** the presentation is unresolvable, the reason naming the container no longer in the
+  library
+
+#### Scenario: a container above the item gone from the library
+- **WHEN** the item's container is moved to the library's root, the container it was below is
+  deleted, and the library is walked
+- **THEN** the presentation is current, and is not checked again
+
+#### Scenario: rules that no longer decide a presentation
+- **WHEN** a version of the presentation's ruleset is stored that decides none of its video
+  streams, or that makes no output for the profile it was made for
+- **THEN** the presentation is unresolvable, the reason saying which, and the next pass does not
+  check it again
+
+#### Scenario: what moved is said a line each
+- **WHEN** an item moves from a featurette to a trailer, into the extras, and its second audio
+  stream from a commentary to isolated music
+- **THEN** the moves are `kind: featurette → trailer`, `extra: false → true` and
+  `audio 2 role: commentary → isolatedMusic`, and a fact the item no longer has reads `none`
+
 Pinned by: `Tests/SiloTests/CheckTests.swift` (`aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `aPromotionThatChangesNothingForAPresentationLeavesItCurrent`, `aPersonsDecisionStandsWhenTheRulesBeneathItChange`,
-`aContainerEditThatChangesADecisionLeavesThePresentationOutOfDate`, `aContainerEditTheRulesDoNotReadLeavesThePresentationCurrent`, `anItemGoneFromItsContainerIsUnresolvable`).
+`aContainerEditThatChangesADecisionLeavesThePresentationOutOfDate`, `aContainerEditTheRulesDoNotReadLeavesThePresentationCurrent`, `anItemGoneFromItsContainerIsUnresolvable`,
+`anItemsContainerGoneFromTheLibraryLeavesItsPresentationUnresolvable`, `aContainerAboveTheItemGoneFromTheLibraryChangesNothing`,
+`aStreamTheRulesNoLongerDecideLeavesThePresentationUnresolvable`, `anOutputTheRulesNoLongerMakeLeavesThePresentationUnresolvable`,
+`whatMovedInAnItemIsSaidALineEach`).
 
 ### Requirement: The silo checks placed presentations in the background and records what it finds
 The silo SHALL keep, for each presentation placed by a job, its latest check: the stack it was checked
