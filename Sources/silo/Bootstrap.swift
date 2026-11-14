@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import BasicContainers
+import FileServing
 import Foundation
 import HTTPAPIs
 import HTTPTypes
@@ -81,14 +82,14 @@ package struct AppBootstrap {
     /// The concrete server rather than `some HTTPServer`: the proposal's reader and sender are
     /// `~Copyable`, which a bare opaque return cannot express.
     package func createServer() throws -> NIOHTTPServer {
-        NIOHTTPServer(
-            logger: Logger(label: "silo"),
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: config.host, port: config.port),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
+        var configuration = try NIOHTTPServerConfiguration(
+            bindTarget: .hostAndPort(host: config.host, port: config.port),
+            supportedHTTPVersions: [.http1_1],
+            transportSecurity: .plaintext
         )
+        // An hour for the header timer, which runs while a handler answers. `ConnectionTimeouts.silo`.
+        configuration.connectionTimeouts = .silo
+        return NIOHTTPServer(logger: Logger(label: "silo"), configuration: configuration)
     }
 
     package func createRouteBuilder<Server: HTTPServer>(

@@ -19,6 +19,16 @@ import FoundationNetworking
 /// The file a node serves and the fetch another node makes of it, over a real socket: the two
 /// halves of principle 6, files moving between the machines that have them.
 struct FileServerTests {
+    /// The header timer runs while a handler answers, so every server of the silo's gives it an
+    /// hour; the idle and body timers keep the library's defaults.
+    @Test func everyServerKeepsAConnectionOpenWhileItAnswers() {
+        let library = NIOHTTPServerConfiguration.ConnectionTimeouts()
+        #expect(NIOHTTPServerConfiguration.ConnectionTimeouts.silo.readHeader == .seconds(3600))
+        #expect(library.readHeader == .seconds(30), "the library's own, which a slow answer outlasts")
+        #expect(NIOHTTPServerConfiguration.ConnectionTimeouts.silo.idle == library.idle)
+        #expect(NIOHTTPServerConfiguration.ConnectionTimeouts.silo.readBody == library.readBody)
+    }
+
     @Test func aPublishedFileIsFetchedByRangeWithItsSecretAndByNothingElse() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
