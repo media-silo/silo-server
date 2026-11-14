@@ -8,7 +8,7 @@
 How a machine that is not the silo becomes a node, and how it stops being one. A node mints and
 keeps its own identity and secret, finds the silo by Bonjour or is handed its URL, registers what
 its `ffmpeg` can do and is recorded pending and given nothing, waits for a person to approve it,
-takes the token the approval minted exactly once, and claims, reports and completes behind that
+takes a token from its polls, and claims, reports and completes behind that
 token until revoking — one state change — cuts it off. This spec covers the node record and its
 hashes on the silo, the node routes and their two gates, Bonjour done as child processes of the
 platform's own tools, the silo's advertisement of itself, the `silo-node` executable, and the
@@ -91,26 +91,33 @@ bring the record's name, platform, capabilities, `ffmpegVersion` and `cores` up 
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`xNodesRegisterAreApprovedAndTakeWorkWithTheirToken`), `Tests/SiloTests/NodeTests.swift` (`aNodeIsApprovedAndTakesItsTokenOnce`).
 
-### Requirement: Approval is the operator's, and the node's poll takes its token once
+### Requirement: Approval is the operator's, and the node's polls carry a token until it is used
 The operator's side of nodes SHALL be `GET /v1/nodes` (every node the silo knows, pending ones
 included, oldest first), `POST /v1/nodes/{id}/approve` and `POST /v1/nodes/{id}/revoke`, all
 three behind the operator's bearer token: 401 without it, 404 for an unknown id. A node SHALL
 poll `GET /v1/nodes/{id}` with its secret in the `x-silo-node-secret` header — 404 for an unknown
 id, 403 for a secret that is not its. While the node is `pending` the poll SHALL answer the
 record and nothing else. Approval SHALL set the state `approved`, record `approvedAt`, and clear
-any token that came before; the node's first poll after it SHALL mint a token, 64 lower-case hex
-characters, store only its hash, mark it delivered, and carry it in that answer — and every later
-poll SHALL carry none, since the node keeps it. Every poll SHALL touch the node's `lastSeenAt`.
+any token that came before. Until the node first uses a token, each poll after approval SHALL mint
+a new token, 64 lower-case hex characters, store only its hash in place of the last one's, and
+carry it in that answer, so a poll whose answer is lost costs the node nothing: the token the next
+poll carries is the one that works, and every token before it stops working. The node's first
+request that its token authenticates SHALL mark the token delivered, and every poll after that
+SHALL carry none, since the node keeps it. Every poll SHALL touch the node's `lastSeenAt`.
 
 #### Scenario: approval through the routes
 - **WHEN** `POST /v1/nodes/node-1/approve` arrives with no bearer token, and then with the operator's
 - **THEN** the replies are 401 and 200, and `GET /v1/nodes` with the operator's token lists `node-1`
 
-#### Scenario: the token is handed over once
-- **WHEN** `node-1` polls `GET /v1/nodes/node-1` with `x-silo-node-secret: s3cret` while pending, then twice after approval
-- **THEN** the pending poll carries no token, the first approved poll carries one, and the second carries none again; a poll with `x-silo-node-secret: wrong` is 403 and a poll for `node-9` is 404
+#### Scenario: the token is used, and polls stop carrying one
+- **WHEN** `node-1` polls `GET /v1/nodes/node-1` with `x-silo-node-secret: s3cret` while pending, then after approval, then claims with the token that poll carried, then polls again
+- **THEN** the pending poll carries no token, the approved poll carries one, the claim passes the node gate, and the last poll carries none; a poll with `x-silo-node-secret: wrong` is 403 and a poll for `node-9` is 404
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`xNodesRegisterAreApprovedAndTakeWorkWithTheirToken`), `Tests/SiloTests/NodeTests.swift` (`aNodeIsApprovedAndTakesItsTokenOnce`).
+#### Scenario: a poll whose answer is lost
+- **WHEN** an approved node polls, loses the answer, and polls again
+- **THEN** the second poll carries a token different from the first; the first token is refused by the node gate and the second authenticates
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`xNodesRegisterAreApprovedAndTakeWorkWithTheirToken`), `Tests/SiloTests/NodeTests.swift` (`aNodeIsApprovedAndTakesItsTokenOnce`, `aTokenWhosePollIsLostIsGivenAgain`).
 
 ### Requirement: The node's token gates the working routes, and seeing it is the heartbeat
 The node's four job routes — `POST /v1/jobs/claim`, `POST /v1/jobs/{id}/progress`, `POST
@@ -147,13 +154,13 @@ Pinned by: `Tests/SiloTests/NodeTests.swift` (`aNodeIsApprovedAndTakesItsTokenOn
 
 ### Requirement: The silo stores hashes of the secret and the token, never either itself
 The silo SHALL keep one JSON file per node at `<state>/nodes/<id>.json` holding the record, the
-SHA-256 of the node's secret as hex, the SHA-256 of a delivered token as hex, and whether the
-token was delivered — and SHALL never store either the secret or the token themselves. Writes
+SHA-256 of the node's secret as hex, the SHA-256 of the token last given as hex, and whether the
+node has used it — and SHALL never store either the secret or the token themselves. Writes
 SHALL be atomic. The store SHALL be loaded on boot, so an approved node's token keeps
-authenticating across a restart and a delivered token is not handed out a second time.
+authenticating across a restart, and a node that has used its token is given no other.
 
 #### Scenario: nodes survive a restart
-- **WHEN** a node was approved and took its token, and a fresh `NodeStore` opens the same folder
+- **WHEN** a node was approved, took its token and used it, and a fresh `NodeStore` opens the same folder
 - **THEN** the token still authenticates against the node's name, a poll carries no second token, and the JSON on disk contains neither the secret nor the token
 
 Pinned by: `Tests/SiloTests/NodeTests.swift` (`nodesSurviveARestart`).

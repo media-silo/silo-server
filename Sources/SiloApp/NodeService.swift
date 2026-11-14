@@ -57,27 +57,27 @@ package struct NodeService: Sendable {
         return node
     }
 
-    /// The node's poll. Once approved, the first poll after it carries the token; later ones do
-    /// not, since the node keeps it.
+    /// The node's poll. Once approved, every poll carries a token until the node first uses one,
+    /// each a new token whose hash replaces the last, so a poll whose answer is lost costs nothing:
+    /// the next poll's token is the one that works. Once the node has used its token, polls carry
+    /// none, since the node keeps it.
     package func status(_ id: String, secret: String) throws -> NodeStatus {
         guard let stored = nodes.stored(id) else { throw NoSuchNode() }
         guard stored.secretHash == NodeStore.hash(secret) else { throw WrongSecret() }
-        guard stored.node.state == .approved, !stored.tokenDelivered else {
-            _ = try nodes.update(id) { $0.node.lastSeenAt = .now }
-            return NodeStatus(node: stored.node)
-        }
-        let token = FileRef.mintSecret()
+        var token: String?
         let updated = try nodes.update(id) { stored in
-            stored.tokenHash = NodeStore.hash(token)
-            stored.tokenDelivered = true
             stored.node.lastSeenAt = .now
+            guard stored.node.state == .approved, !stored.tokenDelivered else { return }
+            let minted = FileRef.mintSecret()
+            stored.tokenHash = NodeStore.hash(minted)
+            token = minted
         }!
-        logger.info("node \(updated.node.name) took its token")
+        if token != nil { logger.info("node \(updated.node.name) was given a token") }
         return NodeStatus(node: updated.node, token: token)
     }
 
-    /// Approval mints a token the node's next poll takes. Approving again, after a revoke, mints
-    /// a new one; the old was invalidated by the revoke.
+    /// Approval clears any token, so the node's next poll is given one. Approving again, after a
+    /// revoke, gives a new one; the old was invalidated by the revoke.
     package func approve(_ id: String) throws -> Node {
         guard nodes.stored(id) != nil else { throw NoSuchNode() }
         let updated = try nodes.update(id) { stored in
@@ -101,13 +101,20 @@ package struct NodeService: Sendable {
         return updated.node
     }
 
-    /// The approved node a bearer token belongs to, or nil. Seeing it is the node's heartbeat.
+    /// The approved node a bearer token belongs to, or nil. Seeing it is the node's heartbeat, and
+    /// the first sight of it says the node received it, so its polls stop carrying one.
     package func authenticate(bearer token: String) -> Node? {
         let hash = NodeStore.hash(token)
         guard let stored = nodes.first(where: { $0.node.state == .approved && $0.tokenHash == hash }) else {
             return nil
         }
-        _ = try? nodes.update(stored.node.id) { $0.node.lastSeenAt = .now }
+        _ = try? nodes.update(stored.node.id) { stored in
+            stored.node.lastSeenAt = .now
+            if !stored.tokenDelivered {
+                stored.tokenDelivered = true
+                logger.info("node \(stored.node.name) used its token")
+            }
+        }
         return stored.node
     }
 }

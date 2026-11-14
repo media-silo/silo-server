@@ -2050,13 +2050,6 @@ extension ServerTests {
             )
             let approved = try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"])
             let token = try #require(try SiloClient.decoder.decode(NodeStatus.self, from: approved.body).token)
-            #expect(
-                try SiloClient.decoder.decode(
-                    NodeStatus.self,
-                    from: try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"]).body
-                ).token == nil,
-                "once"
-            )
 
             let claim = try await client.post(
                 "/v1/jobs/claim",
@@ -2064,6 +2057,13 @@ extension ServerTests {
                 headers: ["Authorization": "Bearer \(token)"]
             )
             #expect(claim.status == 200, "the node's token passes the node gate")
+            #expect(
+                try SiloClient.decoder.decode(
+                    NodeStatus.self,
+                    from: try await client.get("/v1/nodes/node-1", headers: ["x-silo-node-secret": "s3cret"]).body
+                ).token == nil,
+                "no token once the node has used one"
+            )
             #expect(
                 try await client.post(
                     "/v1/jobs/claim",
