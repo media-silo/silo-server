@@ -47,8 +47,8 @@ struct NodeServiceTests {
         #expect(try service.approve("n1").state == .approved)
         let first = try service.status("n1", secret: "s1")
         let token = try #require(first.token)
-        #expect(try service.status("n1", secret: "s1").token == nil, "handed over once")
         #expect(service.authenticate(bearer: token)?.id == "n1")
+        #expect(try service.status("n1", secret: "s1").token == nil, "none once the node has used it")
         #expect(try service.node("n1").lastSeenAt != nil, "seeing the token is the heartbeat")
 
         #expect(try service.revoke("n1").state == .revoked)
@@ -59,6 +59,26 @@ struct NodeServiceTests {
         #expect(service.authenticate(bearer: token) == nil)
         #expect(service.authenticate(bearer: again)?.id == "n1")
         #expect(throws: NoSuchNode.self) { try service.approve("n9") }
+    }
+
+    /// A poll whose answer is lost costs the node nothing: the next poll is given a new token, the
+    /// lost one stops working, and the node's first use of a token ends the handing out.
+    @Test func aTokenWhosePollIsLostIsGivenAgain() throws {
+        let service = NodeService(nodes: NodeStore())
+        _ = try service.register(
+            NodeRegistration(id: "n1", secret: "s1", name: "box", platform: "Linux", capabilities: [])
+        )
+        _ = try service.approve("n1")
+        let lost = try #require(try service.status("n1", secret: "s1").token)
+        let received = try #require(try service.status("n1", secret: "s1").token, "the next poll is given one too")
+        #expect(received != lost, "a new token, not the lost one kept")
+        #expect(service.authenticate(bearer: lost) == nil, "only the newest works")
+        #expect(service.authenticate(bearer: received)?.id == "n1")
+        #expect(try service.status("n1", secret: "s1").token == nil, "used, so polls stop carrying one")
+        #expect(service.authenticate(bearer: received)?.id == "n1", "and the used token goes on working")
+        #expect(throws: WrongSecret.self, "a token is given only to a poll that knows the secret") {
+            try service.status("n1", secret: "other")
+        }
     }
 
     @Test func nodesSurviveARestart() throws {
@@ -72,6 +92,7 @@ struct NodeServiceTests {
             )
             _ = try service.approve("n1")
             token = try #require(try service.status("n1", secret: "s1").token)
+            #expect(service.authenticate(bearer: token) != nil)
         }
         let reopened = NodeService(nodes: try NodeStore(folder: folder))
         #expect(reopened.authenticate(bearer: token)?.name == "box")

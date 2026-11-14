@@ -1867,7 +1867,7 @@ paths:
     get:
       operationId: nodeStatus
       summary: A node polls for its approval
-      description: The first poll after approval carries the node's token; later ones do not, since the node keeps it.
+      description: After approval, every poll carries a new token until the node first uses one, each replacing the last, so a lost answer costs nothing; once the node has used its token, polls carry none, since the node keeps it.
       tags: [Nodes]
       parameters:
         - $ref: "#/components/parameters/NodeID"
@@ -1878,7 +1878,7 @@ paths:
             type: string
       responses:
         "200":
-          description: The record, and the token once.
+          description: The record, and a token until the node has used one.
           content:
             application/json:
               schema:
@@ -1939,7 +1939,7 @@ components:
     node:
       type: http
       scheme: bearer
-      description: An approved node's token, minted at approval and handed to it once.
+      description: An approved node's token, given by its polls until it first uses one.
     setup:
       type: http
       scheme: bearer
