@@ -219,6 +219,8 @@ struct JobServiceTests {
         }
         #expect(both.isEmpty, "a job completed and failed at once: \(both.count) of 300")
         #expect(throws: NoSuchJob.self, "a job that was never made") { try service.cancel("never") }
+        try bench.store.insert(Job(id: "waiting", recipe: "r"))
+        #expect(try service.cancel("waiting").state == .cancelled, "a job no node holds is cancelled at once")
     }
 
     /// A progress report that arrives as the operator cancels never writes over the cancel: the

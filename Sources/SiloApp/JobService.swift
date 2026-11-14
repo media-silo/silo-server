@@ -412,11 +412,7 @@ extension JobService {
             throw WrongState(current.state, "cannot be placed")
         }
         guard let library = libraries.library(binding.library) else { throw NoSuchLibrary() }
-        // Checked again under the lock: of two placements sent at once, only one becomes `placing`.
-        _ = try changing(id) { job throws(WrongState) in
-            guard job.state == .encoded else { throw WrongState(job.state, "cannot be placed") }
-            job.state = .placing
-        }
+        try beginPlacing(id)
 
         do {
             let staged = try await Self.stage(output, of: id, in: library)
@@ -485,6 +481,15 @@ extension JobService {
                 job.failure = "placement: \(error.localizedDescription)"
             }
             throw error
+        }
+    }
+
+    /// Sets an encoded job `placing`, checked again under the lock: of two placements sent at once,
+    /// only one begins.
+    private func beginPlacing(_ id: String) throws {
+        _ = try changing(id) { job throws(WrongState) in
+            guard job.state == .encoded else { throw WrongState(job.state, "cannot be placed") }
+            job.state = .placing
         }
     }
 
