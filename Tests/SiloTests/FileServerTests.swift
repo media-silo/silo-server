@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 the media-silo project authors
 
+import BasicContainers
 import FileServing
 import Foundation
+import HTTPAPIs
+import HTTPTypes
+import Logging
+import NIOHTTPServer
 import SiloKit
 import SiloWorker
 import Testing
@@ -63,6 +68,103 @@ struct FileServerTests {
 
         server.unpublish("job-1/source")
         #expect(try await fetch("/files/job-1/source", secret: published.secret).0 == 404)
+    }
+
+    /// A holder that sends the head of a gigabyte and 64 KB of it, then nothing more for ten minutes.
+    struct Trickle: HTTPServerRequestHandler {
+        static let sent = 64 * 1024
+
+        func handle(
+            request: HTTPRequest,
+            requestContext: consuming NIOHTTPServer.RequestContext,
+            reader: consuming sending NIOHTTPServer.Reader,
+            responseSender: consuming sending NIOHTTPServer.ResponseSender
+        ) async throws {
+            var writer = try await responseSender.send(
+                HTTPResponse(status: .ok, headerFields: [.contentLength: String(1 << 30)])
+            )
+            var chunk = UniqueArray<UInt8>(copying: [UInt8](repeating: 0x2A, count: Self.sent))
+            try await writer.write(buffer: &chunk)
+            try await Task.sleep(for: .seconds(600))
+        }
+    }
+
+    /// Cancelling the task that awaits a fetch cancels the transfer, rather than leaving it to run to
+    /// the end of a file that may be many gigabytes, and keeps what arrived for the next attempt.
+    @Test(.timeLimit(.minutes(1))) func aCancelledFetchStopsAndKeepsWhatArrived() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let server = NIOHTTPServer(
+            logger: Logger(label: "silo.tests.trickle"),
+            configuration: try .init(
+                bindTarget: .hostAndPort(host: "127.0.0.1", port: 0),
+                supportedHTTPVersions: [.http1_1],
+                transportSecurity: .plaintext
+            )
+        )
+        let serving = Task { try await server.serve(handler: Trickle()) }
+        defer { serving.cancel() }
+        let port = try #require(try await server.listeningAddresses.first?.port)
+        let source = FileRef(holder: "elsewhere", url: URL(string: "http://127.0.0.1:\(port)/slow")!, secret: "s")
+
+        let fetched = root.appendingPathComponent("fetched.mkv")
+        let fetching = Task { try await RangeDownloader.download(source, to: fetched) }
+        func size() -> Int64 {
+            (try? FileManager.default.attributesOfItem(atPath: fetched.path)[.size] as? NSNumber)?.int64Value ?? 0
+        }
+        while size() < Int64(Trickle.sent) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let cancelled = ContinuousClock.now
+        fetching.cancel()
+        await #expect(throws: CancellationError.self) { try await fetching.value }
+        #expect(ContinuousClock.now - cancelled < .seconds(10), "the transfer was cancelled, not run out")
+        #expect(size() == Int64(Trickle.sent), "what arrived is kept, for the next attempt to resume from")
+    }
+
+    /// A fetch whose task was cancelled before it began asks the holder for nothing.
+    @Test func aFetchFromACancelledTaskIsNeverStarted() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        // Nothing listens here: a request that went out would fail as a refused connection.
+        let source = FileRef(holder: "elsewhere", url: URL(string: "http://127.0.0.1:9/never")!, secret: "s")
+        let fetched = root.appendingPathComponent("fetched.mkv")
+        let fetching = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await RangeDownloader.download(source, to: fetched)
+        }
+        await #expect(throws: CancellationError.self) { try await fetching.value }
+    }
+
+    /// A holder nobody answers for fails the fetch as the connection did.
+    @Test func aFetchFromAHolderThatIsNotThereFailsAsTheConnectionDid() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = FileRef(holder: "elsewhere", url: URL(string: "http://127.0.0.1:9/never")!, secret: "s")
+        await #expect(throws: URLError.self) {
+            try await RangeDownloader.download(source, to: root.appendingPathComponent("fetched.mkv"))
+        }
+    }
+
+    /// A holder that answers anything but 200 or 206 fails the fetch with its status.
+    @Test func aFetchTheHolderRefusesFailsWithItsStatus() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try FileServer(host: "127.0.0.1", port: 0, advertisedHost: "127.0.0.1")
+        let serving = Task { try await server.run() }
+        defer { serving.cancel() }
+        let port = try await server.boundPort
+        // Nothing is published at this path, so the holder answers 404.
+        let source = FileRef(holder: "elsewhere", url: URL(string: "http://127.0.0.1:\(port)/files/gone")!, secret: "s")
+        let error = await #expect(throws: WorkerError.self) {
+            try await RangeDownloader.download(source, to: root.appendingPathComponent("fetched.mkv"))
+        }
+        #expect(error?.description == "fetching a source failed: the holder answered 404")
     }
 
     /// A file longer than the socket buffer arrives whole every time. The server closes a connection whose

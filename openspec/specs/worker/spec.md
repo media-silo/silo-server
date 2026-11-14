@@ -110,14 +110,26 @@ whose answer is appended — and accepting only 200 and 206, any other status fa
 `the holder answered <status>`. A 200 in answer to a resume SHALL truncate the file and start
 over rather than append. When the reference's `sizeBytes` is known, a file that already has it
 SHALL be fetched not at all, and a finished fetch SHALL be checked against it, failing as
-`got <final> bytes of <size>`.
+`got <final> bytes of <size>`. Cancelling the task that awaits a fetch SHALL cancel the transfer
+and throw `CancellationError`, keeping the bytes that arrived for the next attempt to resume from.
 
 #### Scenario: an interrupted fetch resumes
 - **WHEN** 1234 bytes of a 5000-byte source sit in the work folder from an earlier attempt
 - **THEN** the holder is asked from byte 1234 and the file on disk afterwards is the source,
   byte for byte
 
-Pinned by: `Tests/SiloTests/FileServerTests.swift` (`aPublishedFileIsFetchedByRangeWithItsSecretAndByNothingElse`).
+#### Scenario: a fetch cancelled partway stops and keeps what arrived
+- **WHEN** a holder sends 64 KB of a gigabyte and then nothing more, and the task awaiting the
+  fetch is cancelled once the 64 KB are on disk
+- **THEN** the fetch throws `CancellationError` at once, and the 64 KB stay on disk
+
+#### Scenario: a holder that refuses the fetch
+- **WHEN** the holder answers 404
+- **THEN** the fetch fails as `the holder answered 404`
+
+Pinned by: `Tests/SiloTests/FileServerTests.swift` (`aPublishedFileIsFetchedByRangeWithItsSecretAndByNothingElse`,
+`aCancelledFetchStopsAndKeepsWhatArrived`, `aFetchFromACancelledTaskIsNeverStarted`,
+`aFetchTheHolderRefusesFailsWithItsStatus`, `aFetchFromAHolderThatIsNotThereFailsAsTheConnectionDid`).
 
 ### Requirement: The recipe becomes one encode in the work folder
 A claimed job whose answer carries no recipe SHALL fail at once, with
