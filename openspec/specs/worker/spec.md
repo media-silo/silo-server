@@ -129,7 +129,7 @@ and throw `CancellationError`, keeping the bytes that arrived for the next attem
 
 Pinned by: `Tests/SiloTests/FileServerTests.swift` (`aPublishedFileIsFetchedByRangeWithItsSecretAndByNothingElse`,
 `aCancelledFetchStopsAndKeepsWhatArrived`, `aFetchFromACancelledTaskIsNeverStarted`,
-`aFetchTheHolderRefusesFailsWithItsStatus`).
+`aFetchTheHolderRefusesFailsWithItsStatus`, `aFetchFromAHolderThatIsNotThereFailsAsTheConnectionDid`).
 
 ### Requirement: The recipe becomes one encode in the work folder
 A claimed job whose answer carries no recipe SHALL fail at once, with
