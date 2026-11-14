@@ -38,6 +38,7 @@ struct CheckTests {
         item: String = "part3",
         containers: [String] = Bench.containers,
         application: Application = Application(ruleset: "household"),
+        profile: String? = nil,
         name: String = UUID().uuidString
     ) async throws -> Job {
         let source = try bench.sources.register(Bench.input, key: nil, copy: try bench.copy("\(name).mkv")).source
@@ -53,7 +54,7 @@ struct CheckTests {
             )
         )
         var unqualified = application
-        unqualified.outputs = [Application.OutputChoice()]
+        unqualified.outputs = [Application.OutputChoice(profile: profile)]
         let resolved = try #require(try bench.bindingService.apply(unqualified, to: binding.id).first)
         let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
@@ -119,6 +120,198 @@ struct CheckTests {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return false
+    }
+
+    /// Edits the serial in the library's index and on disk, as the container route does.
+    private static func editSerial(_ bench: Bench, _ change: (inout Container) -> Void) async throws {
+        let library = try #require(bench.libraries.library("main"))
+        let row = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        var serial = try #require(try bench.index.sidecar(Fixture.serial.id, in: "main")).container
+        change(&serial)
+        let outcome = try await ContainerEditor.edit(
+            Fixture.serial.id,
+            in: library,
+            document: String(decoding: ContainerFile.data(for: serial), as: UTF8.self),
+            basedOn: row.digest,
+            dryRun: false,
+            libraries: bench.libraries,
+            index: bench.index
+        )
+        #expect(outcome.applied)
+    }
+
+    /// The item is read from its container as the library holds it now, not as it was when the
+    /// recipe was committed: a feature retyped moves its audio from one rule to another, and the
+    /// check says what moved.
+    @Test func aContainerEditThatChangesADecisionLeavesThePresentationOutOfDate() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        #expect(try bench.checkService.pass() == 1)
+        #expect(bench.checks.check(of: job.id)?.outcome == .current)
+
+        try await Self.editSerial(bench) { $0.features[0].type = .isolatedMusic }
+        #expect(try bench.checkService.pass() == 1, "the stack is as it was, but the item is not")
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .outOfDate)
+        #expect(check.changes.map(\.index) == [2], "the commentary, now isolated music, is lossless and kept so")
+        #expect(check.reason == "audio 2 role: commentary → isolatedMusic")
+        #expect(try bench.checkService.pass() == 0, "and nothing is checked twice")
+    }
+
+    /// An edit of a container asks the running check for a pass, as a walk that read something does.
+    @Test func aContainerEditAsksTheRunningCheckForAPass() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { await bench.checkService.run() }
+            defer { group.cancelAll() }
+            #expect(await Self.checked(job.id, in: bench))
+            try await Self.editSerial(bench) { $0.features[0].type = .isolatedMusic }
+            var outcome = bench.checks.check(of: job.id)?.outcome
+            for _ in 0..<500 where outcome != .outOfDate {
+                try await Task.sleep(for: .milliseconds(10))
+                outcome = bench.checks.check(of: job.id)?.outcome
+            }
+            #expect(outcome == .outOfDate, "checked again without anything else asking")
+        }
+    }
+
+    /// A change the rules decide nothing by is read, and leaves the presentation current, saying
+    /// nothing of it.
+    @Test func aContainerEditTheRulesDoNotReadLeavesThePresentationCurrent() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+
+        try await Self.editSerial(bench) { serial in
+            serial.sequences[0].items[2] = .leaf(
+                Entry.Leaf(id: ItemID("part3")!, type: .featurette, title: "Part Three")
+            )
+        }
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .current && check.reason == nil)
+        #expect(check.item?.kind == .featurette, "read as it is now")
+        #expect(try bench.checkService.pass() == 0)
+    }
+
+    /// An item its container no longer holds makes no recipe, so its presentation is recorded
+    /// unresolvable, saying so.
+    @Test func anItemGoneFromItsContainerIsUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+
+        // The container route refuses to take away an item with presentations, so only a sidecar
+        // edited by hand, and read by a walk, can do this.
+        let library = try #require(bench.libraries.library("main"))
+        let row = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        let file = library.root.appendingPathComponent(row.folder).appendingPathComponent("container.smd")
+        var serial = try #require(try bench.index.sidecar(Fixture.serial.id, in: "main")).container
+        serial.sequences[0].items.removeLast()
+        try SidecarFile.data(settingContainer: serial, in: try Data(contentsOf: file)).write(to: file)
+        try await bench.libraries.walk(library)
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "Pyramids of Mars has no item part3")
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// The item's container taken out of the library, and the library walked: there is no longer an
+    /// item to read the facts of.
+    @Test func anItemsContainerGoneFromTheLibraryLeavesItsPresentationUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+        let library = try #require(bench.libraries.library("main"))
+        let row = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        try FileManager.default.removeItem(at: library.root.appendingPathComponent(row.folder))
+        try await bench.libraries.walk(library)
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "Pyramids of Mars is no longer in the library")
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// The item's container moved to the library's root, and the container it was below deleted: the
+    /// binding still names that container, which no longer decides any of the item's facts, so the
+    /// check reads it as the binding recorded it, and nothing moves.
+    @Test func aContainerAboveTheItemGoneFromTheLibraryChangesNothing() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+        let library = try #require(bench.libraries.library("main"))
+        let series = try #require(try bench.index.container(Fixture.series.id, in: "main"))
+        let serial = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        let moved = library.root.appendingPathComponent(serial.folder)
+        try FileManager.default.moveItem(
+            at: moved,
+            to: library.root.appendingPathComponent(moved.lastPathComponent)
+        )
+        try FileManager.default.removeItem(at: library.root.appendingPathComponent(series.folder))
+        try await bench.libraries.walk(library)
+        #expect(try bench.index.sidecar(Fixture.series.id, in: "main") == nil)
+        #expect(try bench.index.sidecar(Fixture.serial.id, in: "main") != nil)
+        #expect(try bench.checkService.pass() == 0)
+        #expect(bench.checks.check(of: job.id)?.outcome == .current)
+    }
+
+    /// A version of the rules in force that leaves a stream undecided: the check records the
+    /// resolver's reason, with the item it read, so the next pass does not check it again.
+    @Test func aStreamTheRulesNoLongerDecideLeavesThePresentationUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+        let undecided = Bench.household.replacingOccurrences(of: "<video><copy/></video>", with: "")
+        #expect(undecided != Bench.household)
+        _ = try bench.rulesets.store(Data(undecided.utf8), as: "household")
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "no rule decides video 1 (h264 320x240)")
+        #expect(check.item != nil)
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// A version of the rules in force that no longer makes the presentation's output profile.
+    @Test func anOutputTheRulesNoLongerMakeLeavesThePresentationUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench, profile: "mobile")
+        _ = try bench.checkService.pass()
+        #expect(bench.checks.check(of: job.id)?.outcome == .current)
+        _ = try bench.rulesets.store(Data(Fixture.household.utf8), as: "household")
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "the rules make no mobile output")
+        #expect(check.item != nil)
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
+    /// Each fact from the lineage that moved, a line each, with `none` for one the item did not have.
+    @Test func whatMovedInAnItemIsSaidALineEach() {
+        let was = CheckedItem(kind: .featurette, extra: false, roles: [.main, .commentary])
+        #expect(was.moves(to: was).isEmpty)
+        #expect(
+            was.moves(to: CheckedItem(kind: .trailer, extra: true, roles: [.main, .isolatedMusic])) == [
+                "kind: featurette → trailer", "extra: false → true", "audio 2 role: commentary → isolatedMusic",
+            ]
+        )
+        #expect(
+            was.moves(to: CheckedItem(kind: nil, extra: nil, roles: [.main, .commentary])) == [
+                "kind: featurette → none", "extra: false → none",
+            ]
+        )
     }
 
     @Test func aPromotionThatChangesADecisionLeavesThePresentationOutOfDate() async throws {

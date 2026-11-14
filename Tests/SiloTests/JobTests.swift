@@ -58,18 +58,6 @@ struct JobServiceTests {
             checks = checksOnDisk ? try CheckStore(folder: Self.checksFolder(in: root)) : CheckStore()
             libraries = Libraries(config: config, settings: settings, index: index, checks: signal)
             let stack = RulesStack(libraries: libraries, index: index, staged: stagedRules)
-            checkService = CheckService(
-                jobs: store,
-                recipes: recipes,
-                bindings: bindings,
-                sources: sources,
-                rulesets: rulesets,
-                stack: stack,
-                checks: checks,
-                index: index,
-                libraries: libraries,
-                signal: signal
-            )
             bindingService = BindingService(
                 settings: settings,
                 index: index,
@@ -81,6 +69,19 @@ struct JobServiceTests {
                 stack: stack,
                 libraries: libraries,
                 checks: signal
+            )
+            checkService = CheckService(
+                jobs: store,
+                recipes: recipes,
+                bindings: bindings,
+                sources: sources,
+                rulesets: rulesets,
+                stack: stack,
+                checks: checks,
+                index: index,
+                libraries: libraries,
+                bindingService: bindingService,
+                signal: signal
             )
             service = JobService(
                 config: config,
