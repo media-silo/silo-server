@@ -164,6 +164,30 @@ struct RulesetFileTests {
         }
     }
 
+    @Test(arguments: [
+        (#"<when fact="video.hdr" is="hdr"/>"#, RulesetFileError.notAValueOf(fact: "video.hdr", value: "hdr")),
+        (#"<when fact="extra" ne="yes"/>"#, RulesetFileError.notAValueOf(fact: "extra", value: "yes")),
+        (#"<when fact="format" in="dvd, hddvd"/>"#, RulesetFileError.notAValueOf(fact: "format", value: "hddvd")),
+    ])
+    func aValueItsFactNeverTakesIsRefused(condition: String, expected: RulesetFileError) {
+        let xml = #"<ruleset format="1" name="t"><video>\#(condition)<copy/></video></ruleset>"#
+        #expect(throws: expected) { try RulesetFile.ruleset(from: Data(xml.utf8)) }
+    }
+
+    @Test func aValueItsFactCanTakeIsRead() throws {
+        let xml = #"""
+            <ruleset format="1" name="t">
+            <video><when fact="video.hdr" in="hdr10, hlg"/><when fact="extra" is="false"/><copy/></video>
+            <audio><when fact="audio.role" ne="commentary"/><when fact="audio.codec" is="anything"/><copy/></audio>
+            </ruleset>
+            """#
+        #expect(try RulesetFile.ruleset(from: Data(xml.utf8)).rules.count == 2)
+        #expect(
+            RulesetFileError.notAValueOf(fact: "extra", value: "yes").description
+                == #""yes" is not a value "extra" takes: true, false"#
+        )
+    }
+
     @Test func anEmptyRulesetHasTheToolsDefaults() throws {
         let ruleset = try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"/>".utf8))
         #expect(ruleset.outputs == [OutputPolicy()], "one unqualified mkv")
