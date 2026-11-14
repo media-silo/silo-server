@@ -41,13 +41,7 @@ public final class FileServer: Service, Sendable {
         self.host = advertisedHost
         self.port = port
         self.logger = logger
-        var configuration = try NIOHTTPServerConfiguration(
-            bindTarget: .hostAndPort(host: host, port: port),
-            supportedHTTPVersions: [.http1_1],
-            transportSecurity: .plaintext
-        )
-        configuration.connectionTimeouts = .silo
-        server = NIOHTTPServer(logger: logger, configuration: configuration)
+        server = NIOHTTPServer(logger: logger, configuration: try .silo(host: host, port: port))
     }
 
     /// Publishes a file under a path and returns where it is and the secret to fetch it with.

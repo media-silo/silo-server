@@ -8,9 +8,12 @@ import HTTPAPIs
 import HTTPTypes
 import Logging
 import NIOHTTPServer
+import SiloApp
 import SiloKit
 import SiloWorker
 import Testing
+
+@testable import silo
 
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -19,14 +22,27 @@ import FoundationNetworking
 /// The file a node serves and the fetch another node makes of it, over a real socket: the two
 /// halves of principle 6, files moving between the machines that have them.
 struct FileServerTests {
-    /// The header timer runs while a handler answers, so every server of the silo's gives it an
-    /// hour; the idle and body timers keep the library's defaults.
-    @Test func everyServerKeepsAConnectionOpenWhileItAnswers() {
+    /// The header timer runs while a handler answers, so every server of the silo's, the API and a
+    /// participant's file server, is made from one configuration that gives it an hour; the idle and
+    /// body timers keep the library's defaults.
+    @Test func everyServerKeepsAConnectionOpenWhileItAnswers() async throws {
         let library = NIOHTTPServerConfiguration.ConnectionTimeouts()
-        #expect(NIOHTTPServerConfiguration.ConnectionTimeouts.silo.readHeader == .seconds(3600))
+        let configuration = try NIOHTTPServerConfiguration.silo(host: "127.0.0.1", port: 0)
+        #expect(configuration.connectionTimeouts.readHeader == .seconds(3600))
         #expect(library.readHeader == .seconds(30), "the library's own, which a slow answer outlasts")
-        #expect(NIOHTTPServerConfiguration.ConnectionTimeouts.silo.idle == library.idle)
-        #expect(NIOHTTPServerConfiguration.ConnectionTimeouts.silo.readBody == library.readBody)
+        #expect(configuration.connectionTimeouts.idle == library.idle)
+        #expect(configuration.connectionTimeouts.readBody == library.readBody)
+        #expect(configuration.supportedHTTPVersions == [.http1_1])
+
+        // The silo's API server is made from it: it binds where the silo's configuration says.
+        let state = FileManager.default.temporaryDirectory.appendingPathComponent("silo-api-\(UUID().uuidString)")
+        let api = try AppBootstrap(config: SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: state)).createServer()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await api.serve { _, _, _, _ in } }
+            defer { group.cancelAll() }
+            let bound = try await api.listeningAddresses.first?.port
+            #expect((bound ?? 0) > 0)
+        }
     }
 
     @Test func aPublishedFileIsFetchedByRangeWithItsSecretAndByNothingElse() async throws {

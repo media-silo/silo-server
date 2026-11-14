@@ -15,3 +15,18 @@ extension NIOHTTPServerConfiguration.ConnectionTimeouts {
     /// sends anything. The idle and body timeouts keep the library's defaults. (#197)
     public static let silo = Self(readHeader: .seconds(3600))
 }
+
+extension NIOHTTPServerConfiguration {
+    /// What every server of the silo's runs with: plaintext HTTP/1.1 bound to `host` and `port`, under
+    /// the silo's timeouts. The silo's API and a participant's file server are both made from it, so
+    /// neither can be given the library's timeouts by being built some other way.
+    public static func silo(host: String, port: Int) throws -> Self {
+        var configuration = try Self(
+            bindTarget: .hostAndPort(host: host, port: port),
+            supportedHTTPVersions: [.http1_1],
+            transportSecurity: .plaintext
+        )
+        configuration.connectionTimeouts = .silo
+        return configuration
+    }
+}

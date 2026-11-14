@@ -82,14 +82,7 @@ package struct AppBootstrap {
     /// The concrete server rather than `some HTTPServer`: the proposal's reader and sender are
     /// `~Copyable`, which a bare opaque return cannot express.
     package func createServer() throws -> NIOHTTPServer {
-        var configuration = try NIOHTTPServerConfiguration(
-            bindTarget: .hostAndPort(host: config.host, port: config.port),
-            supportedHTTPVersions: [.http1_1],
-            transportSecurity: .plaintext
-        )
-        // An hour for the header timer, which runs while a handler answers. `ConnectionTimeouts.silo`.
-        configuration.connectionTimeouts = .silo
-        return NIOHTTPServer(logger: Logger(label: "silo"), configuration: configuration)
+        NIOHTTPServer(logger: Logger(label: "silo"), configuration: try .silo(host: config.host, port: config.port))
     }
 
     package func createRouteBuilder<Server: HTTPServer>(
