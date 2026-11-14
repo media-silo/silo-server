@@ -121,6 +121,106 @@ struct CheckTests {
         return false
     }
 
+    /// Edits the serial in the library's index and on disk, as the container route does.
+    private static func editSerial(_ bench: Bench, _ change: (inout Container) -> Void) async throws {
+        let library = try #require(bench.libraries.library("main"))
+        let row = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        var serial = try #require(try bench.index.sidecar(Fixture.serial.id, in: "main")).container
+        change(&serial)
+        let outcome = try await ContainerEditor.edit(
+            Fixture.serial.id,
+            in: library,
+            document: String(decoding: ContainerFile.data(for: serial), as: UTF8.self),
+            basedOn: row.digest,
+            dryRun: false,
+            libraries: bench.libraries,
+            index: bench.index
+        )
+        #expect(outcome.applied)
+    }
+
+    /// The item is read from its container as the library holds it now, not as it was when the
+    /// recipe was committed: a feature retyped moves its audio from one rule to another, and the
+    /// check says what moved.
+    @Test func aContainerEditThatChangesADecisionLeavesThePresentationOutOfDate() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        #expect(try bench.checkService.pass() == 1)
+        #expect(bench.checks.check(of: job.id)?.outcome == .current)
+
+        try await Self.editSerial(bench) { $0.features[0].type = .isolatedMusic }
+        #expect(try bench.checkService.pass() == 1, "the stack is as it was, but the item is not")
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .outOfDate)
+        #expect(check.changes.map(\.index) == [2], "the commentary, now isolated music, is lossless and kept so")
+        #expect(check.reason == "audio 2 role: commentary → isolatedMusic")
+        #expect(try bench.checkService.pass() == 0, "and nothing is checked twice")
+    }
+
+    /// An edit of a container asks the running check for a pass, as a walk that read something does.
+    @Test func aContainerEditAsksTheRunningCheckForAPass() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { await bench.checkService.run() }
+            defer { group.cancelAll() }
+            #expect(await Self.checked(job.id, in: bench))
+            try await Self.editSerial(bench) { $0.features[0].type = .isolatedMusic }
+            var outcome = bench.checks.check(of: job.id)?.outcome
+            for _ in 0..<500 where outcome != .outOfDate {
+                try await Task.sleep(for: .milliseconds(10))
+                outcome = bench.checks.check(of: job.id)?.outcome
+            }
+            #expect(outcome == .outOfDate, "checked again without anything else asking")
+        }
+    }
+
+    /// A change the rules decide nothing by is read, and leaves the presentation current, saying
+    /// nothing of it.
+    @Test func aContainerEditTheRulesDoNotReadLeavesThePresentationCurrent() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+
+        try await Self.editSerial(bench) { serial in
+            serial.sequences[0].items[2] = .leaf(
+                Entry.Leaf(id: ItemID("part3")!, type: .featurette, title: "Part Three")
+            )
+        }
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .current && check.reason == nil)
+        #expect(check.item?.kind == .featurette, "read as it is now")
+        #expect(try bench.checkService.pass() == 0)
+    }
+
+    /// An item its container no longer holds makes no recipe, so its presentation is recorded
+    /// unresolvable, saying so.
+    @Test func anItemGoneFromItsContainerIsUnresolvable() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let job = try await Self.placed(bench)
+        _ = try bench.checkService.pass()
+
+        // The container route refuses to take away an item with presentations, so only a sidecar
+        // edited by hand, and read by a walk, can do this.
+        let library = try #require(bench.libraries.library("main"))
+        let row = try #require(try bench.index.container(Fixture.serial.id, in: "main"))
+        let file = library.root.appendingPathComponent(row.folder).appendingPathComponent("container.smd")
+        var serial = try #require(try bench.index.sidecar(Fixture.serial.id, in: "main")).container
+        serial.sequences[0].items.removeLast()
+        try SidecarFile.data(settingContainer: serial, in: try Data(contentsOf: file)).write(to: file)
+        try await bench.libraries.walk(library)
+        #expect(try bench.checkService.pass() == 1)
+        let check = try #require(bench.checks.check(of: job.id))
+        #expect(check.outcome == .unresolvable)
+        #expect(check.reason == "Pyramids of Mars has no item part3")
+        #expect(try bench.checkService.pass() == 0, "and is not checked again until something changes")
+    }
+
     @Test func aPromotionThatChangesADecisionLeavesThePresentationOutOfDate() async throws {
         let bench = try Bench()
         defer { bench.remove() }

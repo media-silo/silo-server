@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import Foundation
+import SmdKit
 
 /// A stack as a check records it: the ruleset at its version, and the layers above it, nearest
 /// first. Two equal stacks resolve a recipe's facts alike, which is what lets a check be skipped.
@@ -12,6 +13,45 @@ public struct CheckedStack: Hashable, Sendable, Codable {
     public init(ruleset: RulesetRef, layers: [RecipeLayer]) {
         self.ruleset = ruleset
         self.layers = layers
+    }
+}
+
+/// What a check read of a presentation's item from its container: the facts that come from the
+/// lineage, which an edit of the container can change, rather than from the sources, which do not.
+/// A check is made again when these differ from the ones it was last made with, as when its stack
+/// differs.
+public struct CheckedItem: Hashable, Sendable, Codable {
+    public var kind: EntryType?
+    public var extra: Bool?
+    /// Each audio stream's role, in the file's audio order.
+    public var roles: [AudioRole]
+
+    public init(kind: EntryType?, extra: Bool?, roles: [AudioRole]) {
+        self.kind = kind
+        self.extra = extra
+        self.roles = roles
+    }
+
+    /// What moved from this to another, a line each: `kind: featurette → trailer`, say.
+    public func moves(to other: CheckedItem) -> [String] {
+        var moves: [String] = []
+        if kind != other.kind {
+            moves.append("kind: \(kind?.rawValue ?? "none") → \(other.kind?.rawValue ?? "none")")
+        }
+        if extra != other.extra {
+            moves.append("extra: \(extra.map(String.init) ?? "none") → \(other.extra.map(String.init) ?? "none")")
+        }
+        for (position, (was, now)) in zip(roles, other.roles).enumerated() where was != now {
+            moves.append("audio \(position + 1) role: \(was.rawValue) → \(now.rawValue)")
+        }
+        return moves
+    }
+}
+
+extension SourceFacts {
+    /// The facts of these that come from the lineage.
+    public var item: CheckedItem {
+        CheckedItem(kind: kind, extra: extra, roles: audio.map(\.role))
     }
 }
 
@@ -50,9 +90,12 @@ public struct CheckRecord: Hashable, Sendable, Codable {
     public var checkedAt: Date
     public var outcome: Outcome
     public var changes: [StreamChange]
-    /// Why the rules would make the presentation otherwise, beyond its streams: the output, or no
-    /// recipe at all.
+    /// Why the rules would make the presentation otherwise, beyond its streams: the output, what
+    /// moved in the item's container, or no recipe at all.
     public var reason: String?
+    /// The item as the check read it from its container; nil in a record made before checks read
+    /// it, which is therefore checked again.
+    public var item: CheckedItem?
 
     public init(
         job: String,
@@ -61,7 +104,8 @@ public struct CheckRecord: Hashable, Sendable, Codable {
         checkedAt: Date = .now,
         outcome: Outcome,
         changes: [StreamChange] = [],
-        reason: String? = nil
+        reason: String? = nil,
+        item: CheckedItem? = nil
     ) {
         self.job = job
         self.recipe = recipe
@@ -70,6 +114,7 @@ public struct CheckRecord: Hashable, Sendable, Codable {
         self.outcome = outcome
         self.changes = changes
         self.reason = reason
+        self.item = item
     }
 }
 

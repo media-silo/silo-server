@@ -295,14 +295,21 @@ stores nothing. A recipe SHALL need no field for its branch: its version is on e
 Pinned by: `Tests/SiloTests/BranchApplicationTests.swift` (`anApplicationOnABranchTakesItsHead`).
 
 ### Requirement: A placed presentation is out of date when its rules would now decide it differently
-A presentation placed by a job SHALL be out of date when the facts of the committed recipe the job
-ran, resolved through the stack that applies to the recipe's binding now — its binding's rules in
-force, its lineage's container rules in force, then the head of the branch the recipe's ruleset
-version is on, or of the standard once that branch is promoted — for the recipe's output, give
-decisions that differ from the ones the recipe recorded in any stream's action or its settings, or
-give a different output policy, or give no recipe. Which layer or rule decided a stream SHALL NOT be
-compared. A
-presentation placed without a job SHALL never be checked.
+A presentation placed by a job SHALL be out of date when the facts its binding gives now, resolved
+through the stack that applies to the recipe's binding now — its binding's rules in force, its
+lineage's container rules in force, then the head of the branch the recipe's ruleset version is on,
+or of the standard once that branch is promoted — for the recipe's output, give decisions that
+differ from the ones the recipe recorded in any stream's action or its settings, or give a
+different output policy, or give no recipe. The facts that come from the binding's sources are as
+the recipe recorded them, since a source does not change once registered; the facts that come from
+the lineage — the item's `kind`, whether it is an `extra`, and the role each mapped audio stream
+takes from its feature — SHALL be read from the item's container as the library holds it now, so an
+edit of the container reaches the presentations of its items. An item its container no longer
+holds gives no recipe. Which layer or rule decided a stream SHALL NOT be compared. When a
+presentation is out of date and a fact from the lineage moved, the check's reason SHALL name each
+that moved, as `kind: featurette → trailer`, `extra: false → true` or
+`audio 2 role: commentary → isolatedMusic`. A presentation placed without a job SHALL never be
+checked.
 
 #### Scenario: a promotion that changes a decision
 - **WHEN** a presentation's commentary was encoded at 160k by `household@7`, and a branch encoding
@@ -319,22 +326,41 @@ presentation placed without a job SHALL never be checked.
   rule for that kind of stream changes from FLAC to another encode
 - **THEN** the presentation is current for that stream
 
-Pinned by: `Tests/SiloTests/CheckTests.swift` (`aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `aPromotionThatChangesNothingForAPresentationLeavesItCurrent`, `aPersonsDecisionStandsWhenTheRulesBeneathItChange`).
+#### Scenario: a feature retyped in the item's container
+- **WHEN** a presentation's second audio stream was encoded as a commentary, and the container's
+  feature it is mapped to is edited from a commentary to isolated music
+- **THEN** the presentation is out of date, its second audio stream encoded losslessly instead, and
+  the reason is `audio 2 role: commentary → isolatedMusic`
+
+#### Scenario: an edit the rules decide nothing by
+- **WHEN** the item of a presentation is edited from an episode to a featurette, and no rule tests
+  `kind`
+- **THEN** the presentation is current, with no reason
+
+#### Scenario: an item gone from its container
+- **WHEN** the item of a presentation is taken out of its container's sidecar by hand, and the
+  library is walked
+- **THEN** the presentation is unresolvable, because the container has no such item
+
+Pinned by: `Tests/SiloTests/CheckTests.swift` (`aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `aPromotionThatChangesNothingForAPresentationLeavesItCurrent`, `aPersonsDecisionStandsWhenTheRulesBeneathItChange`,
+`aContainerEditThatChangesADecisionLeavesThePresentationOutOfDate`, `aContainerEditTheRulesDoNotReadLeavesThePresentationCurrent`, `anItemGoneFromItsContainerIsUnresolvable`).
 
 ### Requirement: The silo checks placed presentations in the background and records what it finds
 The silo SHALL keep, for each presentation placed by a job, its latest check: the stack it was checked
-against, when, and the outcome — `current`, `outOfDate` with each stream that would change and from
+against, the facts it read from the item's lineage, when, and the outcome — `current`, `outOfDate` with each stream that would change and from
 what to what, or `unresolvable` with the resolver's reason. A check SHALL be begun by a ruleset version
-stored, a promotion, a binding's rules moved to a new version, and a walk that finds a sidecar whose
-`<rules>` names another version than the index last held; and SHALL reach, for a ruleset, the placed
+stored, a promotion, a binding's rules moved to a new version, an edit of a container, and a walk
+that reads a sidecar that changed; and SHALL reach, for a ruleset, the placed
 recipes whose ruleset version is on the changed branch, or on the standard after a promotion; for a
 binding's rules, that binding's placed recipes; and for a container's, every placed recipe whose
 binding's lineage holds the container. The work remaining SHALL be every presentation whose latest
-check's stack is not the stack that applies to it now, so a check stopped or interrupted SHALL resume
+check's stack is not the stack that applies to it now, or whose latest check read other facts from
+its item's lineage than the lineage gives now, so a check stopped or interrupted SHALL resume
 with what is left and check nothing twice, and changes in quick succession SHALL leave one stack to
 check against. A pass that fails SHALL be logged and SHALL NOT stop the checking: the next change
-that begins a check SHALL get a pass of its own. A check SHALL read no media file, run no tool and change no recipe: it resolves
-recorded facts through rules the silo and the library already hold.
+that begins a check SHALL get a pass of its own. A check SHALL read no media file, run no tool and
+change no recipe: it resolves recorded facts and the lineage the index holds through rules the silo
+and the library already hold.
 
 #### Scenario: a container's rules move on
 - **WHEN** a container's `<rules>` moves from version 1 to version 2, and the library is walked
@@ -349,7 +375,12 @@ recorded facts through rules the silo and the library already hold.
 - **WHEN** a pass cannot record what it found, and a presentation is placed afterwards
 - **THEN** the failure is logged, and the presentation placed afterwards is checked
 
-Pinned by: `Tests/SiloTests/CheckTests.swift` (`aContainersRulesReachThePresentationsBelowItAndNoOthers`, `aCheckStoppedHalfWayResumesWithWhatIsLeft`, `aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `theRunningCheckPassesAtStartAndWhenAsked`, `aPassThatFailsLeavesTheCheckRunning`).
+#### Scenario: an edit of a container asks for a check
+- **WHEN** the check is running and a container holding a placed presentation's item is edited
+- **THEN** the presentation is checked again, with nothing else asking
+
+Pinned by: `Tests/SiloTests/CheckTests.swift` (`aContainersRulesReachThePresentationsBelowItAndNoOthers`, `aCheckStoppedHalfWayResumesWithWhatIsLeft`, `aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `theRunningCheckPassesAtStartAndWhenAsked`, `aPassThatFailsLeavesTheCheckRunning`,
+`aContainerEditAsksTheRunningCheckForAPass`).
 
 ### Requirement: An out-of-date presentation is reported with its binding's sources and their copies
 Each out-of-date presentation SHALL be reported with the sources of its recipe's binding, in segment
