@@ -1691,8 +1691,9 @@ paths:
       operationId: fetchTrial
       summary: Fetch an encoded trial's output again
       description: >
-        The silo fetches a trial's output when it is encoded; when that fetch failed, the job is left
-        encoded with the failure recorded, and this asks again. Operator only.
+        The silo fetches a trial's output when it is encoded, and at its next start when it stopped
+        first; when that fetch failed, the job is left encoded with the failure recorded, and this
+        asks again. Operator only.
       tags: [Jobs]
       security:
         - operator: []

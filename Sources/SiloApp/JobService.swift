@@ -3,6 +3,7 @@
 
 import Foundation
 import Logging
+import ServiceLifecycle
 import SiloKit
 import SiloLibrary
 import SiloStore
@@ -10,6 +11,7 @@ import SmdKit
 import SmdSidecar
 import Synchronization
 import Wire
+import WireMVC
 
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -17,9 +19,11 @@ import FoundationNetworking
 
 /// The job's states and every transition between them, in one place, with the job store as the
 /// only thing it writes but for the one recipe a job commits. The controllers translate; the
-/// embedded node calls this directly.
+/// embedded node calls this directly. Also the background service that fetches each encoded
+/// trial's output into the trial area.
 @Singleton
-package struct JobService: Sendable, JobsAPI {
+@BackgroundService
+package struct JobService: Service, JobsAPI {
     package static let leaseLength: TimeInterval = 120
     package static let attemptsAllowed = 3
 
@@ -33,6 +37,9 @@ package struct JobService: Sendable, JobsAPI {
     private let checks: CheckSignal
     /// The trial jobs whose output is being fetched, so that one is never fetched twice at once.
     private let fetching = InFlight()
+    /// The encoded trials whose output is to be fetched, which `run` fetches.
+    private let trialsQueued: AsyncStream<String>
+    private let trialQueue: AsyncStream<String>.Continuation
     private let logger = Logger(label: "silo.jobs")
 
     @Inject
@@ -54,6 +61,7 @@ package struct JobService: Sendable, JobsAPI {
         self.bindings = bindings
         self.recipes = recipes
         self.libraries = libraries
+        (trialsQueued, trialQueue) = AsyncStream.makeStream(of: String.self)
     }
 
     // MARK: - Reading
@@ -238,9 +246,9 @@ package struct JobService: Sendable, JobsAPI {
                 job.failure = "the output's layout is not the recipe's"
             }
         }!
-        // A trial's output is fetched once it is encoded, without the node waiting on it.
+        // A trial's output is fetched once it is encoded, by `run`, without the node waiting on it.
         if completed.trial, completed.state == .encoded {
-            Task { _ = try? await fetchTrial(id) }
+            trialQueue.yield(id)
         }
         return completed
     }
@@ -289,6 +297,27 @@ package struct JobService: Sendable, JobsAPI {
 
     // MARK: - Trials
 
+    /// Fetches each encoded trial's output while the silo runs: first every trial encoded and not
+    /// yet fetched when it started, then each as its node completes it. Trials are fetched side by
+    /// side. Stopping the silo cancels a fetch under way, which leaves its job encoded with no
+    /// failure recorded, for the next start to fetch. The silo runs it once, among its background
+    /// services.
+    package func run() async {
+        await cancelWhenGracefulShutdown { await fetchingTrials() }
+    }
+
+    private func fetchingTrials() async {
+        for job in jobs.all() where job.trial && job.state == .encoded && job.output != nil {
+            trialQueue.yield(job.id)
+        }
+        await withDiscardingTaskGroup { group in
+            for await id in trialsQueued {
+                // A fetch's failure is recorded on its job, for the operator to ask again.
+                group.addTask { _ = try? await fetchTrial(id) }
+            }
+        }
+    }
+
     /// Where a trial's output is kept: `<state>/trials/<job id>.<ext>`.
     package func trialFile(of job: Job) -> URL {
         let ext = job.output?.url.pathExtension ?? ""
@@ -298,7 +327,8 @@ package struct JobService: Sendable, JobsAPI {
 
     /// Fetches an encoded trial's output from the node that holds it into the trial area, as
     /// placement would into a library, and makes the job `tried`. A fetch that fails leaves the job
-    /// `encoded` with the failure recorded, to be fetched again when the operator asks.
+    /// `encoded` with the failure recorded, to be fetched again when the operator asks. A fetch
+    /// cancelled leaves it `encoded` with nothing recorded: being stopped is not a failure.
     package func fetchTrial(_ id: String) async throws -> Job {
         guard let current = jobs.job(id), current.trial else { throw NoSuchJob() }
         if current.state == .tried { return current }
@@ -319,6 +349,8 @@ package struct JobService: Sendable, JobsAPI {
             } else {
                 try await Self.fetch(output, to: destination)
             }
+        } catch  where Task.isCancelled {
+            throw CancellationError()
         } catch {
             _ = try jobs.update(id) { $0.failure = "trial fetch: \(error.localizedDescription)" }
             throw error

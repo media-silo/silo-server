@@ -93,6 +93,21 @@ struct JobServiceTests {
 
         func remove() { try? FileManager.default.removeItem(at: root) }
 
+        /// The job service as a silo started again over the same state makes it: a new service, with
+        /// nothing queued but what its run finds.
+        func restarted() -> JobService {
+            JobService(
+                config: config,
+                jobs: store,
+                sources: sources,
+                bindings: bindings,
+                recipes: recipes,
+                libraries: libraries,
+                stagedRules: stagedRules,
+                checks: signal
+            )
+        }
+
         /// The household ruleset with a second output, for the mobile profile.
         static let household = Fixture.household.replacingOccurrences(
             of: #"<output container="mkv"/>"#,
@@ -242,6 +257,15 @@ struct JobServiceTests {
     }
 
     /// Waits for a trial's fetch, which follows its completion without the node waiting on it.
+    /// The body, with the service running beside it as the silo runs it, stopped once the body ends.
+    private func running<T>(_ service: JobService, _ body: () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { await service.run() }
+            defer { group.cancelAll() }
+            return try await body()
+        }
+    }
+
     private func settled(_ id: String, in service: JobService, until done: (Job) -> Bool) async throws -> Job {
         for _ in 0..<500 {
             let job = try service.job(id)
@@ -264,12 +288,14 @@ struct JobServiceTests {
         #expect(claimed.id == pending.id, "claimed as any job is")
         let output = bench.root.appendingPathComponent("trial.mkv")
         try Fixture.mediaBytes.write(to: output)
-        _ = try await service.complete(
-            claimed.id,
-            output: FileRef(holder: "box", url: output, path: output.path, secret: ""),
-            result: EncodeResult(streams: ["video h264", "audio flac", "audio aac"], layoutMatched: true)
-        )
-        let tried = try await settled(claimed.id, in: service) { $0.state != .encoded }
+        let tried = try await running(service) {
+            _ = try await service.complete(
+                claimed.id,
+                output: FileRef(holder: "box", url: output, path: output.path, secret: ""),
+                result: EncodeResult(streams: ["video h264", "audio flac", "audio aac"], layoutMatched: true)
+            )
+            return try await settled(claimed.id, in: service) { $0.state != .encoded }
+        }
         #expect(tried.state == .tried)
         let kept = service.trialFile(of: tried)
         #expect(kept.path == bench.config.stateDirectory.appendingPathComponent("trials/\(tried.id).mkv").path)
@@ -301,8 +327,10 @@ struct JobServiceTests {
         _ = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"]))
         // A node that has gone: nothing answers at its address.
         let gone = FileRef(holder: "box", url: URL(string: "http://127.0.0.1:9/files/out.mkv")!, secret: "s")
-        _ = try await service.complete(job.id, output: gone, result: EncodeResult(streams: [], layoutMatched: true))
-        let failed = try await settled(job.id, in: service) { $0.failure != nil }
+        let failed = try await running(service) {
+            _ = try await service.complete(job.id, output: gone, result: EncodeResult(streams: [], layoutMatched: true))
+            return try await settled(job.id, in: service) { $0.failure != nil }
+        }
         #expect(
             failed.state == .encoded && failed.failure?.hasPrefix("trial fetch: ") == true,
             "encoded still, the failure recorded"
@@ -316,6 +344,56 @@ struct JobServiceTests {
         }
         let tried = try await service.fetchTrial(job.id)
         #expect(tried.state == .tried && tried.failure == nil, "fetched again when asked")
+    }
+
+    /// A trial encoded while the silo was stopped, its output never fetched, is fetched when the
+    /// service starts, without anyone asking.
+    @Test func aTrialEncodedButNotFetchedIsFetchedWhenTheSiloStarts() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        let output = bench.root.appendingPathComponent("waiting.mkv")
+        try Fixture.mediaBytes.write(to: output)
+        var waiting = Job(id: "waiting", state: .encoded, recipe: "r", trial: true)
+        waiting.output = FileRef(holder: "embedded", url: output, path: output.path, secret: "")
+        try bench.store.insert(waiting)
+
+        let tried = try await running(service) { try await settled("waiting", in: service) { $0.state != .encoded } }
+        #expect(tried.state == .tried)
+        #expect(try Data(contentsOf: service.trialFile(of: tried)) == Fixture.mediaBytes)
+    }
+
+    /// A fetch the silo's stop cuts short records no failure, since being stopped is not one, and
+    /// leaves the trial encoded for the next start, which fetches it.
+    @Test(.timeLimit(.minutes(1))) func aTrialFetchCutShortByAStopIsFetchedAtTheNextStart() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        let holder = try SilentHolder()
+        var waiting = Job(id: "waiting", state: .encoded, recipe: "r", trial: true)
+        waiting.output = FileRef(
+            holder: "box",
+            url: URL(string: "http://127.0.0.1:\(holder.port)/files/out.mkv")!,
+            secret: "s"
+        )
+        try bench.store.insert(waiting)
+
+        try await running(service) {
+            while !holder.hasConnection { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        let stopped = try service.job("waiting")
+        #expect(stopped.state == .encoded, "left for the next start")
+        #expect(stopped.failure == nil, "a stop is not a failure")
+
+        // The node is back, here as a file on this machine, and the silo starts again.
+        let output = bench.root.appendingPathComponent("back.mkv")
+        try Fixture.mediaBytes.write(to: output)
+        _ = try bench.store.update("waiting") {
+            $0.output = FileRef(holder: "embedded", url: output, path: output.path, secret: "")
+        }
+        let again = bench.restarted()
+        let tried = try await running(again) { try await settled("waiting", in: again) { $0.state != .encoded } }
+        #expect(tried.state == .tried)
     }
 
     @Test func aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad() throws {

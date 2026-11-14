@@ -284,7 +284,10 @@ Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`rulesStoredBeforePlacemen
 When a trial job is encoded, the silo SHALL fetch its output, as placement fetches one, into
 `trials/<job id>.<ext>` in its state directory, and the job SHALL become `tried`. A fetch that fails
 SHALL leave the job `encoded` with the failure recorded, and the silo SHALL fetch it again when the
-operator asks. The node that reported the job complete SHALL NOT wait on the fetch. Placing a trial
+operator asks. The node that reported the job complete SHALL NOT wait on the fetch, which a
+background service makes: on start it SHALL first fetch every trial job that is `encoded`, and
+then each as it is reported complete. Stopping the silo during a fetch SHALL leave the job
+`encoded` with no failure recorded, for the next start to fetch. Placing a trial
 job SHALL be refused with 409, saying a trial is never placed, and the background check SHALL never
 check a trial.
 
@@ -297,5 +300,14 @@ check a trial.
 - **THEN** the job stays `encoded` with the failed fetch recorded, and once the output can be had,
   asking again makes it `tried`
 
+#### Scenario: a trial left encoded when the silo stopped
+- **WHEN** the silo starts with a trial job `encoded` and its output not fetched
+- **THEN** the output is fetched without anyone asking, and the job is `tried`
+
+#### Scenario: a fetch cut short by the silo stopping
+- **WHEN** the silo stops while a trial's output is being fetched, and starts again
+- **THEN** the job is `encoded` with no failure recorded, and the next start fetches it
+
 Pinned by: `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`,
-`aTrialWhoseFetchFailsStaysEncodedToBeFetchedAgain`).
+`aTrialWhoseFetchFailsStaysEncodedToBeFetchedAgain`, `aTrialEncodedButNotFetchedIsFetchedWhenTheSiloStarts`,
+`aTrialFetchCutShortByAStopIsFetchedAtTheNextStart`).
