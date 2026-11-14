@@ -143,10 +143,21 @@ package struct JobService: Sendable, JobsAPI {
     /// The first pending job the node can do, preferring one of whose every source it holds a copy,
     /// leased to it, with what the node needs to run it. Lapsed leases are reclaimed first, so a job a
     /// vanished node held is offered again.
+    ///
+    /// A node that claims again while it holds a claimed job it has not yet reported on is answered
+    /// that job, its lease renewed, rather than leased a second: its first claim's answer never
+    /// reached it, so it doesn't know it holds one. Without this the first job would sit claimed
+    /// until its lease lapsed, and three answers lost that way would fail a job no node had failed.
     package func claim(node: String, capabilities: Set<String>) async throws -> Claim? {
         try reclaimLapsed()
+        let held = try jobs.updateFirst(
+            where: { $0.state == .claimed && $0.lease?.node == node },
+            sortedBy: { $0.createdAt < $1.createdAt },
+            { $0.lease = Lease(node: node, expiresAt: .now.addingTimeInterval(Self.leaseLength)) }
+        )
+        if let held { return claim(of: held, by: node) }
         // Which jobs the node holds every source of, worked out before the job store's lock is taken.
-        let held = Set(
+        let local = Set(
             jobs.all().filter { $0.state == .pending }.filter { job in
                 guard let sources = self.sources(of: job), !sources.isEmpty else { return false }
                 return sources.allSatisfy { source in source.copies.contains { $0.holder == node } }
@@ -155,8 +166,8 @@ package struct JobService: Sendable, JobsAPI {
         let leased = try jobs.updateFirst(
             where: { $0.state == .pending && Set($0.requirements).isSubset(of: capabilities) },
             sortedBy: { lhs, rhs in
-                let lhsHeld = held.contains(lhs.id)
-                let rhsHeld = held.contains(rhs.id)
+                let lhsHeld = local.contains(lhs.id)
+                let rhsHeld = local.contains(rhs.id)
                 return lhsHeld != rhsHeld ? lhsHeld : lhs.createdAt < rhs.createdAt
             }
         ) { job in

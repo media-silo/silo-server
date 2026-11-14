@@ -1505,7 +1505,9 @@ paths:
       summary: A node asks for work
       description: >
         The first pending job the node's encoders can do, preferring one of whose every source the
-        node holds a copy, leased to it for two minutes and renewed by every progress report.
+        node holds a copy, leased to it for two minutes and renewed by every progress report. A
+        node that claims again while it holds a claimed job it has not yet reported on is answered
+        that job, its lease renewed, since the answer to its first claim never reached it.
       tags: [Jobs]
       security:
         - node: []

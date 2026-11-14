@@ -74,7 +74,9 @@ SHALL carry the job's recipe and, for each of its binding's segments in order, o
 segment's source — the claimant's own when it holds one — as a file reference whole, secret
 included, and the segment's span in seconds: the claiming node is handed the secret it will fetch
 by. Lapsed leases SHALL be reclaimed before an offer is made, so a job a vanished node held is
-offered again.
+offered again. A claim by a node that holds a `claimed` job it has not yet reported on SHALL be
+answered that job, its lease renewed for two minutes from the claim and no attempt added, rather
+than leasing it a second: the answer to its first claim never reached it.
 
 #### Scenario: capabilities decide
 - **WHEN** a job needs `["aac", "flac"]` and a node claiming with `["flac"]` asks, then one with
@@ -88,7 +90,12 @@ offered again.
 - **THEN** the answer carries one segment: a copy of that source, secret included, from 1497.6 to
   2995.2 seconds
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aClaimPrefersWhatTheNodeHoldsAndHandsOverEachSpan`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, which measures that the answer carries the recipe and the segment's copy, secret included).
+#### Scenario: a claim whose answer was lost is made again
+- **WHEN** a node claims, its answer is lost, and it claims again before reporting on the job
+- **THEN** the second answer holds the same job with its lease renewed and one attempt recorded,
+  and the next pending job is left for another node
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aClaimPrefersWhatTheNodeHoldsAndHandsOverEachSpan`, `aClaimRepeatedByTheNodeHoldingAJobIsAnsweredThatJob`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, which measures that the answer carries the recipe and the segment's copy, secret included).
 
 ### Requirement: A progress report is the heartbeat — the lease renews, the state answers
 `POST /v1/jobs/{id}/progress` with the fraction, seconds, rate and speed the encoder reports
