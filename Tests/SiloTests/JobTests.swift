@@ -153,6 +153,34 @@ struct JobServiceTests {
         }
     }
 
+    /// A node whose claim's answer was lost claims again, and is answered the job it holds, with its
+    /// lease renewed and no second attempt, rather than leased another. Once it has reported on the
+    /// job, it knows it holds it, and a claim is for more work.
+    @Test func aClaimRepeatedByTheNodeHoldingAJobIsAnsweredThatJob() async throws {
+        let bench = try JobServiceTests.Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        try bench.store.insert(Job(id: "first", createdAt: .now.addingTimeInterval(-2), recipe: "r"))
+        try bench.store.insert(Job(id: "second", createdAt: .now.addingTimeInterval(-1), recipe: "r"))
+
+        let claimed = try #require(try await service.claim(node: "box", capabilities: []))
+        #expect(claimed.job.id == "first")
+        let leased = try #require(claimed.job.lease?.expiresAt)
+        try await Task.sleep(for: .milliseconds(20))
+
+        let again = try #require(try await service.claim(node: "box", capabilities: []))
+        #expect(again.job.id == "first", "the job it holds, not a second")
+        #expect(again.job.attempts.count == 1, "one attempt: the first claim's")
+        #expect(try #require(again.job.lease?.expiresAt) > leased, "the lease renewed")
+        #expect(try service.job("second").state == .pending)
+
+        let other = try #require(try await service.claim(node: "elsewhere", capabilities: []))
+        #expect(other.job.id == "second", "another node is leased the next job")
+
+        _ = try await service.report("first", progress: JobProgress(fraction: 0.1))
+        #expect(try await service.claim(node: "box", capabilities: []) == nil, "reported on: a claim is for more")
+    }
+
     @Test func aJobGoesFromResolvedToPlaced() async throws {
         let bench = try Bench()
         defer { bench.remove() }
@@ -360,6 +388,8 @@ struct JobServiceTests {
             "chapters two and three: from the second's start to the fourth's"
         )
         #expect(claim.segments.allSatisfy { $0.copy.holder == "box" })
+        // Reported on, so the node knows it holds the first, and its next claim is for more.
+        _ = try await service.report(held.id, progress: JobProgress(fraction: 0.1))
         #expect(
             try await service.claim(node: "box", capabilities: ["flac", "aac"])?.job.id == elsewhere.id,
             "then the oldest"
