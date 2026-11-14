@@ -124,6 +124,49 @@ struct FileServerTests {
         #expect(size() == Int64(Trickle.sent), "what arrived is kept, for the next attempt to resume from")
     }
 
+    /// A fetch whose task was cancelled before it began asks the holder for nothing.
+    @Test func aFetchFromACancelledTaskIsNeverStarted() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        // Nothing listens here: a request that went out would fail as a refused connection.
+        let source = FileRef(holder: "elsewhere", url: URL(string: "http://127.0.0.1:9/never")!, secret: "s")
+        let fetched = root.appendingPathComponent("fetched.mkv")
+        let fetching = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await RangeDownloader.download(source, to: fetched)
+        }
+        await #expect(throws: CancellationError.self) { try await fetching.value }
+    }
+
+    /// A holder nobody answers for fails the fetch as the connection did.
+    @Test func aFetchFromAHolderThatIsNotThereFailsAsTheConnectionDid() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = FileRef(holder: "elsewhere", url: URL(string: "http://127.0.0.1:9/never")!, secret: "s")
+        await #expect(throws: URLError.self) {
+            try await RangeDownloader.download(source, to: root.appendingPathComponent("fetched.mkv"))
+        }
+    }
+
+    /// A holder that answers anything but 200 or 206 fails the fetch with its status.
+    @Test func aFetchTheHolderRefusesFailsWithItsStatus() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-files-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try FileServer(host: "127.0.0.1", port: 0, advertisedHost: "127.0.0.1")
+        let serving = Task { try await server.run() }
+        defer { serving.cancel() }
+        let port = try await server.boundPort
+        // Nothing is published at this path, so the holder answers 404.
+        let source = FileRef(holder: "elsewhere", url: URL(string: "http://127.0.0.1:\(port)/files/gone")!, secret: "s")
+        let error = await #expect(throws: WorkerError.self) {
+            try await RangeDownloader.download(source, to: root.appendingPathComponent("fetched.mkv"))
+        }
+        #expect(error?.description == "fetching a source failed: the holder answered 404")
+    }
+
     /// A file longer than the socket buffer arrives whole every time. The server closes a connection whose
     /// request was never read to its end, dropping what of the response is still queued, so before the
     /// handler read its requests a three-megabyte file came back short on some of thirty fetches.

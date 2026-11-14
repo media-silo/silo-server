@@ -393,10 +393,15 @@ public enum RangeDownloader {
                 defer { state.finish = nil }
                 return (state.status, state.finish)
             }
-            if let error {
+            if let error, status == 0 {
+                // No answer at all: the transport's error is why.
                 finish?.resume(throwing: error)
             } else if status != 200 && status != 206 {
+                // A status refused is answered by cancelling the task, which then ends with
+                // `URLError.cancelled`: the status, not that, is why it failed.
                 finish?.resume(throwing: WorkerError.download("the holder answered \(status)"))
+            } else if let error {
+                finish?.resume(throwing: error)
             } else {
                 finish?.resume()
             }

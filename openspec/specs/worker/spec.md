@@ -123,8 +123,13 @@ and throw `CancellationError`, keeping the bytes that arrived for the next attem
   fetch is cancelled once the 64 KB are on disk
 - **THEN** the fetch throws `CancellationError` at once, and the 64 KB stay on disk
 
+#### Scenario: a holder that refuses the fetch
+- **WHEN** the holder answers 404
+- **THEN** the fetch fails as `the holder answered 404`
+
 Pinned by: `Tests/SiloTests/FileServerTests.swift` (`aPublishedFileIsFetchedByRangeWithItsSecretAndByNothingElse`,
-`aCancelledFetchStopsAndKeepsWhatArrived`).
+`aCancelledFetchStopsAndKeepsWhatArrived`, `aFetchFromACancelledTaskIsNeverStarted`,
+`aFetchTheHolderRefusesFailsWithItsStatus`).
 
 ### Requirement: The recipe becomes one encode in the work folder
 A claimed job whose answer carries no recipe SHALL fail at once, with
