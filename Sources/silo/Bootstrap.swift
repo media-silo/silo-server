@@ -2,6 +2,7 @@
 // Copyright (c) 2026 the media-silo project authors
 
 import BasicContainers
+import FileServing
 import Foundation
 import HTTPAPIs
 import HTTPTypes
@@ -81,14 +82,7 @@ package struct AppBootstrap {
     /// The concrete server rather than `some HTTPServer`: the proposal's reader and sender are
     /// `~Copyable`, which a bare opaque return cannot express.
     package func createServer() throws -> NIOHTTPServer {
-        NIOHTTPServer(
-            logger: Logger(label: "silo"),
-            configuration: try .init(
-                bindTarget: .hostAndPort(host: config.host, port: config.port),
-                supportedHTTPVersions: [.http1_1],
-                transportSecurity: .plaintext
-            )
-        )
+        NIOHTTPServer(logger: Logger(label: "silo"), configuration: try .silo(host: config.host, port: config.port))
     }
 
     package func createRouteBuilder<Server: HTTPServer>(

@@ -111,3 +111,19 @@ connection closed once the answer is sent.
 Pinned by: `Tests/SiloTests/FileServerTests.swift` (`aLargeFileArrivesWholeEveryTime`). The silo's own
 routes, the media route among them, are served through wire-mvc, which reads what a route leaves of its
 request; that is pinned by wire-mvc's own live-server test (swift-wire/wire-mvc#257).
+
+### Requirement: Every server of the silo's keeps a connection open while it answers
+The silo's API server and every holder's file server SHALL run with a header-read timeout of one
+hour, and the idle and body-read timeouts of swift-http-server's defaults. The library arms its
+header timer again once a request has arrived, so it runs while the handler works and while the
+answer is sent, and closes the connection when it fires; at the library's thirty seconds, a
+placement that fetches a large output, a walk that moves folders, or a file served for longer than
+that would be cut off part way. An hour is beyond the slowest of them, and still drops a client
+that opens a connection and sends nothing.
+
+#### Scenario: a slow answer is not cut off
+- **WHEN** a handler takes longer than thirty seconds to answer, or a file takes longer than that to send
+- **THEN** the connection stays open until the answer is sent, for up to an hour
+
+Pinned by: `Tests/SiloTests/FileServerTests.swift` (`everyServerKeepsAConnectionOpenWhileItAnswers`), which
+pins the timeouts both servers are configured with rather than waiting thirty seconds.

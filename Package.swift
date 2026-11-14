@@ -250,6 +250,7 @@ let package = Package(
         .executableTarget(
             name: "silo",
             dependencies: [
+                "FileServing",
                 "SiloApp",
                 "SiloAPI",
                 "SiloKit",
