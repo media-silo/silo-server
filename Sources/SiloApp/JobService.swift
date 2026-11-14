@@ -114,28 +114,30 @@ package struct JobService: Service, JobsAPI {
         return job
     }
 
+    // Every change of a job's state checks the state it changes inside the store's `update`, under
+    // its lock, so that two copies of one request cannot both pass the check: a client retrying a
+    // request whose first copy still runs sends them.
+
     package func cancel(_ id: String) throws -> Job {
-        guard let current = jobs.job(id) else { throw NoSuchJob() }
-        switch current.state {
-        case .pending, .encoded, .failed:
-            return try jobs.update(id) {
-                $0.state = .cancelled
-                $0.lease = nil
-            }!
-        case .claimed, .encoding:
-            // The node learns at its next progress report and stops; its fail report finalises.
-            return try jobs.update(id) { $0.state = .cancelling }!
-        case .cancelling, .cancelled, .placing, .placed, .tried:
-            throw WrongState(current.state, "cannot be cancelled")
+        try changing(id) { job throws(WrongState) in
+            switch job.state {
+            case .pending, .encoded, .failed:
+                job.state = .cancelled
+                job.lease = nil
+            case .claimed, .encoding:
+                // The node learns at its next progress report and stops; its fail report finalises.
+                job.state = .cancelling
+            case .cancelling, .cancelled, .placing, .placed, .tried:
+                throw WrongState(job.state, "cannot be cancelled")
+            }
         }
     }
 
     package func retry(_ id: String) throws -> Job {
-        guard let current = jobs.job(id) else { throw NoSuchJob() }
-        guard [.failed, .cancelled].contains(current.state) else {
-            throw WrongState(current.state, "cannot be retried")
-        }
-        return try jobs.update(id) { job in
+        try changing(id) { job throws(WrongState) in
+            guard [.failed, .cancelled].contains(job.state) else {
+                throw WrongState(job.state, "cannot be retried")
+            }
             job.state = .pending
             job.attempts.removeAll()
             job.failure = nil
@@ -143,7 +145,14 @@ package struct JobService: Service, JobsAPI {
             job.progress = nil
             job.output = nil
             job.result = nil
-        }!
+        }
+    }
+
+    /// One job changed under the store's lock by a change that checks its state first and throws
+    /// when the change is not allowed, in which case nothing is written.
+    private func changing(_ id: String, _ change: (inout Job) throws(WrongState) -> Void) throws -> Job {
+        guard let changed = try jobs.update(id, change) else { throw NoSuchJob() }
+        return changed
     }
 
     // MARK: - JobsAPI, the node's side
@@ -221,26 +230,24 @@ package struct JobService: Service, JobsAPI {
         return binding.segments.compactMap { sources.source($0.source) }
     }
 
+    /// Records progress and renews the lease of a job being encoded, and answers its state, which is
+    /// how a cancel reaches the node. A job in any other state, a cancelling one among them, is
+    /// answered as it is and left alone, decided under the lock so a cancel that lands meanwhile is
+    /// never written over.
     package func report(_ id: String, progress: JobProgress) async throws -> JobState {
-        guard let current = jobs.job(id) else { throw NoSuchJob() }
-        switch current.state {
-        case .claimed, .encoding:
-            return try jobs.update(id) { job in
-                job.state = .encoding
-                job.progress = progress
-                job.lease = job.lease.map { Lease(node: $0.node, expiresAt: .now.addingTimeInterval(Self.leaseLength)) }
-            }!.state
-        default:
-            return current.state
-        }
+        try changing(id) { job in
+            guard [.claimed, .encoding].contains(job.state) else { return }
+            job.state = .encoding
+            job.progress = progress
+            job.lease = job.lease.map { Lease(node: $0.node, expiresAt: .now.addingTimeInterval(Self.leaseLength)) }
+        }.state
     }
 
     package func complete(_ id: String, output: FileRef, result: EncodeResult) async throws -> Job {
-        guard let current = jobs.job(id) else { throw NoSuchJob() }
-        guard [.claimed, .encoding].contains(current.state) else {
-            throw WrongState(current.state, "cannot be completed")
-        }
-        let completed = try jobs.update(id) { job in
+        let completed = try changing(id) { job throws(WrongState) in
+            guard [.claimed, .encoding].contains(job.state) else {
+                throw WrongState(job.state, "cannot be completed")
+            }
             job.output = output
             job.result = result
             job.lease = nil
@@ -256,7 +263,7 @@ package struct JobService: Service, JobsAPI {
                 job.state = .failed
                 job.failure = "the output's layout is not the recipe's"
             }
-        }!
+        }
         // A trial's output is fetched once it is encoded, by `run`, without the node waiting on it.
         if completed.trial, completed.state == .encoded {
             trialQueue.yield(id)
@@ -265,9 +272,8 @@ package struct JobService: Service, JobsAPI {
     }
 
     package func fail(_ id: String, reason: String) async throws -> Job {
-        guard let current = jobs.job(id) else { throw NoSuchJob() }
-        guard current.isActive else { throw WrongState(current.state, "cannot be failed") }
-        return try jobs.update(id) { job in
+        try changing(id) { job throws(WrongState) in
+            guard job.isActive else { throw WrongState(job.state, "cannot be failed") }
             job.lease = nil
             if var last = job.attempts.popLast() {
                 last.endedAt = .now
@@ -280,7 +286,7 @@ package struct JobService: Service, JobsAPI {
                 job.state = .failed
                 job.failure = reason
             }
-        }!
+        }
     }
 
     /// A lease that lapsed is a node that vanished: the attempt is lost, and the job is offered
@@ -406,7 +412,7 @@ extension JobService {
             throw WrongState(current.state, "cannot be placed")
         }
         guard let library = libraries.library(binding.library) else { throw NoSuchLibrary() }
-        _ = try jobs.update(id) { $0.state = .placing }
+        try beginPlacing(id)
 
         do {
             let staged = try await Self.stage(output, of: id, in: library)
@@ -475,6 +481,15 @@ extension JobService {
                 job.failure = "placement: \(error.localizedDescription)"
             }
             throw error
+        }
+    }
+
+    /// Sets an encoded job `placing`, checked again under the lock: of two placements sent at once,
+    /// only one begins.
+    private func beginPlacing(_ id: String) throws {
+        _ = try changing(id) { job throws(WrongState) in
+            guard job.state == .encoded else { throw WrongState(job.state, "cannot be placed") }
+            job.state = .placing
         }
     }
 

@@ -182,6 +182,25 @@ its failure, lease, progress, output and result cleared.
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
 
+### Requirement: A job's state is checked and changed in one step
+Every change of a job's state — a cancel, a retry, a progress report, a completion, a failure and
+the start of a placement — SHALL check the state it changes and write the change in one step
+under the job store's lock, so that two copies of one request sent at once, as a client retrying a
+request whose first copy still runs sends them, cannot both pass the check. The copy that finds
+the state already changed SHALL be refused as the wrong state, and a progress report SHALL leave
+a job that is no longer being encoded as it found it.
+
+#### Scenario: a completion and a failure sent at once
+- **WHEN** a claimed job is completed and failed at the same moment
+- **THEN** exactly one of the two is made, and the other is refused as the wrong state
+
+#### Scenario: a report sent as the job is cancelled
+- **WHEN** a claimed job is cancelled while a progress report for it arrives
+- **THEN** the job is `cancelling` afterwards, for the node's next report to learn of
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`twoChangesOfOneJobSentAtOnceAreNeverBothMade`,
+`aReportSentAsAJobIsCancelledNeverUndoesTheCancel`).
+
 ### Requirement: Placement fetches the output from its holder and files it
 `POST /v1/jobs/{id}/place` SHALL take only an `encoded` job with its output present; anything else
 is 409, and a binding naming a library the silo no longer has is 404. The job SHALL become `placing`
