@@ -149,6 +149,9 @@ stream when every one of its conditions holds; a rule with no conditions matches
 its scope. There SHALL be no "or" and no nesting: a rule that wants either of two things is written
 as two rules. A rule SHALL be named, wherever a silo reports which rule decided a stream, by its
 `id`, or by `#n` for its 1-based position among all the rules of the document when it has no `id`.
+So an `id` SHALL name one rule of the document, whatever its scope, and SHALL NOT be `#` followed
+by digits: a document in which two rules share an `id`, or an `id` is spelled as a position, SHALL
+be refused, naming the `id`.
 
 #### Scenario: a rule with no conditions
 - **WHEN** a ruleset holds `<subtitle><copy/></subtitle>`
@@ -163,8 +166,17 @@ as two rules. A rule SHALL be named, wherever a silo reports which rule decided 
   `<copy/>` and `<drop/>`
 - **THEN** the ruleset is refused, saying the rule has no action, or more than one
 
-Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`),
-`Tests/SiloKitTests/ResolverTests.swift` (`theThreeRulesDecideAnEpisode`).
+#### Scenario: two rules of one id
+- **WHEN** an `<audio id="commentary">` rule and a `<subtitle id="commentary">` rule are in one
+  ruleset
+- **THEN** the ruleset is refused with `two rules are called commentary`
+
+#### Scenario: an id spelled as a position
+- **WHEN** a rule carries `id="#3"`
+- **THEN** the ruleset is refused, saying `#3` is how an unnamed rule is named by its position
+
+Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aRuleThatCannotBeReadIsRefused`,
+`aRuleIDNamesOneRule`), `Tests/SiloKitTests/ResolverTests.swift` (`theThreeRulesDecideAnEpisode`).
 
 ### Requirement: A rule tests only the facts of a closed vocabulary
 A `<when>` SHALL name its fact with the `fact` attribute, and the fact SHALL be one of the
@@ -416,6 +428,8 @@ refused document is used. It SHALL be refused, in these words, when:
 | a rule has no action | `rule <rule> has no <copy/>, <drop/> or <encode>` |
 | a rule has more than one action | `rule <rule> has more than one action` |
 | two outputs have the same profile, or neither has one | `the profile <profile> is made twice`, or `the unqualified output is made twice` |
+| two rules have the same `id` | `two rules are called <id>` |
+| an `id` is `#` followed by digits | `<id> is how an unnamed rule is named by its position, and cannot be an id` |
 
 where `<rule>` is the rule's `id`, or `#n` when it has none, `n` its 1-based position among all the
 rules of the document, as a recipe names it. An attribute the
