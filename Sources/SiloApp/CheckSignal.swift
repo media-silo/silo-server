@@ -5,9 +5,10 @@ import Wire
 
 /// A change of rules, told to the background check: a ruleset stored or promoted, a binding's rules
 /// moved, a library walked or a file placed. Requests coalesce — the check has one thing to do,
-/// whatever asked, which is to bring every placed presentation up to the rules in force.
+/// whatever asked, which is to bring every placed presentation up to the rules in force. A copy
+/// holds the same stream and continuation, so every holder of the signal asks the one check.
 @Singleton
-package final class CheckSignal: Sendable {
+package struct CheckSignal: Sendable {
     package let requests: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
 

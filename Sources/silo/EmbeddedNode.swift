@@ -9,7 +9,6 @@ import SiloApp
 import SiloKit
 import SiloStore
 import SiloWorker
-import Synchronization
 import Wire
 import WireMVC
 
@@ -23,18 +22,16 @@ import WireMVC
 /// to completion — a setting change is not a reason to throw away an encode.
 @Singleton
 @BackgroundService
-package final class EmbeddedNode: Service, Sendable {
+package struct EmbeddedNode: Service, Sendable {
     private let config: SiloConfig
     private let jobs: JobService
     private let settings: SettingsStore
     private let pollInterval: Duration
     private let progressInterval: Duration
     private let logger = Logger(label: "silo.node")
-    /// The worker, made the first time the setting is on and the tools are there; `nil` until then.
-    private let worker = Mutex<Worker?>(nil)
 
     @Inject
-    package convenience init(config: SiloConfig, jobs: JobService, settings: SettingsStore) {
+    package init(config: SiloConfig, jobs: JobService, settings: SettingsStore) {
         self.init(
             config: config,
             jobs: jobs,
@@ -67,7 +64,9 @@ package final class EmbeddedNode: Service, Sendable {
     }
 
     /// The loop, until cancelled: claim and encode while the setting is on, idle while it is off.
+    /// The worker is made the first time the setting is on and the tools are there, and kept.
     package func follow() async {
+        var worker: Worker?
         var running = false
         var toolsMissingLogged = false
         while !Task.isCancelled {
@@ -79,7 +78,8 @@ package final class EmbeddedNode: Service, Sendable {
                 try? await Task.sleep(for: pollInterval)
                 continue
             }
-            guard let worker = makeWorker(logMissingTools: !toolsMissingLogged) else {
+            if worker == nil { worker = makeWorker(logMissingTools: !toolsMissingLogged) }
+            guard let worker else {
                 toolsMissingLogged = true
                 try? await Task.sleep(for: pollInterval)
                 continue
@@ -99,10 +99,9 @@ package final class EmbeddedNode: Service, Sendable {
         }
     }
 
-    /// The worker, made once. When the encode tools cannot be started the node logs the lack —
-    /// once, not at every poll — and idles rather than stopping the silo.
+    /// A worker, or nil when the encode tools cannot be started: the node logs the lack — once, not
+    /// at every poll — and idles rather than stopping the silo.
     private func makeWorker(logMissingTools: Bool) -> Worker? {
-        if let made = worker.withLock({ $0 }) { return made }
         let ffmpeg: FFmpeg
         let ffprobe: FFprobe
         do {
@@ -112,7 +111,7 @@ package final class EmbeddedNode: Service, Sendable {
             if logMissingTools { logger.error("the embedded node cannot run: \(error)") }
             return nil
         }
-        let made = Worker(
+        return Worker(
             api: jobs,
             configuration: Worker.Configuration(
                 nodeID: "embedded",
@@ -126,7 +125,5 @@ package final class EmbeddedNode: Service, Sendable {
             ffprobe: ffprobe,
             logger: logger
         )
-        worker.withLock { $0 = made }
-        return made
     }
 }

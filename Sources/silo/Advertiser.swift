@@ -20,7 +20,7 @@ import WireMVC
 /// silo, and a confirmed setup ending bootstrap all reach the network without a restart.
 @Singleton
 @BackgroundService
-package final class Advertiser: Service, Sendable {
+package struct Advertiser: Service, Sendable {
     private let config: SiloConfig
     private let server: ServerService
     private let settings: SettingsStore
@@ -28,7 +28,7 @@ package final class Advertiser: Service, Sendable {
     private let logger = Logger(label: "silo.bonjour")
 
     @Inject
-    package convenience init(config: SiloConfig, server: ServerService, settings: SettingsStore) {
+    package init(config: SiloConfig, server: ServerService, settings: SettingsStore) {
         self.init(config: config, server: server, settings: settings, interval: .seconds(2))
     }
 
