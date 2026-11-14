@@ -37,7 +37,9 @@ struct JobServiceTests {
         let index: Index
         let libraries: Libraries
 
-        init() throws {
+        /// `checksOnDisk` keeps the check records in the state folder, as the silo does, rather than in
+        /// memory.
+        init(checksOnDisk: Bool = false) throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("silo-jobs-\(UUID().uuidString)")
             let library = root.appendingPathComponent("Library")
             try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
@@ -53,7 +55,7 @@ struct JobServiceTests {
             settings = SettingsStore(Settings(name: "Silo on test", libraries: [self.library]))
             stagedRules = try BindingRulesStore(folder: root.appendingPathComponent("State/binding-rules"))
             signal = CheckSignal()
-            checks = CheckStore()
+            checks = checksOnDisk ? try CheckStore(folder: Self.checksFolder(in: root)) : CheckStore()
             libraries = Libraries(config: config, settings: settings, index: index, checks: signal)
             let stack = RulesStack(libraries: libraries, index: index, staged: stagedRules)
             checkService = CheckService(
@@ -65,7 +67,8 @@ struct JobServiceTests {
                 stack: stack,
                 checks: checks,
                 index: index,
-                libraries: libraries
+                libraries: libraries,
+                signal: signal
             )
             bindingService = BindingService(
                 settings: settings,
@@ -92,6 +95,9 @@ struct JobServiceTests {
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }
+
+        /// Where a bench made with `checksOnDisk` keeps its check records.
+        static func checksFolder(in root: URL) -> URL { root.appendingPathComponent("State/checks") }
 
         /// The job service as a silo started again over the same state makes it: a new service, with
         /// nothing queued but what its run finds.
