@@ -2423,8 +2423,13 @@ extension ServerTests {
         </ruleset>
         """
 
-    static func bindingBody(source: String, chapters: (Int, Int)? = nil, item: String = "part2") -> Data {
-        let documents = String(decoding: try! JSONEncoder().encode(Self.documents), as: UTF8.self)
+    static func bindingBody(
+        source: String,
+        chapters: (Int, Int)? = nil,
+        item: String = "part2",
+        documents: [String] = Self.documents
+    ) -> Data {
+        let documents = String(decoding: try! JSONEncoder().encode(documents), as: UTF8.self)
         let span = chapters.map { #", "chapters": { "from": \#($0.0), "to": \#($0.1) }"# } ?? ""
         return Data(
             """
@@ -2662,6 +2667,12 @@ extension ServerTests {
                     "has no item part9"
                 )
             )
+            let unreadable = try await answer(
+                "/v1/bindings",
+                Self.bindingBody(source: source.id, documents: [Self.documents[0], "not a container"])
+            )
+            #expect(unreadable.0 == 400)
+            #expect(unreadable.1.contains("a container document cannot be read"))
 
             let binding = try await client.send(
                 "POST",

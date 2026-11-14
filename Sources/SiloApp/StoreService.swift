@@ -222,6 +222,7 @@ package struct StoreService: Service {
             index: index
         )
         if outcome.applied, !outcome.moves.isEmpty { libraries.walkInTurn(library) }
+        if outcome.applied { libraries.containerEdited() }
     }
 
     /// The digest of the sidecar the library holds for a container, read now; nil when it holds none.

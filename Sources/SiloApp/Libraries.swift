@@ -336,6 +336,13 @@ package final class Libraries: Sendable {
         }
     }
 
+    /// A container's own fields changed in the index outside a walk, by an edit: what the background
+    /// check reads of an item may have moved, so it is asked for a pass, as a walk that read
+    /// something asks for one.
+    package func containerEdited() {
+        checks.request()
+    }
+
     /// Walks the library within a turn of it its caller already holds, after the caller moved folders,
     /// so that what moved is read back at its new path before anything else is let in. A walk that
     /// fails is logged, and the next tick's walk reads what moved.

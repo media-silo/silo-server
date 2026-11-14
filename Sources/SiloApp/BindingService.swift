@@ -243,15 +243,19 @@ package struct BindingService: Sendable {
         var lineage: [SmdKit.Container]
     }
 
-    private func entry(of binding: Binding) throws -> Entry {
+    private func entry(of binding: Binding, lineage given: [SmdKit.Container]? = nil) throws -> Entry {
         guard libraries.library(binding.library) != nil else {
             throw BadBinding(reason: "no library \(binding.library)")
         }
         let lineage: [SmdKit.Container]
-        do {
-            lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
-        } catch {
-            throw BadBinding(reason: "a container document cannot be read: \(error.localizedDescription)")
+        if let given {
+            lineage = given
+        } else {
+            do {
+                lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
+            } catch {
+                throw BadBinding(reason: "a container document cannot be read: \(error.localizedDescription)")
+            }
         }
         guard let target = lineage.last else { throw BadBinding(reason: "a binding needs the item's container") }
         let inSequence = target.sequences.flatMap(\.items).first { $0.id?.value == binding.item }
@@ -302,5 +306,22 @@ package struct BindingService: Sendable {
             }
         }
         return Entry(kind: item.type, extra: inSequence == nil, roles: roles, joined: joined, lineage: lineage)
+    }
+}
+
+extension BindingService {
+    /// The facts a binding gives one output, its item read from the lineage given rather than the
+    /// containers the binding was made with: the background check's, with the lineage as the
+    /// library holds it now. Refused with `BadBinding` when the lineage no longer holds the binding.
+    package func facts(of binding: Binding, in lineage: [SmdKit.Container], profile: String?) throws -> SourceFacts {
+        let entry = try entry(of: binding, lineage: lineage)
+        return SourceFacts(
+            input: entry.joined.spec,
+            roles: entry.roles,
+            kind: entry.kind,
+            extra: entry.extra,
+            profile: profile,
+            duration: entry.joined.duration
+        )
     }
 }

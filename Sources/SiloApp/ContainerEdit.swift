@@ -58,7 +58,7 @@ enum ContainerEditor {
 
         // What moved is walked in the same turn, so it is read back with everything beneath it before
         // any request can look for it where it was.
-        return try await libraries.exclusively(
+        let outcome = try await libraries.exclusively(
             library,
             walkingAfter: { $0.applied && !$0.moves.isEmpty },
             doing: {
@@ -76,6 +76,8 @@ enum ContainerEditor {
                 )
             }
         )
+        if outcome.applied { libraries.containerEdited() }
+        return outcome
     }
 
     /// An edit of a container's own fields, its document read, onto the sidecar it was based on.

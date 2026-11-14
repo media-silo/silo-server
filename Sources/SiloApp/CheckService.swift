@@ -5,14 +5,17 @@ import Logging
 import ServiceLifecycle
 import SiloKit
 import SiloStore
+import SmdKit
+import SmdSidecar
 import Wire
 import WireMVC
 
 /// Whether the rules in force would make each placed presentation differently. A presentation is
-/// checked by resolving its committed recipe's facts again through the stack that applies to its
-/// binding now, and the outcome recorded; the work left is every placed presentation whose latest
-/// check was against another stack, so a pass stopped half way resumes with what is left, and a
-/// change of rules reaches exactly the presentations it changes the stack of.
+/// checked by resolving its binding's facts again through the stack that applies to it now, with
+/// its item read from its container as the library holds it now, and the outcome recorded. The work
+/// left is every placed presentation whose latest check was against another stack or another
+/// reading of its item, so a pass stopped half way resumes with what is left, and a change of rules
+/// or of an item's container reaches exactly the presentations it changes.
 ///
 /// It runs while the silo runs: a pass at start, and another whenever a change of rules asks for
 /// one through the `CheckSignal`. A pass records each check as it finishes, so stopping the silo
@@ -30,6 +33,7 @@ package struct CheckService: Service, Sendable {
     private let checks: CheckStore
     private let index: Index
     private let libraries: Libraries
+    private let bindingService: BindingService
     private let signal: CheckSignal
     private let logger = Logger(label: "silo.checks")
 
@@ -44,6 +48,7 @@ package struct CheckService: Service, Sendable {
         checks: CheckStore,
         index: Index,
         libraries: Libraries,
+        bindingService: BindingService,
         signal: CheckSignal
     ) {
         self.jobs = jobs
@@ -55,6 +60,7 @@ package struct CheckService: Service, Sendable {
         self.checks = checks
         self.index = index
         self.libraries = libraries
+        self.bindingService = bindingService
         self.signal = signal
     }
 
@@ -127,9 +133,11 @@ package struct CheckService: Service, Sendable {
                 reason: "the ruleset \(recorded.ruleset.name) is not there"
             )
         }
+        let now: (facts: SourceFacts, lineage: [SmdKit.Container])
         let layers: [RulesLayer]
         do {
-            layers = try stack.layers(of: placed.binding, lineage: try stack.lineage(of: placed.binding))
+            now = try factsNow(placed)
+            layers = try stack.layers(of: placed.binding, lineage: now.lineage)
         } catch let error as Unresolvable {
             return CheckRecord(
                 job: placed.job.id,
@@ -147,13 +155,14 @@ package struct CheckService: Service, Sendable {
                 recipe: placed.recipe.id,
                 checkedAgainst: against,
                 outcome: .unresolvable,
-                reason: "the rules make no \(profile!) output"
+                reason: "the rules make no \(profile!) output",
+                item: now.facts.item
             )
         }
         let again: Recipe
         do throws(ResolutionError) {
             again = try RecipeResolver.resolve(
-                placed.recipe.facts,
+                now.facts,
                 with: ruleset,
                 layers: layers,
                 mappings: placed.binding.tracks
@@ -164,18 +173,24 @@ package struct CheckService: Service, Sendable {
                 recipe: placed.recipe.id,
                 checkedAgainst: against,
                 outcome: .unresolvable,
-                reason: error.description
+                reason: error.description,
+                item: now.facts.item
             )
         }
         let changes = recorded.changes(to: again)
-        let reason = again.output == recorded.output ? nil : "the output becomes \(again.output.container)"
+        let output = again.output == recorded.output ? nil : "the output becomes \(again.output.container)"
+        let outOfDate = !changes.isEmpty || output != nil
+        // What moved in the item's container is said only when it changed a decision.
+        let moves = outOfDate ? placed.recipe.facts.item.moves(to: now.facts.item) : []
+        let reasons = [output].compactMap { $0 } + moves
         return CheckRecord(
             job: placed.job.id,
             recipe: placed.recipe.id,
             checkedAgainst: against,
-            outcome: changes.isEmpty && reason == nil ? .current : .outOfDate,
+            outcome: outOfDate ? .outOfDate : .current,
             changes: changes,
-            reason: reason
+            reason: reasons.isEmpty ? nil : reasons.joined(separator: "; "),
+            item: now.facts.item
         )
     }
 
@@ -189,7 +204,7 @@ package struct CheckService: Service, Sendable {
 
     private func needsCheck(_ placed: Placed) -> Bool {
         guard let last = checks.check(of: placed.job.id) else { return true }
-        return last.checkedAgainst != stackInForce(placed)
+        return last.checkedAgainst != stackInForce(placed) || last.item != (try? factsNow(placed))?.facts.item
     }
 
     /// Checks every placed presentation not yet checked against the rules in force, recording each
@@ -288,5 +303,39 @@ package struct CheckService: Service, Sendable {
             pending += try index.children(of: next, in: library).map(\.containerID)
         }
         return ids
+    }
+}
+
+extension CheckService {
+    /// The binding's lineage as the library holds it now: each container as the index has its
+    /// sidecar, or as the binding has it where the index has none above the item. The item's own
+    /// container has to be in the library.
+    private func lineageNow(of binding: Binding) throws -> [SmdKit.Container] {
+        let made = try stack.lineage(of: binding)
+        guard let library = libraries.library(binding.library) else { return made }
+        return try made.enumerated().map { position, container in
+            if let now = try index.sidecar(container.id, in: library.id)?.container { return now }
+            guard position < made.count - 1 else {
+                throw Unresolvable(reason: "\(container.displayTitle) is no longer in the library")
+            }
+            return container
+        }
+    }
+
+    /// A placed recipe's facts as its binding gives them now, its item read from the lineage as the
+    /// library holds it, and that lineage. The facts that come from the sources are as they were,
+    /// since a source does not change once registered.
+    private func factsNow(_ placed: Placed) throws -> (facts: SourceFacts, lineage: [SmdKit.Container]) {
+        let lineage = try lineageNow(of: placed.binding)
+        do {
+            let facts = try bindingService.facts(
+                of: placed.binding,
+                in: lineage,
+                profile: placed.recipe.recipe.output.profile
+            )
+            return (facts, lineage)
+        } catch let error as BadBinding {
+            throw Unresolvable(reason: error.reason)
+        }
     }
 }
