@@ -493,12 +493,19 @@ private struct ArtworkStrip: View {
                 .frame(width: 400, height: 360)
             }
         }
+        // Tied to the record being browsed, so moving to another container, or closing the
+        // popover, cancels a slow answer rather than letting it overwrite the newer one.
+        .task(id: browsing == nil ? nil : record) {
+            images = TMDb.Images()
+            guard browsing != nil, let record else { return }
+            let found = await model.tmdbImages(of: record)
+            if !Task.isCancelled { images = found }
+        }
     }
 
     private func browse(_ kind: String) {
-        guard let record else { return }
+        guard record != nil else { return }
         browsing = kind
-        Task { images = await model.tmdbImages(of: record) }
     }
 }
 
