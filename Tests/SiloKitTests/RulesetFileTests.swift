@@ -76,6 +76,23 @@ struct RulesetFileTests {
         #expect(throws: expected) { try RulesetFile.ruleset(from: Data(xml.utf8)) }
     }
 
+    /// An unnamed rule is refused by the name a recipe would give it: `#n`, its position among the
+    /// document's rules of every scope, outputs not counted. A layer's rules count among themselves.
+    @Test func anUnnamedRuleIsRefusedByItsPosition() {
+        let ruleset = """
+            <ruleset format="1" name="t"><video><copy/></video><output container="mkv"/><audio id="named"><copy/></audio>\
+            <audio><drop/></audio><subtitle><copy/></subtitle><audio><when fact="audio.codec" is="ac3"/></audio></ruleset>
+            """
+        let refusal = #expect(throws: RulesetFileError.noAction(rule: "#5")) {
+            try RulesetFile.ruleset(from: Data(ruleset.utf8))
+        }
+        #expect(refusal?.description == "rule #5 has no <copy/>, <drop/> or <encode>")
+        let layer = #"<rules><audio><copy/></audio><audio><copy/><drop/></audio></rules>"#
+        #expect(throws: RulesetFileError.multipleActions(rule: "#2")) {
+            try RulesetFile.layerRules(from: Data(layer.utf8))
+        }
+    }
+
     @Test func aDocumentThatIsNotARulesetIsRefused() {
         #expect(throws: RulesetFileError.notARuleset) { try RulesetFile.ruleset(from: Data("<rules/>".utf8)) }
         #expect(throws: RulesetFileError.unsupportedFormat(2)) {
