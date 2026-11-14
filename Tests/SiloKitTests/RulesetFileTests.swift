@@ -136,6 +136,34 @@ struct RulesetFileTests {
         }
     }
 
+    @Test func anAttributeTheReaderDoesNotKnowIsRefused() {
+        let misspelt = RulesetFileError.unknownAttribute(element: "encode", attribute: "bitrat")
+        #expect(throws: misspelt, "a misspelt bitrate is refused, not read as the codec's default") {
+            try RulesetFile.ruleset(
+                from: Data(
+                    #"<ruleset format="1" name="t"><audio><encode codec="aac" bitrat="96k"/></audio></ruleset>"#.utf8
+                )
+            )
+        }
+        #expect(misspelt.description == "bitrat is not an attribute of <encode>")
+        #expect(throws: RulesetFileError.unknownAttribute(element: "ruleset", attribute: "verison")) {
+            try RulesetFile.ruleset(from: Data(#"<ruleset format="1" name="t" verison="2"/>"#.utf8))
+        }
+        #expect(throws: RulesetFileError.unknownAttribute(element: "output", attribute: "codec")) {
+            try RulesetFile.ruleset(from: Data(#"<ruleset format="1" name="t"><output codec="hevc"/></ruleset>"#.utf8))
+        }
+        #expect(throws: RulesetFileError.unknownAttribute(element: "rules", attribute: "name")) {
+            try RulesetFile.layerRules(from: Data(#"<rules name="x"/>"#.utf8))
+        }
+        #expect(throws: RulesetFileError.unknownAttribute(element: "scale", attribute: "hieght")) {
+            try RulesetFile.layerRules(
+                from: Data(
+                    #"<rules><video><encode codec="libx265"><scale hieght="720"/></encode></video></rules>"#.utf8
+                )
+            )
+        }
+    }
+
     @Test func anEmptyRulesetHasTheToolsDefaults() throws {
         let ruleset = try RulesetFile.ruleset(from: Data("<ruleset format=\"1\" name=\"t\"/>".utf8))
         #expect(ruleset.outputs == [OutputPolicy()], "one unqualified mkv")

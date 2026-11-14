@@ -430,10 +430,12 @@ refused document is used. It SHALL be refused, in these words, when:
 | two outputs have the same profile, or neither has one | `the profile <profile> is made twice`, or `the unqualified output is made twice` |
 | two rules have the same `id` | `two rules are called <id>` |
 | an `id` is `#` followed by digits | `<id> is how an unnamed rule is named by its position, and cannot be an id` |
+| an element carries an attribute it does not have | `<attribute> is not an attribute of <<element>>` |
 
 where `<rule>` is the rule's `id`, or `#n` when it has none, `n` its 1-based position among all the
 rules of the document, as a recipe names it. An attribute the
-reader does not know SHALL be ignored. What a source keeps is not an element of a ruleset: a
+reader does not know SHALL be refused, not ignored: a misspelt attribute would otherwise be read as
+the default it was meant to change. What a source keeps is not an element of a ruleset: a
 producer reads it from the rules, as the streams every output drops.
 
 #### Scenario: an element the document does not have
@@ -443,6 +445,11 @@ producer reads it from the rules, as the streams every output drops.
 #### Scenario: what a source keeps is said by rules
 - **WHEN** a ruleset's root holds an `<extraction subtitles="false"/>` element
 - **THEN** it is refused with `<extraction> is not an element of a ruleset`
+
+#### Scenario: a misspelt attribute
+- **WHEN** a rule's action is `<encode codec="aac" bitrat="96k"/>`
+- **THEN** it is refused with `bitrat is not an attribute of <encode>`, not encoded at the codec's
+  default bitrate
 
 #### Scenario: a truncated document
 - **WHEN** the document is `<ruleset format="1" name="t"><audio>` and nothing more
@@ -454,8 +461,8 @@ producer reads it from the rules, as the streams every output drops.
 - **THEN** it is refused with `rule #5 has no <copy/>, <drop/> or <encode>`
 
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`,
-`aRuleThatCannotBeReadIsRefused`, `anOutputMadeTwiceIsRefused`, `anUnnamedRuleIsRefusedByItsPosition`);
-the ignored attributes are pinned by nothing yet.
+`aRuleThatCannotBeReadIsRefused`, `anOutputMadeTwiceIsRefused`, `anUnnamedRuleIsRefusedByItsPosition`,
+`anAttributeTheReaderDoesNotKnowIsRefused`).
 
 ### Requirement: A silo keeps each ruleset as the documents it was given
 A silo SHALL keep its rulesets under `rulesets/<name>/<version>.xml` in its state directory — the

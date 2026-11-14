@@ -172,6 +172,7 @@ public enum RulesetFile {
         guard let root = document.rootElement(), root.name == "ruleset" else {
             throw RulesetFileError.notARuleset
         }
+        try root.knows("format", "name", "version")
         let format = try root.integer("format")
         guard format <= Self.format else { throw RulesetFileError.unsupportedFormat(format) }
 
@@ -180,6 +181,7 @@ public enum RulesetFile {
 
         var outputs: [OutputPolicy] = []
         for element in root.elements(forName: "output") {
+            try element.knows("profile", "container")
             let output = OutputPolicy(
                 profile: element.attribute("profile"),
                 container: element.attribute("container") ?? "mkv"
@@ -226,6 +228,7 @@ public enum RulesetFile {
         guard let root = document.rootElement(), root.name == "rules" else {
             throw RulesetFileError.notLayerRules
         }
+        try root.knows()
         var rules: [Rule] = []
         for case let element as XMLElement in root.children ?? [] {
             switch element.name {
@@ -254,6 +257,7 @@ public enum RulesetFile {
     /// A rule, at its 1-based position among the document's rules of every scope. A refusal names
     /// it as a recipe and the resolver do: by its `id`, or `#n` for that position when it has none.
     private static func rule(from element: XMLElement, scope: Scope, position: Int) throws -> Rule {
+        try element.knows("id")
         let id = element.attribute("id")
         let label = id ?? "#\(position)"
         var conditions: [Condition] = []
@@ -274,6 +278,7 @@ public enum RulesetFile {
     }
 
     private static func condition(from element: XMLElement, scope: Scope, rule: String) throws -> Condition {
+        try element.knows("fact", "is", "ne", "in", "lt", "le", "gt", "ge")
         let key = try element.required("fact")
         guard let fact = FactKey(rawValue: key) else { throw RulesetFileError.unknownFact(key) }
         guard fact.isVisible(in: scope) else { throw RulesetFileError.factOutOfScope(fact: key, scope: scope) }
@@ -308,10 +313,13 @@ public enum RulesetFile {
     private static func action(from element: XMLElement) throws -> Action {
         switch element.name {
         case "copy":
+            try element.knows()
             return .copy
         case "drop":
+            try element.knows()
             return .drop
         default:
+            try element.knows("codec", "preset", "crf", "bitrate", "channels", "pixelFormat")
             var settings = EncodeSettings(codec: try element.required("codec"))
             settings.preset = element.attribute("preset")
             settings.crf = try element.optionalInteger("crf")
@@ -321,20 +329,24 @@ public enum RulesetFile {
             for case let child as XMLElement in element.children ?? [] {
                 switch child.name {
                 case "deinterlace":
+                    try child.knows("mode")
                     let mode = child.attribute("mode") ?? "auto"
                     guard let parsed = Filter.DeinterlaceMode(rawValue: mode) else {
                         throw RulesetFileError.invalidValue(element: "deinterlace", attribute: "mode", value: mode)
                     }
                     settings.filters.append(.deinterlace(parsed))
                 case "scale":
+                    try child.knows("width", "height")
                     settings.filters.append(
                         .scale(width: try child.optionalInteger("width"), height: try child.optionalInteger("height"))
                     )
                 case "filter":
+                    try child.knows()
                     settings.filters.append(
                         .custom(child.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
                     )
                 case "option":
+                    try child.knows("name", "value")
                     settings.options[try child.required("name")] = try child.required("value")
                 default:
                     throw RulesetFileError.unknownElement(child.name ?? "?")
@@ -363,6 +375,7 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
     case notALayerElement(String)
     case sharedRuleID(String)
     case positionalRuleID(String)
+    case unknownAttribute(element: String, attribute: String)
 
     public var description: String {
         switch self {
@@ -387,6 +400,7 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
         case .notALayerElement(let name): "<\(name)> is not an element of a container's or a binding's rules"
         case .sharedRuleID(let id): "two rules are called \(id)"
         case .positionalRuleID(let id): "\(id) is how an unnamed rule is named by its position, and cannot be an id"
+        case .unknownAttribute(let element, let attribute): "\(attribute) is not an attribute of <\(element)>"
         }
     }
 }
@@ -405,6 +419,15 @@ extension XMLElement {
             preconditionFailure("XMLNode.attribute(withName:stringValue:) returned a non-node")
         }
         addAttribute(attribute)
+    }
+
+    /// Refuses an attribute the element does not have, rather than ignoring it: a misspelling would
+    /// otherwise be read as the default it was meant to change.
+    func knows(_ names: String...) throws {
+        for attribute in attributes ?? [] {
+            guard let name = attribute.name, !names.contains(name) else { continue }
+            throw RulesetFileError.unknownAttribute(element: self.name ?? "?", attribute: name)
+        }
     }
 
     func attribute(_ name: String) -> String? {
