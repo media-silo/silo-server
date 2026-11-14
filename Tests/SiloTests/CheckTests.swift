@@ -82,6 +82,36 @@ struct CheckTests {
         }
     }
 
+    /// A pass that fails, here because its records cannot be written, is logged, and the running check
+    /// carries on: the next request gets a pass of its own.
+    @Test func aPassThatFailsLeavesTheCheckRunning() async throws {
+        let bench = try Bench(checksOnDisk: true)
+        defer { bench.remove() }
+        let folder = Bench.checksFolder(in: bench.root)
+        try FileManager.default.removeItem(at: folder)
+        let failed = try await Self.placed(bench)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { await bench.checkService.run() }
+            defer { group.cancelAll() }
+            #expect(await Self.checked(failed.id, in: bench), "the pass at start reached it, and failed to write")
+            #expect(!FileManager.default.fileExists(atPath: Self.file(of: failed.id, in: folder).path))
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let after = try await Self.placed(bench, item: "part2")
+            #expect(await Self.onDisk(after.id, in: folder), "the pass its placing asked for")
+        }
+    }
+
+    private static func file(of job: String, in folder: URL) -> URL { folder.appendingPathComponent("\(job).json") }
+
+    /// Whether a presentation's job gets a check record written within five seconds.
+    private static func onDisk(_ job: String, in folder: URL) async -> Bool {
+        for _ in 0..<500 {
+            if FileManager.default.fileExists(atPath: file(of: job, in: folder).path) { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
     /// Whether a presentation's job gets a check record within five seconds.
     private static func checked(_ job: String, in bench: Bench) async -> Bool {
         for _ in 0..<500 {

@@ -332,7 +332,8 @@ binding's rules, that binding's placed recipes; and for a container's, every pla
 binding's lineage holds the container. The work remaining SHALL be every presentation whose latest
 check's stack is not the stack that applies to it now, so a check stopped or interrupted SHALL resume
 with what is left and check nothing twice, and changes in quick succession SHALL leave one stack to
-check against. A check SHALL read no media file, run no tool and change no recipe: it resolves
+check against. A pass that fails SHALL be logged and SHALL NOT stop the checking: the next change
+that begins a check SHALL get a pass of its own. A check SHALL read no media file, run no tool and change no recipe: it resolves
 recorded facts through rules the silo and the library already hold.
 
 #### Scenario: a container's rules move on
@@ -344,7 +345,11 @@ recorded facts through rules the silo and the library already hold.
 - **WHEN** a check of forty presentations is stopped after twenty, and the silo starts again
 - **THEN** the twenty left are checked, and the twenty done are not checked again
 
-Pinned by: `Tests/SiloTests/CheckTests.swift` (`aContainersRulesReachThePresentationsBelowItAndNoOthers`, `aCheckStoppedHalfWayResumesWithWhatIsLeft`, `aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `theRunningCheckPassesAtStartAndWhenAsked`).
+#### Scenario: a pass fails
+- **WHEN** a pass cannot record what it found, and a presentation is placed afterwards
+- **THEN** the failure is logged, and the presentation placed afterwards is checked
+
+Pinned by: `Tests/SiloTests/CheckTests.swift` (`aContainersRulesReachThePresentationsBelowItAndNoOthers`, `aCheckStoppedHalfWayResumesWithWhatIsLeft`, `aPromotionThatChangesADecisionLeavesThePresentationOutOfDate`, `theRunningCheckPassesAtStartAndWhenAsked`, `aPassThatFailsLeavesTheCheckRunning`).
 
 ### Requirement: An out-of-date presentation is reported with its binding's sources and their copies
 Each out-of-date presentation SHALL be reported with the sources of its recipe's binding, in segment
