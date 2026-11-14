@@ -5392,6 +5392,10 @@ extension AdminConsoleTests {
             ]
         )
         #expect(plan.steps.firstIndex { $0.id.hasPrefix("held:") } == 1, "before the edits that refer to them")
+        // Named as a walk kept on this Mac recorded them stored: each library, container, item and ref.
+        let feature = "held:films/\(film.id)/feature/wikidata:"
+        let heldIDs = plan.steps.filter { $0.id.hasPrefix("held:") }.map(\.id)
+        #expect(heldIDs == [feature + "Q3205", feature + "Q3206", "held:tv/\(sofa.id)/special-9-q3208/"])
         let draft = try #require(Self.edit(of: series.id.value, in: plan))
         let taken = try #require(draft.value)
         #expect(taken.year == 1963 && taken.outline == "A time traveller.")

@@ -160,7 +160,7 @@ extension AdminConsole {
             child.sequences = [Sequence(id: "parts", items: [DraftTree.leaf(special, type: .episode, in: child)])]
             children.append(child)
         case .duplicate(let home, let item, let homeLibrary, _, let asExtra):
-            edits.append(.init(library: homeLibrary, container: home, item: item, ref: special.episode.item))
+            edits.append(.init(.addRef(item: item, ref: special.episode.item), to: home, in: homeLibrary))
             guard let homeID = ContainerID(home), let itemID = ItemID(item) else { return }
             DraftTree.refer(to: EntryRef(container: homeID, item: itemID), from: &container, asExtra: asExtra)
         case .breakout(let breakout, _, let asExtra):
@@ -174,7 +174,7 @@ extension AdminConsole {
                 )
                 made[breakout] = companion
             } else {
-                edits.append(.init(library: library, container: breakout, entry: special, entryID: item.value))
+                edits.append(.init(.addEntry(special, id: item), to: breakout, in: library))
             }
             guard let breakoutID = ContainerID(breakout) else { return }
             DraftTree.refer(to: EntryRef(container: breakoutID, item: item), from: &container, asExtra: asExtra)
@@ -423,8 +423,7 @@ extension ReviewWalk {
             gathering.made[id] = companion
         }
         let making = tree.making
-        gathering.edits += making.heldEdits.filter { edit in edit.entry == nil || gathering.made[edit.container] == nil
-        }
+        gathering.edits += making.heldEdits.filter { !$0.change.addsEntry || gathering.made[$0.container] == nil }
         return (tree.creating, making)
     }
 

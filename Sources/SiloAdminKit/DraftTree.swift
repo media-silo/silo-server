@@ -277,22 +277,17 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
     /// attributions, the new breakouts made first, the edits of containers libraries hold that the
     /// placements make, and the references the top declines.
     public struct Making: Hashable, Sendable {
-        /// An edit of a container a library holds: a special's id added to an item, or an entry added.
+        /// An edit of a container a library holds, which a placement makes.
         public struct HeldEdit: Hashable, Sendable {
             public var library: String
             public var container: String
-            /// The id to add to an item's references, for a duplicate's home.
-            public var item: String?
-            public var ref: ExternalRef?
-            /// The entry to add, for a breakout made before, under the id the tree's ref names.
-            public var entry: Special?
-            public var entryID: String?
-            /// The type the entry is, an episode unless an extra's type is named.
-            public var entryType: EntryType?
-            /// A ref to add, for a container that refers to a duplicate's home or a breakout, from its
-            /// extras or its first sequence.
-            public var refer: EntryRef?
-            public var asExtra = false
+            public var change: Change
+
+            public init(_ change: Change, to container: String, in library: String) {
+                self.library = library
+                self.container = container
+                self.change = change
+            }
         }
 
         public var documents: [Container]
@@ -307,11 +302,7 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
                 + ["make \(documents.first?.displayTitle ?? "the tree") and the \(documents.count - 1) beneath it"]
                 + (declined.isEmpty
                     ? [] : ["decline \(declined.count) of the specials in \(documents.first?.displayTitle ?? "")"])
-                + heldEdits.map {
-                    $0.ref != nil
-                        ? "add the special's id to \($0.item ?? "") of \($0.container) in \($0.library)"
-                        : "add an entry to \($0.container) in \($0.library)"
-                }
+                + heldEdits.map(\.described)
         }
     }
 
@@ -371,16 +362,7 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
                 }
                 Self.refer(to: EntryRef(container: homeID, item: itemID), from: &referrer, asExtra: asExtra)
                 byID[from] = referrer
-                heldEdits.append(
-                    .init(
-                        library: library,
-                        container: home,
-                        item: item,
-                        ref: special.episode.item,
-                        entry: nil,
-                        entryID: nil
-                    )
-                )
+                heldEdits.append(.init(.addRef(item: item, ref: special.episode.item), to: home, in: library))
             case .breakout(let breakoutID, let from, let asExtra):
                 guard var referrer = byID[from], let breakout = ContainerID(breakoutID) else { continue }
                 let entryID: ItemID
@@ -393,16 +375,7 @@ public struct DraftTree: Hashable, Sendable, Codable, Identifiable {
                     // A breakout made before is not read here, so the entry's id is one no title it
                     // holds could have taken.
                     entryID = special.entryID
-                    heldEdits.append(
-                        .init(
-                            library: library,
-                            container: breakoutID,
-                            item: nil,
-                            ref: nil,
-                            entry: special,
-                            entryID: entryID.value
-                        )
-                    )
+                    heldEdits.append(.init(.addEntry(special, id: entryID), to: breakoutID, in: library))
                 }
                 Self.refer(to: EntryRef(container: breakout, item: entryID), from: &referrer, asExtra: asExtra)
                 byID[from] = referrer
@@ -559,15 +532,34 @@ extension DraftTree {
 }
 
 extension DraftTree.Making.HeldEdit {
-    /// What names the edit among a walk's steps.
+    /// What the edit does to the container: one of the two things a placement makes of a container
+    /// it doesn't make itself.
+    public enum Change: Hashable, Sendable {
+        /// The special's id added to the references of an item, for a duplicate's home.
+        case addRef(item: String, ref: ExternalRef)
+        /// The special added as an entry, for a breakout made before, under the id the tree's ref to
+        /// it names.
+        case addEntry(Special, id: ItemID)
+
+        /// Whether it adds an entry, which a companion the walk makes takes as it is made instead.
+        var addsEntry: Bool {
+            if case .addEntry = self { true } else { false }
+        }
+    }
+
+    /// What names the edit among a walk's steps. A walk kept on this Mac records the steps it has
+    /// stored by these names, so they stay as they were when the edit was a struct of optionals.
     var key: String {
-        "\(library)/\(container)/\(item ?? entryID ?? "")/\(ref.map { "\($0.provider):\($0.value)" } ?? "")"
+        switch change {
+        case .addRef(let item, let ref): "\(library)/\(container)/\(item)/\(ref.provider):\(ref.value)"
+        case .addEntry(_, let id): "\(library)/\(container)/\(id.value)/"
+        }
     }
 
     public var described: String {
-        if ref != nil { return "add the special's id to \(item ?? "") of \(container) in \(library)" }
-        if refer != nil { return "refer to a special from \(container) in \(library)" }
-        if entryType != nil { return "add an extra to \(container) in \(library)" }
-        return "add an entry to \(container) in \(library)"
+        switch change {
+        case .addRef(let item, _): "add the special's id to \(item) of \(container) in \(library)"
+        case .addEntry: "add an entry to \(container) in \(library)"
+        }
     }
 }
