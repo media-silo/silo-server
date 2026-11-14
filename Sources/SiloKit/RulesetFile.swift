@@ -196,7 +196,7 @@ public enum RulesetFile {
             case "output":
                 continue
             case "video", "audio", "subtitle":
-                rules.append(try rule(from: element, scope: Scope(rawValue: element.name!)!))
+                rules.append(try rule(from: element, scope: Scope(rawValue: element.name!)!, position: rules.count + 1))
             default:
                 throw RulesetFileError.unknownElement(element.name ?? "?")
             }
@@ -229,7 +229,7 @@ public enum RulesetFile {
         for case let element as XMLElement in root.children ?? [] {
             switch element.name {
             case "video", "audio", "subtitle":
-                rules.append(try rule(from: element, scope: Scope(rawValue: element.name!)!))
+                rules.append(try rule(from: element, scope: Scope(rawValue: element.name!)!, position: rules.count + 1))
             default:
                 throw RulesetFileError.notALayerElement(element.name ?? "?")
             }
@@ -237,9 +237,11 @@ public enum RulesetFile {
         return rules
     }
 
-    private static func rule(from element: XMLElement, scope: Scope) throws -> Rule {
+    /// A rule, at its 1-based position among the document's rules of every scope. A refusal names
+    /// it as a recipe and the resolver do: by its `id`, or `#n` for that position when it has none.
+    private static func rule(from element: XMLElement, scope: Scope, position: Int) throws -> Rule {
         let id = element.attribute("id")
-        let label = id ?? scope.rawValue
+        let label = id ?? "#\(position)"
         var conditions: [Condition] = []
         var action: Action?
         for case let child as XMLElement in element.children ?? [] {

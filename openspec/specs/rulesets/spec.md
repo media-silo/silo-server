@@ -417,7 +417,8 @@ refused document is used. It SHALL be refused, in these words, when:
 | a rule has more than one action | `rule <rule> has more than one action` |
 | two outputs have the same profile, or neither has one | `the profile <profile> is made twice`, or `the unqualified output is made twice` |
 
-where `<rule>` is the rule's `id`, or its scope's element name when it has none. An attribute the
+where `<rule>` is the rule's `id`, or `#n` when it has none, `n` its 1-based position among all the
+rules of the document, as a recipe names it. An attribute the
 reader does not know SHALL be ignored. What a source keeps is not an element of a ruleset: a
 producer reads it from the rules, as the streams every output drops.
 
@@ -433,9 +434,14 @@ producer reads it from the rules, as the streams every output drops.
 - **WHEN** the document is `<ruleset format="1" name="t"><audio>` and nothing more
 - **THEN** it is refused as malformed XML, not read with its tags closed for it
 
+#### Scenario: an unnamed rule is refused by its position
+- **WHEN** the fifth rule of a document, counting every scope and not its outputs, has no `id` and
+  no action
+- **THEN** it is refused with `rule #5 has no <copy/>, <drop/> or <encode>`
+
 Pinned by: `Tests/SiloKitTests/RulesetFileTests.swift` (`aDocumentThatIsNotARulesetIsRefused`,
-`aRuleThatCannotBeReadIsRefused`, `anOutputMadeTwiceIsRefused`); the ignored attributes are pinned by
-nothing yet.
+`aRuleThatCannotBeReadIsRefused`, `anOutputMadeTwiceIsRefused`, `anUnnamedRuleIsRefusedByItsPosition`);
+the ignored attributes are pinned by nothing yet.
 
 ### Requirement: A silo keeps each ruleset as the documents it was given
 A silo SHALL keep its rulesets under `rulesets/<name>/<version>.xml` in its state directory — the
