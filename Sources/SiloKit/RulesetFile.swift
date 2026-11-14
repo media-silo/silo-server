@@ -202,6 +202,7 @@ public enum RulesetFile {
             }
         }
 
+        try checkIDs(of: rules)
         return Ruleset(name: name, version: version, rules: rules, outputs: outputs)
     }
 
@@ -234,7 +235,20 @@ public enum RulesetFile {
                 throw RulesetFileError.notALayerElement(element.name ?? "?")
             }
         }
+        try checkIDs(of: rules)
         return rules
+    }
+
+    /// Each rule's `id` names one rule of the document, since a recipe names the rule that decided
+    /// a stream by it, and none is spelled `#n`, the name an unnamed rule is given by its position.
+    private static func checkIDs(of rules: [Rule]) throws {
+        var seen: Set<String> = []
+        for id in rules.compactMap(\.id) {
+            if id.first == "#", id.count > 1, id.dropFirst().allSatisfy({ $0.isASCII && $0.isNumber }) {
+                throw RulesetFileError.positionalRuleID(id)
+            }
+            guard seen.insert(id).inserted else { throw RulesetFileError.sharedRuleID(id) }
+        }
     }
 
     /// A rule, at its 1-based position among the document's rules of every scope. A refusal names
@@ -347,6 +361,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
     case outputMadeTwice(profile: String?)
     case notLayerRules
     case notALayerElement(String)
+    case sharedRuleID(String)
+    case positionalRuleID(String)
 
     public var description: String {
         switch self {
@@ -369,6 +385,8 @@ public enum RulesetFileError: Error, Equatable, CustomStringConvertible {
         case .outputMadeTwice(nil): "the unqualified output is made twice"
         case .notLayerRules: "the document is not rooted at <rules>"
         case .notALayerElement(let name): "<\(name)> is not an element of a container's or a binding's rules"
+        case .sharedRuleID(let id): "two rules are called \(id)"
+        case .positionalRuleID(let id): "\(id) is how an unnamed rule is named by its position, and cannot be an id"
         }
     }
 }

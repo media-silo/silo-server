@@ -93,6 +93,28 @@ struct RulesetFileTests {
         }
     }
 
+    /// A recipe names the rule that decided a stream by its id, so an id names one rule of the
+    /// document, whatever its scope, and is never the `#n` an unnamed rule is named by.
+    @Test func aRuleIDNamesOneRule() throws {
+        func read(_ rules: String) throws -> Ruleset {
+            try RulesetFile.ruleset(from: Data(#"<ruleset format="1" name="t">\#(rules)</ruleset>"#.utf8))
+        }
+        let shared = #expect(throws: RulesetFileError.sharedRuleID("commentary")) {
+            try read(#"<audio id="commentary"><drop/></audio><subtitle id="commentary"><copy/></subtitle>"#)
+        }
+        #expect(shared?.description == "two rules are called commentary")
+        let positional = #expect(throws: RulesetFileError.positionalRuleID("#3")) {
+            try read(##"<audio id="#3"><copy/></audio>"##)
+        }
+        #expect(positional?.description == "#3 is how an unnamed rule is named by its position, and cannot be an id")
+        #expect(try read(##"<audio id="#main"><copy/></audio><audio id="#"><drop/></audio>"##).rules.count == 2)
+        #expect(throws: RulesetFileError.sharedRuleID("keep")) {
+            try RulesetFile.layerRules(
+                from: Data(#"<rules><video id="keep"><copy/></video><video id="keep"><drop/></video></rules>"#.utf8)
+            )
+        }
+    }
+
     @Test func aDocumentThatIsNotARulesetIsRefused() {
         #expect(throws: RulesetFileError.notARuleset) { try RulesetFile.ruleset(from: Data("<rules/>".utf8)) }
         #expect(throws: RulesetFileError.unsupportedFormat(2)) {
