@@ -283,7 +283,7 @@ struct CheckTests {
         _ = try bench.checkService.pass()
         let undecided = Bench.household.replacingOccurrences(of: "<video><copy/></video>", with: "")
         #expect(undecided != Bench.household)
-        _ = try bench.rulesets.store(Data(undecided.utf8), as: "household")
+        _ = try bench.rulesets.store(Data(undecided.utf8), as: "household", basedOn: 1)
         #expect(try bench.checkService.pass() == 1)
         let check = try #require(bench.checks.check(of: job.id))
         #expect(check.outcome == .unresolvable)
@@ -299,7 +299,7 @@ struct CheckTests {
         let job = try await Self.placed(bench, profile: "mobile")
         _ = try bench.checkService.pass()
         #expect(bench.checks.check(of: job.id)?.outcome == .current)
-        _ = try bench.rulesets.store(Data(Fixture.household.utf8), as: "household")
+        _ = try bench.rulesets.store(Data(Fixture.household.utf8), as: "household", basedOn: 1)
         #expect(try bench.checkService.pass() == 1)
         let check = try #require(bench.checks.check(of: job.id))
         #expect(check.outcome == .unresolvable)
@@ -333,7 +333,7 @@ struct CheckTests {
         #expect(bench.checks.check(of: job.id)?.checkedAgainst.ruleset == RulesetRef(name: "household", version: 1))
 
         _ = try bench.rulesets.startBranch("speech-96k", of: "household", from: 1)
-        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", branch: "speech-96k")
+        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", branch: "speech-96k", basedOn: 1)
         let impact = try bench.checkService.impact(of: "speech-96k", of: "household")
         #expect(impact.map(\.recipe.id) == [job.recipe], "what promotion would change, before it does")
         #expect(try bench.checkService.pass() == 0, "a store on a branch changes no stack in force")
@@ -365,7 +365,7 @@ struct CheckTests {
         let bench = try Bench()
         defer { bench.remove() }
         _ = try bench.rulesets.startBranch("speech-96k", of: "household", from: 1)
-        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", branch: "speech-96k")
+        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", branch: "speech-96k", basedOn: 1)
         let job = try await Self.placed(bench, application: Application(ruleset: "household", branch: "speech-96k"))
         _ = try bench.checkService.pass()
         _ = try bench.rulesets.promote("speech-96k", of: "household")
@@ -450,7 +450,7 @@ struct CheckTests {
             resolved.recipe.audio[1].layer == .layer(.binding(binding.id)),
             "the commentary is the binding's rule's to decide"
         )
-        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household")
+        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", basedOn: 1)
         #expect(try bench.checkService.pass() == 1)
         #expect(
             bench.checks.check(of: job.id)?.outcome == .current,
@@ -463,7 +463,7 @@ struct CheckTests {
         defer { bench.remove() }
         for item in ["part1", "part2", "part3"] { try await Self.placed(bench, item: item, name: item) }
         _ = try bench.checkService.pass()
-        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household")
+        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", basedOn: 1)
 
         var checked = 0
         #expect(
@@ -520,7 +520,7 @@ struct CheckTests {
         let bench = try Bench()
         defer { bench.remove() }
         for item in ["part1", "part2", "part3"] { try await Self.placed(bench, item: item, name: item) }
-        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household")
+        _ = try bench.rulesets.store(Data(Self.speech96k.utf8), as: "household", basedOn: 1)
         #expect(bench.checkService.made(by: "household") == [1: 3])
 
         let summary = try #require(

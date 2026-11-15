@@ -36,4 +36,4 @@ rules SHALL change no recipe: a recipe that should carry them is resolved by app
   document again
 - **THEN** the third answer names version 3, in force, whose document is version 1's
 
-Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, for the routes). Rules put again are pinned by nothing yet.
+Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile`, `rulesPutAgainAreTheVersionInForce`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, for the routes).

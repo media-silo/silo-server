@@ -14,9 +14,12 @@ struct BranchApplicationTests {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
         let rulesets = try RulesetStore(folder: bench.root.appendingPathComponent("State/rulesets"))
-        let household = Data(JobServiceTests.Bench.household.utf8)
+        let onTrial = JobServiceTests.Bench.household.replacingOccurrences(
+            of: "</ruleset>",
+            with: "<!-- on trial --></ruleset>"
+        )
         _ = try rulesets.startBranch("trial", of: "household", from: 1)
-        #expect(try rulesets.store(household, as: "household", branch: "trial") == 2)
+        #expect(try rulesets.store(Data(onTrial.utf8), as: "household", branch: "trial", basedOn: 1).version == 2)
         let source = try bench.sources.register(
             JobServiceTests.Bench.input,
             key: JobServiceTests.Bench.key(),

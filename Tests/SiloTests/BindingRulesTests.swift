@@ -54,6 +54,34 @@ struct BindingRulesTests {
         _ = try await bench.service.place(job.id)
     }
 
+    @Test func rulesPutAgainAreTheVersionInForce() async throws {
+        let bench = try JobServiceTests.Bench()
+        defer { bench.remove() }
+        let binding = try Self.binding(in: bench)
+        let keepFirst = #"<rules><audio id="keep-the-first"><when fact="audio.index" is="1"/><copy/></audio></rules>"#
+
+        #expect(try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 1)
+        #expect(
+            try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 1,
+            "rules put again are the version in force"
+        )
+        #expect(try bench.bindingService.rules(of: binding.id).versions == [1], "and store nothing")
+
+        #expect(try await bench.bindingService.setRules(Data(keepFirst.utf8), of: binding.id) == 2)
+        #expect(
+            try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 3,
+            "rules put back are a version of their own"
+        )
+        #expect(try bench.bindingService.rules(of: binding.id).document == Data(Self.dropFirst.utf8))
+
+        try await Self.place(binding, in: bench)
+        #expect(
+            try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 3,
+            "and so once the rules are in the library"
+        )
+        #expect(try bench.bindingService.rules(of: binding.id).versions == [1, 2, 3])
+    }
+
     @Test func anExtraIsWhereItsContainerFilesItWhateverItsKind() throws {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
