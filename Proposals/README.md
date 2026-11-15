@@ -107,3 +107,8 @@ deltas in `openspec/changes/`, as that README describes.
   itself, records step by step and resumes if it stops; the console asks after the key rather than
   sending again, the images are sent first by their digest, and every write the silo takes can be sent
   twice and is answered as made.
+- [Repeats](Repeats.md) — a request sent again is answered as the first was: a route that makes a
+  record recognises it by what it is, a source by its natural key, now required, a binding by the entry
+  and segments it says, an application by the recipes it would make and a version by its document; a
+  route that changes a state answers a repeat with the record when the state asked for is there; and a
+  delete answers a repeat as made, since the silo remembers for thirty days what it deleted.
