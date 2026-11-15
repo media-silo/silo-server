@@ -24,4 +24,4 @@ findings shown — so the caller reads what refused it.
 - **THEN** the second answer is 200 with `applied` true, the presentation id the first answered and no
   writes, and the library holds one presentation of the item
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAndRefusedTheSecondTime`). A placement sent again is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`zPlacementIsShownThenAppliedAndRefusedTheSecondTime`), `Tests/SiloLibraryTests/PlacementTests.swift` (`whatCannotBePlacedIsRefusedWithReasons`), `Tests/SiloTests/RepeatTests.swift` (`aJobWhosePresentationIsAlreadyPlacedIsRecordedPlaced`).

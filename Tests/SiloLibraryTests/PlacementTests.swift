@@ -346,15 +346,37 @@ struct PlacementTests {
             )
         )
 
-        let again = try Placer.compute(
+        let resent = try Placer.compute(
             PlacementRequest(
                 library: sandbox.library,
                 lineage: Self.lineage,
                 item: "part1",
                 presentation: Presentation(file: ""),
+                source: try sandbox.source("resent.mkv")
+            )
+        )
+        #expect(resent.held, "the presentation the library holds, at its destination, is a placement sent again")
+        #expect(
+            resent.findings.isEmpty && resent.sidecars.isEmpty && resent.describe(relativeTo: sandbox.library).isEmpty
+        )
+        try Placer.apply(resent)
+        #expect(
+            FileManager.default.fileExists(atPath: sandbox.root.appendingPathComponent("resent.mkv").path),
+            "and applying it moves nothing"
+        )
+
+        var chaptered = Presentation(file: "")
+        chaptered.chapters = [Chapter(index: 1, title: "Opening")]
+        let again = try Placer.compute(
+            PlacementRequest(
+                library: sandbox.library,
+                lineage: Self.lineage,
+                item: "part1",
+                presentation: chaptered,
                 source: try sandbox.source("b.mkv")
             )
         )
+        #expect(!again.held, "a presentation that asks for other chapters is not the one held")
         #expect(
             again.errors.map(\.text) == [
                 "already exists; nothing is overwritten",

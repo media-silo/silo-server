@@ -31,4 +31,4 @@ the branch is brought up to date by storing a version on it that declares the st
 - **WHEN** `trial`, holding version 8, has been promoted as version 9, and is promoted again
 - **THEN** the promotion answers version 9, and nothing is stored
 
-Pinned by: `Tests/SiloStoreTests/RulesetBranchTests.swift` (`promotionIsAFastForwardRefusedOverWhatTheBranchHasNotTakenIn`, `aStraightPromotionOverTheStandardsHead`). A promotion made again is pinned by nothing yet.
+Pinned by: `Tests/SiloStoreTests/RulesetBranchTests.swift` (`promotionIsAFastForwardRefusedOverWhatTheBranchHasNotTakenIn`, `aStraightPromotionOverTheStandardsHead`).

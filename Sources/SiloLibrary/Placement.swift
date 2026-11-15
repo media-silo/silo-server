@@ -61,12 +61,17 @@ public struct Placement: Sendable {
     /// The presentation as it will be recorded, with the file the layout gave it.
     public var presentation: Presentation
     public var findings: [Finding]
+    /// Whether the library already holds the presentation, its file at the destination: a placement
+    /// sent again, which has nothing to write.
+    public var held = false
 
     public var errors: [Finding] { findings.filter { $0.severity == .error } }
     public var isApplicable: Bool { errors.isEmpty }
 
-    /// The declared write targets, one per line, relative to the library.
+    /// The declared write targets, one per line, relative to the library; none for a placement the
+    /// library already holds.
     public func describe(relativeTo library: URL) -> [String] {
+        guard !held else { return [] }
         var lines: [String] = []
         for folder in folders { lines.append("create   \(LibraryWalker.relativePath(of: folder, in: library))/") }
         lines.append("place    \(source.path) -> \(LibraryWalker.relativePath(of: destination, in: library))")
@@ -146,6 +151,20 @@ public enum Placer {
             fileExtension: request.fileExtension
         )
         let destination = last.folder.appendingPathComponent(presentation.file)
+        if Self.holds(last.sidecar, presentation, of: request.item, at: destination) {
+            var placed = Placement(
+                source: request.source,
+                destination: destination,
+                folders: [],
+                sidecars: [],
+                container: target.id,
+                item: request.item,
+                presentation: presentation,
+                findings: []
+            )
+            placed.held = true
+            return placed
+        }
         findings += presentationFindings(presentation, in: target, destination: destination, request: request)
         if isExtra {
             let extras = last.folder.appendingPathComponent(LibraryLayout.extrasFolder, isDirectory: true)
@@ -236,6 +255,21 @@ public enum Placer {
         return sidecars
     }
 
+    /// Whether the sidecar records the presentation of the item — its alternative and profile, its
+    /// file, its tracks and its chapters — and its file is at the destination.
+    private static func holds(
+        _ sidecar: Sidecar,
+        _ presentation: Presentation,
+        of item: String,
+        at destination: URL
+    ) -> Bool {
+        sidecar.presentations[item, default: []].contains {
+            $0.alternative == presentation.alternative && $0.profile == presentation.profile
+                && $0.file == presentation.file && $0.tracks == presentation.tracks
+                && $0.chapters == presentation.chapters
+        } && FileManager.default.fileExists(atPath: destination.path)
+    }
+
     /// What is wrong with the presentation itself: what it names that the container lacks, and the
     /// files on either end of the move.
     private static func presentationFindings(
@@ -283,6 +317,8 @@ public enum Placer {
     /// sidecars root first. Refused whole when the placement has an error.
     public static func apply(_ placement: Placement, move: Bool = true) throws {
         guard placement.isApplicable else { throw PlacementError.refused(placement.errors) }
+        // A placement the library already holds has nothing to write, and moves nothing.
+        guard !placement.held else { return }
         for folder in placement.folders {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         }

@@ -338,7 +338,7 @@ struct CheckTests {
         #expect(impact.map(\.recipe.id) == [job.recipe], "what promotion would change, before it does")
         #expect(try bench.checkService.pass() == 0, "a store on a branch changes no stack in force")
 
-        #expect(try bench.rulesets.promote("speech-96k", of: "household") == 3)
+        #expect(try bench.rulesets.promote("speech-96k", of: "household").version == 3)
         #expect(try bench.checkService.pass() == 1)
         let check = try #require(bench.checks.check(of: job.id))
         #expect(check.outcome == .outOfDate)

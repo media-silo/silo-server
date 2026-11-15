@@ -25,7 +25,7 @@ struct RulesetBranchTests {
         for n in 1...7 { try store.store(Self.document("standard \(n)"), as: "household", basedOn: n - 1) }
         #expect(try store.parent(of: "household", version: 2) == 1)
 
-        let trial = try store.startBranch("trial", of: "household", from: 7)
+        let trial = try store.startBranch("trial", of: "household", from: 7).branch
         #expect(trial.head == 7 && trial.upToDateWith == 7, "a new branch's head is its base")
         #expect(try store.store(Self.document("on trial"), as: "household", branch: "trial", basedOn: 7).version == 8)
         #expect(
@@ -39,8 +39,11 @@ struct RulesetBranchTests {
         #expect(try store.head(of: "household", branch: "trial") == 8)
         #expect(try store.branches(of: "household").map(\.name) == ["standard", "trial"], "the standard first")
 
+        let again = try store.startBranch("trial", of: "household", from: 7)
+        #expect(!again.created, "a start sent again")
+        #expect(again.branch.head == 8 && again.branch.base == 7, "is the branch as it stands")
         #expect(throws: RulesetStoreError.branchExists(name: "household", branch: "trial")) {
-            try store.startBranch("trial", of: "household", from: 7)
+            try store.startBranch("trial", of: "household", from: 6)
         }
         #expect(throws: RulesetStoreError.notOnStandard(name: "household", version: 8)) {
             try store.startBranch("other", of: "household", from: 8)
@@ -102,7 +105,7 @@ struct RulesetBranchTests {
             upToDateWith: 9,
             basedOn: 8
         ).version
-        let promoted = try store.promote("trial", of: "household")
+        let promoted = try store.promote("trial", of: "household").version
         #expect(promoted == caughtUp + 1)
         #expect(
             try store.document(named: "household", version: promoted)?.data == Self.document("on trial, with 9"),
@@ -114,9 +117,11 @@ struct RulesetBranchTests {
         #expect(throws: RulesetStoreError.branchClosed(name: "household", branch: "trial")) {
             try store.store(Self.document("late"), as: "household", branch: "trial", basedOn: 10)
         }
-        #expect(throws: RulesetStoreError.branchClosed(name: "household", branch: "trial")) {
-            try store.promote("trial", of: "household")
-        }
+        #expect(
+            try store.promote("trial", of: "household") == (promoted, false),
+            "a promotion sent again is the version the first made"
+        )
+        #expect(try store.latestVersion(of: "household") == promoted, "and stores nothing")
     }
 
     @Test func aStraightPromotionOverTheStandardsHead() throws {
@@ -125,7 +130,7 @@ struct RulesetBranchTests {
         for n in 1...7 { try store.store(Self.document("standard \(n)"), as: "household", basedOn: n - 1) }
         _ = try store.startBranch("trial", of: "household", from: 7)
         try store.store(Self.document("on trial"), as: "household", branch: "trial", basedOn: 7)
-        #expect(try store.promote("trial", of: "household") == 9)
+        #expect(try store.promote("trial", of: "household").version == 9)
         #expect(try store.parent(of: "household", version: 9) == 7)
         #expect(try store.document(named: "household", version: 9)?.data == Self.document("on trial"))
     }

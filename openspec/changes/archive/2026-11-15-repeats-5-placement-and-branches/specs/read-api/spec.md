@@ -38,4 +38,4 @@ silo does not hold is 404.
 - **WHEN** `trial` is promoted as version 9, and the promotion is sent again
 - **THEN** the second answer is 200 with version 9, and nothing is stored
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`aBranchIsStartedStoredOnAndPromoted`). A start and a promotion sent again are pinned by nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`aBranchIsStartedStoredOnAndPromoted`).
