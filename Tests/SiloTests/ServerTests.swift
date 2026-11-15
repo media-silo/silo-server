@@ -1807,11 +1807,13 @@ extension ServerTests {
             #expect(job.recipe == recipe.id)
             #expect(job.requirements == ["aac", "flac"])
             #expect(try await client.get("/v1/recipes/\(recipe.id)").json(StoredRecipeBody.self).state == "committed")
-            #expect(
-                try await client.post("/v1/jobs", json: NewJob(recipe: recipe.id), headers: Self.operatorHeaders).status
-                    == 409,
-                "one recipe, one job"
+            let again = try await client.post(
+                "/v1/jobs",
+                json: NewJob(recipe: recipe.id),
+                headers: Self.operatorHeaders
             )
+            #expect(again.status == 200, "one recipe, one job")
+            #expect(try SiloClient.decoder.decode(Job.self, from: again.body).id == job.id, "answered with the job")
             #expect(try await client.get("/v1/jobs?state=pending").bodyText.contains(job.id))
             let held = try await client.send("DELETE", "/v1/libraries/main", headers: Self.operatorHeaders)
             #expect(held.status == 409, "a live job files into the library")
@@ -1897,10 +1899,13 @@ extension ServerTests {
             #expect(done.placement?.destination == "Doctor Who (1963)/01 - Pyramids of Mars/Part Three - mobile.mkv")
             let id = try #require(done.placement?.presentation)
             #expect(try await client.get("/v1/media/\(id)", headers: ["Range": "bytes=0-9"]).status == 206)
-            #expect(
-                try await client.send("POST", "/v1/jobs/\(job.id)/place", headers: ["Authorization": "Bearer secret"])
-                    .status == 409
+            let placedAgain = try await client.send(
+                "POST",
+                "/v1/jobs/\(job.id)/place",
+                headers: ["Authorization": "Bearer secret"]
             )
+            #expect(placedAgain.status == 200, "a place sent again")
+            #expect(try SiloClient.decoder.decode(Job.self, from: placedAgain.body) == done, "is the job as placed")
             #expect(
                 try await client.send("POST", "/v1/jobs/\(job.id)/cancel", headers: ["Authorization": "Bearer secret"])
                     .status == 409

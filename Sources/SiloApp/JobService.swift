@@ -91,35 +91,60 @@ package struct JobService: Service, JobsAPI {
     /// A job from a resolved recipe: the recipe is committed, so one recipe is run by one job, and the
     /// job is pending. Refused while any source of the recipe's binding has no copy, since no node
     /// could fetch it; the recipe then stays resolved. A trial job is encoded as any job is, and kept
-    /// in the trial area rather than placed.
-    package func make(from id: String, trial: Bool = false) throws -> Job {
+    /// in the trial area rather than placed. A recipe whose job the silo holds, of the kind asked
+    /// for, is answered with that job as it stands, so a request sent again finds the job the first
+    /// made; `created` says which.
+    package func make(from id: String, trial: Bool = false) throws -> (job: Job, created: Bool) {
         guard let recipe = recipes.recipe(id) else { throw NoSuchRecipe() }
-        guard recipe.state == .resolved else {
-            throw CommittedRecipe(reason: "recipe \(id) is committed; a job has been made from it")
-        }
+        guard recipe.state == .resolved else { return (try job(of: id, trial: trial), false) }
         guard let binding = bindings.binding(recipe.binding) else {
             throw Unrunnable(reason: "recipe \(id)'s binding \(recipe.binding) is gone")
         }
         for segment in binding.segments where sources.source(segment.source)?.copies.isEmpty ?? true {
             throw Unrunnable(reason: "source \(segment.source) has no copy; no node could fetch it")
         }
+        // The job is found or made under the job store's lock, before the recipe is committed, so
+        // that of two copies sent at once the second finds the first's job.
+        let made = try jobs.insert(Job(recipe: id, requirements: recipe.recipe.encoders.sorted(), trial: trial)) {
+            $0.recipe == id
+        }
+        guard made.created else { return (try kind(of: made.job, asked: trial), false) }
         do {
             _ = try recipes.commit(id)
-        } catch let error as RecipeStoreError {
-            throw CommittedRecipe(reason: error.description)
+        } catch {
+            try? jobs.remove(made.job.id)
+            throw (error as? RecipeStoreError).map { CommittedRecipe(reason: $0.description) } ?? error
         }
-        let job = Job(recipe: id, requirements: recipe.recipe.encoders.sorted(), trial: trial)
-        try jobs.insert(job)
-        logger.info("made \(trial ? "trial " : "")\(job.id) from recipe \(id), needs \(job.requirements)")
+        logger.info("made \(trial ? "trial " : "")\(made.job.id) from recipe \(id), needs \(made.job.requirements)")
+        return made
+    }
+
+    /// A committed recipe's job, when it is of the kind asked for.
+    private func job(of recipe: String, trial: Bool) throws -> Job {
+        guard let held = jobs.all().first(where: { $0.recipe == recipe }) else {
+            throw CommittedRecipe(reason: "recipe \(recipe) is committed, and the job made from it is gone")
+        }
+        return try kind(of: held, asked: trial)
+    }
+
+    private func kind(of job: Job, asked trial: Bool) throws -> Job {
+        guard job.trial == trial else {
+            throw CommittedRecipe(
+                reason:
+                    "recipe \(job.recipe) is committed to \(job.trial ? "trial" : "job") \(job.id), which is \(job.trial ? "" : "not ")a trial"
+            )
+        }
         return job
     }
 
     // Every change of a job's state checks the state it changes inside the store's `update`, under
     // its lock, so that two copies of one request cannot both pass the check: a client retrying a
-    // request whose first copy still runs sends them.
+    // request whose first copy still runs sends them. A change that finds the state it asks for
+    // already made answers the job as it stands, writing nothing, as a request sent again is
+    // answered.
 
     package func cancel(_ id: String) throws -> Job {
-        try changing(id) { job throws(WrongState) in
+        try changing(id) { job throws(JobChange) in
             switch job.state {
             case .pending, .encoded, .failed:
                 job.state = .cancelled
@@ -127,16 +152,19 @@ package struct JobService: Service, JobsAPI {
             case .claimed, .encoding:
                 // The node learns at its next progress report and stops; its fail report finalises.
                 job.state = .cancelling
-            case .cancelling, .cancelled, .placing, .placed, .tried:
-                throw WrongState(job.state, "cannot be cancelled")
+            case .cancelling, .cancelled:
+                throw .asMade(job)
+            case .placing, .placed, .tried:
+                throw .refused(WrongState(job.state, "cannot be cancelled"))
             }
         }
     }
 
     package func retry(_ id: String) throws -> Job {
-        try changing(id) { job throws(WrongState) in
+        try changing(id) { job throws(JobChange) in
+            if job.state == .pending { throw .asMade(job) }
             guard [.failed, .cancelled].contains(job.state) else {
-                throw WrongState(job.state, "cannot be retried")
+                throw .refused(WrongState(job.state, "cannot be retried"))
             }
             job.state = .pending
             job.attempts.removeAll()
@@ -149,10 +177,16 @@ package struct JobService: Service, JobsAPI {
     }
 
     /// One job changed under the store's lock by a change that checks its state first and throws
-    /// when the change is not allowed, in which case nothing is written.
-    private func changing(_ id: String, _ change: (inout Job) throws(WrongState) -> Void) throws -> Job {
-        guard let changed = try jobs.update(id, change) else { throw NoSuchJob() }
-        return changed
+    /// when the change is not allowed, or is already made, in which case nothing is written.
+    private func changing(_ id: String, _ change: (inout Job) throws(JobChange) -> Void) throws -> Job {
+        do {
+            guard let changed = try jobs.update(id, change) else { throw NoSuchJob() }
+            return changed
+        } catch let JobChange.asMade(job) {
+            return job
+        } catch let JobChange.refused(wrong) {
+            throw wrong
+        }
     }
 
     // MARK: - JobsAPI, the node's side
@@ -244,10 +278,15 @@ package struct JobService: Service, JobsAPI {
     }
 
     package func complete(_ id: String, output: FileRef, result: EncodeResult) async throws -> Job {
-        let completed = try changing(id) { job throws(WrongState) in
-            guard [.claimed, .encoding].contains(job.state) else {
-                throw WrongState(job.state, "cannot be completed")
+        var made = false
+        let completed = try changing(id) { job throws(JobChange) in
+            if [.encoded, .failed].contains(job.state), job.output == output, job.result == result {
+                throw .asMade(job)
             }
+            guard [.claimed, .encoding].contains(job.state) else {
+                throw .refused(WrongState(job.state, "cannot be completed"))
+            }
+            made = true
             job.output = output
             job.result = result
             job.lease = nil
@@ -264,16 +303,18 @@ package struct JobService: Service, JobsAPI {
                 job.failure = "the output's layout is not the recipe's"
             }
         }
-        // A trial's output is fetched once it is encoded, by `run`, without the node waiting on it.
-        if completed.trial, completed.state == .encoded {
+        // A trial's output is fetched once it is encoded, by `run`, without the node waiting on it;
+        // a completion sent again has been queued already.
+        if made, completed.trial, completed.state == .encoded {
             trialQueue.yield(id)
         }
         return completed
     }
 
     package func fail(_ id: String, reason: String) async throws -> Job {
-        try changing(id) { job throws(WrongState) in
-            guard job.isActive else { throw WrongState(job.state, "cannot be failed") }
+        try changing(id) { job throws(JobChange) in
+            if job.state == .cancelled || (job.state == .failed && job.failure == reason) { throw .asMade(job) }
+            guard job.isActive else { throw .refused(WrongState(job.state, "cannot be failed")) }
             job.lease = nil
             if var last = job.attempts.popLast() {
                 last.endedAt = .now
@@ -406,6 +447,8 @@ extension JobService {
     package func place(_ id: String) async throws -> Job {
         guard let current = jobs.job(id) else { throw NoSuchJob() }
         guard !current.trial else { throw TrialNeverPlaced() }
+        // A place sent again, once the first has placed the job.
+        if current.state == .placed { return current }
         guard current.state == .encoded, let output = current.output, let stored = recipes.recipe(current.recipe),
             let binding = bindings.binding(stored.binding)
         else {
@@ -487,8 +530,8 @@ extension JobService {
     /// Sets an encoded job `placing`, checked again under the lock: of two placements sent at once,
     /// only one begins.
     private func beginPlacing(_ id: String) throws {
-        _ = try changing(id) { job throws(WrongState) in
-            guard job.state == .encoded else { throw WrongState(job.state, "cannot be placed") }
+        _ = try changing(id) { job throws(JobChange) in
+            guard job.state == .encoded else { throw .refused(WrongState(job.state, "cannot be placed")) }
             job.state = .placing
         }
     }
@@ -586,6 +629,12 @@ final class InFlight: Sendable {
     func begin(_ id: String) -> Bool { ids.withLock { $0.insert(id).inserted } }
 
     func end(_ id: String) { _ = ids.withLock { $0.remove(id) } }
+}
+/// Why a change of a job's state was not written: it was refused, or the job is already as the change
+/// would make it.
+enum JobChange: Error {
+    case refused(WrongState)
+    case asMade(Job)
 }
 package struct WrongState: Error, CustomStringConvertible {
     package var state: JobState

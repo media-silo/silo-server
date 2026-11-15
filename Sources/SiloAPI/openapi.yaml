@@ -1503,7 +1503,9 @@ paths:
         Commits the recipe, so one recipe is run by one job, and makes the job pending with the
         recipe's encoders as its requirements. Refused while a source of the recipe's binding has no
         copy, since no node could fetch it. A trial job is encoded as any job is, its output kept in
-        the silo's trial area, and never placed. Operator only.
+        the silo's trial area, and never placed. A committed recipe whose job the silo holds, of the
+        kind asked for, is answered 200 with that job as it stands, so a request sent again finds the
+        job the first made. Operator only.
       tags: [Jobs]
       security:
         - operator: []
@@ -1520,12 +1522,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+        "200":
+          description: The job made from the recipe before, as it stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
           description: No such recipe.
         "409":
-          description: The recipe is committed, or a source of its binding has no copy.
+          description: >
+            The recipe's job is of the other kind, trial or not, and is named; the recipe's job is
+            gone; or a source of its binding has no copy.
           content:
             application/json:
               schema:
@@ -1584,7 +1594,10 @@ paths:
     post:
       operationId: cancelJob
       summary: Cancel a job
-      description: A job a node is working on becomes cancelling; the node learns at its next report and stops.
+      description: >
+        A job a node is working on becomes cancelling; the node learns at its next report and stops.
+        A job already cancelling or cancelled is answered as it stands, so a cancel sent again is
+        answered as the first was.
       tags: [Jobs]
       security:
         - operator: []
@@ -1612,6 +1625,9 @@ paths:
     post:
       operationId: retryJob
       summary: Offer a failed or cancelled job again
+      description: >
+        A pending job is answered as it stands, so a retry sent again is answered as the first was.
+        One a node has claimed since is refused, naming its state.
       tags: [Jobs]
       security:
         - operator: []
@@ -1642,7 +1658,8 @@ paths:
       description: >
         The silo fetches the output from the node that holds it into the library's filesystem,
         places it as the recipe's binding says, in the profile of the recipe's output, and re-scans. Refused, with the reasons, when the
-        placement would be.
+        placement would be. A placed job is answered as it stands, so a place sent again is answered
+        as the first was; one still placing is refused.
       tags: [Jobs]
       security:
         - operator: []
@@ -1789,6 +1806,9 @@ paths:
     post:
       operationId: completeJob
       summary: A node reports the output, where it holds it
+      description: >
+        A job that already holds this output and result is answered as it stands, so a completion
+        sent again is answered as the first was.
       tags: [Jobs]
       security:
         - node: []
@@ -1823,6 +1843,9 @@ paths:
     post:
       operationId: failJob
       summary: A node gives up on a job
+      description: >
+        A job failed with this reason, or cancelled, is answered as it stands, so a failure sent again
+        is answered as the first was.
       tags: [Jobs]
       security:
         - node: []

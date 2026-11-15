@@ -141,7 +141,10 @@ Pinned by: `Tests/SiloTests/JobTests.swift` (`aMismatchedLayoutFailsAndALapsedLe
 
 ### Requirement: Completion encodes the job only when the reported layout matches the recipe
 `POST /v1/jobs/{id}/complete` with the output's file reference — on the node that made it — and
-the result SHALL be taken only from a `claimed` or `encoding` job; anything else is 409. The job
+the result SHALL be taken from a `claimed` or `encoding` job. A job that already holds that output and
+that result, `encoded` or `failed` as the result made it, SHALL be answered 200 as it stands, changing
+nothing, and a trial SHALL be queued for fetching once, so that a completion sent again is answered as
+the first was; anything else is 409. The job
 SHALL record the output and the result (its size and its probed stream list), clear the lease and
 set progress to done. The open attempt SHALL end `encoded` when the reported layout matched the
 recipe and `failed` when it did not. A match SHALL make the job `encoded`; a mismatch SHALL make
@@ -156,11 +159,22 @@ it `failed` with the failure `the output's layout is not the recipe's`.
 - **THEN** the job is `failed` with `the output's layout is not the recipe's`, and placing it is
   refused
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aMismatchedLayoutFailsAndALapsedLeaseIsReclaimed`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
+#### Scenario: a completion sent again
+- **WHEN** a node completes its job with an output and `layoutMatched` true, and sends the same
+  completion again
+- **THEN** both answers are 200 with the job `encoded`, and it has one attempt
+
+#### Scenario: a completion of another output
+- **WHEN** an encoded job is completed again with another output
+- **THEN** the answer is 409, and the job holds the first output
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aMismatchedLayoutFailsAndALapsedLeaseIsReclaimed`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`).
 
 ### Requirement: A node gives an active job up with a reason
-`POST /v1/jobs/{id}/fail` with a reason SHALL be taken only from an active job — `claimed`,
-`encoding` or `cancelling`; anything else is 409. The lease SHALL be cleared and the open attempt
+`POST /v1/jobs/{id}/fail` with a reason SHALL be taken from an active job — `claimed`,
+`encoding` or `cancelling`. A job `failed` with that reason, or `cancelled`, SHALL be answered 200 as it
+stands, changing nothing, so that a failure sent again is answered as the first was; anything else is
+409. The lease SHALL be cleared and the open attempt
 ended, `failed` ordinarily and `cancelled` when a cancel was pending. An ordinary failure SHALL
 make the job `failed` with the reason recorded; a failure that lands a pending cancel SHALL make
 it `cancelled`.
@@ -169,24 +183,36 @@ it `cancelled`.
 - **WHEN** a node fails the job it holds with the error it hit
 - **THEN** the job is `failed` with that reason, the lease gone, the attempt's outcome `failed`
 
-Pinned by: nothing yet (the service covers the cancel-landing half — `Tests/SiloTests/JobTests.swift`, `aJobGoesFromResolvedToPlaced`).
+#### Scenario: a failure sent again
+- **WHEN** a node fails the job it holds, and sends the same failure again
+- **THEN** both answers are 200 with the job `failed` with that reason, and it has one attempt
+
+Pinned by: `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`), `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, for the cancel-landing half).
 
 ### Requirement: Cancelling reaches a running job at its next progress report
 `POST /v1/jobs/{id}/cancel` SHALL land a `pending`, `encoded` or `failed` job as `cancelled` at
 once, lease cleared. On a `claimed` or `encoding` job it SHALL make the job `cancelling` and leave
 the rest to the node: the job's state rides back in the answer to the node's next progress report,
 and the node's fail report then lands the job `cancelled` with the attempt's outcome `cancelled`. A
-job already `cancelling`, `cancelled`, `placing` or `placed` SHALL be 409.
+job already `cancelling` or `cancelled` SHALL be answered 200 as it stands, changing nothing, so that a
+cancel sent again is answered as the first was; one `placing`, `placed` or `tried` SHALL be 409.
 
 #### Scenario: the node learns at its next report
 - **WHEN** a job is cancelled while a node encodes it
 - **THEN** the job is `cancelling`, the node's next progress report is answered `cancelling`, and
   the node's fail report makes it `cancelled` with the attempt's outcome `cancelled`
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, for cancel on a placed job being 409).
+#### Scenario: a cancel sent again
+- **WHEN** a pending job is cancelled, and the cancel is sent again
+- **THEN** both answers are 200 with the job `cancelled`
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, for cancel on a placed job being 409), `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`).
 
 ### Requirement: A failed or cancelled job is offered again on retry
-`POST /v1/jobs/{id}/retry` SHALL take only a `failed` or `cancelled` job; anything else is 409.
+`POST /v1/jobs/{id}/retry` SHALL take a `failed` or `cancelled` job. A `pending` job SHALL be answered
+200 as it stands, changing nothing, so that a retry sent again is answered as the first was; anything
+else is 409 naming the job's state, since a job a node has claimed since cannot be told from one that
+was never retried.
 The job SHALL go back to `pending`, running the same committed recipe, with its attempts emptied and
 its failure, lease, progress, output and result cleared.
 
@@ -195,15 +221,20 @@ its failure, lease, progress, output and result cleared.
 - **THEN** it is `pending` with no attempts, and claiming works again; a retry while a node is
   encoding is 409
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`).
+#### Scenario: a retry sent again
+- **WHEN** a failed job is retried, and the retry is sent again before a node claims it
+- **THEN** both answers are 200 with the job `pending`
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`).
 
 ### Requirement: A job's state is checked and changed in one step
 Every change of a job's state — a cancel, a retry, a progress report, a completion, a failure and
 the start of a placement — SHALL check the state it changes and write the change in one step
 under the job store's lock, so that two copies of one request sent at once, as a client retrying a
 request whose first copy still runs sends them, cannot both pass the check. The copy that finds
-the state already changed SHALL be refused as the wrong state, and a progress report SHALL leave
-a job that is no longer being encoded as it found it.
+the state the other made SHALL be answered as made, as a request sent again is; one that finds
+another state SHALL be refused as the wrong state; and a progress report SHALL leave a job that is no
+longer being encoded as it found it.
 
 #### Scenario: a completion and a failure sent at once
 - **WHEN** a claimed job is completed and failed at the same moment
@@ -213,12 +244,18 @@ a job that is no longer being encoded as it found it.
 - **WHEN** a claimed job is cancelled while a progress report for it arrives
 - **THEN** the job is `cancelling` afterwards, for the node's next report to learn of
 
+#### Scenario: one completion sent twice at once
+- **WHEN** a claimed job's completion is sent twice at the same moment
+- **THEN** the job is completed once, with one attempt, and both are answered 200 with it
+
 Pinned by: `Tests/SiloTests/JobTests.swift` (`twoChangesOfOneJobSentAtOnceAreNeverBothMade`,
-`aReportSentAsAJobIsCancelledNeverUndoesTheCancel`).
+`aReportSentAsAJobIsCancelledNeverUndoesTheCancel`), `Tests/SiloTests/RepeatTests.swift` (`oneCompletionSentTwiceAtOnceIsMadeOnceAndAnsweredTwice`).
 
 ### Requirement: Placement fetches the output from its holder and files it
-`POST /v1/jobs/{id}/place` SHALL take only an `encoded` job with its output present; anything else
-is 409, and a binding naming a library the silo no longer has is 404. The job SHALL become `placing`
+`POST /v1/jobs/{id}/place` SHALL take an `encoded` job with its output present. A `placed` job SHALL be
+answered 200 as it stands, its placement summary included, so that a place sent again is answered as
+the first was; anything else is 409, a `placing` job among them, since how its placement ends is not
+yet known; and a binding naming a library the silo no longer has is 404. The job SHALL become `placing`
 while the silo works. The output SHALL be staged at `<library>/.silo/incoming/<job id>.<ext>`: moved
 across when the output is a file URL — the embedded node's output is on this filesystem already —
 and fetched over HTTP with the file's secret in `x-silo-secret` when it is remote, a non-200 answer
@@ -239,7 +276,8 @@ writes made. Any failure along the way SHALL return the job to `encoded` with th
   Mars*, in the series *Doctor Who (1963)* in library `main`, made by the unqualified output
 - **THEN** the job is `placed` at `Doctor Who (1963)/01 - Pyramids of Mars/Part Three.mkv`, the index
   answers its presentation id (and the media route serves it by range), the serial's sidecar names
-  the binding and the recipe's ruleset version on the presentation, and a second place is 409
+  the binding and the recipe's ruleset version on the presentation, and a second place is answered 200
+  with the job, `placed`, writing nothing
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, for the `- mobile` naming and the file moved out of the work folder). `Tests/SiloTests/StackTests.swift` (`aPlacedPresentationRecordsItsBindingAndTheRulesThatMadeIt`, for the presentation's provenance).
 
@@ -284,17 +322,22 @@ Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `T
 `POST /v1/jobs` with a recipe's id, behind the operator's token, SHALL commit the recipe, make the job
 `pending` with the recipe's encoders sorted as its requirements, and answer 201 with it; with
 `trial`, the job SHALL be a trial job. It SHALL be
-404 for a recipe the silo does not have; 409 for a committed recipe, so one recipe is run by one job;
-and 409 naming the source when a source of the recipe's binding has no copy, since no node could
-fetch it. A job SHALL NOT be made any other way.
+404 for a recipe the silo does not have; and 409 naming the source when a source of the recipe's
+binding has no copy, since no node could fetch it. One recipe SHALL be run by one job: a request for a
+committed recipe whose job the silo holds, trial or not as the request asks, SHALL be answered 200 with
+that job as it stands, so that a request sent again is answered with the job the first made; one asking
+for the other kind SHALL be 409 naming the job; and a committed recipe whose job the silo no longer
+holds SHALL be 409 saying so. Two requests for one recipe sent at once SHALL make one job, and both
+SHALL be answered with it. A job SHALL NOT be made any other way.
 
 #### Scenario: a job from a resolved recipe
 - **WHEN** the operator makes a job from a resolved recipe whose source has a copy
 - **THEN** the answer is 201 with a `pending` job, and the recipe is committed
 
 #### Scenario: a second job from one recipe
-- **WHEN** the operator makes a job from a recipe a job has already been made from
-- **THEN** the answer is 409, and no job is made
+- **WHEN** the operator makes a job from a recipe a job has already been made from, and the job has
+  since been claimed
+- **THEN** the answer is 200 with the job made first, `claimed`, and no job is made
 
 #### Scenario: a source no node holds
 - **WHEN** the operator makes a job from a resolved recipe whose binding's only source has no copy
@@ -304,7 +347,17 @@ fetch it. A job SHALL NOT be made any other way.
 - **WHEN** the operator makes a trial job from a resolved recipe made by a version on a branch
 - **THEN** the answer is 201 with a `pending` trial job, and the recipe is committed
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`), `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`), for a trial.
+#### Scenario: a trial asked for as a job
+- **WHEN** the operator makes a trial job from a recipe, and then asks for a job that is not a trial
+  from the same recipe
+- **THEN** the second answer is 409 naming the trial job, and no job is made
+
+#### Scenario: a recipe whose job is gone
+- **WHEN** a trial job made from a recipe has been deleted, and the operator makes a trial job from the
+  recipe
+- **THEN** the answer is 409 saying the recipe's job is gone, and no job is made
+
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`), `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`), for a trial. `Tests/SiloTests/RepeatTests.swift` (`aJobMadeAgainIsTheJobAsItStands`, `oneJobAskedForTwiceAtOnceIsMadeOnce`), for a request for a committed recipe's job.
 
 ### Requirement: Placement writes a binding's rules before the presentation names them
 Placing a job's output SHALL, when the job's binding has rules kept in the silo's state, write every

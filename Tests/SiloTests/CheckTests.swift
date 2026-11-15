@@ -60,7 +60,7 @@ struct CheckTests {
         var unqualified = application
         unqualified.outputs = [Application.OutputChoice(profile: profile)]
         let resolved = try #require(try bench.bindingService.apply(unqualified, to: binding.id).recipes.first)
-        let job = try bench.service.make(from: resolved.id)
+        let job = try bench.service.make(from: resolved.id).job
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
         let output = bench.root.appendingPathComponent("encoded-\(name).mkv")
         try Fixture.mediaBytes.write(to: output)
@@ -434,7 +434,7 @@ struct CheckTests {
                 to: binding.id
             ).recipes.first
         )
-        let job = try bench.service.make(from: resolved.id)
+        let job = try bench.service.make(from: resolved.id).job
         _ = try await bench.service.claim(node: "box", capabilities: Set(job.requirements))
         let output = bench.root.appendingPathComponent("encoded.mkv")
         try Fixture.mediaBytes.write(to: output)

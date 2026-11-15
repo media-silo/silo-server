@@ -98,7 +98,7 @@ struct EmbeddedNodeTests {
         let (first, firstInput) = try await sample(in: bench, named: "first.mkv")
         let firstJob = try bench.service.make(
             from: try bench.resolved(input: firstInput, copy: first, profile: "mobile").id
-        )
+        ).job
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(firstJob.id).state == .pending, "off, it claims nothing")
 
@@ -113,7 +113,7 @@ struct EmbeddedNodeTests {
         let (second, secondInput) = try await sample(in: bench, named: "second.mkv")
         let secondJob = try bench.service.make(
             from: try bench.resolved(input: secondInput, copy: second, profile: "mobile").id
-        )
+        ).job
         try await Task.sleep(for: .milliseconds(400))
         #expect(try bench.service.job(secondJob.id).state == .pending, "off again, it claims no more")
     }
