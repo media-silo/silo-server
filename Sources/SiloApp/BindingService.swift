@@ -43,6 +43,7 @@ package struct BindingService: Sendable {
     private let stack: RulesStack
     private let libraries: Libraries
     private let checks: CheckSignal
+    private let deleted: DeletedStore
     private let logger = Logger(label: "silo.bindings")
 
     @Inject
@@ -56,8 +57,10 @@ package struct BindingService: Sendable {
         staged: BindingRulesStore,
         stack: RulesStack,
         libraries: Libraries,
-        checks: CheckSignal
+        checks: CheckSignal,
+        deleted: DeletedStore
     ) {
+        self.deleted = deleted
         self.staged = staged
         self.stack = stack
         self.libraries = libraries
@@ -162,14 +165,6 @@ package struct BindingService: Sendable {
     package func binding(_ id: String) throws -> (binding: Binding, recipes: [StoredRecipe]) {
         guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
         return (binding, recipes.recipes(of: id))
-    }
-
-    package func discard(_ id: String) throws {
-        do {
-            guard try recipes.discard(id) != nil else { throw NoSuchRecipe() }
-        } catch let error as RecipeStoreError {
-            throw CommittedRecipe(reason: error.description)
-        }
     }
 
     // MARK: - A binding's own rules
@@ -319,6 +314,22 @@ package struct BindingService: Sendable {
 }
 
 extension BindingService {
+    /// Discards a resolved recipe. One the silo discarded, as its record of what it deleted holds, is
+    /// discarded already.
+    package func discard(_ id: String) throws {
+        do {
+            guard try recipes.discard(id) != nil else {
+                guard deleted.holds(.recipe, id) else { throw NoSuchRecipe() }
+                return
+            }
+        } catch let error as RecipeStoreError {
+            throw CommittedRecipe(reason: error.description)
+        }
+        do { try deleted.record(.recipe, id) } catch {
+            logger.warning("recipe \(id) is not on the deleted record: \(error)")
+        }
+    }
+
     /// The facts a binding gives one output, its item read from the lineage given rather than the
     /// containers the binding was made with: the background check's, with the lineage as the
     /// library holds it now. Refused with `BadBinding` when the lineage no longer holds the binding.

@@ -45,14 +45,26 @@ package struct OperatorController {
         self.checks = checks
     }
 
-    @Operation
-    @JSONResponse(status: .created)
-    @ErrorResponse(LibraryTaken.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(OutsideTheRoots.self, .forbidden, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(BadLibrary.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
-    package func addLibrary(@JSONBody body: Components.Schemas.NewLibrary) async throws -> Components.Schemas.Library {
-        let library = try await libraries.add(id: body.id, path: body.path, create: body.create ?? false)
-        return try listing(library.id, ruleset: library.ruleset)
+    /// Raw, because which success it answers — 201 for a library added, 200 for the one an add sent
+    /// again finds — is decided by the libraries.
+    @RawOperation
+    package func addLibrary(_ input: Operations.addLibrary.Input) async throws -> Operations.addLibrary.Output {
+        let body =
+            switch input.body {
+            case .json(let body): body
+            }
+        func problem(_ detail: String) -> Components.Schemas.Problem { Components.Schemas.Problem(detail: detail) }
+        do {
+            let (library, created) = try await libraries.add(id: body.id, path: body.path, create: body.create ?? false)
+            let rendered = try listing(library.id, ruleset: library.ruleset)
+            return created ? .created(.init(body: .json(rendered))) : .ok(.init(body: .json(rendered)))
+        } catch let taken as LibraryTaken {
+            return .conflict(.init(body: .json(problem(taken.reason))))
+        } catch let outside as OutsideTheRoots {
+            return .forbidden(.init(body: .json(problem(outside.reason))))
+        } catch let bad as BadLibrary {
+            return .unprocessableContent(.init(body: .json(problem(bad.reason))))
+        }
     }
 
     /// What `addLibrary` would find and answer for the same body, making and writing nothing.
@@ -79,14 +91,14 @@ package struct OperatorController {
     }
 
     /// Forgets a library — its entry in `settings.json` and its rows in the index — and leaves every
-    /// file under it where it is. Refused while a job not yet in a final state names it.
+    /// file under it where it is. Refused while a job not yet in a final state names it. A library the
+    /// silo removed is answered as removed, so a removal sent again is answered as the first was.
     @Operation
     @ResponseStatus(.noContent)
     @ErrorResponse(NoSuchLibrary.self, .notFound)
     @ErrorResponse(LibraryHeld.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
     package func removeLibrary(@Path library: String) async throws {
-        guard libraries.library(library) != nil else { throw NoSuchLibrary() }
-        if let job = jobs.liveJob(in: library) {
+        if libraries.library(library) != nil, let job = jobs.liveJob(in: library) {
             throw LibraryHeld(reason: "job \(job.id) is \(job.state.rawValue) and files into \(library)")
         }
         try await libraries.remove(library)
@@ -113,14 +125,7 @@ package struct OperatorController {
     }
 
     private func listing(_ library: String, ruleset: String?) throws -> Components.Schemas.Library {
-        let counts = LibraryCounts(index: index)
-        return Components.Schemas.Library(
-            id: library,
-            ruleset: ruleset,
-            containers: try counts.containers(in: library),
-            presentations: try counts.presentations(in: library),
-            available: libraries.isAvailable(library)
-        )
+        try LibraryCounts(index: index).library(library, ruleset: ruleset, available: libraries.isAvailable(library))
     }
 
     @Operation

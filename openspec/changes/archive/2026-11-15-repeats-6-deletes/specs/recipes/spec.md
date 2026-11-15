@@ -18,4 +18,4 @@ deleted holds.
 - **WHEN** the operator discards a resolved recipe, and sends the same discard again
 - **THEN** both answers are 204
 
-Pinned by: `Tests/SiloStoreTests/RecipeStoreTests.swift` (`aCommittedRecipeNeverChanges`, `aResolvedRecipeIsDiscardedAndTheRestStay`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`). Committing by making a job is pinned by `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`). A discard sent again is pinned by nothing yet.
+Pinned by: `Tests/SiloStoreTests/RecipeStoreTests.swift` (`aCommittedRecipeNeverChanges`, `aResolvedRecipeIsDiscardedAndTheRestStay`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`). Committing by making a job is pinned by `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`). A discard sent again is pinned by `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`).

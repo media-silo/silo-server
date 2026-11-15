@@ -1447,9 +1447,14 @@ struct ServerTests {
                 "written to settings.json"
             )
 
-            let taken = try await client.post("/v1/libraries", json: films, headers: Self.operatorHeaders)
-            #expect(taken.status == 409)
             let before = try Data(contentsOf: settingsFile)
+            let again = try await client.post("/v1/libraries", json: films, headers: Self.operatorHeaders)
+            #expect(again.status == 200, "an add sent again")
+            #expect(try again.json(LibraryBody.self).id == "films", "is the library the first added")
+            let elsewhere = NewLibrary(id: "films", path: media.appendingPathComponent("films/Casablanca (1942)").path)
+            let taken = try await client.post("/v1/libraries", json: elsewhere, headers: Self.operatorHeaders)
+            #expect(taken.status == 409, "the id at another path")
+            #expect(taken.bodyText.contains("there is already a library films"))
             let escape = try await client.post(
                 "/v1/libraries",
                 json: NewLibrary(id: "escape", path: media.appendingPathComponent("escape").path),
@@ -1494,7 +1499,14 @@ struct ServerTests {
                 ),
                 "and its files stay"
             )
-            #expect(try await client.send("DELETE", "/v1/libraries/films", headers: Self.operatorHeaders).status == 404)
+            #expect(
+                try await client.send("DELETE", "/v1/libraries/films", headers: Self.operatorHeaders).status == 204,
+                "a removal sent again"
+            )
+            #expect(
+                try await client.send("DELETE", "/v1/libraries/never", headers: Self.operatorHeaders).status == 404,
+                "and one the silo never served"
+            )
         }
     }
 
@@ -2044,6 +2056,10 @@ extension ServerTests {
             )
             #expect(try await client.get("/v1/trials").bodyText == "[]")
             #expect(try await client.get("/v1/trials/\(job.id)/file").status == 404)
+            #expect(
+                try await client.send("DELETE", "/v1/trials/\(job.id)", headers: Self.operatorHeaders).status == 204,
+                "a trial deleted again"
+            )
         }
     }
 }
@@ -2713,6 +2729,15 @@ extension ServerTests {
                     == 204
             )
             #expect(try await client.get("/v1/recipes/\(resolved[1].id)").status == 404)
+            #expect(
+                try await client.send("DELETE", "/v1/recipes/\(resolved[1].id)", headers: Self.operatorHeaders).status
+                    == 204,
+                "a discard sent again"
+            )
+            #expect(
+                try await client.send("DELETE", "/v1/recipes/never", headers: Self.operatorHeaders).status == 404,
+                "and one never held"
+            )
 
             // The same ruleset again, and another: the same act, adding resolved recipes and leaving the rest.
             let mobileOnly = try await client.send(

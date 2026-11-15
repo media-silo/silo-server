@@ -485,14 +485,19 @@ trial's output again and answer the job, 409 for a trial that is not encoded and
 holding the output does not give it. `DELETE /v1/trials/{job}` SHALL delete the output and the job's
 record, leaving its recipe committed, and answer 204. Fetching and deleting SHALL be the operator's.
 For the file and the deletion a job that is not a tried trial SHALL be 404, and for the fetch a job
-that is not a trial.
+that is not a trial; a deletion of a trial the silo deleted, as its record of what it deleted holds,
+SHALL be answered 204.
 
 #### Scenario: a trial served and deleted
 - **WHEN** a client asks for a tried trial's file with a range, and the operator then deletes the
   trial
 - **THEN** the range is served as 206, and the trial is no longer listed
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`).
+#### Scenario: a trial deleted again
+- **WHEN** the operator deletes a tried trial, and sends the same delete again
+- **THEN** both answers are 204
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`). A trial deleted again is pinned by the same and by `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`).
 
 ### Requirement: An unavailable library is kept, and says so
 A library SHALL be unavailable while its folder does not exist, or while its last walk found no

@@ -221,7 +221,9 @@ paths:
         made where a drive mounts — directly within /Volumes, /media, a folder of /media or
         /run/media, or /mnt, or within a mount point /etc/fstab or a systemd mount or automount unit
         declares with nothing mounted on it. The library is
-        written to settings.json, walked, and answered, and is served without a restart. Operator
+        written to settings.json, walked, and answered, and is served without a restart. A library
+        the silo serves under the id at the same path is answered 200 as it stands, adding and
+        walking nothing, so an add sent again is answered with the library the first added. Operator
         only. POST /v1/libraries/check asks the same questions and adds nothing.
       tags: [Libraries]
       security:
@@ -239,6 +241,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Library"
+        "200":
+          description: The library the silo serves under the id at the path, as it stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
         "401":
           $ref: "#/components/responses/Unauthorised"
         "403":
@@ -248,7 +256,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
         "409":
-          description: There is a library by that id already.
+          description: There is a library by that id already, at another path.
           content:
             application/json:
               schema:
@@ -307,11 +315,11 @@ paths:
         - $ref: "#/components/parameters/Library"
       responses:
         "204":
-          description: Removed.
+          description: Removed, or removed already within the last thirty days.
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
-          description: No such library.
+          description: No such library, and none the silo removed in the last thirty days.
         "409":
           description: A job not yet in a final state files into the library; the detail names it.
           content:
@@ -1289,7 +1297,10 @@ paths:
     delete:
       operationId: discardRecipe
       summary: Discard a resolved recipe
-      description: A committed recipe is the record of what a job ran, and is refused. Operator only.
+      description: >
+        A committed recipe is the record of what a job ran, and is refused. A recipe the silo
+        discarded in the last thirty days is answered 204, so a discard sent again is answered as the
+        first was. Operator only.
       tags: [Bindings]
       security:
         - operator: []
@@ -1297,11 +1308,11 @@ paths:
         - $ref: "#/components/parameters/RecipeID"
       responses:
         "204":
-          description: Discarded.
+          description: Discarded, or discarded already within the last thirty days.
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
-          description: No such recipe.
+          description: No such recipe, and none the silo discarded in the last thirty days.
         "409":
           description: The recipe is committed.
           content:
@@ -1742,7 +1753,10 @@ paths:
     delete:
       operationId: deleteTrial
       summary: Delete a trial
-      description: Its output and its job's record; its recipe stays committed. Operator only.
+      description: >
+        Its output and its job's record; its recipe stays committed. A trial the silo deleted in the
+        last thirty days is answered 204, so a delete sent again is answered as the first was.
+        Operator only.
       tags: [Jobs]
       security:
         - operator: []
@@ -1750,11 +1764,11 @@ paths:
         - $ref: "#/components/parameters/JobID"
       responses:
         "204":
-          description: Deleted.
+          description: Deleted, or deleted already within the last thirty days.
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
-          description: No tried trial with that id.
+          description: No tried trial with that id, and none the silo deleted in the last thirty days.
 
   /trials/{id}/fetch:
     post:

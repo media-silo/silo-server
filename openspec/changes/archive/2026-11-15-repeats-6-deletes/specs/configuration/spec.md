@@ -28,7 +28,9 @@ answered as the route answers an id the silo never had.
 - **WHEN** a trial is deleted, the silo stops and starts again, and the delete is sent again
 - **THEN** the answer is 204
 
-Pinned by: nothing yet.
+Pinned by: `Tests/SiloStoreTests/DeletedStoreTests.swift` (`aDeleteIsRecordedByKindAndSurvivesARestart`,
+`aDeleteLongAgoIsNotHeld`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`,
+`yTrialsAreListedServedAndDeletedOverTheAPI`).
 
 ## MODIFIED Requirements
 
@@ -126,4 +128,6 @@ for the refusal while a live job names the library), `Tests/SiloTests/LibrariesT
 (`withTheRootsEmptiedNothingIsAddedOverTheNetwork`, `aRootIsMatchedByWholeComponents`,
 `aPathIsCheckedAndItsMissingFoldersMadeWithinARoot`, `noFolderIsMadeWhereADriveMounts`,
 `mountPointsAreReadAsTheMachineHasThem`, `mountPointsAreReadFromSystemdUnits`). An add and a
-removal sent again are pinned by nothing yet.
+removal sent again are pinned by `Tests/SiloTests/LibrariesTests.swift`
+(`anAddAndARemovalSentAgainAreAnsweredAsMade`) and `Tests/SiloTests/ServerTests.swift`
+(`aLibraryIsAddedWithinTheRootsAndRemovedLeavingItsFiles`).

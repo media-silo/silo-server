@@ -23,6 +23,7 @@ struct LibrariesTests {
         let late: LibraryConfig
         let settings: SettingsStore
         let index: Index
+        let deleted = DeletedStore()
         let libraries: Libraries
 
         init() throws {
@@ -37,7 +38,13 @@ struct LibrariesTests {
             )
             settings = SettingsStore(Settings(name: "Silo on test", libraries: [present, late]))
             index = try Index(at: nil)
-            libraries = Libraries(config: config, settings: settings, index: index, checks: CheckSignal())
+            libraries = Libraries(
+                config: config,
+                settings: settings,
+                index: index,
+                checks: CheckSignal(),
+                deleted: deleted
+            )
         }
 
         static func place(_ film: Container, into library: URL, from root: URL) throws {
@@ -57,6 +64,32 @@ struct LibrariesTests {
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }
+    }
+
+    @Test func anAddAndARemovalSentAgainAreAnsweredAsMade() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let libraries = bench.libraries
+        let path = bench.root.appendingPathComponent("New")
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+
+        let first = try await libraries.add(id: "new", path: path.path)
+        let again = try await libraries.add(id: "new", path: path.path)
+        #expect(first.created)
+        #expect(!again.created && again.library == first.library, "an add sent again is the library the first added")
+        await #expect(throws: LibraryTaken.self, "the id at another path") {
+            try await libraries.add(id: "new", path: bench.present.root.path)
+        }
+
+        try await libraries.remove("new")
+        try await libraries.remove("new")
+        #expect(libraries.library("new") == nil && bench.deleted.holds(.library, "new"), "a removal sent again")
+        await #expect(throws: NoSuchLibrary.self, "and an id never served") { try await libraries.remove("never") }
+
+        #expect(try await libraries.add(id: "new", path: path.path).created)
+        #expect(!bench.deleted.holds(.library, "new"), "an id added again is taken off the record")
+        try await libraries.remove("new")
+        #expect(libraries.library("new") == nil, "and its removal is the new library's")
     }
 
     @Test func aDriveLateToMountIsUnavailableAndTheRestAreServed() async throws {
@@ -340,7 +373,8 @@ struct LibrariesTests {
             config: SiloConfig(host: "127.0.0.1", port: 0, stateDirectory: root, libraryRoots: []),
             settings: settings,
             index: try Index(at: nil),
-            checks: CheckSignal()
+            checks: CheckSignal(),
+            deleted: DeletedStore()
         )
         await #expect(throws: OutsideTheRoots.self) {
             try await libraries.add(id: "films", path: root.appendingPathComponent("films").path)
@@ -367,7 +401,8 @@ struct LibrariesTests {
             ),
             settings: settings,
             index: try Index(at: nil),
-            checks: CheckSignal()
+            checks: CheckSignal(),
+            deleted: DeletedStore()
         )
         let wanted = media.appendingPathComponent("Films/New")
 
@@ -426,7 +461,7 @@ struct LibrariesTests {
         }
         #expect(Indexer.isFolder(atPath: root.appendingPathComponent("Unmounted").path) == nil)
 
-        let added = try await libraries.add(id: "films", path: wanted.path, create: true)
+        let added = try await libraries.add(id: "films", path: wanted.path, create: true).library
         #expect(Indexer.isFolder(atPath: wanted.path) == true)
         #expect(settings.current.libraries.map(\.id) == ["films"])
         #expect(libraries.isAvailable(added.id), "an empty folder just made is an available library")
@@ -457,6 +492,7 @@ struct LibrariesTests {
                 settings: SettingsStore(Settings(name: "Silo on test")),
                 index: try! Index(at: nil),
                 checks: CheckSignal(),
+                deleted: DeletedStore(),
                 mounts: MountPoints(
                     holders: [volumes.path],
                     declared: [.init(path: disk.path, by: "/etc/fstab")],
