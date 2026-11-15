@@ -92,7 +92,11 @@ struct StackTests {
     @Test func anApplicationNamingNoRulesetTakesTheLibrarysStandard() throws {
         let bench = try JobServiceTests.Bench()
         defer { bench.remove() }
-        let source = try bench.sources.register(JobServiceTests.Bench.input, key: nil, copy: try bench.copy()).source
+        let source = try bench.sources.register(
+            JobServiceTests.Bench.input,
+            key: JobServiceTests.Bench.key(),
+            copy: try bench.copy()
+        ).source
         let binding = try bench.bindingService.make(
             Binding(
                 library: "main",

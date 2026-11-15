@@ -19,7 +19,11 @@ struct BindingRulesTests {
 
     /// A binding of part three, made from a source with one copy.
     static func binding(in bench: JobServiceTests.Bench) throws -> Binding {
-        let source = try bench.sources.register(JobServiceTests.Bench.input, key: nil, copy: try bench.copy()).source
+        let source = try bench.sources.register(
+            JobServiceTests.Bench.input,
+            key: JobServiceTests.Bench.key(),
+            copy: try bench.copy()
+        ).source
         return try bench.bindingService.make(
             Binding(
                 library: "main",
@@ -59,7 +63,11 @@ struct BindingRulesTests {
         ]
         serial.extras = [.leaf(Entry.Leaf(id: ItemID("documentary")!, type: .movie, title: "The Making Of"))]
         let containers = [Fixture.series, serial].map { String(decoding: ContainerFile.data(for: $0), as: UTF8.self) }
-        let source = try bench.sources.register(JobServiceTests.Bench.input, key: nil, copy: try bench.copy()).source
+        let source = try bench.sources.register(
+            JobServiceTests.Bench.input,
+            key: JobServiceTests.Bench.key(),
+            copy: try bench.copy()
+        ).source
         func resolved(_ item: String) throws -> StoredRecipe {
             let binding = try bench.bindingService.make(
                 Binding(

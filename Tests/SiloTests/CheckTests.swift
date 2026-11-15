@@ -41,7 +41,11 @@ struct CheckTests {
         profile: String? = nil,
         name: String = UUID().uuidString
     ) async throws -> Job {
-        let source = try bench.sources.register(Bench.input, key: nil, copy: try bench.copy("\(name).mkv")).source
+        let source = try bench.sources.register(
+            Bench.input,
+            key: JobServiceTests.Bench.key(),
+            copy: try bench.copy("\(name).mkv")
+        ).source
         // Audio 2 is the serial's commentary; a film has no such feature.
         let tracks = containers == Bench.containers ? [TrackMapping(feature: "commentary1", audio: 2)] : []
         let binding = try bench.bindingService.make(
@@ -409,7 +413,8 @@ struct CheckTests {
     @Test func aPersonsDecisionStandsWhenTheRulesBeneathItChange() async throws {
         let bench = try Bench()
         defer { bench.remove() }
-        let source = try bench.sources.register(Bench.input, key: nil, copy: try bench.copy()).source
+        let source = try bench.sources.register(Bench.input, key: JobServiceTests.Bench.key(), copy: try bench.copy())
+            .source
         let binding = try bench.bindingService.make(
             Binding(
                 library: "main",

@@ -25,7 +25,7 @@ file under its state directory, so the sources it has survive a restart.
 - **WHEN** the operator registers a source with a valid input spec and no natural key
 - **THEN** the answer is 400, and no source is registered
 
-Pinned by: `Tests/SiloStoreTests/SourceStoreTests.swift` (`aSourceIsRegisteredWithAMintedID`, `sourcesSurviveARestart`), `Tests/SiloTests/ServerTests.swift` (`sourcesAreRegisteredOnceAndTheirCopiesKept`). A source without a natural key refused is pinned by nothing yet.
+Pinned by: `Tests/SiloStoreTests/SourceStoreTests.swift` (`aSourceIsRegisteredWithAMintedID`, `sourcesSurviveARestart`), `Tests/SiloTests/ServerTests.swift` (`sourcesAreRegisteredOnceAndTheirCopiesKept`).
 
 ### Requirement: A natural key finds the source already registered
 A natural key SHALL be a `scheme` and a `value`, both text, unique among the silo's sources. A producer
@@ -52,4 +52,4 @@ key matches but whose input spec differs SHALL be 409, changing nothing.
 - **THEN** the first answer is 201 and the second 200 with the same source, and the silo holds one
   source
 
-Pinned by: `Tests/SiloStoreTests/SourceStoreTests.swift` (`aNaturalKeyFindsTheSourceAlreadyRegistered`, `theSameKeyDescribedOtherwiseIsRefused`), `Tests/SiloTests/ServerTests.swift` (`sourcesAreRegisteredOnceAndTheirCopiesKept`). A registration sent again is pinned by nothing yet.
+Pinned by: `Tests/SiloStoreTests/SourceStoreTests.swift` (`aNaturalKeyFindsTheSourceAlreadyRegistered`, `theSameKeyDescribedOtherwiseIsRefused`, `twoKeysAreTwoSources`), `Tests/SiloTests/ServerTests.swift` (`sourcesAreRegisteredOnceAndTheirCopiesKept`).

@@ -48,13 +48,14 @@ public final class SourceStore: Sendable {
         sources.withLock { $0[id] }
     }
 
-    /// Registers a source, or finds the one its natural key already names. A match whose input spec
-    /// differs is refused, since one of the two descriptions is wrong; a match whose spec agrees
-    /// takes the copy given. `created` says which happened.
-    public func register(_ input: InputSpec, key: NaturalKey?, copy: FileRef?) throws -> (source: Source, created: Bool)
+    /// Registers a source, or finds the one its natural key already names, so that a registration
+    /// sent again is answered with the source the first made. A match whose input spec differs is
+    /// refused, since one of the two descriptions is wrong; a match whose spec agrees takes the copy
+    /// given. `created` says which happened.
+    public func register(_ input: InputSpec, key: NaturalKey, copy: FileRef?) throws -> (source: Source, created: Bool)
     {
         try sources.withLock { sources -> (Source, Bool) in
-            if let key, var existing = sources.values.first(where: { $0.key == key }) {
+            if var existing = sources.values.first(where: { $0.key == key }) {
                 guard existing.input == input else {
                     throw SourceStoreError.keyDescribedOtherwise(key: key, source: existing.id)
                 }

@@ -142,6 +142,15 @@ struct JobServiceTests {
             ]
         )
 
+        /// A natural key no other source has: a content hash, as a producer that knows no identity of
+        /// its own for a file gives, made up for a file only this test has.
+        static func key() -> SiloKit.NaturalKey {
+            SiloKit.NaturalKey(
+                scheme: "sha256",
+                value: (0..<4).map { _ in String(format: "%016llx", UInt64.random(in: 0...UInt64.max)) }.joined()
+            )
+        }
+
         static let containers = [Fixture.series, Fixture.serial].map {
             String(decoding: ContainerFile.data(for: $0), as: UTF8.self)
         }
@@ -155,7 +164,7 @@ struct JobServiceTests {
             segments count: Int = 1,
             profile: String? = nil
         ) throws -> StoredRecipe {
-            let source = try sources.register(input, key: nil, copy: copy).source
+            let source = try sources.register(input, key: Self.key(), copy: copy).source
             let binding = try bindingService.make(
                 Binding(
                     library: "main",
@@ -684,7 +693,7 @@ struct WorkerTests {
         served.url = URL(string: "http://127.0.0.1:\(try await server.boundPort)/files/disc2/source")!
         let one = try bench.sources.register(
             input,
-            key: nil,
+            key: JobServiceTests.Bench.key(),
             copy: FileRef(holder: "embedded", url: first, path: first.path, secret: "")
         ).source
         let two = try bench.sources.register(input, key: NaturalKey(scheme: "test", value: "two"), copy: served).source
@@ -743,7 +752,7 @@ struct WorkerTests {
         var served = server.publish(title, at: "title/source")
         served.holder = "elsewhere"
         served.url = URL(string: "http://127.0.0.1:\(try await server.boundPort)/files/title/source")!
-        let source = try bench.sources.register(input, key: nil, copy: served).source
+        let source = try bench.sources.register(input, key: JobServiceTests.Bench.key(), copy: served).source
         // The second chapter, then the first: one source, two segments.
         let binding = try bench.bindingService.make(
             Binding(

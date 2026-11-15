@@ -93,7 +93,9 @@ struct FailedWriteTests {
         )
         try state.takeAway("sources")
 
-        #expect(throws: (any Error).self) { try sources.register(SourceStoreTests.spec, key: nil, copy: nil) }
+        #expect(throws: (any Error).self) {
+            try sources.register(SourceStoreTests.spec, key: SourceStoreTests.contentHash("a"), copy: nil)
+        }
         #expect(sources.all().map(\.id) == [kept.id], "a new source")
         #expect(throws: (any Error).self) {
             try sources.register(
