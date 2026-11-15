@@ -18,7 +18,8 @@ public final class NodeStore: Sendable {
         public var node: Node
         public var secretHash: String
         public var tokenHash: String?
-        /// Whether the token minted at approval has been handed to the node; it is handed once.
+        /// Whether the node has used a token it was handed. Until it has, each poll that proves its
+        /// secret is handed a new one, in place of the last.
         public var tokenDelivered: Bool
 
         public init(node: Node, secretHash: String, tokenHash: String? = nil, tokenDelivered: Bool = false) {
@@ -72,8 +73,8 @@ public final class NodeStore: Sendable {
 
     public func insert(_ stored: Stored) throws {
         try nodes.withLock { nodes in
-            nodes[stored.node.id] = stored
             try write(stored)
+            nodes[stored.node.id] = stored
         }
     }
 
@@ -82,8 +83,8 @@ public final class NodeStore: Sendable {
         try nodes.withLock { nodes -> Stored? in
             guard var stored = nodes[id] else { return nil }
             try change(&stored)
-            nodes[id] = stored
             try write(stored)
+            nodes[id] = stored
             return stored
         }
     }

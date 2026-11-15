@@ -83,22 +83,28 @@ struct CheckTests {
         }
     }
 
-    /// A pass that fails, here because its records cannot be written, is logged, and the running check
-    /// carries on: the next request gets a pass of its own.
+    /// A pass that fails, here because one presentation's record cannot be written, is logged, and the
+    /// running check carries on: the next request gets a pass of its own, and that pass checks the
+    /// presentation the failed one could not record, since a record not written is not held.
     @Test func aPassThatFailsLeavesTheCheckRunning() async throws {
         let bench = try Bench(checksOnDisk: true)
         defer { bench.remove() }
         let folder = Bench.checksFolder(in: bench.root)
-        try FileManager.default.removeItem(at: folder)
-        let failed = try await Self.placed(bench)
+        let first = try await Self.placed(bench)
+        let blocked = try await Self.placed(bench, item: "part2")
+        // A folder where the record's file would go, which no write of a file replaces.
+        let obstacle = Self.file(of: blocked.id, in: folder)
+        try FileManager.default.createDirectory(at: obstacle, withIntermediateDirectories: true)
+        try Data().write(to: obstacle.appendingPathComponent("held"))
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { await bench.checkService.run() }
             defer { group.cancelAll() }
-            #expect(await Self.checked(failed.id, in: bench), "the pass at start reached it, and failed to write")
-            #expect(!FileManager.default.fileExists(atPath: Self.file(of: failed.id, in: folder).path))
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let after = try await Self.placed(bench, item: "part2")
+            #expect(await Self.onDisk(first.id, in: folder), "the pass at start, which goes on to the blocked one")
+            #expect(bench.checks.check(of: blocked.id) == nil, "a record that could not be written")
+            try FileManager.default.removeItem(at: obstacle)
+            let after = try await Self.placed(bench, item: "part1")
             #expect(await Self.onDisk(after.id, in: folder), "the pass its placing asked for")
+            #expect(await Self.onDisk(blocked.id, in: folder), "which checks what the failed pass left")
         }
     }
 

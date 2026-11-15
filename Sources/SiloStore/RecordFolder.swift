@@ -6,7 +6,9 @@ import Synchronization
 
 /// Records as the silo keeps most of its state: one JSON file each in a folder, read once at start
 /// and held in memory, every change written whole and atomically, every read-modify-write under one
-/// lock. The shape the job and source stores already have, shared here by the stores that are
+/// lock. A change reaches memory only once its file is written, and a removal only once its file is
+/// gone, so a write that fails leaves the record as it was in both, and what the folder answers is
+/// always what a restart would read. The shape the job and source stores already have, shared here by the stores that are
 /// nothing more than it. It is the class — the one instance that owns the `Mutex`, which cannot be
 /// copied — so the stores built on it need not be: they are structs, and a copy of one holds the
 /// same folder.
@@ -50,8 +52,8 @@ final class RecordFolder<Record: Codable & Sendable>: Sendable {
     func insert(_ inserted: [Record]) throws {
         try records.withLock { records in
             for record in inserted {
-                records[id(record)] = record
                 try write(record)
+                records[id(record)] = record
             }
         }
     }
@@ -62,8 +64,8 @@ final class RecordFolder<Record: Codable & Sendable>: Sendable {
         try records.withLock { records -> Record? in
             guard var record = records[key] else { return nil }
             try change(&record)
-            records[key] = record
             try write(record)
+            records[key] = record
             return record
         }
     }
@@ -74,10 +76,8 @@ final class RecordFolder<Record: Codable & Sendable>: Sendable {
         try records.withLock { records -> Record? in
             guard let record = records[key] else { return nil }
             try allowed(record)
+            if folder.path != "/dev/null" { try removeFile(at: folder.appendingPathComponent("\(key).json")) }
             records[key] = nil
-            if folder.path != "/dev/null" {
-                try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(key).json"))
-            }
             return record
         }
     }
@@ -88,5 +88,15 @@ final class RecordFolder<Record: Codable & Sendable>: Sendable {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(record).write(to: folder.appendingPathComponent("\(id(record)).json"), options: .atomic)
+    }
+}
+
+/// Deletes a record's file. One that is not there is already gone, which is what a removal wants;
+/// any other failure is thrown, so the caller keeps the record it could not remove.
+func removeFile(at url: URL) throws {
+    do {
+        try FileManager.default.removeItem(at: url)
+    } catch CocoaError.fileNoSuchFile {
+        return
     }
 }

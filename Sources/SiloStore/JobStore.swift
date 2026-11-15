@@ -6,7 +6,8 @@ import SiloKit
 import Synchronization
 
 /// Jobs as the silo keeps them: one JSON file per job under `<state>/jobs`, read once at start and
-/// held in memory, every change written whole and atomically. Tens of records, not thousands.
+/// held in memory, every change written whole and atomically, and reaching memory only once it is
+/// written, as in `RecordFolder`. Tens of records, not thousands.
 ///
 /// A `Sendable` class rather than a struct or an actor. Every change is a read-modify-write of one
 /// job under one lock — a claim has to pick a job and lease it as one step — and a `Mutex` is
@@ -60,8 +61,8 @@ public final class JobStore: Sendable {
             guard var job = jobs[id] else { return nil }
             try change(&job)
             job.updatedAt = .now
-            jobs[id] = job
             try write(job)
+            jobs[id] = job
             return job
         }
     }
@@ -76,8 +77,8 @@ public final class JobStore: Sendable {
             guard var job = jobs.values.filter(predicate).sorted(by: order).first else { return nil }
             try change(&job)
             job.updatedAt = .now
-            jobs[job.id] = job
             try write(job)
+            jobs[job.id] = job
             return job
         }
     }
@@ -88,24 +89,25 @@ public final class JobStore: Sendable {
             for (id, var job) in jobs where predicate(job) {
                 change(&job)
                 job.updatedAt = .now
-                jobs[id] = job
                 try write(job)
+                jobs[id] = job
             }
         }
     }
 
     public func insert(_ job: Job) throws {
         try jobs.withLock { jobs in
-            jobs[job.id] = job
             try write(job)
+            jobs[job.id] = job
         }
     }
 
     /// Removes the job and its file: a trial, deleted by the operator.
     public func remove(_ id: String) throws {
         try jobs.withLock { jobs in
-            guard jobs.removeValue(forKey: id) != nil, folder.path != "/dev/null" else { return }
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(id).json"))
+            guard jobs[id] != nil else { return }
+            if folder.path != "/dev/null" { try removeFile(at: folder.appendingPathComponent("\(id).json")) }
+            jobs[id] = nil
         }
     }
 

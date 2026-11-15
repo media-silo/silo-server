@@ -29,13 +29,28 @@ The store SHALL keep one JSON file per job at `<state directory>/jobs/<id>.json`
 and atomically on every change with ISO-8601 dates, load every such file once at start, and
 thereafter hold the queue in memory — tens of records, not thousands. Every transition SHALL be a
 read-modify-write of one job under one lock, and a claim's pick-and-lease SHALL be a single locked
-step, so two transitions cannot cross.
+step, so two transitions cannot cross. A change SHALL reach the queue in memory only once its file
+is written, and a removal only once its file is gone, so a write that fails leaves the job as it
+was, and the queue served is always the one a restart would read. A file already gone SHALL count
+as removed. The silo's other stores of records — sources, nodes, bindings, recipes and checks —
+SHALL keep their records the same way.
 
 #### Scenario: the queue survives a restart
 - **WHEN** the silo stops and starts again over the same state directory
 - **THEN** the queue it serves is the queue it had, states and attempts included
 
-Pinned by: nothing yet.
+#### Scenario: a change that cannot be written
+- **WHEN** a job's change, a claim, or a new job cannot be written to its file
+- **THEN** the change is refused with the error, and the job is as it was, to every reader and to a
+  restart
+
+#### Scenario: a removal that cannot delete the file
+- **WHEN** a trial's file cannot be deleted
+- **THEN** the removal is refused, and the job is still there
+
+Pinned by: `Tests/SiloStoreTests/FailedWriteTests.swift` (`aJobWhoseWriteFailsIsAsItWas`,
+`aRemovalWhoseFileCannotBeDeletedKeepsTheRecord`, `aRemovalWhoseFileIsAlreadyGoneRemovesTheRecord`,
+`aRecordWhoseWriteFailsIsNotHeld`, `aSourceWhoseWriteFailsIsAsItWas`).
 
 ### Requirement: The queue is read openly, oldest first, filtered by state
 `GET /v1/jobs` SHALL answer every job, oldest first, with no token asked, and SHALL honour an

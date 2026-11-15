@@ -156,14 +156,16 @@ Pinned by: `Tests/SiloTests/NodeTests.swift` (`aNodeIsApprovedAndTakesItsTokenOn
 The silo SHALL keep one JSON file per node at `<state>/nodes/<id>.json` holding the record, the
 SHA-256 of the node's secret as hex, the SHA-256 of the token last given as hex, and whether the
 node has used it — and SHALL never store either the secret or the token themselves. Writes
-SHALL be atomic. The store SHALL be loaded on boot, so an approved node's token keeps
-authenticating across a restart, and a node that has used its token is given no other.
+SHALL be atomic, and a change SHALL reach the store in memory only once it is written, so a token
+whose hash could not be written is never one the silo holds. The store SHALL be loaded on boot, so
+an approved node's token keeps authenticating across a restart, and a node that has used its token
+is given no other.
 
 #### Scenario: nodes survive a restart
 - **WHEN** a node was approved, took its token and used it, and a fresh `NodeStore` opens the same folder
 - **THEN** the token still authenticates against the node's name, a poll carries no second token, and the JSON on disk contains neither the secret nor the token
 
-Pinned by: `Tests/SiloTests/NodeTests.swift` (`nodesSurviveARestart`).
+Pinned by: `Tests/SiloTests/NodeTests.swift` (`nodesSurviveARestart`), `Tests/SiloStoreTests/FailedWriteTests.swift` (`aNodeWhoseWriteFailsIsAsItWas`).
 
 ### Requirement: Bonjour runs as child processes of the platform's own tools
 `SiloDiscovery` SHALL do Bonjour through the tools each platform ships — `dns-sd` on macOS, and
