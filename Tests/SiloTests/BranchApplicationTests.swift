@@ -29,39 +29,41 @@ struct BranchApplicationTests {
                 item: "part3",
                 segments: [Binding.Segment(source: source.id)]
             )
-        )
+        ).binding
         let unqualified = [Application.OutputChoice()]
 
         #expect(
             try bench.bindingService.apply(
                 Application(ruleset: "household", branch: "trial", outputs: unqualified),
                 to: binding.id
-            ).first?.recipe.ruleset.version == 2
+            ).recipes.first?.recipe.ruleset.version == 2
         )
         #expect(
             try bench.bindingService.apply(Application(ruleset: "household", outputs: unqualified), to: binding.id)
+                .recipes
                 .first?.recipe.ruleset.version == 1,
             "naming no branch, the standard's head"
         )
 
         #expect(throws: BadApplication.self) {
-            try bench.bindingService.apply(Application(ruleset: "household", branch: "nowhere"), to: binding.id)
+            try bench.bindingService.apply(Application(ruleset: "household", branch: "nowhere"), to: binding.id).recipes
         }
         let wrong = #expect(throws: BadApplication.self) {
             try bench.bindingService.apply(
                 Application(ruleset: "household", branch: "trial", version: 1),
                 to: binding.id
-            )
+            ).recipes
         }
         #expect(wrong?.reason == "household@1 is on standard, not trial")
 
         _ = try rulesets.promote("trial", of: "household")
         let closed = #expect(throws: ClosedBranch.self) {
-            try bench.bindingService.apply(Application(ruleset: "household", branch: "trial"), to: binding.id)
+            try bench.bindingService.apply(Application(ruleset: "household", branch: "trial"), to: binding.id).recipes
         }
         #expect(closed?.reason == "household's branch trial has been promoted, and is closed")
         #expect(
             try bench.bindingService.apply(Application(ruleset: "household", outputs: unqualified), to: binding.id)
+                .recipes
                 .first?.recipe.ruleset.version == 3,
             "the promoted head is the standard's"
         )

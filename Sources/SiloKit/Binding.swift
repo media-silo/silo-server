@@ -70,6 +70,25 @@ public struct Binding: Hashable, Sendable, Codable {
     }
 }
 
+extension Binding {
+    /// Whether this says what another says, and so is that binding: its library; its item, as the
+    /// item's container's id and the item's id; its alternative; its segments, in order; its feature
+    /// map; and its chapter names. The copies of the lineage's documents are not compared, since the
+    /// silo reads the lineage from the library whenever it resolves or checks a binding, so a newer
+    /// copy does not make another entry.
+    public func says(whatIsSaidBy other: Binding) -> Bool {
+        library == other.library && item == other.item && alternative == other.alternative
+            && segments == other.segments && tracks == other.tracks && chapters == other.chapters
+            && itemContainer != nil && itemContainer == other.itemContainer
+    }
+
+    /// The id of the item's container, as the last of the lineage's documents gives it; nil when
+    /// that cannot be read, which a binding the silo keeps never is.
+    public var itemContainer: ContainerID? {
+        containers.last.flatMap { try? ContainerFile.container(from: Data($0.utf8)).id }
+    }
+}
+
 /// A ruleset applied to a binding: which ruleset — the binding's library's standard when nil — on
 /// which branch — the standard when nil — at which version — the branch's head when nil — and
 /// which of its outputs to make — every one when nil.

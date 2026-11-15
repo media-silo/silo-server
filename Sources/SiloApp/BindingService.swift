@@ -71,17 +71,21 @@ package struct BindingService: Sendable {
     }
 
     /// Checks a binding whole and keeps it, or refuses it, keeping nothing.
-    package func make(_ binding: Binding) throws -> Binding {
+    /// A binding that says what one the silo holds says is that binding, and keeps nothing;
+    /// `created` says which.
+    package func make(_ binding: Binding) throws -> (binding: Binding, created: Bool) {
         _ = try entry(of: binding)
-        try bindings.insert(binding)
-        logger.info("bound \(binding.item) as \(binding.id)")
-        return binding
+        let made = try bindings.insert(binding)
+        if made.created { logger.info("bound \(binding.item) as \(binding.id)") }
+        return made
     }
 
     /// Applies a ruleset to a binding: resolves it once for each output the application makes, and
     /// keeps the recipe of each — or, when any output cannot be resolved, keeps nothing. Every recipe
-    /// the binding already has is left as it was.
-    package func apply(_ application: Application, to id: String) throws -> [StoredRecipe] {
+    /// the binding already has is left as it was, and one of the same facts and recipe as an output
+    /// resolves is answered in its place, so an application sent again makes nothing. `created` says
+    /// whether any recipe was kept.
+    package func apply(_ application: Application, to id: String) throws -> (recipes: [StoredRecipe], created: Bool) {
         guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
         guard
             let name = application.ruleset
@@ -149,9 +153,10 @@ package struct BindingService: Sendable {
                 )
             }
         }
-        try recipes.insert(made)
-        logger.info("applied \(RulesetRef(ruleset)) to \(binding.id): \(made.count) recipes")
-        return made
+        let held = try recipes.insertUnlessHeld(made)
+        let kept = held.filter(\.created).count
+        logger.info("applied \(RulesetRef(ruleset)) to \(binding.id): \(kept) of \(made.count) recipes made")
+        return (held.map(\.recipe), kept > 0)
     }
 
     package func binding(_ id: String) throws -> (binding: Binding, recipes: [StoredRecipe]) {

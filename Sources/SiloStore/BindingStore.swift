@@ -5,7 +5,8 @@ import Foundation
 import SiloKit
 
 /// Bindings as the silo keeps them: one JSON file each under `<state>/bindings`. A binding is never
-/// changed once made, so the store adds and reads and does nothing else.
+/// changed once made, so the store adds and reads and does nothing else; an addition of a binding
+/// that says what one the store holds says finds that one.
 public struct BindingStore: Sendable {
     private let folder: RecordFolder<Binding>
 
@@ -20,7 +21,12 @@ public struct BindingStore: Sendable {
 
     public func binding(_ id: String) -> Binding? { folder.record(id) }
 
-    public func insert(_ binding: Binding) throws { try folder.insert([binding]) }
+    /// Keeps a binding, or finds the one the store holds that says what it says. `created` says which.
+    @discardableResult
+    public func insert(_ binding: Binding) throws -> (binding: Binding, created: Bool) {
+        let held = try folder.insert([binding]) { $0.says(whatIsSaidBy: $1) }[0]
+        return (held.record, held.inserted)
+    }
 }
 
 /// Recipes as the silo keeps them: one JSON file each under `<state>/recipes`. A resolved recipe
@@ -45,6 +51,16 @@ public struct RecipeStore: Sendable {
     }
 
     public func insert(_ recipes: [StoredRecipe]) throws { try folder.insert(recipes) }
+
+    /// Keeps each recipe, or finds one its binding holds, resolved or committed, of the same facts
+    /// and recipe: the same ruleset version, stack, output and decisions. Answers, for each recipe
+    /// given, the recipe held and whether it was kept.
+    public func insertUnlessHeld(_ recipes: [StoredRecipe]) throws -> [(recipe: StoredRecipe, created: Bool)] {
+        try folder.insert(recipes) { held, given in
+            held.binding == given.binding && held.facts == given.facts && held.recipe == given.recipe
+        }
+        .map { ($0.record, $0.inserted) }
+    }
 
     /// Commits a resolved recipe: the one change a recipe makes after which it makes none.
     public func commit(_ id: String) throws -> StoredRecipe? {

@@ -56,10 +56,10 @@ struct CheckTests {
                 tracks: tracks,
                 segments: [Binding.Segment(source: source.id)]
             )
-        )
+        ).binding
         var unqualified = application
         unqualified.outputs = [Application.OutputChoice(profile: profile)]
-        let resolved = try #require(try bench.bindingService.apply(unqualified, to: binding.id).first)
+        let resolved = try #require(try bench.bindingService.apply(unqualified, to: binding.id).recipes.first)
         let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
         let output = bench.root.appendingPathComponent("encoded-\(name).mkv")
@@ -423,7 +423,7 @@ struct CheckTests {
                 tracks: [TrackMapping(feature: "commentary1", audio: 2)],
                 segments: [Binding.Segment(source: source.id)]
             )
-        )
+        ).binding
         _ = try await bench.bindingService.setRules(
             Data(#"<rules><audio><when fact="audio.index" is="2"/><copy/></audio></rules>"#.utf8),
             of: binding.id
@@ -432,7 +432,7 @@ struct CheckTests {
             try bench.bindingService.apply(
                 Application(ruleset: "household", outputs: [Application.OutputChoice()]),
                 to: binding.id
-            ).first
+            ).recipes.first
         )
         let job = try bench.service.make(from: resolved.id)
         _ = try await bench.service.claim(node: "box", capabilities: Set(job.requirements))

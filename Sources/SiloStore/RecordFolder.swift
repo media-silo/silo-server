@@ -58,6 +58,23 @@ final class RecordFolder<Record: Codable & Sendable>: Sendable {
         }
     }
 
+    /// Inserts each record the folder holds no match of, under one lock, so that two copies of one
+    /// request at once insert one record. Answers, for each record given, the record held — the
+    /// match found, or the record inserted — and whether it was inserted.
+    func insert(
+        _ inserted: [Record],
+        unlessHeld matches: (_ held: Record, _ given: Record) -> Bool
+    ) throws -> [(record: Record, inserted: Bool)] {
+        try records.withLock { records in
+            try inserted.map { record in
+                if let held = records.values.first(where: { matches($0, record) }) { return (held, false) }
+                try write(record)
+                records[id(record)] = record
+                return (record, true)
+            }
+        }
+    }
+
     /// Changes one record under the lock. The change may throw, and then nothing is written; nil for
     /// a record the folder does not hold.
     func update<Failure: Error>(_ key: String, _ change: (inout Record) throws(Failure) -> Void) throws -> Record? {
