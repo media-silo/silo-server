@@ -1734,7 +1734,11 @@ extension ServerTests {
             func resolved(copy: FileRef?) async throws -> StoredRecipeBody {
                 let source = try await client.post(
                     "/v1/sources",
-                    json: SiloClient.NewSource(input: JobServiceTests.Bench.input, copy: copy),
+                    json: SiloClient.NewSource(
+                        input: JobServiceTests.Bench.input,
+                        key: JobServiceTests.Bench.key(),
+                        copy: copy
+                    ),
                     headers: Self.operatorHeaders
                 ).json(SourceBody.self)
                 let binding = try await client.post(
@@ -1895,6 +1899,7 @@ extension ServerTests {
                 "/v1/sources",
                 json: SiloClient.NewSource(
                     input: JobServiceTests.Bench.input,
+                    key: JobServiceTests.Bench.key(),
                     copy: FileRef(holder: "laptop", url: rip, path: rip.path, secret: "s")
                 ),
                 headers: Self.operatorHeaders
@@ -2262,9 +2267,14 @@ extension ServerTests {
         var copies: [Copy]
     }
 
-    static func registration(key: String?, copyOn node: String?, extraAudio: Bool = false) -> Data {
+    static func registration(
+        key: String?,
+        scheme: String = "discTitle",
+        copyOn node: String?,
+        extraAudio: Bool = false
+    ) -> Data {
         let audio = extraAudio ? #", { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 }"# : ""
-        let keyJSON = key.map { #", "key": { "scheme": "discTitle", "value": "\#($0)" }"# } ?? ""
+        let keyJSON = key.map { #", "key": { "scheme": "\#(scheme)", "value": "\#($0)" }"# } ?? ""
         let copyJSON =
             node.map {
                 #", "copy": { "holder": "\#($0)", "url": "http://\#($0).local:8743/files/t.mkv", "secret": "s-\#($0)" }"#
@@ -2285,10 +2295,24 @@ extension ServerTests {
             let refused = try await client.send(
                 "POST",
                 "/v1/sources",
-                body: Self.registration(key: nil, copyOn: nil),
+                body: Self.registration(key: "3F1AC2E9/00004", copyOn: nil),
                 headers: json
             )
             #expect(refused.status == 401, "registering is the operator's")
+
+            let registered = try await client.get("/v1/sources").json([SourceBody].self).count
+            let keyless = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Self.registration(key: nil, copyOn: "ripper"),
+                headers: Self.operatorHeaders
+            )
+            #expect(keyless.status == 400)
+            #expect(keyless.bodyText.contains("a source is registered with its natural key"))
+            #expect(
+                try await client.get("/v1/sources").json([SourceBody].self).count == registered,
+                "and nothing is registered"
+            )
 
             let first = try await client.send(
                 "POST",
@@ -2323,8 +2347,33 @@ extension ServerTests {
             #expect(otherwise.status == 409)
             #expect(otherwise.bodyText.contains("with a different input spec"))
 
+            let hash = String(repeating: "c", count: 64)
+            let hashed = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Self.registration(key: hash, scheme: "sha256", copyOn: "ripper"),
+                headers: Self.operatorHeaders
+            )
+            let resent = try await client.send(
+                "POST",
+                "/v1/sources",
+                body: Self.registration(key: hash, scheme: "sha256", copyOn: "ripper"),
+                headers: Self.operatorHeaders
+            )
+            #expect(hashed.status == 201)
+            #expect(resent.status == 200, "a registration sent again")
+            #expect(
+                try resent.json(SourceBody.self).id == hashed.json(SourceBody.self).id,
+                "is the source the first made"
+            )
+            #expect(try resent.json(SourceBody.self).copies.map(\.holder) == ["ripper"])
+            #expect(
+                try await client.get("/v1/sources").json([SourceBody].self).count == registered + 2,
+                "of the two files"
+            )
+
             let misspelt = Data(
-                #"{ "input": { "format": 1, "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1, "intelaced": true } ] } }"#
+                #"{ "input": { "format": 1, "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1, "intelaced": true } ] }, "key": { "scheme": "discTitle", "value": "misspelt" } }"#
                     .utf8
             )
             let bad = try await client.send("POST", "/v1/sources", body: misspelt, headers: Self.operatorHeaders)
@@ -2333,7 +2382,10 @@ extension ServerTests {
             let newer = try await client.send(
                 "POST",
                 "/v1/sources",
-                body: Data(#"{ "input": { "format": 2, "streams": [], "segments": [] } }"#.utf8),
+                body: Data(
+                    #"{ "input": { "format": 2, "streams": [], "segments": [] }, "key": { "scheme": "discTitle", "value": "newer" } }"#
+                        .utf8
+                ),
                 headers: Self.operatorHeaders
             )
             #expect(newer.status == 400)
@@ -2463,7 +2515,8 @@ extension ServerTests {
                   "streams": [
                     { "index": 0, "kind": "video", "codec": "mpeg2video", "width": 720, "height": 576 },
                     { "index": 1, "kind": "audio", "codec": "pcm_s16le", "channels": 2, "language": "en" },
-                    { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "en" } ] } }
+                    { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2, "language": "en" } ] },
+                  "key": { "scheme": "discTitle", "value": "two outputs" } }
                 """#
             let source = try await client.send(
                 "POST",
@@ -2643,7 +2696,8 @@ extension ServerTests {
             let spec = #"""
                 { "input": { "format": 1, "chapters": [ { "index": 1, "start": 0 }, { "index": 2, "start": 10 } ],
                   "streams": [ { "index": 0, "kind": "video", "codec": "h264", "width": 1, "height": 1 },
-                               { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2 }, { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 } ] } }
+                               { "index": 1, "kind": "audio", "codec": "ac3", "channels": 2 }, { "index": 2, "kind": "audio", "codec": "ac3", "channels": 2 } ] },
+                  "key": { "scheme": "discTitle", "value": "refused" } }
                 """#
             let source = try await client.send(
                 "POST",

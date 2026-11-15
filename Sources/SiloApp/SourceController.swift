@@ -66,7 +66,12 @@ package struct SourceOperatorController {
         } catch {
             return .badRequest(.init(body: .json(Components.Schemas.Problem(detail: error.description))))
         }
-        let key: NaturalKey? = try body.key.map { try Mapping.transcode($0) }
+        guard let given = body.key else {
+            return .badRequest(
+                .init(body: .json(Components.Schemas.Problem(detail: "a source is registered with its natural key")))
+            )
+        }
+        let key: NaturalKey = try Mapping.transcode(given)
         let copy: FileRef? = try body.copy.map { try Mapping.transcode($0) }
         do {
             let (source, created) = try store.register(spec, key: key, copy: copy)

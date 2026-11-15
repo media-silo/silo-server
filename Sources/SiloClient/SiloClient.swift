@@ -43,10 +43,10 @@ public struct SiloClient: Sendable, JobsAPI {
 
     public struct NewSource: Hashable, Sendable, Codable {
         public var input: InputSpec
-        public var key: SiloKit.NaturalKey?
+        public var key: SiloKit.NaturalKey
         public var copy: FileRef?
 
-        public init(input: InputSpec, key: SiloKit.NaturalKey? = nil, copy: FileRef? = nil) {
+        public init(input: InputSpec, key: SiloKit.NaturalKey, copy: FileRef? = nil) {
             self.input = input
             self.key = key
             self.copy = copy

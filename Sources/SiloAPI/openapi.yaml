@@ -1332,8 +1332,9 @@ paths:
       operationId: registerSource
       summary: Register a source by its input spec
       description: >
-        The silo mints the id. A natural key the silo already has answers that source with 200,
-        taking the copy given; the same key with a different input spec is 409. The input spec is
+        The silo mints the id. The natural key is required, so that a registration sent again finds
+        the source the first made: a key the silo already has answers that source with 200, taking
+        the copy given; the same key with a different input spec is 409. The input spec is
         read strictly by the silo itself, so a refusal names the field at fault. Operator only.
       tags: [Sources]
       security:
@@ -1358,7 +1359,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Source"
         "400":
-          description: The input spec is refused.
+          description: The input spec is refused, or there is no natural key.
           content:
             application/json:
               schema:
@@ -2594,11 +2595,19 @@ components:
           type: object
           additionalProperties: true
         key:
+          description: >
+            Required: a registration without one is 400. Optional in the schema only so that its
+            absence is refused with a Problem saying so.
           $ref: "#/components/schemas/NaturalKey"
         copy:
           $ref: "#/components/schemas/FileRef"
 
     NaturalKey:
+      description: >
+        What a source is, as its producer knows it, unique among the silo's sources: a registration
+        whose key the silo holds is answered with that source. A producer that knows no identity of
+        its own for a file gives its content hash, as scheme sha256 and the file's SHA-256 in
+        lowercase hexadecimal.
       type: object
       required: [scheme, value]
       properties:

@@ -17,7 +17,11 @@ struct BranchApplicationTests {
         let household = Data(JobServiceTests.Bench.household.utf8)
         _ = try rulesets.startBranch("trial", of: "household", from: 1)
         #expect(try rulesets.store(household, as: "household", branch: "trial") == 2)
-        let source = try bench.sources.register(JobServiceTests.Bench.input, key: nil, copy: try bench.copy()).source
+        let source = try bench.sources.register(
+            JobServiceTests.Bench.input,
+            key: JobServiceTests.Bench.key(),
+            copy: try bench.copy()
+        ).source
         let binding = try bench.bindingService.make(
             Binding(
                 library: "main",

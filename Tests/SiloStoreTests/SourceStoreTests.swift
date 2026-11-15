@@ -11,13 +11,18 @@ struct SourceStoreTests {
     static let spec = InputSpec(streams: [InputSpec.Stream(index: 0, kind: .audio, codec: "ac3", channels: 2)])
     static let discTitle = NaturalKey(scheme: "discTitle", value: "3F1AC2E9/00004")
 
+    /// A file's content hash, as a producer that knows no identity of its own for it gives.
+    static func contentHash(_ digit: Character) -> NaturalKey {
+        NaturalKey(scheme: "sha256", value: String(repeating: digit, count: 64))
+    }
+
     static func copy(on node: String) -> FileRef {
         FileRef(holder: node, url: URL(string: "http://\(node).local:8743/files/t.mkv")!, secret: "s-\(node)")
     }
 
     @Test func aSourceIsRegisteredWithAMintedID() throws {
         let store = SourceStore()
-        let (source, created) = try store.register(Self.spec, key: nil, copy: Self.copy(on: "ripper"))
+        let (source, created) = try store.register(Self.spec, key: Self.contentHash("a"), copy: Self.copy(on: "ripper"))
         #expect(created)
         #expect(UUID(uuidString: source.id) != nil)
         #expect(source.id == source.id.lowercased())
@@ -46,16 +51,18 @@ struct SourceStoreTests {
         #expect(store.source(first.id)?.copies.isEmpty == true, "and nothing changed")
     }
 
-    @Test func noKeyIsNeverMatched() throws {
+    @Test func twoKeysAreTwoSources() throws {
         let store = SourceStore()
-        _ = try store.register(Self.spec, key: nil, copy: nil)
-        _ = try store.register(Self.spec, key: nil, copy: nil)
+        let (first, _) = try store.register(Self.spec, key: Self.contentHash("a"), copy: nil)
+        let (second, created) = try store.register(Self.spec, key: Self.contentHash("b"), copy: nil)
+        #expect(created, "two files described alike are two sources")
+        #expect(second.id != first.id)
         #expect(store.all().count == 2)
     }
 
     @Test func aNodeHoldsAFileOnceAndTheLastCopyCanGo() throws {
         let store = SourceStore()
-        let (source, _) = try store.register(Self.spec, key: nil, copy: Self.copy(on: "ripper"))
+        let (source, _) = try store.register(Self.spec, key: Self.contentHash("a"), copy: Self.copy(on: "ripper"))
         var moved = Self.copy(on: "ripper")
         moved.url = URL(string: "http://ripper.local:8743/files/moved.mkv")!
         let held = try store.update(source.id) { $0.hold(moved) }
