@@ -274,7 +274,7 @@ struct JobServiceTests {
             "an episode's video is copied; a featurette's would be re-encoded"
         )
 
-        let pending = try service.make(from: resolved.id)
+        let pending = try service.make(from: resolved.id).job
         #expect(pending.state == .pending)
         #expect(pending.recipe == resolved.id)
         #expect(pending.requirements == ["aac", "flac"])
@@ -309,7 +309,7 @@ struct JobServiceTests {
         let cancelled = try await service.fail(claimed.id, reason: "cancelled")
         #expect(cancelled.state == .cancelled)
         #expect(cancelled.attempts.last?.outcome == "cancelled")
-        #expect(throws: WrongState.self) { try service.cancel(claimed.id) }
+        #expect(try service.cancel(claimed.id) == cancelled, "a cancel sent again is answered with the job")
 
         let again = try service.retry(claimed.id)
         #expect(again.state == .pending)
@@ -371,7 +371,7 @@ struct JobServiceTests {
         defer { bench.remove() }
         let service = bench.service
         let resolved = try bench.resolved(copy: try bench.copy())
-        let pending = try service.make(from: resolved.id, trial: true)
+        let pending = try service.make(from: resolved.id, trial: true).job
         #expect(pending.trial && pending.state == .pending)
         #expect(bench.recipes.recipe(resolved.id)?.state == .committed, "a trial commits its recipe, as any job does")
 
@@ -414,7 +414,7 @@ struct JobServiceTests {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
-        let job = try service.make(from: try bench.resolved(copy: try bench.copy()).id, trial: true)
+        let job = try service.make(from: try bench.resolved(copy: try bench.copy()).id, trial: true).job
         _ = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"]))
         // A node that has gone: nothing answers at its address.
         let gone = FileRef(holder: "box", url: URL(string: "http://127.0.0.1:9/files/out.mkv")!, secret: "s")
@@ -491,16 +491,18 @@ struct JobServiceTests {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
-        #expect(throws: NoSuchRecipe.self) { try service.make(from: "nothing") }
+        #expect(throws: NoSuchRecipe.self) { try service.make(from: "nothing").job }
 
         let resolved = try bench.resolved(copy: try bench.copy())
-        _ = try service.make(from: resolved.id)
-        #expect(throws: CommittedRecipe.self) { try service.make(from: resolved.id) }
+        let made = try service.make(from: resolved.id)
+        let again = try service.make(from: resolved.id)
+        #expect(made.created)
+        #expect(!again.created && again.job == made.job, "a request sent again is answered with the job")
         #expect(try service.all().count == 1, "one recipe is run by one job")
 
         let unheld = try bench.resolved(copy: nil)
         let source = try bench.bindingService.binding(unheld.binding).binding.segments[0].source
-        let refusal = #expect(throws: Unrunnable.self) { try service.make(from: unheld.id) }
+        let refusal = #expect(throws: Unrunnable.self) { try service.make(from: unheld.id).job }
         #expect(refusal?.reason == "source \(source) has no copy; no node could fetch it")
         #expect(bench.recipes.recipe(unheld.id)?.state == .resolved, "and the recipe stays resolved")
         #expect(try service.all().count == 1)
@@ -510,14 +512,14 @@ struct JobServiceTests {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
-        let elsewhere = try service.make(from: try bench.resolved(copy: try bench.copy("a.mkv", on: "laptop")).id)
+        let elsewhere = try service.make(from: try bench.resolved(copy: try bench.copy("a.mkv", on: "laptop")).id).job
         let held = try service.make(
             from: try bench.resolved(
                 copy: try bench.copy("b.mkv", on: "box"),
                 chapters: Binding.ChapterSpan(from: 2, to: 3),
                 segments: 2
             ).id
-        )
+        ).job
         #expect(elsewhere.createdAt <= held.createdAt)
 
         let claim = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"]))
@@ -541,7 +543,7 @@ struct JobServiceTests {
         let bench = try Bench()
         defer { bench.remove() }
         let service = bench.service
-        let job = try service.make(from: try bench.resolved(copy: try bench.copy()).id)
+        let job = try service.make(from: try bench.resolved(copy: try bench.copy()).id).job
 
         let claimed = try #require(try await service.claim(node: "box", capabilities: ["flac", "aac"])).job
         let failed = try await service.complete(
@@ -611,7 +613,7 @@ struct WorkerTests {
             copy: FileRef(holder: "embedded", url: sample, path: sample.path, secret: ""),
             profile: "mobile"
         )
-        let job = try bench.service.make(from: resolved.id)
+        let job = try bench.service.make(from: resolved.id).job
 
         let worker = Self.worker(bench, ffmpeg: ffmpeg, ffprobe: ffprobe)
         #expect(try await worker.runOnce() == true)
@@ -646,7 +648,7 @@ struct WorkerTests {
             copy: FileRef(holder: "embedded", url: sample, path: sample.path, secret: ""),
             profile: "mobile"
         )
-        let job = try bench.service.make(from: resolved.id)
+        let job = try bench.service.make(from: resolved.id).job
 
         let started = bench.root.appendingPathComponent("encoding")
         let slow = bench.root.appendingPathComponent("ffmpeg")
@@ -715,7 +717,7 @@ struct WorkerTests {
             resolved.facts.duration.map { abs($0 - 3) < 0.1 } == true,
             "a second of the first and two of the second"
         )
-        let job = try bench.service.make(from: resolved.id)
+        let job = try bench.service.make(from: resolved.id).job
 
         #expect(try await Self.worker(bench, ffmpeg: ffmpeg, ffprobe: ffprobe).runOnce() == true)
         let encoded = try bench.service.job(job.id)
@@ -768,7 +770,7 @@ struct WorkerTests {
         let resolved = try #require(
             try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).recipes.first
         )
-        let job = try bench.service.make(from: resolved.id)
+        let job = try bench.service.make(from: resolved.id).job
 
         #expect(try await Self.worker(bench, ffmpeg: ffmpeg, ffprobe: ffprobe).runOnce() == true)
         #expect(try bench.service.job(job.id).state == .encoded)

@@ -45,13 +45,25 @@ package struct JobOperatorController {
         self.service = service
     }
 
-    @Operation
-    @JSONResponse(status: .created)
-    @ErrorResponse(NoSuchRecipe.self, .notFound)
-    @ErrorResponse(CommittedRecipe.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(Unrunnable.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func createJob(@JSONBody body: Components.Schemas.NewJob) async throws -> Components.Schemas.Job {
-        try Mapping.transcode(try service.make(from: body.recipe, trial: body.trial ?? false))
+    /// Raw, because which success it answers — 201 for a job made, 200 for the recipe's job found —
+    /// is decided by the service.
+    @RawOperation
+    package func createJob(_ input: Operations.createJob.Input) async throws -> Operations.createJob.Output {
+        let body =
+            switch input.body {
+            case .json(let body): body
+            }
+        do {
+            let (job, created) = try service.make(from: body.recipe, trial: body.trial ?? false)
+            let rendered: Components.Schemas.Job = try Mapping.transcode(job)
+            return created ? .created(.init(body: .json(rendered))) : .ok(.init(body: .json(rendered)))
+        } catch is NoSuchRecipe {
+            return .notFound(.init())
+        } catch let committed as CommittedRecipe {
+            return .conflict(.init(body: .json(Components.Schemas.Problem(detail: committed.reason))))
+        } catch let unrunnable as Unrunnable {
+            return .conflict(.init(body: .json(Components.Schemas.Problem(detail: unrunnable.reason))))
+        }
     }
 
     @Operation

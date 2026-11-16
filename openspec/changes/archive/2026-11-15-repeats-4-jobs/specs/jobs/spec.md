@@ -42,8 +42,7 @@ SHALL be answered with it. A job SHALL NOT be made any other way.
   recipe
 - **THEN** the answer is 409 saying the recipe's job is gone, and no job is made
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`), `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`), for a trial.
-A request for a committed recipe's job answered with it, or refused naming it, is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobIsMadeOnlyFromAResolvedRecipeWhoseSourcesCanBeHad`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`), `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`), for a trial. `Tests/SiloTests/RepeatTests.swift` (`aJobMadeAgainIsTheJobAsItStands`, `oneJobAskedForTwiceAtOnceIsMadeOnce`), for a request for a committed recipe's job.
 
 ### Requirement: Cancelling reaches a running job at its next progress report
 `POST /v1/jobs/{id}/cancel` SHALL land a `pending`, `encoded` or `failed` job as `cancelled` at
@@ -62,7 +61,7 @@ cancel sent again is answered as the first was; one `placing`, `placed` or `trie
 - **WHEN** a pending job is cancelled, and the cancel is sent again
 - **THEN** both answers are 200 with the job `cancelled`
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, for cancel on a placed job being 409). A cancel sent again is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`, for cancel on a placed job being 409), `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`).
 
 ### Requirement: A failed or cancelled job is offered again on retry
 `POST /v1/jobs/{id}/retry` SHALL take a `failed` or `cancelled` job. A `pending` job SHALL be answered
@@ -81,7 +80,7 @@ its failure, lease, progress, output and result cleared.
 - **WHEN** a failed job is retried, and the retry is sent again before a node claims it
 - **THEN** both answers are 200 with the job `pending`
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). A retry sent again is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`).
 
 ### Requirement: Placement fetches the output from its holder and files it
 `POST /v1/jobs/{id}/place` SHALL take an `encoded` job with its output present. A `placed` job SHALL be
@@ -111,7 +110,7 @@ writes made. Any failure along the way SHALL return the job to `encoded` with th
   the binding and the recipe's ruleset version on the presentation, and a second place is answered 200
   with the job, `placed`, writing nothing
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, for the `- mobile` naming and the file moved out of the work folder). `Tests/SiloTests/StackTests.swift` (`aPlacedPresentationRecordsItsBindingAndTheRulesThatMadeIt`, for the presentation's provenance). A second place answered with the job is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/JobTests.swift` (`theEmbeddedNodeEncodesAndTheSiloPlaces`, for the `- mobile` naming and the file moved out of the work folder). `Tests/SiloTests/StackTests.swift` (`aPlacedPresentationRecordsItsBindingAndTheRulesThatMadeIt`, for the presentation's provenance).
 
 ### Requirement: Completion encodes the job only when the reported layout matches the recipe
 `POST /v1/jobs/{id}/complete` with the output's file reference — on the node that made it — and
@@ -142,7 +141,7 @@ it `failed` with the failure `the output's layout is not the recipe's`.
 - **WHEN** an encoded job is completed again with another output
 - **THEN** the answer is 409, and the job holds the first output
 
-Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aMismatchedLayoutFailsAndALapsedLeaseIsReclaimed`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`). A completion sent again is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, `aMismatchedLayoutFailsAndALapsedLeaseIsReclaimed`), `Tests/SiloTests/ServerTests.swift` (`yJobsAreMadeFromRecipesClaimedAndPlacedOverTheAPI`), `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`).
 
 ### Requirement: A node gives an active job up with a reason
 `POST /v1/jobs/{id}/fail` with a reason SHALL be taken from an active job — `claimed`,
@@ -161,7 +160,7 @@ it `cancelled`.
 - **WHEN** a node fails the job it holds, and sends the same failure again
 - **THEN** both answers are 200 with the job `failed` with that reason, and it has one attempt
 
-Pinned by: nothing yet (the service covers the cancel-landing half — `Tests/SiloTests/JobTests.swift`, `aJobGoesFromResolvedToPlaced`).
+Pinned by: `Tests/SiloTests/RepeatTests.swift` (`eachChangeSentAgainIsAnsweredWithTheJob`), `Tests/SiloTests/JobTests.swift` (`aJobGoesFromResolvedToPlaced`, for the cancel-landing half).
 
 ### Requirement: A job's state is checked and changed in one step
 Every change of a job's state — a cancel, a retry, a progress report, a completion, a failure and
@@ -185,4 +184,4 @@ longer being encoded as it found it.
 - **THEN** the job is completed once, with one attempt, and both are answered 200 with it
 
 Pinned by: `Tests/SiloTests/JobTests.swift` (`twoChangesOfOneJobSentAtOnceAreNeverBothMade`,
-`aReportSentAsAJobIsCancelledNeverUndoesTheCancel`). One completion sent twice at once is pinned by nothing yet.
+`aReportSentAsAJobIsCancelledNeverUndoesTheCancel`), `Tests/SiloTests/RepeatTests.swift` (`oneCompletionSentTwiceAtOnceIsMadeOnceAndAnsweredTwice`).

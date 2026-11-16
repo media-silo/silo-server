@@ -102,6 +102,17 @@ public final class JobStore: Sendable {
         }
     }
 
+    /// Inserts a job, or finds one the store holds that the predicate matches, under one lock, so
+    /// that two copies of one request at once insert one job. `created` says which.
+    public func insert(_ job: Job, unlessHeld matches: (Job) -> Bool) throws -> (job: Job, created: Bool) {
+        try jobs.withLock { jobs in
+            if let held = jobs.values.first(where: matches) { return (held, false) }
+            try write(job)
+            jobs[job.id] = job
+            return (job, true)
+        }
+    }
+
     /// Removes the job and its file: a trial, deleted by the operator.
     public func remove(_ id: String) throws {
         try jobs.withLock { jobs in
