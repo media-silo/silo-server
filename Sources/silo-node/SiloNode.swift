@@ -79,28 +79,7 @@ struct SiloNode: AsyncParsableCommand {
             ffmpegVersion: version,
             cores: ProcessInfo.processInfo.activeProcessorCount
         )
-        var node = try await registering.registerNode(registration)
-        logger.info("registered as \(node.name) (\(node.id)): \(node.state.rawValue)")
-
-        // Approval, and the token that comes with it.
-        var announced = false
-        while identity.token == nil {
-            let status = try await registering.nodeStatus(id: identity.id, secret: identity.secret)
-            node = status.node
-            if let token = status.token {
-                identity.token = token
-                try JSONEncoder().encode(identity).write(to: identityURL, options: .atomic)
-                logger.info("approved; token taken")
-            } else if node.state == .revoked {
-                throw ValidationError("this node has been revoked on the silo")
-            } else {
-                if !announced {
-                    logger.info("waiting for approval: on the silo, run  silo-ctl nodes approve \(identity.id)")
-                    announced = true
-                }
-                try await Task.sleep(for: .seconds(5))
-            }
-        }
+        try await Self.register(registration, with: registering, identity: &identity, at: identityURL, logger: logger)
 
         // Serving what it makes.
         let server = try FileServer(port: servePort, advertisedHost: advertisedHost ?? hostName)
@@ -129,6 +108,46 @@ struct SiloNode: AsyncParsableCommand {
             gracefulShutdownSignals: [.sigterm, .sigint],
             logger: logger
         ).run()
+    }
+
+    /// Registers, then polls until approved, taking and saving the token. The silo may be restarting,
+    /// or not yet up: registration and each poll are sent again for as long as it takes, rather than
+    /// ending the node.
+    private static func register(
+        _ registration: NodeRegistration,
+        with registering: SiloClient,
+        identity: inout NodeIdentity,
+        at identityURL: URL,
+        logger: Logger
+    ) async throws {
+        let backoff = Backoff()
+        func unreachable(_ error: any Error, _ wait: Duration) {
+            logger.warning("the silo is unreachable (\(error)); trying again in \(wait)")
+        }
+        var node = try await backoff.retry(retrying: unreachable) { try await registering.registerNode(registration) }
+        logger.info("registered as \(node.name) (\(node.id)): \(node.state.rawValue)")
+
+        // Approval, and the token that comes with it.
+        var announced = false
+        while identity.token == nil {
+            let status = try await backoff.retry(retrying: unreachable) { [identity] in
+                try await registering.nodeStatus(id: identity.id, secret: identity.secret)
+            }
+            node = status.node
+            if let token = status.token {
+                identity.token = token
+                try JSONEncoder().encode(identity).write(to: identityURL, options: .atomic)
+                logger.info("approved; token taken")
+            } else if node.state == .revoked {
+                throw ValidationError("this node has been revoked on the silo")
+            } else {
+                if !announced {
+                    logger.info("waiting for approval: on the silo, run  silo-ctl nodes approve \(identity.id)")
+                    announced = true
+                }
+                try await Task.sleep(for: .seconds(5))
+            }
+        }
     }
 
     /// The silo: given, from the environment, or found.
