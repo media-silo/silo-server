@@ -3,10 +3,6 @@
 
 import Foundation
 
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
-
 /// How a node sends a request again when it is lost in transport: after a wait of `first`, doubling
 /// each time to at most `cap`, each wait drawn at random from its upper half so that nodes cut off
 /// together do not come back together. Only a transport error is sent again — the silo unreachable,
