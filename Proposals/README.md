@@ -112,3 +112,7 @@ deltas in `openspec/changes/`, as that README describes.
   and segments it says, an application by the recipes it would make and a version by its document; a
   route that changes a state answers a repeat with the record when the state asked for is there; and a
   delete answers a repeat as made, since the silo remembers for thirty days what it deleted.
+- [Taken](Taken.md) — a slow request is answered when it is taken: placing a job, fetching a trial
+  again, laying a library out and adding a library answer 202 with the record of the work, which is
+  made in the background and read again until it has ended; a request sent while its work is under way
+  is answered with that record and done once, and work under way at a stop is taken up at the start.
