@@ -924,6 +924,9 @@ paths:
     post:
       operationId: startBranch
       summary: Start a branch from a version of the standard
+      description: >
+        A branch of the name started from the version is answered 200 as it stands, so a start sent
+        again is answered as the first was. Operator only.
       tags: [Rulesets]
       security:
         - operator: []
@@ -942,6 +945,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Branch"
+        "200":
+          description: The branch of the name, started from the version, as it stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Branch"
         "400":
           description: The version is not on the standard, or the name is not one a branch can have.
           content:
@@ -953,7 +962,7 @@ paths:
         "404":
           description: No such ruleset.
         "409":
-          description: The ruleset already has a branch of that name.
+          description: The ruleset already has a branch of that name, started from another version.
           content:
             application/json:
               schema:
@@ -965,7 +974,9 @@ paths:
       summary: Make a branch's head the standard's next version
       description: >
         A fast-forward: refused, naming them, while the standard has versions the branch has not
-        taken in. The branch closes. Operator only.
+        taken in. The branch closes. A branch its promotion has closed is answered 200 with the
+        version that promotion made, so a promotion sent again is answered as the first was.
+        Operator only.
       tags: [Rulesets]
       security:
         - operator: []
@@ -983,12 +994,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RulesetSummary"
+        "200":
+          description: The standard version the branch's promotion made, before.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesetSummary"
         "401":
           $ref: "#/components/responses/Unauthorised"
         "404":
           description: No such ruleset or branch.
         "409":
-          description: The standard has versions the branch has not taken in, or the branch is closed.
+          description: >
+            The standard has versions the branch has not taken in, or the branch was closed before
+            the silo recorded what its promotion made.
           content:
             application/json:
               schema:

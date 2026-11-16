@@ -1696,8 +1696,28 @@ extension ServerTests {
                 body: try JSONEncoder().encode(body),
                 headers: Self.operatorHeaders
             )
-            #expect(again.status == 409)
-            let refused = try again.json(PlacementResultBody.self)
+            #expect(again.status == 200, "a placement sent again")
+            let resent = try again.json(PlacementResultBody.self)
+            #expect(resent.applied && resent.presentation == id, "is answered as applied, with its presentation")
+            #expect(resent.writes.isEmpty, "and writes nothing")
+            #expect(FileManager.default.fileExists(atPath: file.path), "the file offered stays where it was")
+
+            // A file at the destination that no presentation of the sidecar records is not one.
+            let stray = Fixture.root.appendingPathComponent(
+                "Library/Doctor Who (1963)/01 - Pyramids of Mars/Part Two - mobile.mkv"
+            )
+            try Fixture.mediaBytes.write(to: stray)
+            defer { try? FileManager.default.removeItem(at: stray) }
+            var mobile = body
+            mobile.profile = "mobile"
+            let collided = try await client.send(
+                "POST",
+                "/v1/libraries/main/place",
+                body: try JSONEncoder().encode(mobile),
+                headers: Self.operatorHeaders
+            )
+            #expect(collided.status == 409)
+            let refused = try collided.json(PlacementResultBody.self)
             #expect(refused.applied == false)
             #expect(refused.findings.map(\.text).contains("already exists; nothing is overwritten"))
             #expect(FileManager.default.fileExists(atPath: file.path), "a refusal moves nothing")
@@ -2930,14 +2950,16 @@ extension ServerTests {
                 headers: headers
             )
             #expect(started.status == 201)
+            let startedAgain = try await client.send(
+                "POST",
+                "/v1/rulesets/trialset/branches",
+                body: Data(#"{"name":"trial","from":1}"#.utf8),
+                headers: headers
+            )
+            #expect(startedAgain.status == 200, "a start sent again")
             #expect(
-                try await client.send(
-                    "POST",
-                    "/v1/rulesets/trialset/branches",
-                    body: Data(#"{"name":"trial","from":1}"#.utf8),
-                    headers: headers
-                ).status == 409,
-                "a name taken"
+                startedAgain.bodyText.contains("\"name\":\"trial\"") && startedAgain.bodyText.contains("\"base\":1"),
+                "is the branch as it stands"
             )
             #expect(
                 try await client.send(
@@ -2967,6 +2989,13 @@ extension ServerTests {
             )
             #expect(promoted.status == 201)
             #expect(promoted.bodyText.contains("\"version\":5"))
+            let promotedAgain = try await client.send(
+                "POST",
+                "/v1/rulesets/trialset/branches/trial/promote",
+                headers: headers
+            )
+            #expect(promotedAgain.status == 200, "a promotion sent again")
+            #expect(promotedAgain.bodyText.contains("\"version\":5"), "is the version the first made")
 
             struct BranchBody: Decodable {
                 var name: String
@@ -2978,6 +3007,15 @@ extension ServerTests {
             #expect(branches.map(\.name) == ["standard", "trial"])
             #expect(branches[0].head == 5 && branches[1].closed && branches[1].base == 1)
             #expect(try await store("trial", basedOn: 4, edition: 6).0 == 409, "a closed branch takes no store")
+            #expect(
+                try await client.send(
+                    "POST",
+                    "/v1/rulesets/trialset/branches",
+                    body: Data(#"{"name":"trial","from":3}"#.utf8),
+                    headers: headers
+                ).status == 409,
+                "a name taken, from another version"
+            )
             let source = try await client.post(
                 "/v1/sources",
                 json: SiloClient.NewSource(input: JobServiceTests.Bench.input, key: JobServiceTests.Bench.key()),

@@ -478,6 +478,12 @@ extension JobService {
             guard placement.isApplicable else {
                 throw PlacementRefusedError(reason: placement.errors.map(\.description).joined(separator: "; "))
             }
+            // The presentation already in the library, its file at the destination: placed before, by a
+            // placement whose job was not recorded as placed. The staged copy is not needed.
+            if placement.held {
+                try? FileManager.default.removeItem(at: staged)
+                return try placed(id, by: placement, in: library)
+            }
             // A binding's rules staged in the silo move into the library with its first file: every
             // version beside the item's sidecar, then the presentation, then the reference to the
             // version in force, so the sidecar never names a file that is not there.
@@ -506,15 +512,7 @@ extension JobService {
                 try stagedRules.remove(binding.id)
             }
             try await libraries.reread(placement.sidecars, in: library)
-            let destination = LibraryWalker.relativePath(of: placement.destination, in: library.root)
-            let placed = try jobs.update(id) { job in
-                job.state = .placed
-                job.placement = PlacementSummary(
-                    destination: destination,
-                    presentation: IndexedPresentation.id(library: library.id, placed: placement),
-                    writes: placement.describe(relativeTo: library.root)
-                )
-            }!
+            let placed = try placed(id, by: placement, in: library)
             // A new presentation, never checked: the check records it against the rules in force.
             checks.request()
             return placed
@@ -525,6 +523,25 @@ extension JobService {
             }
             throw error
         }
+    }
+
+    /// Records a job placed by the placement given, with its summary.
+    private func placed(_ id: String, by placement: Placement, in library: LibraryConfig) throws -> Job {
+        let destination = LibraryWalker.relativePath(of: placement.destination, in: library.root)
+        guard
+            let placed = try jobs.update(
+                id,
+                { job in
+                    job.state = .placed
+                    job.placement = PlacementSummary(
+                        destination: destination,
+                        presentation: IndexedPresentation.id(library: library.id, placed: placement),
+                        writes: placement.describe(relativeTo: library.root)
+                    )
+                }
+            )
+        else { throw NoSuchJob() }
+        return placed
     }
 
     /// Sets an encoded job `placing`, checked again under the lock: of two placements sent at once,

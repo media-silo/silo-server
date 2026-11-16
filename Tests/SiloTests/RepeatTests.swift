@@ -229,4 +229,40 @@ struct RepeatTests {
         #expect(twice.isEmpty, "a recipe answered with two jobs, or refused: \(twice.count) of 30")
         #expect(try service.all().count == 30)
     }
+
+    /// A job whose placement was made but not recorded, made `encoded` again, finds its presentation
+    /// in the library and is recorded placed, writing nothing.
+    @Test func aJobWhosePresentationIsAlreadyPlacedIsRecordedPlaced() async throws {
+        let bench = try Bench()
+        defer { bench.remove() }
+        let service = bench.service
+        let job = try service.make(from: try bench.resolved(copy: try bench.copy()).id).job
+        _ = try #require(try await service.claim(node: "box", capabilities: Set(job.requirements)))
+        func encoded(_ name: String) throws -> FileRef {
+            let output = bench.root.appendingPathComponent(name)
+            try Fixture.mediaBytes.write(to: output)
+            return FileRef(holder: "box", url: output, path: output.path, secret: "")
+        }
+        _ = try await service.complete(
+            job.id,
+            output: try encoded("first.mkv"),
+            result: EncodeResult(streams: [], layoutMatched: true)
+        )
+        let first = try await service.place(job.id)
+
+        let again = try encoded("again.mkv")
+        try bench.store.update(job.id) {
+            $0.state = .encoded
+            $0.output = again
+        }
+        let placed = try await service.place(job.id)
+        #expect(placed.state == .placed)
+        #expect(placed.placement?.presentation == first.placement?.presentation)
+        #expect(placed.placement?.writes.isEmpty == true, "writing nothing")
+        let incoming = bench.library.root.appendingPathComponent(".silo/incoming")
+        #expect(
+            (try? FileManager.default.contentsOfDirectory(atPath: incoming.path))?.isEmpty ?? true,
+            "and keeping no staged copy"
+        )
+    }
 }

@@ -211,53 +211,29 @@ public final class RulesetStore: Sendable {
         return branches
     }
 
-    /// Starts a branch from a version of the standard.
-    public func startBranch(_ branch: String, of name: String, from base: Int) throws -> Branch {
+    /// Starts a branch from a version of the standard. A branch of the name started from that
+    /// version is answered as it stands, so a start sent again is answered as the first was;
+    /// `created` says which.
+    public func startBranch(
+        _ branch: String,
+        of name: String,
+        from base: Int
+    ) throws -> (branch: Branch, created: Bool) {
         guard Self.isName(branch), branch != Self.standard else { throw RulesetStoreError.invalidName(branch) }
         return try lock.withLock { _ in
-            guard try branchRecord(name, branch) == nil else {
-                throw RulesetStoreError.branchExists(name: name, branch: branch)
+            if let held = try branchRecord(name, branch) {
+                guard held.base == base else { throw RulesetStoreError.branchExists(name: name, branch: branch) }
+                let head = try head(of: name, branch: branch)
+                return (
+                    Branch(name: branch, base: base, head: head, upToDateWith: held.upToDateWith, closed: held.closed),
+                    false
+                )
             }
             guard try self.branch(of: name, version: base) == Self.standard else {
                 throw RulesetStoreError.notOnStandard(name: name, version: base)
             }
             try write(BranchRecord(base: base, upToDateWith: base, closed: false), name: name, branch: branch)
-            return Branch(name: branch, base: base, head: base, upToDateWith: base, closed: false)
-        }
-    }
-
-    /// Promotes a branch: its head's document becomes the standard's next version, and the branch
-    /// closes. Refused, naming them, while the standard has versions the branch has not taken in.
-    public func promote(_ branch: String, of name: String) throws -> Int {
-        try lock.withLock { _ in
-            guard var record = try branchRecord(name, branch) else {
-                throw RulesetStoreError.noSuchBranch(name: name, branch: branch)
-            }
-            guard !record.closed else { throw RulesetStoreError.branchClosed(name: name, branch: branch) }
-            let standard = try versions(of: name).filter { try branchOf(name, version: $0) == Self.standard }
-            let missed = standard.filter { $0 > record.upToDateWith }
-            guard missed.isEmpty else {
-                throw RulesetStoreError.notTakenIn(name: name, branch: branch, versions: missed)
-            }
-            guard let from = try head(of: name, branch: branch),
-                let (_, data) = try document(named: name, version: from)
-            else {
-                throw RulesetStoreError.noSuchBranch(name: name, branch: branch)
-            }
-            let version = (try latestVersion(of: name) ?? 0) + 1
-            let url = fileURL(name: name, version: version)
-            guard !FileManager.default.fileExists(atPath: url.path) else {
-                throw RulesetStoreError.versionExists(name: name, version: version)
-            }
-            try data.write(to: url, options: .atomic)
-            try write(
-                VersionRecord(branch: Self.standard, parent: standard.last, promotedFrom: from),
-                name: name,
-                version: version
-            )
-            record.closed = true
-            try write(record, name: name, branch: branch)
-            return version
+            return (Branch(name: branch, base: base, head: base, upToDateWith: base, closed: false), true)
         }
     }
 
@@ -273,6 +249,9 @@ public final class RulesetStore: Sendable {
         var base: Int
         var upToDateWith: Int
         var closed: Bool
+        /// The standard version the branch's promotion made; nil while it is open, and in a record
+        /// closed before promotions were recorded.
+        var promotedAs: Int?
     }
 
     private static func isName(_ name: String) -> Bool {
@@ -318,6 +297,50 @@ public final class RulesetStore: Sendable {
 }
 
 extension RulesetStore {
+    /// Promotes a branch: its head's document becomes the standard's next version, and the branch
+    /// closes. Refused, naming them, while the standard has versions the branch has not taken in. A
+    /// branch its promotion has closed answers the version that promotion made, so a promotion sent
+    /// again is answered as the first was; `created` says which.
+    @discardableResult
+    public func promote(_ branch: String, of name: String) throws -> (version: Int, created: Bool) {
+        try lock.withLock { _ in
+            guard var record = try branchRecord(name, branch) else {
+                throw RulesetStoreError.noSuchBranch(name: name, branch: branch)
+            }
+            guard !record.closed else {
+                guard let promoted = record.promotedAs else {
+                    throw RulesetStoreError.branchClosed(name: name, branch: branch)
+                }
+                return (promoted, false)
+            }
+            let standard = try versions(of: name).filter { try branchOf(name, version: $0) == Self.standard }
+            let missed = standard.filter { $0 > record.upToDateWith }
+            guard missed.isEmpty else {
+                throw RulesetStoreError.notTakenIn(name: name, branch: branch, versions: missed)
+            }
+            guard let from = try head(of: name, branch: branch),
+                let (_, data) = try document(named: name, version: from)
+            else {
+                throw RulesetStoreError.noSuchBranch(name: name, branch: branch)
+            }
+            let version = (try latestVersion(of: name) ?? 0) + 1
+            let url = fileURL(name: name, version: version)
+            guard !FileManager.default.fileExists(atPath: url.path) else {
+                throw RulesetStoreError.versionExists(name: name, version: version)
+            }
+            try data.write(to: url, options: .atomic)
+            try write(
+                VersionRecord(branch: Self.standard, parent: standard.last, promotedFrom: from),
+                name: name,
+                version: version
+            )
+            record.closed = true
+            record.promotedAs = version
+            try write(record, name: name, branch: branch)
+            return (version, true)
+        }
+    }
+
     /// The head of the branch, when the document is its document; otherwise nil, once the store is
     /// found to go ahead from `basedOn`. Called under the lock the version number is taken under.
     fileprivate func heldHead(of data: Data, as name: String, on branch: String, basedOn: Int?) throws -> Int? {

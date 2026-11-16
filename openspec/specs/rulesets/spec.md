@@ -645,7 +645,8 @@ Pinned by: `Tests/SiloStoreTests/RulesetBranchTests.swift` (`branchesShareTheSeq
 ### Requirement: Promotion makes a branch's head the standard's next version, and never merges
 Promoting a branch SHALL store its head's document as the standard's next version, its parent the
 standard's head and recording the branch head it came from, and SHALL close the branch: a closed
-branch takes no store and no application. Promotion SHALL be refused, naming the versions, when the
+branch takes no store and no application. Promoting a branch already closed by its promotion SHALL
+store nothing, and SHALL answer the standard version recorded as promoted from the branch's head. Promotion SHALL be refused, naming the versions, when the
 standard has versions later than the one the branch is up to date with, and SHALL store nothing;
 the branch is brought up to date by storing a version on it that declares the standard's head.
 
@@ -664,6 +665,10 @@ the branch is brought up to date by storing a version on it that declares the st
 - **WHEN** `trial` is refused for not taking in version 9, a document is stored on it declaring that
   it is up to date with version 9, and `trial` is promoted again
 - **THEN** the standard's next version is stored with that document, and `trial` is closed
+
+#### Scenario: promoted again
+- **WHEN** `trial`, holding version 8, has been promoted as version 9, and is promoted again
+- **THEN** the promotion answers version 9, and nothing is stored
 
 Pinned by: `Tests/SiloStoreTests/RulesetBranchTests.swift` (`promotionIsAFastForwardRefusedOverWhatTheBranchHasNotTakenIn`, `aStraightPromotionOverTheStandardsHead`).
 

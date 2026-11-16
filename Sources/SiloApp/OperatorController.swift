@@ -287,6 +287,16 @@ package struct OperatorController {
             throw BadPlacement(reason: error.localizedDescription)
         }
         let destination = LibraryWalker.relativePath(of: placement.destination, in: library.root)
+        // A placement sent again: the presentation is there, and nothing is written.
+        if placement.held {
+            return Components.Schemas.PlacementResult(
+                applied: true,
+                destination: destination,
+                presentation: IndexedPresentation.id(library: library.id, placed: placement),
+                writes: [],
+                findings: []
+            )
+        }
         var result = Components.Schemas.PlacementResult(
             applied: false,
             destination: destination,
@@ -342,39 +352,43 @@ package struct OperatorController {
         return .created(.init(body: .json(rendered)))
     }
 
-    @Operation
-    @JSONResponse(status: .created)
-    @ErrorResponse(NoSuchRuleset.self, .notFound)
-    @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func startBranch(
-        @Path name: String,
-        @JSONBody body: Components.Schemas.NewBranch
-    ) async throws -> Components.Schemas.Branch {
-        guard try store.latestVersion(of: name) != nil else { throw NoSuchRuleset() }
+    /// Raw, because which success it answers — 201 for a branch started, 200 for the one a start
+    /// sent again finds — is decided by the store.
+    @RawOperation
+    package func startBranch(_ input: Operations.startBranch.Input) async throws -> Operations.startBranch.Output {
+        let body =
+            switch input.body {
+            case .json(let body): body
+            }
+        let name = input.path.name
+        guard try store.latestVersion(of: name) != nil else { return .notFound(.init()) }
         do {
-            return Mapping.branch(try store.startBranch(body.name, of: name, from: body.from))
+            let (branch, created) = try store.startBranch(body.name, of: name, from: body.from)
+            let rendered = Mapping.branch(branch)
+            return created ? .created(.init(body: .json(rendered))) : .ok(.init(body: .json(rendered)))
         } catch let error as RulesetStoreError {
-            if case .branchExists = error { throw BranchConflict(reason: error.description) }
-            throw BadRuleset(reason: error.description)
+            let problem = Components.Schemas.Problem(detail: error.description)
+            if case .branchExists = error { return .conflict(.init(body: .json(problem))) }
+            return .badRequest(.init(body: .json(problem)))
         }
     }
 
-    @Operation
-    @JSONResponse(status: .created)
-    @ErrorResponse(NoSuchRuleset.self, .notFound)
-    @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
+    /// Raw, because which success it answers — 201 for a promotion made, 200 for the one a
+    /// promotion sent again finds — is decided by the store.
+    @RawOperation
     package func promoteBranch(
-        @Path name: String,
-        @Path branch: String
-    ) async throws -> Components.Schemas.RulesetSummary {
+        _ input: Operations.promoteBranch.Input
+    ) async throws -> Operations.promoteBranch.Output {
+        let name = input.path.name
         do {
-            let version = try store.promote(branch, of: name)
+            let (version, created) = try store.promote(input.path.branch, of: name)
+            let rendered = Components.Schemas.RulesetSummary(name: name, version: version)
+            guard created else { return .ok(.init(body: .json(rendered))) }
             checks.request()
-            return Components.Schemas.RulesetSummary(name: name, version: version)
+            return .created(.init(body: .json(rendered)))
         } catch let error as RulesetStoreError {
-            if case .noSuchBranch = error { throw NoSuchRuleset() }
-            throw BranchConflict(reason: error.description)
+            if case .noSuchBranch = error { return .notFound(.init()) }
+            return .conflict(.init(body: .json(Components.Schemas.Problem(detail: error.description))))
         }
     }
 }
