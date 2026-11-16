@@ -83,6 +83,7 @@ package final class Libraries: Sendable {
     private let settings: SettingsStore
     private let index: Index
     private let checks: CheckSignal
+    private let deleted: DeletedStore
     private let mounts: MountPoints
     private let logger = Logger(label: "silo.libraries")
     private let state = Mutex(State())
@@ -99,12 +100,14 @@ package final class Libraries: Sendable {
         settings: SettingsStore,
         index: Index,
         checks: CheckSignal,
+        deleted: DeletedStore,
         mounts: MountPoints = .system
     ) {
         self.config = config
         self.settings = settings
         self.index = index
         self.checks = checks
+        self.deleted = deleted
         self.mounts = mounts
     }
 
@@ -127,10 +130,20 @@ package final class Libraries: Sendable {
     /// resolved, and a folder that exists — or, with `create`, one whose missing folders are made, below
     /// a folder that exists within a root; the id new. Written to `settings.json`, walked, and only
     /// then answered, so it is served at once. Libraries written into the file by hand are not held to
-    /// the roots — the roots bound what the network may add, and what the owner wrote is theirs.
-    package func add(id: String, path: String, create: Bool = false) async throws -> LibraryConfig {
+    /// the roots — the roots bound what the network may add, and what the owner wrote is theirs. A
+    /// library the silo serves under the id at the same path is answered as it stands, adding and
+    /// walking nothing, so an add sent again is answered with the library the first added; `created`
+    /// says which.
+    package func add(
+        id: String,
+        path: String,
+        create: Bool = false
+    ) async throws -> (
+        library: LibraryConfig, created: Bool
+    ) {
         let check = check(id: id, path: path, create: create)
         if let refusal = check.refusal { throw refusal.error }
+        if let held = library(id) { return (held, false) }
         let library = LibraryConfig(id: id, root: URL(fileURLWithPath: check.path, isDirectory: true))
         if !check.creates.isEmpty {
             do {
@@ -147,8 +160,12 @@ package final class Libraries: Sendable {
             settings.libraries.append(library)
         }
         logger.info("added \(id) at \(library.root.path)")
+        // A removal of the id from now on is the new library's.
+        do { try deleted.forget(.library, id) } catch {
+            logger.warning("\(id) is still on the deleted record: \(error)")
+        }
         try await walk(library)
-        return library
+        return (library, true)
     }
 
     /// What adding a library at `path` would find, and the refusal it would meet, without adding it.
@@ -226,15 +243,21 @@ package final class Libraries: Sendable {
             guard create else { return .bad("\(check.path) is not a folder that exists") }
         }
         guard !id.isEmpty, !id.contains("/") else { return .bad("a library's id must be a name, without a slash") }
-        guard library(id) == nil else { return .taken("there is already a library \(id)") }
+        if let held = library(id), held.root.standardizedFileURL.path != check.path {
+            return .taken("there is already a library \(id), at \(held.root.path)")
+        }
         return nil
     }
 
     /// Removes a library: it leaves `settings.json` and its rows leave the index, after any walk of it
     /// already running; nothing on disk is touched — no sidecar, no media file. The files are the
-    /// household's.
+    /// household's. A library the silo removed, as its record of what it deleted holds, is removed
+    /// already, and changes nothing.
     package func remove(_ id: String) async throws {
-        guard let library = library(id) else { throw NoSuchLibrary() }
+        guard let library = library(id) else {
+            guard deleted.holds(.library, id) else { throw NoSuchLibrary() }
+            return
+        }
         try settings.update { $0.libraries.removeAll { $0.id == id } }
         try await lane(of: id).exclusively { [self] in try index.forget(library: id) }
         state.withLock { state in
@@ -243,6 +266,9 @@ package final class Libraries: Sendable {
             state.lanes[id] = nil
         }
         logger.info("removed \(id); \(library.root.path) is left as it was")
+        do { try deleted.record(.library, id) } catch {
+            logger.warning("\(id)'s removal is not on the deleted record: \(error)")
+        }
     }
 
     /// Whether `path` is `root` or inside it, by whole components: `/srv/media2` is not within `/srv/media`.

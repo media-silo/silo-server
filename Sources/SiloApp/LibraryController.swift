@@ -48,11 +48,9 @@ package struct LibraryController {
             uniquingKeysWith: { first, _ in first }
         )
         return try libraries.all.map { library in
-            Components.Schemas.Library(
-                id: library.id,
+            try counts.library(
+                library.id,
                 ruleset: standards[library.id] ?? nil,
-                containers: try counts.containers(in: library.id),
-                presentations: try counts.presentations(in: library.id),
                 available: libraries.availability(of: library)
             )
         }
@@ -146,6 +144,17 @@ package struct LibraryController {
 /// What a library holds, counted down from its roots through the index.
 struct LibraryCounts {
     let index: Index
+
+    /// A library as the API lists it, with its counts.
+    func library(_ id: String, ruleset: String?, available: Bool) throws -> Components.Schemas.Library {
+        Components.Schemas.Library(
+            id: id,
+            ruleset: ruleset,
+            containers: try containers(in: id),
+            presentations: try presentations(in: id),
+            available: available
+        )
+    }
 
     func containers(in library: String) throws -> Int {
         var total = 0

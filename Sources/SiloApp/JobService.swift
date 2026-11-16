@@ -35,6 +35,7 @@ package struct JobService: Service, JobsAPI {
     private let libraries: Libraries
     private let stagedRules: BindingRulesStore
     private let checks: CheckSignal
+    private let deleted: DeletedStore
     /// The trial jobs whose output is being fetched, so that one is never fetched twice at once.
     private let fetching = InFlight()
     /// The encoded trials whose output is to be fetched, which `run` fetches.
@@ -51,10 +52,12 @@ package struct JobService: Service, JobsAPI {
         recipes: RecipeStore,
         libraries: Libraries,
         stagedRules: BindingRulesStore,
-        checks: CheckSignal
+        checks: CheckSignal,
+        deleted: DeletedStore
     ) {
         self.stagedRules = stagedRules
         self.checks = checks
+        self.deleted = deleted
         self.config = config
         self.jobs = jobs
         self.sources = sources
@@ -430,11 +433,18 @@ package struct JobService: Service, JobsAPI {
         jobs.job(id).flatMap { $0.trial && $0.state == .tried ? $0 : nil }
     }
 
-    /// Deletes a tried trial: its output, then its record. Its recipe stays committed.
+    /// Deletes a tried trial: its output, then its record. Its recipe stays committed. A trial the
+    /// silo deleted, as its record of what it deleted holds, is deleted already.
     package func deleteTrial(_ id: String) throws {
-        guard let trial = trial(id) else { throw NoSuchJob() }
+        guard let trial = trial(id) else {
+            guard deleted.holds(.trial, id) else { throw NoSuchJob() }
+            return
+        }
         try? FileManager.default.removeItem(at: trialFile(of: trial))
         try jobs.remove(id)
+        do { try deleted.record(.trial, id) } catch {
+            logger.warning("trial \(id) is not on the deleted record: \(error)")
+        }
     }
 }
 

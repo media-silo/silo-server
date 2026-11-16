@@ -24,4 +24,4 @@ SHALL be answered 204.
 - **WHEN** the operator deletes a tried trial, and sends the same delete again
 - **THEN** both answers are 204
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`). A trial deleted again is pinned by nothing yet.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`yTrialsAreListedServedAndDeletedOverTheAPI`). A trial deleted again is pinned by the same and by `Tests/SiloTests/JobTests.swift` (`aTrialIsKeptApartFromTheLibraryAndNeverPlaced`).

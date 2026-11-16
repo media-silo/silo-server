@@ -34,7 +34,8 @@ struct StoreServiceTests {
                 config: config,
                 settings: SettingsStore(Settings(name: "Silo on test", libraries: [library])),
                 index: index,
-                checks: CheckSignal()
+                checks: CheckSignal(),
+                deleted: DeletedStore()
             )
             records = try StoreRecords(folder: root.appendingPathComponent("State/stores"))
             blobs = try BlobStore(folder: root.appendingPathComponent("State/blobs"))

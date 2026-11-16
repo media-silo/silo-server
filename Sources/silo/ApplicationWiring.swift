@@ -23,9 +23,10 @@ package enum ApplicationWiring {
         config: SiloConfig,
         settings: SettingsStore,
         index: Index,
-        checks: CheckSignal
+        checks: CheckSignal,
+        deleted: DeletedStore
     ) throws -> Libraries {
-        let libraries = Libraries(config: config, settings: settings, index: index, checks: checks)
+        let libraries = Libraries(config: config, settings: settings, index: index, checks: checks, deleted: deleted)
         try libraries.walkAtBoot()
         return libraries
     }
@@ -73,6 +74,12 @@ package enum ApplicationWiring {
     @Provides
     package static func blobs(config: SiloConfig) throws -> BlobStore {
         try BlobStore(folder: config.stateDirectory.appendingPathComponent("blobs", isDirectory: true))
+    }
+
+    /// What the silo deleted in the last thirty days, so that a delete sent again is answered as made.
+    @Provides
+    package static func deleted(config: SiloConfig) throws -> DeletedStore {
+        try DeletedStore(file: config.stateDirectory.appendingPathComponent("deleted.json"))
     }
 
     @Provides

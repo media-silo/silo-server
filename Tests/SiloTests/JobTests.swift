@@ -36,6 +36,7 @@ struct JobServiceTests {
         let service: JobService
         let index: Index
         let libraries: Libraries
+        let deleted: DeletedStore
 
         /// `checksOnDisk` keeps the check records in the state folder, as the silo does, rather than in
         /// memory.
@@ -56,7 +57,8 @@ struct JobServiceTests {
             stagedRules = try BindingRulesStore(folder: root.appendingPathComponent("State/binding-rules"))
             signal = CheckSignal()
             checks = checksOnDisk ? try CheckStore(folder: Self.checksFolder(in: root)) : CheckStore()
-            libraries = Libraries(config: config, settings: settings, index: index, checks: signal)
+            deleted = try DeletedStore(file: root.appendingPathComponent("State/deleted.json"))
+            libraries = Libraries(config: config, settings: settings, index: index, checks: signal, deleted: deleted)
             let stack = RulesStack(libraries: libraries, index: index, staged: stagedRules)
             bindingService = BindingService(
                 settings: settings,
@@ -68,7 +70,8 @@ struct JobServiceTests {
                 staged: stagedRules,
                 stack: stack,
                 libraries: libraries,
-                checks: signal
+                checks: signal,
+                deleted: deleted
             )
             checkService = CheckService(
                 jobs: store,
@@ -91,7 +94,8 @@ struct JobServiceTests {
                 recipes: recipes,
                 libraries: libraries,
                 stagedRules: stagedRules,
-                checks: signal
+                checks: signal,
+                deleted: deleted
             )
         }
 
@@ -111,7 +115,8 @@ struct JobServiceTests {
                 recipes: recipes,
                 libraries: libraries,
                 stagedRules: stagedRules,
-                checks: signal
+                checks: signal,
+                deleted: deleted
             )
         }
 
@@ -407,7 +412,9 @@ struct JobServiceTests {
         #expect(try service.trials().isEmpty)
         #expect(throws: NoSuchJob.self) { try service.job(tried.id) }
         #expect(bench.recipes.recipe(resolved.id)?.state == .committed, "its recipe stays")
-        #expect(throws: NoSuchJob.self) { try service.deleteTrial(tried.id) }
+        try service.deleteTrial(tried.id)
+        #expect(bench.deleted.holds(.trial, tried.id), "a trial deleted again is deleted")
+        #expect(throws: NoSuchJob.self, "and one never held is not") { try service.deleteTrial("never") }
     }
 
     @Test func aTrialWhoseFetchFailsStaysEncodedToBeFetchedAgain() async throws {

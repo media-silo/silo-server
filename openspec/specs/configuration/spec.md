@@ -198,15 +198,18 @@ and lies within a root once its links are resolved; a root SHALL never be made, 
 be made where a drive mounts — directly within a folder the platform mounts drives in (`/Volumes` on
 macOS; `/media`, each folder within it, each folder within `/run/media`, and `/mnt` on Linux), or
 within a mount point declared while nothing is mounted on it — by `/etc/fstab`, or by a systemd
-mount or automount unit in `/etc/systemd/system` or `/run/systemd/system` or enabled from there. The id SHALL be new.
-A taken id SHALL be 409; a path outside every root, any path when the roots are empty, or folders
+mount or automount unit in `/etc/systemd/system` or `/run/systemd/system` or enabled from there. The id SHALL be new,
+unless the library the silo serves under it is at the same path, once standardised: that SHALL be
+answered 200 with the library as it stands, adding and walking nothing, so that an add sent again is
+answered with the library the first added. An id taken at another path SHALL be 409; a path outside every root, any path when the roots are empty, or folders
 that would be made outside a root or where a drive mounts SHALL be 403, whether or not `create` was given,
 since asking would not make them; otherwise a path that does not exist without `create`, or that
 passes through something that is not a folder, SHALL be 422. An added library SHALL be written to
 `settings.json`, walked before the route answers, and served without a restart. The silo SHALL
 serve `DELETE /v1/libraries/{library}` behind the same gate; it SHALL be 409 while a job not yet in a
 final state names the library, and otherwise SHALL remove the library from `settings.json` and its
-rows from the index, touching nothing on disk.
+rows from the index, touching nothing on disk, and answer 204. A library the silo does not serve SHALL
+be 404, unless the silo removed it, as its record of what it deleted holds.
 
 #### Scenario: added and served
 - **WHEN** `silo.json`'s library roots are `/srv/media` and the operator adds `films` at
@@ -225,6 +228,15 @@ rows from the index, touching nothing on disk.
 - **WHEN** the operator removes a library no live job names
 - **THEN** it leaves `settings.json` and the index, and every sidecar and media file under its path
   remains
+
+#### Scenario: an add sent again
+- **WHEN** the operator adds `films` at `/srv/media/films`, sends the same request again, and then adds
+  `films` at `/srv/media/other`
+- **THEN** the answers are 201, 200 with the same library, and 409
+
+#### Scenario: a removal sent again
+- **WHEN** the operator removes a library no live job names, and sends the same removal again
+- **THEN** both answers are 204, and an id the silo never served is 404
 
 #### Scenario: missing folders made on request
 - **WHEN** `silo.json`'s library roots are `/srv/media`, `/srv/media` exists and `/srv/media/shows`
@@ -270,7 +282,10 @@ Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibraryIsAddedWithinTheRootsAn
 for the refusal while a live job names the library), `Tests/SiloTests/LibrariesTests.swift`
 (`withTheRootsEmptiedNothingIsAddedOverTheNetwork`, `aRootIsMatchedByWholeComponents`,
 `aPathIsCheckedAndItsMissingFoldersMadeWithinARoot`, `noFolderIsMadeWhereADriveMounts`,
-`mountPointsAreReadAsTheMachineHasThem`, `mountPointsAreReadFromSystemdUnits`).
+`mountPointsAreReadAsTheMachineHasThem`, `mountPointsAreReadFromSystemdUnits`). An add and a
+removal sent again are pinned by `Tests/SiloTests/LibrariesTests.swift`
+(`anAddAndARemovalSentAgainAreAnsweredAsMade`) and `Tests/SiloTests/ServerTests.swift`
+(`aLibraryIsAddedWithinTheRootsAndRemovedLeavingItsFiles`).
 
 ### Requirement: A library's path is checked before it is added
 The silo SHALL serve `POST /v1/libraries/check` behind the operator gate, taking the body
@@ -299,3 +314,32 @@ that a path can be checked before the library is named.
 
 Pinned by: `Tests/SiloTests/ServerTests.swift` (`aLibrarysPathIsCheckedAndItsMissingFoldersMade`),
 `Tests/SiloTests/LibrariesTests.swift` (`aPathIsCheckedAndItsMissingFoldersMadeWithinARoot`).
+
+### Requirement: The silo remembers what it deleted
+The silo SHALL record each library it removes, each recipe it discards and each trial it deletes, by
+its kind, its id and when, in `deleted.json` in its state directory, written whole and atomically once
+the delete has been made, and SHALL keep each entry for thirty days. A delete whose entry could not be
+written SHALL still be answered as made. A library's entry SHALL be taken off the record when a library
+is added under its id again. Each route that deletes SHALL answer a delete of an id the record holds for
+its kind as it answered the delete, 204, and changing nothing; an id the record does not hold SHALL be
+answered as the route answers an id the silo never had.
+
+#### Scenario: a delete sent again
+- **WHEN** the operator discards a resolved recipe, and sends the same delete again
+- **THEN** both answers are 204
+
+#### Scenario: an id never held
+- **WHEN** the operator discards a recipe id the silo has never held
+- **THEN** the answer is 404
+
+#### Scenario: a delete long ago
+- **WHEN** a recipe was discarded thirty-one days ago, and the delete is sent again
+- **THEN** the answer is 404
+
+#### Scenario: the record across a restart
+- **WHEN** a trial is deleted, the silo stops and starts again, and the delete is sent again
+- **THEN** the answer is 204
+
+Pinned by: `Tests/SiloStoreTests/DeletedStoreTests.swift` (`aDeleteIsRecordedByKindAndSurvivesARestart`,
+`aDeleteLongAgoIsNotHeld`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`,
+`yTrialsAreListedServedAndDeletedOverTheAPI`).
