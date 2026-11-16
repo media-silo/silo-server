@@ -51,7 +51,7 @@ public enum ToolError: Error, CustomStringConvertible {
 }
 
 /// Runs a tool, streaming its standard output a line at a time and keeping the tail of its
-/// standard error for the failure message. Cancelling the task terminates the process; a task
+/// standard error for the failure message. Cancelling the task kills the process; a task
 /// cancelled before the process starts throws `CancellationError` without starting it.
 package enum ProcessRunner {
     package struct Outcome: Sendable {
@@ -181,8 +181,18 @@ package enum ProcessRunner {
             if started { terminate() }
         }
 
+        /// Kills the process with `SIGKILL` rather than asking it to stop with `Process.terminate()`'s
+        /// `SIGTERM`. A child inherits the signal mask of the thread that spawns it, and Foundation on
+        /// Linux does not reset it, so a tool started from a thread with `SIGTERM` blocked never sees
+        /// the request and runs to its end. `SIGKILL` cannot be blocked or ignored, and what a cancelled
+        /// run leaves is thrown away.
         private func terminate() {
-            if process.isRunning { process.terminate() }
+            guard process.isRunning else { return }
+            #if os(Windows)
+            process.terminate()
+            #else
+            kill(process.processIdentifier, SIGKILL)
+            #endif
         }
     }
 }

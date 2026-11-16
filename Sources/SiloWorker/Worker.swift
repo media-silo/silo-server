@@ -26,18 +26,31 @@ public actor Worker: Service {
         /// Where a finished file is reachable from: the node's file server, or for the embedded
         /// node a `file://` URL the silo reads directly.
         public var publish: @Sendable (_ job: String, _ file: URL) async throws -> FileRef
+        /// How a progress report or a completion lost in transport is sent again.
+        public var backoff: Backoff
+        /// How long after the last report the silo answered a lost one is sent again: the job's
+        /// lease, after which the silo reclaims it.
+        public var reportPatience: Duration
+        /// How long a completion lost in transport is sent again before it is given up.
+        public var completionPatience: Duration
 
         public init(
             nodeID: String,
             workFolder: URL,
             pollInterval: Duration = .seconds(5),
             progressInterval: Duration = .seconds(5),
+            backoff: Backoff = Backoff(),
+            reportPatience: Duration = .seconds(120),
+            completionPatience: Duration = .seconds(60 * 60),
             publish: @escaping @Sendable (String, URL) async throws -> FileRef
         ) {
             self.nodeID = nodeID
             self.workFolder = workFolder
             self.pollInterval = pollInterval
             self.progressInterval = progressInterval
+            self.backoff = backoff
+            self.reportPatience = reportPatience
+            self.completionPatience = completionPatience
             self.publish = publish
         }
     }
@@ -106,6 +119,9 @@ public actor Worker: Service {
         } catch let error as Cancelled {
             logger.info("\(job.id) cancelled: \(error.reason)")
             _ = try? await api.fail(job.id, reason: "cancelled")
+        } catch let error as CompletionUnanswered {
+            // The encode is good, and a fail would throw it away: the job is the silo's to reclaim.
+            logger.error("\(job.id) encoded, but its completion was never answered: \(error.error)")
         } catch {
             logger.error("\(job.id) failed: \(error)")
             _ = try? await api.fail(job.id, reason: String(describing: error))
@@ -115,6 +131,11 @@ public actor Worker: Service {
 
     struct Cancelled: Error {
         var reason: String
+    }
+
+    /// A completion the silo never answered, for as long as one is sent again.
+    struct CompletionUnanswered: Error {
+        var error: any Error
     }
 
     private func perform(_ claim: Claim) async throws {
@@ -154,18 +175,31 @@ public actor Worker: Service {
             throw WorkerError.layoutMismatch(mismatches.map(\.description))
         }
         let published = try await configuration.publish(job.id, output)
-        _ = try await api.complete(job.id, output: published, result: result)
+        func lost(_ error: any Error, _ wait: Duration) {
+            logger.warning("\(job.id): completion lost (\(error)); sending it again in \(wait)")
+        }
+        do {
+            _ = try await configuration.backoff.retry(until: .now + configuration.completionPatience, retrying: lost) {
+                try await api.complete(job.id, output: published, result: result)
+            }
+        } catch  where Backoff.isTransport(error) {
+            throw CompletionUnanswered(error: error)
+        }
         logger.info("encoded \(job.id) to \(output.lastPathComponent)")
     }
 
     /// ffmpeg run beside the progress reports, until the first of them ends: the encode finishing,
     /// or the reporter learning of a cancel. Progress doubles as heartbeat, and the state that comes
     /// back is how a cancel arrives. Both are the group's own children, so cancelling the task that
-    /// runs this cancels the encode too, which terminates ffmpeg.
+    /// runs this cancels the encode too, which terminates ffmpeg. A report lost in transport is sent
+    /// again while the encode runs on, until the lease the last answered report renewed would lapse.
     private func encode(_ job: String, _ arguments: [String], duration: Double?) async throws {
         let api = self.api
         let ffmpeg = self.ffmpeg
+        let logger = self.logger
         let interval = configuration.progressInterval
+        let backoff = configuration.backoff
+        let patience = configuration.reportPatience
         let latest = ProgressBox()
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -182,9 +216,16 @@ public actor Worker: Service {
             }
             group.addTask {
                 // Never ends of itself: once the group is cancelled, the sleep throws.
+                func lost(_ error: any Error, _ wait: Duration) {
+                    logger.warning("\(job): progress report lost (\(error)); sending it again in \(wait)")
+                }
+                var answered = ContinuousClock.now
                 while true {
                     try await Task.sleep(for: interval)
-                    let state = try await api.report(job, progress: latest.take())
+                    let state = try await backoff.retry(until: answered + patience, retrying: lost) {
+                        try await api.report(job, progress: latest.take())
+                    }
+                    answered = .now
                     if state == .cancelling || state == .cancelled {
                         throw Cancelled(reason: "the silo asked")
                     }

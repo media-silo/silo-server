@@ -86,4 +86,25 @@ struct ProcessRunnerTests {
         #expect(ContinuousClock.now - cancelled < .seconds(10), "terminated, not left to sleep out")
         #expect(outcome.status != 0)
     }
+
+    /// A tool that does not act on `SIGTERM` is still stopped, as one started from a thread with the
+    /// signal blocked is on Linux.
+    @Test(.timeLimit(.minutes(1))) func cancellingARunStopsAToolThatIgnoresSIGTERM() async throws {
+        let marker = FileManager.default.temporaryDirectory.appendingPathComponent("silo-runner-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: marker) }
+        let run = Task {
+            try await ProcessRunner.run(
+                Self.shell,
+                arguments: ["-c", "trap '' TERM; touch '\(marker.path)'; exec sleep 30"]
+            ) { _ in }
+        }
+        while !FileManager.default.fileExists(atPath: marker.path) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let cancelled = ContinuousClock.now
+        run.cancel()
+        let outcome = try await run.value
+        #expect(ContinuousClock.now - cancelled < .seconds(10), "killed, not left to sleep out")
+        #expect(outcome.status != 0)
+    }
 }
