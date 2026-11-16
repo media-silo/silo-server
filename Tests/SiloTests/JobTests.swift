@@ -174,12 +174,12 @@ struct JobServiceTests {
                     chapters: [Chapter(index: 1, title: "Opening")],
                     segments: Array(repeating: Binding.Segment(source: source.id, chapters: chapters), count: count)
                 )
-            )
+            ).binding
             return try #require(
                 try bindingService.apply(
                     Application(ruleset: "household", outputs: [Application.OutputChoice(profile: profile)]),
                     to: binding.id
-                ).first
+                ).recipes.first
             )
         }
     }
@@ -707,9 +707,9 @@ struct WorkerTests {
                     Binding.Segment(source: two.id),
                 ]
             )
-        )
+        ).binding
         let resolved = try #require(
-            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first
+            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).recipes.first
         )
         #expect(
             resolved.facts.duration.map { abs($0 - 3) < 0.1 } == true,
@@ -764,9 +764,9 @@ struct WorkerTests {
                     Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 1, to: 1)),
                 ]
             )
-        )
+        ).binding
         let resolved = try #require(
-            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first
+            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).recipes.first
         )
         let job = try bench.service.make(from: resolved.id)
 

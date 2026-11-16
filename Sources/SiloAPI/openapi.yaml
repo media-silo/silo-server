@@ -1124,8 +1124,12 @@ paths:
       operationId: makeBinding
       summary: Bind an entry to the segments of sources it is made from
       description: >
-        Checks the binding whole and keeps it, or keeps nothing. A binding names no ruleset; applying
-        one is its own operation. Operator only.
+        Checks the binding whole and keeps it, or keeps nothing. A binding that says what one the
+        silo holds says — its library, its item's container and the item, its alternative, segments,
+        feature map and chapter names — is that binding, answered 200 with nothing kept, whatever
+        copies of its lineage's documents it carries; so a binding sent again is answered with the
+        one the first made. A binding names no ruleset; applying one is its own operation. Operator
+        only.
       tags: [Bindings]
       security:
         - operator: []
@@ -1138,6 +1142,12 @@ paths:
       responses:
         "201":
           description: Made.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Binding"
+        "200":
+          description: The binding the silo holds that says what this one says.
           content:
             application/json:
               schema:
@@ -1176,7 +1186,9 @@ paths:
         Resolves the binding once for each output the application makes, at the version named or the
         latest, and keeps the recipe of each — or nothing, when any output cannot be resolved. Every
         recipe the binding already has is left as it was, so applying a newer version, or another
-        ruleset, is the same call again. Operator only.
+        ruleset, is the same call again. For each output, a recipe the binding holds, resolved or
+        committed, of the facts and recipe the application resolves is answered in place of a new
+        one, so an application sent again is answered with the recipes the first made. Operator only.
       tags: [Bindings]
       security:
         - operator: []
@@ -1190,7 +1202,15 @@ paths:
               $ref: "#/components/schemas/Application"
       responses:
         "201":
-          description: The new recipes, each resolved.
+          description: A recipe for each output, at least one of them new.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StoredRecipe"
+        "200":
+          description: A recipe for each output, each one the binding already held; nothing is kept.
           content:
             application/json:
               schema:

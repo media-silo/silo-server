@@ -31,7 +31,7 @@ struct BindingRulesTests {
                 item: "part3",
                 segments: [Binding.Segment(source: source.id)]
             )
-        )
+        ).binding
     }
 
     /// Places a job made from the binding's unqualified output.
@@ -40,7 +40,7 @@ struct BindingRulesTests {
             try bench.bindingService.apply(
                 Application(ruleset: "household", outputs: [Application.OutputChoice()]),
                 to: binding.id
-            ).first
+            ).recipes.first
         )
         let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))
@@ -76,8 +76,10 @@ struct BindingRulesTests {
                     item: item,
                     segments: [Binding.Segment(source: source.id)]
                 )
+            ).binding
+            return try #require(
+                try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).recipes.first
             )
-            return try #require(try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first)
         }
 
         let extra = try resolved("documentary")
@@ -97,7 +99,7 @@ struct BindingRulesTests {
         #expect(try await bench.bindingService.setRules(Data(Self.dropFirst.utf8), of: binding.id) == 1)
 
         let resolved = try #require(
-            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first
+            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).recipes.first
         )
         #expect(resolved.recipe.audio.map(\.action) == [.drop, .copy])
         #expect(
@@ -182,7 +184,7 @@ struct BindingRulesTests {
         let read = try bench.bindingService.rules(of: binding.id)
         #expect(read.active == 3 && read.versions == [1, 2, 3])
         let resolved = try #require(
-            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first
+            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).recipes.first
         )
         #expect(resolved.recipe.layers.first?.version == 3, "the next recipe is resolved through the version in force")
     }

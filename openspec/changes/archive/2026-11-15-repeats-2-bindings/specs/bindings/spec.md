@@ -43,4 +43,4 @@ sources' natural keys — and never given beside it.
   sent again carrying the edited document
 - **THEN** the answer is 200 with the binding made first, and the silo holds one binding of the entry
 
-Pinned by: `Tests/SiloKitTests/BindingTests.swift` (`anEpisodeOutOfAPlayAllTitleIsItsChapterSpan`, `aFilmAcrossTwoDiscsIsBothWhole`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`), `Tests/SiloStoreTests/RecipeStoreTests.swift` (`bindingsAndRecipesSurviveARestart`). A binding recognised by what it says is pinned by nothing yet.
+Pinned by: `Tests/SiloKitTests/BindingTests.swift` (`anEpisodeOutOfAPlayAllTitleIsItsChapterSpan`, `aFilmAcrossTwoDiscsIsBothWhole`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`), `Tests/SiloStoreTests/RecipeStoreTests.swift` (`bindingsAndRecipesSurviveARestart`), `Tests/SiloTests/RepeatTests.swift` (`aBindingSentAgainIsTheBindingThereIs`).

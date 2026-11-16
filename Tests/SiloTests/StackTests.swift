@@ -104,15 +104,15 @@ struct StackTests {
                 item: "part3",
                 segments: [Binding.Segment(source: source.id)]
             )
-        )
+        ).binding
 
         let none = #expect(throws: BadApplication.self) {
-            try bench.bindingService.apply(Application(), to: binding.id)
+            try bench.bindingService.apply(Application(), to: binding.id).recipes
         }
         #expect(none?.reason == "the application names no ruleset, and library main has none of its own")
 
         try bench.settings.update { $0.libraries[0].ruleset = "household" }
-        let resolved = try bench.bindingService.apply(Application(), to: binding.id)
+        let resolved = try bench.bindingService.apply(Application(), to: binding.id).recipes
         #expect(
             resolved.map(\.recipe.ruleset) == [
                 RulesetRef(name: "household", version: 1), RulesetRef(name: "household", version: 1),
@@ -137,9 +137,9 @@ struct StackTests {
                 item: "part3",
                 segments: [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 3))]
             )
-        )
+        ).binding
         let resolved = try #require(
-            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).first
+            try bench.bindingService.apply(Application(ruleset: "household"), to: binding.id).recipes.first
         )
         let job = try bench.service.make(from: resolved.id)
         _ = try #require(try await bench.service.claim(node: "box", capabilities: Set(job.requirements)))

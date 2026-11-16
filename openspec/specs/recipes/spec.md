@@ -185,7 +185,12 @@ binding's stack, as [rulesets](../rulesets/spec.md) describes, from the rules in
 lineage's containers as the index holds their sidecars at that moment and the ruleset applied;
 resolve the binding once for each output it makes, deriving the facts for that output and resolving
 the stack's rules against them; and store each recipe as `resolved`, naming its binding, its output and
-its stack, and answer 201 with them. A ruleset or version the silo does not hold, an output the
+its stack, and answer 201 with them. For each output, a recipe the binding already holds, resolved or
+committed, whose facts and recipe are the ones the application resolves — the same ruleset version,
+stack, output and decisions — SHALL be answered in place of a new one, and no recipe stored for that
+output; an application that makes no recipe SHALL be answered 200 with the recipes it found, storing
+nothing, and one that makes any SHALL be answered 201 with every recipe it answers, made or found, so
+that an application sent again is answered with the recipes the first made. A ruleset or version the silo does not hold, an output the
 ruleset does not make, or no ruleset named for a library that has none, SHALL be 400; a binding the
 silo does not hold SHALL be 404. If a layer of the stack cannot be read — a version file that is not
 there, or one the reader refuses — the application SHALL be refused with 422 naming whose rules they
@@ -194,7 +199,7 @@ refused with 422 carrying the resolver's report. A refused application SHALL sto
 binding stays, since the rules were incomplete and the binding was not wrong. Every recipe the
 binding already has SHALL be left as it was, resolved or committed, so applying a newer version of the
 ruleset, another ruleset, or the same one after a container's rules have moved to another version,
-is the same operation again. `GET /v1/recipes/{id}` SHALL answer one recipe, with no token asked, or
+is the same operation again, making recipes of what it now resolves. `GET /v1/recipes/{id}` SHALL answer one recipe, with no token asked, or
 404 for an id the silo does not know.
 
 #### Scenario: two outputs, two recipes
@@ -233,7 +238,24 @@ is the same operation again. `GET /v1/recipes/{id}` SHALL answer one recipe, wit
   and a ruleset is applied to the binding
 - **THEN** the answer is 422 naming the container, and nothing is stored
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, `aBindingOrAnApplicationThatCannotBeMadeKeepsNothing`). `Tests/SiloTests/StackTests.swift` (`anApplicationResolvesThroughTheLineagesRulesInForce`, `aContainersRulesThatCannotBeReadRefuseTheApplication`, `anApplicationNamingNoRulesetTakesTheLibrarysStandard`). Applying a newer version of a ruleset to a binding that holds a committed recipe is pinned by nothing yet.
+#### Scenario: an application sent again
+- **WHEN** `household@3` is applied to a binding, and the same request is sent again
+- **THEN** the first answer is 201 with a recipe for each output and the second 200 with the same
+  recipes, and the binding holds one recipe for each output
+
+#### Scenario: an application after its recipe was committed
+- **WHEN** `household@3` is applied to a binding, a job is made from the unqualified output's recipe,
+  and `household@3` is applied again
+- **THEN** the answer names the committed recipe for the unqualified output, and no recipe is stored
+  for it
+
+#### Scenario: one output held, another not
+- **WHEN** the unqualified output of `household@3` is applied to a binding, and then every output of
+  it, the unqualified and `mobile`
+- **THEN** the second answer is 201 with the unqualified recipe made first and a new `mobile` recipe,
+  and one recipe is stored
+
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, `aBindingOrAnApplicationThatCannotBeMadeKeepsNothing`). `Tests/SiloTests/StackTests.swift` (`anApplicationResolvesThroughTheLineagesRulesInForce`, `aContainersRulesThatCannotBeReadRefuseTheApplication`, `anApplicationNamingNoRulesetTakesTheLibrarysStandard`), `Tests/SiloTests/RepeatTests.swift` (`anApplicationSentAgainIsAnsweredWithTheRecipesTheFirstMade`, `anApplicationOfOneOutputHeldAndOneNotMakesTheOther`).
 
 ### Requirement: A recipe is committed once, and never changes after
 Making a job from a resolved recipe SHALL commit it, and a committed recipe SHALL NOT change: neither

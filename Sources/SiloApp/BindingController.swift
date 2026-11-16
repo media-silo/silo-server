@@ -58,26 +58,46 @@ package struct BindingOperatorController {
         self.service = service
     }
 
-    @Operation
-    @JSONResponse(status: .created)
-    @ErrorResponse(BadBinding.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    package func makeBinding(@JSONBody body: Components.Schemas.NewBinding) async throws -> Components.Schemas.Binding {
+    /// Raw, because which success it answers — 201 for a new binding, 200 for the one that says
+    /// what it says — is decided by the store, not by the handler's signature.
+    @RawOperation
+    package func makeBinding(_ input: Operations.makeBinding.Input) async throws -> Operations.makeBinding.Output {
+        let body =
+            switch input.body {
+            case .json(let body): body
+            }
         let request: NewBinding = try Mapping.transcode(body)
-        return try Mapping.binding(try service.make(request.binding), recipes: [])
+        do {
+            let (binding, created) = try service.make(request.binding)
+            let rendered = try Mapping.binding(binding, recipes: try service.binding(binding.id).recipes.map(\.id))
+            return created ? .created(.init(body: .json(rendered))) : .ok(.init(body: .json(rendered)))
+        } catch let bad as BadBinding {
+            return .badRequest(.init(body: .json(Components.Schemas.Problem(detail: bad.reason))))
+        }
     }
 
-    @Operation
-    @JSONResponse(status: .created)
-    @ErrorResponse(NoSuchBinding.self, .notFound)
-    @ErrorResponse(BadApplication.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(Unresolvable.self, .unprocessableContent, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(ClosedBranch.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func applyRuleset(
-        @Path id: String,
-        @JSONBody body: Components.Schemas.Application
-    ) async throws -> [Components.Schemas.StoredRecipe] {
+    /// Raw, because which success it answers — 201 when a recipe is made, 200 when every output's
+    /// recipe was already held — is decided by the application.
+    @RawOperation
+    package func applyRuleset(_ input: Operations.applyRuleset.Input) async throws -> Operations.applyRuleset.Output {
+        let body =
+            switch input.body {
+            case .json(let body): body
+            }
         let application: Application = try Mapping.transcode(body)
-        return try service.apply(application, to: id).map { try Mapping.transcode($0) }
+        do {
+            let (recipes, created) = try service.apply(application, to: input.path.id)
+            let rendered: [Components.Schemas.StoredRecipe] = try recipes.map { try Mapping.transcode($0) }
+            return created ? .created(.init(body: .json(rendered))) : .ok(.init(body: .json(rendered)))
+        } catch is NoSuchBinding {
+            return .notFound(.init())
+        } catch let bad as BadApplication {
+            return .badRequest(.init(body: .json(Components.Schemas.Problem(detail: bad.reason))))
+        } catch let closed as ClosedBranch {
+            return .conflict(.init(body: .json(Components.Schemas.Problem(detail: closed.reason))))
+        } catch let unresolvable as Unresolvable {
+            return .unprocessableContent(.init(body: .json(Components.Schemas.Problem(detail: unresolvable.reason))))
+        }
     }
 
     @Operation

@@ -2545,6 +2545,14 @@ extension ServerTests {
                 binding.segments == [Binding.Segment(source: source.id, chapters: Binding.ChapterSpan(from: 2, to: 2))]
             )
             #expect(binding.recipes.isEmpty, "making a binding resolves nothing")
+            let remade = try await client.send(
+                "POST",
+                "/v1/bindings",
+                body: Self.bindingBody(source: source.id, chapters: (2, 2)),
+                headers: Self.operatorHeaders
+            )
+            #expect(remade.status == 200, "a binding sent again")
+            #expect(try remade.json(BindingBody.self).id == binding.id, "is the binding the first made")
 
             let applied = try await client.send(
                 "POST",
@@ -2566,6 +2574,17 @@ extension ServerTests {
             )
             #expect(resolved[0].recipe.video?.action == .copy)
             #expect(resolved[1].recipe.video?.rule == "mobile-video", "the mobile output is resolved with its profile")
+            let reappliedAsIs = try await client.send(
+                "POST",
+                "/v1/bindings/\(binding.id)/recipes",
+                body: Self.application("two"),
+                headers: Self.operatorHeaders
+            )
+            #expect(reappliedAsIs.status == 200, "an application sent again")
+            #expect(
+                try reappliedAsIs.json([StoredRecipeBody].self).map(\.id) == resolved.map(\.id),
+                "is answered with the recipes the first made"
+            )
 
             let read = try await client.get("/v1/bindings/\(binding.id)")
             #expect(
@@ -2916,6 +2935,25 @@ extension ServerTests {
             #expect(branches.map(\.name) == ["standard", "trial"])
             #expect(branches[0].head == 5 && branches[1].closed && branches[1].base == 1)
             #expect(try await store("trial").0 == 409, "a closed branch takes no store")
+            let source = try await client.post(
+                "/v1/sources",
+                json: SiloClient.NewSource(input: JobServiceTests.Bench.input, key: JobServiceTests.Bench.key()),
+                headers: headers
+            ).json(SourceBody.self)
+            let binding = try await client.send(
+                "POST",
+                "/v1/bindings",
+                body: Self.bindingBody(source: source.id),
+                headers: headers
+            ).json(BindingBody.self)
+            let onClosed = try await client.send(
+                "POST",
+                "/v1/bindings/\(binding.id)/recipes",
+                body: Data(#"{"ruleset":"trialset","branch":"trial"}"#.utf8),
+                headers: headers
+            )
+            #expect(onClosed.status == 409, "a closed branch is applied to nothing")
+            #expect(onClosed.bodyText.contains("has been promoted, and is closed"))
             #expect(
                 try await client.send("POST", "/v1/rulesets/trialset/branches/nowhere/promote", headers: headers).status
                     == 404
