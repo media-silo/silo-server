@@ -1163,13 +1163,31 @@ struct ServerTests {
             )
             #expect(first.status == 201)
             #expect(try first.json(RulesetDocumentBody.self).version == 1)
+            struct Based: Encodable {
+                var name = "household"
+                var basedOn: Int
+                var document: String
+            }
+            let next = Based(
+                basedOn: 1,
+                document: Fixture.household.replacingOccurrences(of: "</ruleset>", with: "<!-- next --></ruleset>")
+            )
             let second = try await client.send(
                 "PUT",
                 "/v1/rulesets/household",
-                body: try JSONEncoder().encode(body),
+                body: try JSONEncoder().encode(next),
                 headers: operatorHeaders
             )
+            #expect(second.status == 201)
             #expect(try second.json(RulesetDocumentBody.self).version == 2)
+            let resent = try await client.send(
+                "PUT",
+                "/v1/rulesets/household",
+                body: try JSONEncoder().encode(next),
+                headers: operatorHeaders
+            )
+            #expect(resent.status == 200, "a store sent again")
+            #expect(try resent.json(RulesetDocumentBody.self).version == 2, "is the version the first made")
 
             let bad = try await client.send(
                 "PUT",
@@ -1722,11 +1740,17 @@ extension ServerTests {
             let rip = Fixture.root.appendingPathComponent("rip.mkv")
             try Fixture.mediaBytes.write(to: rip)
             let copy = FileRef(holder: "laptop", url: rip, path: rip.path, sizeBytes: 3000, secret: "s3cret")
-            let ruleset = RulesetDocumentBody(name: "household", document: JobServiceTests.Bench.household)
+            // The household ruleset with a mobile output, over whatever version earlier tests left as the head.
+            struct Store: Encodable {
+                var name = "household"
+                var basedOn: Int
+                var document = JobServiceTests.Bench.household
+            }
+            let head = try? await client.get("/v1/rulesets/household").json(RulesetDocumentBody.self).version
             _ = try await client.send(
                 "PUT",
                 "/v1/rulesets/household",
-                body: try JSONEncoder().encode(ruleset),
+                body: try JSONEncoder().encode(Store(basedOn: head ?? 0)),
                 headers: Self.operatorHeaders
             )
 
@@ -2853,24 +2877,38 @@ extension ServerTests {
         try await withClient { client in
             let headers = ["Content-Type": "application/json", "Authorization": "Bearer secret"]
             let document = Fixture.household.replacingOccurrences(of: #"name="household""#, with: #"name="trialset""#)
-            func store(_ branch: String? = nil, upToDateWith: Int? = nil) async throws -> (Int, Int?) {
+            /// A store of an edition of the document of its own, based on the head given.
+            func store(
+                _ branch: String? = nil,
+                upToDateWith: Int? = nil,
+                basedOn: Int? = nil,
+                edition: Int
+            ) async throws -> (Int, Int?) {
                 struct Body: Encodable {
                     var name: String
                     var branch: String?
                     var upToDateWith: Int?
+                    var basedOn: Int?
                     var document: String
                 }
+                let edited = document.replacingOccurrences(of: "</ruleset>", with: "<!-- \(edition) --></ruleset>")
                 let answer = try await client.send(
                     "PUT",
                     "/v1/rulesets/trialset",
                     body: try JSONEncoder().encode(
-                        Body(name: "trialset", branch: branch, upToDateWith: upToDateWith, document: document)
+                        Body(
+                            name: "trialset",
+                            branch: branch,
+                            upToDateWith: upToDateWith,
+                            basedOn: basedOn,
+                            document: edited
+                        )
                     ),
                     headers: headers
                 )
                 return (answer.status, try? answer.json(RulesetDocumentBody.self).version)
             }
-            #expect(try await store().1 == 1)
+            #expect(try await store(edition: 1).1 == 1)
 
             #expect(
                 try await client.send(
@@ -2905,10 +2943,10 @@ extension ServerTests {
                 ).status == 400,
                 "a version not on the standard"
             )
-            #expect(try await store("trial").1 == 2)
+            #expect(try await store("trial", basedOn: 1, edition: 2).1 == 2)
 
             // The standard moves on; promotion would lose it, until the branch takes it in.
-            #expect(try await store().1 == 3)
+            #expect(try await store(basedOn: 1, edition: 3).1 == 3)
             let refused = try await client.send(
                 "POST",
                 "/v1/rulesets/trialset/branches/trial/promote",
@@ -2916,7 +2954,7 @@ extension ServerTests {
             )
             #expect(refused.status == 409)
             #expect(refused.bodyText.contains("has not taken in trialset@3"))
-            #expect(try await store("trial", upToDateWith: 3).1 == 4)
+            #expect(try await store("trial", upToDateWith: 3, basedOn: 2, edition: 4).1 == 4)
             let promoted = try await client.send(
                 "POST",
                 "/v1/rulesets/trialset/branches/trial/promote",
@@ -2934,7 +2972,7 @@ extension ServerTests {
             let branches = try await client.get("/v1/rulesets/trialset/branches").json([BranchBody].self)
             #expect(branches.map(\.name) == ["standard", "trial"])
             #expect(branches[0].head == 5 && branches[1].closed && branches[1].base == 1)
-            #expect(try await store("trial").0 == 409, "a closed branch takes no store")
+            #expect(try await store("trial", basedOn: 4, edition: 6).0 == 409, "a closed branch takes no store")
             let source = try await client.post(
                 "/v1/sources",
                 json: SiloClient.NewSource(input: JobServiceTests.Bench.input, key: JobServiceTests.Bench.key()),
@@ -3018,13 +3056,22 @@ extension ServerTests {
                 )
                 return (Int(answer.status), answer.bodyText)
             }
+            func edition(_ number: Int) -> String {
+                Self.drafted.replacingOccurrences(of: "</ruleset>", with: "<!-- edition \(number) --></ruleset>")
+            }
             #expect(try await store(basedOn: 0).status == 201, "a new name, based on zero")
-            #expect(try await store(basedOn: 0).status == 409, "and the name is no longer new")
-            #expect(try await store(basedOn: 1).status == 201)
-            let stale = try await store(basedOn: 1)
+            #expect(try await store(basedOn: 0, edition(2)).status == 409, "and the name is no longer new")
+            #expect(try await store(basedOn: 1, edition(2)).status == 201)
+            let stale = try await store(basedOn: 1, edition(3))
             #expect(stale.status == 409, "a second editor from the same base")
             #expect(stale.text.contains("drafted@2"), "naming the head")
-            #expect(try await store(basedOn: nil).status == 201, "without a base, whatever the head")
+            let again = try await store(basedOn: 1, edition(2))
+            #expect(again.status == 200, "a store sent again, whatever its base")
+            #expect(again.text.contains("\"version\":2"), "is the version the first made")
+            let unbased = try await store(basedOn: nil, edition(3))
+            #expect(unbased.status == 400, "a store that does not say its base")
+            #expect(unbased.text.contains("says the head it was made from as basedOn"))
+            #expect(try await store(basedOn: 2, edition(3)).status == 201)
 
             struct Version: Decodable, Equatable {
                 var version: Int

@@ -49,4 +49,3 @@ store nothing and answer 409 with a `Problem` naming the head. The route is the 
 
 Pinned by: `Tests/SiloTests/ServerTests.swift`
 (`rulesetsAreVersionedAndTheOperatorGateHolds`, `aRulesetIsReadWholeADraftCheckedAndAStoreBasedOnItsHead`).
-A store sent again, and one that does not say its base, are pinned by nothing yet.

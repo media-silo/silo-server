@@ -858,7 +858,10 @@ paths:
       description: >
         Every store is a new version the silo numbers, one sequence across all the ruleset's
         branches; a version is immutable once stored, because a recipe names the version it was
-        resolved against. On the standard unless a branch is named. Operator only.
+        resolved against. On the standard unless a branch is named. A document whose bytes are the
+        head's of the branch it is stored to is that head, answered 200 with nothing stored,
+        whatever its basedOn, so a store sent again is answered with the version the first made.
+        Otherwise basedOn is required once the name has a version. Operator only.
       tags: [Rulesets]
       security:
         - operator: []
@@ -877,8 +880,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RulesetDocument"
+        "200":
+          description: The branch's head, whose document this is; nothing is stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RulesetDocument"
         "400":
-          description: The document is not a ruleset this silo can read, or the branch or version named is not there.
+          description: >
+            The document is not a ruleset this silo can read, the branch or version named is not
+            there, or a store to a name that has a version does not say its basedOn.
           content:
             application/json:
               schema:

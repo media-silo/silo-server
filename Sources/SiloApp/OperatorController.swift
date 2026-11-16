@@ -305,38 +305,41 @@ package struct OperatorController {
         return result
     }
 
-    @Operation
-    @ErrorResponse(BadRuleset.self, .badRequest, { Components.Schemas.Problem(detail: $0.reason) })
-    @ErrorResponse(BranchConflict.self, .conflict, { Components.Schemas.Problem(detail: $0.reason) })
-    package func storeRuleset(
-        @Path name: String,
-        @JSONBody body: Components.Schemas.RulesetDocument
-    ) async throws -> Components.Schemas.RulesetDocument {
-        let data = Data(body.document.utf8)
-        let version: Int
+    /// Raw, because which success it answers — 201 for a version stored, 200 for the head whose
+    /// document this is — is decided by the store.
+    @RawOperation
+    package func storeRuleset(_ input: Operations.storeRuleset.Input) async throws -> Operations.storeRuleset.Output {
+        let body =
+            switch input.body {
+            case .json(let body): body
+            }
+        func problem(_ detail: String) -> Components.Schemas.Problem { Components.Schemas.Problem(detail: detail) }
+        let stored: (version: Int, created: Bool)
         do {
-            version = try store.store(
-                data,
-                as: name,
+            stored = try store.store(
+                Data(body.document.utf8),
+                as: input.path.name,
                 branch: body.branch,
                 upToDateWith: body.upToDateWith,
                 basedOn: body.basedOn
             )
-            checks.request()
         } catch let error as RulesetFileError {
-            throw BadRuleset(reason: error.description)
+            return .badRequest(.init(body: .json(problem(error.description))))
         } catch let error as RulesetStoreError {
             switch error {
-            case .branchClosed, .notTheHead: throw BranchConflict(reason: error.description)
-            default: throw BadRuleset(reason: error.description)
+            case .branchClosed, .notTheHead: return .conflict(.init(body: .json(problem(error.description))))
+            default: return .badRequest(.init(body: .json(problem(error.description))))
             }
         }
-        return Components.Schemas.RulesetDocument(
-            name: name,
-            version: version,
+        let rendered = Components.Schemas.RulesetDocument(
+            name: input.path.name,
+            version: stored.version,
             branch: body.branch ?? RulesetStore.standard,
             document: body.document
         )
+        guard stored.created else { return .ok(.init(body: .json(rendered))) }
+        checks.request()
+        return .created(.init(body: .json(rendered)))
     }
 
     @Operation

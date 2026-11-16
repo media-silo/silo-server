@@ -103,7 +103,8 @@ Pinned by: `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppli
 `PUT /v1/bindings/{id}/rules`, behind the operator's token, SHALL take a rules document, read it as a
 binding's rules are read, and store it as the binding's next version, from 1, making it the version in
 force; a document the reader refuses SHALL be 400 with its refusal, and a binding the silo does not
-hold 404. `GET /v1/bindings/{id}/rules` SHALL answer, with no token asked, the version in force with
+hold 404. A document whose bytes are those of the version in force SHALL store nothing, and be answered
+200 as that version, so that rules put again are answered as the first put was. `GET /v1/bindings/{id}/rules` SHALL answer, with no token asked, the version in force with
 its document and the numbers of every version. Until the binding's first presentation is placed, its
 versions SHALL be kept in the silo's state directory; from then on they SHALL be kept in the library,
 in the folder `rules/bindings/<binding id>` beside the sidecar of the container holding the binding's
@@ -122,4 +123,13 @@ rules SHALL change no recipe: a recipe that should carry them is resolved by app
 - **THEN** version 2's file is written in the library's `rules/bindings/<binding id>` folder, and the
   item's `<rules>` for the binding names version 2
 
-Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, for the routes).
+#### Scenario: rules put again
+- **WHEN** a binding's rules are put as version 1, and the same document is put again
+- **THEN** the second answer names version 1, and the binding has one version
+
+#### Scenario: rules put back
+- **WHEN** a binding's rules are put as version 1, another document as version 2, and the first
+  document again
+- **THEN** the third answer names version 3, in force, whose document is version 1's
+
+Pinned by: `Tests/SiloTests/BindingRulesTests.swift` (`rulesStoredBeforePlacementMoveIntoTheLibraryWithTheFirstFile`, `rulesPutAgainAreTheVersionInForce`), `Tests/SiloTests/ServerTests.swift` (`entriesAreBoundAndRulesetsAppliedToThem`, for the routes).

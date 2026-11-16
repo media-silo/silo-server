@@ -40,5 +40,5 @@ the version it was resolved against, and that version must still say what it sai
   standard again
 - **THEN** the store is answered as version 4, and the latest version of `household` is still 4
 
-Pinned by: `Tests/SiloTests/ServerTests.swift` (`rulesetsAreVersionedAndTheOperatorGateHolds`), `Tests/SiloStoreTests/RulesetBranchTests.swift` (`branchesShareTheSequenceAndEachVersionNamesItsParent`).
-The name and already-there refusals are pinned by nothing yet, and so is the head's document stored again.
+Pinned by: `Tests/SiloTests/ServerTests.swift` (`rulesetsAreVersionedAndTheOperatorGateHolds`), `Tests/SiloStoreTests/RulesetBranchTests.swift` (`branchesShareTheSequenceAndEachVersionNamesItsParent`, `theHeadsDocumentStoredAgainIsTheHead`).
+The name and already-there refusals are pinned by nothing yet.

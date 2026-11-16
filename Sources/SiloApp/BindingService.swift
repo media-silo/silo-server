@@ -176,7 +176,9 @@ package struct BindingService: Sendable {
 
     /// Stores a binding's next version of its rules, making it the version in force: in the library,
     /// the file and then the item's reference, once the binding's first presentation is placed; in
-    /// the silo's staging before that. Changes no recipe.
+    /// the silo's staging before that. A document whose bytes are the version in force's is that
+    /// version, and stores nothing, so rules put again are answered as the first put was. Changes no
+    /// recipe.
     package func setRules(_ document: Data, of id: String) async throws -> Int {
         guard let binding = bindings.binding(id) else { throw NoSuchBinding() }
         do {
@@ -184,6 +186,8 @@ package struct BindingService: Sendable {
         } catch {
             throw BadBindingRules(reason: "\(error)")
         }
+        let inForce = try rules(of: id)
+        if let active = inForce.active, inForce.document == document { return active }
         let lineage = try binding.containers.map { try ContainerFile.container(from: Data($0.utf8)) }
         guard let home = try stack.home(of: binding, lineage: lineage), home.placed else {
             let version = try staged.store(document, for: id)
